@@ -34,6 +34,28 @@ export interface PointerHint {
   readonly element: HTMLElement;
 }
 
+/**
+ * Moves `el` (placed by its style's left and top in `host`'s pixels) back
+ * inside `host` where its drawn box, CSS transform and all, sticks out past
+ * an edge: drawing by the view's right edge, the typed-size boxes stuck out
+ * past the window and the page scrolled sideways (hunt 3f). Whole pixels,
+ * rounded outwards so no part pixel stays out; an element bigger than the
+ * host keeps its left and top edges in.
+ */
+export function keepInside(el: HTMLElement, host: HTMLElement): void {
+  const b = el.getBoundingClientRect();
+  const h = host.getBoundingClientRect();
+  const shift = (start: number, end: number, from: number, to: number) => {
+    let d = end > to ? Math.floor(to - end) : 0;
+    if (start + d < from) d = Math.ceil(from - start);
+    return d;
+  };
+  const dx = shift(b.left, b.right, h.left, h.right);
+  const dy = shift(b.top, b.bottom, h.top, h.bottom);
+  if (dx !== 0) el.style.left = `${parseFloat(el.style.left) + dx}px`;
+  if (dy !== 0) el.style.top = `${parseFloat(el.style.top) + dy}px`;
+}
+
 export function pointerHint(host: HTMLElement): PointerHint {
   const el = host.ownerDocument.createElement("div");
   el.className = "pointer-hint";
@@ -49,6 +71,7 @@ export function pointerHint(host: HTMLElement): PointerHint {
       el.hidden = false;
       el.style.left = `${Math.round(x)}px`;
       el.style.top = `${Math.round(y)}px`;
+      keepInside(el, host);
     },
     hide() {
       el.hidden = true;
