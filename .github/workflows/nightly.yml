@@ -29,7 +29,8 @@ name: Random testing
 # against tests/baseline.json (X8b) and its lines go into summary.txt, as do
 # the ts-mutants job's (TypeScript mutation testing, packages/testing/stryker)
 # and the golden job's (the golden models, step 28b; a failing model files an
-# issue like a failing round).
+# issue like a failing round), and the monkey job's (two seeded 2,000-action
+# sessions in the real app, hunt 3f; a failing seed files an issue too).
 # Scheduled runs only fire from the default branch.
 on:
   schedule:
@@ -307,6 +308,58 @@ jobs:
           path: ${{ runner.temp }}/journeys/
           if-no-files-found: ignore
 
+  # The monkey's long sessions (hunt 3f, apps/fission/e2e/monkey.mjs): two
+  # seeded sessions of 2,000 user actions each in the real app in Chromium,
+  # every check after every action; seeds from the night's date (YYYYMMDD0
+  # and YYYYMMDD1), so a night replays exactly. A failing session is shrunk
+  # to a short action list; monkey_night.py turns the output into report.txt
+  # and a failure folder per failing (or unfinished) seed, which files a
+  # random-testing issue like a failing round (collect-results.sh,
+  # file_issues.py). The sessions are cut off at 300 minutes so the report is
+  # always written.
+  monkey:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: wasm-pack
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build
+        working-directory: apps/fission
+      # Retries and time limits for apt's stalls: see the script.
+      - name: Install the browser (chromium)
+        working-directory: apps/fission
+        timeout-minutes: 27
+        run: ../../.github/scripts/install-browser.sh chromium
+      - name: Two seeded sessions of 2,000 actions
+        working-directory: apps/fission
+        env:
+          OUT: ${{ runner.temp }}/monkey
+        run: |
+          mkdir -p "$OUT"
+          first="$(date -u +%Y%m%d)0"
+          MONKEY_NO_REGRESSIONS=1 MONKEY_SEEDS="$first-$((first + 1))" MONKEY_STEPS=2000 \
+            timeout 300m node e2e/monkey.mjs 2>&1 | tee "$OUT/monkey.log" | grep -E '^(seed |monkey:)' || true
+          python3 ../../.github/scripts/monkey_night.py "$OUT/monkey.log" e2e/monkey-results "$OUT" "$first" 2 2000
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: monkey
+          path: ${{ runner.temp }}/monkey/
+          if-no-files-found: ignore
+
   # The golden models (step 28b, packages/testing/golden/nightly.ts): every
   # model in tests/golden that builds today rebuilt in 50 shuffled rounds on
   # one kernel, each checked against its hand-worked answers and against its
@@ -435,7 +488,7 @@ jobs:
           if-no-files-found: ignore
 
   collect:
-    needs: [gate, plan, test, test-second-leg, mutants, journeys, golden, ts-mutants]
+    needs: [gate, plan, test, test-second-leg, mutants, journeys, golden, monkey, ts-mutants]
     if: always() && needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15

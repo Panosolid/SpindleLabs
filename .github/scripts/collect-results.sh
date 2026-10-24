@@ -15,7 +15,9 @@
 #                   mutants-*/ (one cargo mutants shard each: its *.txt lists
 #                   and exit-code.txt), golden/ (the golden models' night:
 #                   report.txt, measured.json, baseline.txt and, if a model
-#                   failed, seed-golden-<seed>/golden-report.txt), journeys/
+#                   failed, seed-golden-<seed>/golden-report.txt), monkey/
+#                   (monkey_night.py: report.txt and seed-monkey-<seed>/),
+#                   journeys/
 #                   and ts-mutants-*/
 #   MUTANT_SHARDS   how many mutation shards the run started (0 or unset: none)
 #   RUN_URL, COMMIT, BRANCH   what this run tested, written next to every row
@@ -106,6 +108,23 @@ add_run() {
     found=$((found + 1))
   done
 
+  # The monkey's long seeded sessions (hunt 3f, monkey_night.py): the same
+  # shape as the golden models: latest lines, a log line per night, and a
+  # failing seed's folder in failures/ (file_issues.py files its kinds).
+  if [ -f "$IN/monkey/report.txt" ]; then
+    mkdir -p monkey
+    { echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"; cat "$IN/monkey/report.txt"; } >monkey/latest.txt
+    echo "$today,$short,$BRANCH,$(head -1 "$IN/monkey/report.txt")" >>monkey/log.txt
+  elif [ -d monkey ]; then
+    echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"$'\n'"no report: the monkey job stopped before the sessions" >monkey/latest.txt
+  fi
+  for f in "$IN"/monkey/seed-*; do
+    [ -d "$f" ] || continue
+    mkdir -p failures && cp -r "$f" failures/
+    echo "tested commit $COMMIT on branch $BRANCH ($RUN_URL)" >"failures/$(basename "$f")/commit.txt"
+    found=$((found + 1))
+  done
+
   # TypeScript mutation testing: the latest run's survivor lines, one target per job.
   mkdir -p ts-mutants
   {
@@ -153,6 +172,9 @@ add_run() {
   fi
   if [ -f golden/latest.txt ]; then
     { echo ""; echo "Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):"; sed 's/^/  /' golden/latest.txt; echo "golden/log.txt has one line per night."; } >>summary.txt
+  fi
+  if [ -f monkey/latest.txt ]; then
+    { echo ""; echo "Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):"; sed 's/^/  /' monkey/latest.txt; echo "monkey/log.txt has one line per night."; } >>summary.txt
   fi
   if [ -f ts-mutants/latest.txt ]; then
     { echo ""; echo "Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):"; sed 's/^/  /' ts-mutants/latest.txt; } >>summary.txt
