@@ -94,10 +94,10 @@ test("hand-worked: the box's height edited under Extrude 1, then Extrude 1's dis
     };
 
     // The box made 35 high: 40 · 30 · 35 = 42000 mm³. Extrude 1 is untouched (same spec, reused): one body built.
-    assert.deepEqual(editableFeature(doc, "feature-1"), { id: "feature-1", name: "Feature 1 (box)", shape: "box", sizes: { width: 40, depth: 30, height: 20 }, keys: ["width", "depth", "height"] });
+    assert.deepEqual(editableFeature(doc, "feature-1"), { id: "feature-1", name: "Box 1", shape: "box", sizes: { width: 40, depth: 30, height: 20 }, keys: ["width", "depth", "height"] });
     const a = await ok(doc, "feature-1", { height: 35 });
     assert.ok("next" in a);
-    assert.equal(editStep(doc, "feature-1"), "Edit Feature 1 (box)");
+    assert.equal(editStep(doc, "feature-1"), "Edit Box 1");
     record(editStep(doc, "feature-1"), a.next);
     // Only the box's intent changed; every other item is the same object.
     a.next.timeline.features.forEach((f, i) => (f.id === "feature-1" ? assert.notEqual(f, doc.timeline.features[i]) : assert.equal(f, doc.timeline.features[i])));
@@ -150,7 +150,7 @@ test("the kernel's size limits, 1 µm to 1 km, at 0.9× and 1.1×: refused with 
     }
   }
   // Not a number at all never reaches the kernel: editFeature refuses it.
-  assert.throws(() => editFeature(doc, "feature-1", { width: Number.NaN }), /Feature 1 \(box\): its width must be a number of mm, not NaN/);
+  assert.throws(() => editFeature(doc, "feature-1", { width: Number.NaN }), /Box 1: its width must be a number of mm, not NaN/);
   assert.throws(() => editFeature(doc, extrude, { height: Infinity }), /Extrude 1: its height must be a number of mm, not Infinity/);
   // A sketch has no sizes (25a3 reopens it); an unknown item is named.
   assert.throws(() => editableFeature(doc, "sketch-2"), /Sketch 1 is a sketch: it has no sizes to edit/);

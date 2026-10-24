@@ -35,6 +35,8 @@ page.on("console", (m) => {
 });
 
 const text = (id) => page.textContent(`#${id}`);
+/** A browser row's words and its tooltip: an item's short name, and the name over its description (U0e). */
+const row = (node) => page.$eval(`#browser .tree-row[data-node=${node}]`, (r) => [r.textContent, r.title]);
 const setSize = async (id, value) => {
   await page.fill(`#${id}`, String(value));
 };
@@ -163,7 +165,7 @@ try {
     assert.equal(await text("topology"), "8 V · 12 E · 6 F");
     assert.equal(await text("status"), "valid");
     assert.equal(await text("intent"), "Box: 40 × 30 × 20 mm");
-    assert.equal(await text("provenance"), "Feature 1 (box) was made in Design.");
+    assert.equal(await text("provenance"), "Box 1 was made in Design.");
   });
 
   await check("no Downstream section shows while no workspace makes anything from the design (X4b)", async () => {
@@ -686,7 +688,7 @@ try {
     assert.equal(await text("height-label"), "Extrude by");
     // The part is feature #1 of the timeline, and knows what it is and where it came from.
     assert.equal(await text("intent"), "Extrude: L-bracket profile 40 × 30 mm, by 20 mm");
-    assert.equal(await text("provenance"), "Feature 1 (extrude) comes from L-bracket profile in Design.");
+    assert.equal(await text("provenance"), "L-bracket 1 comes from L-bracket profile in Design.");
     // A new shape is framed: r = √(40² + 30² + 20²)/2 ≈ 26.93.
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(2900) / 2) < 1e-4, `framed radius ${r}`);
@@ -699,7 +701,8 @@ try {
     await foldBrowser(true);
     // The L-bracket part from the check above: feature #1 with its intent.
     const rows = async (group) => page.$$eval(`#browser [data-node=${group}] .tree-row`, (els) => els.map((e) => e.textContent));
-    assert.deepEqual(await rows("timeline"), ["1. Extrude: L-bracket profile 40 × 30 mm, by 20 mm"]);
+    assert.deepEqual(await rows("timeline"), ["L-bracket 1"]);
+    assert.equal(await page.getAttribute("#browser .tree-row[data-node=feature-1]", "title"), "L-bracket 1\nExtrude: L-bracket profile 40 × 30 mm, by 20 mm");
     assert.deepEqual(await rows("bodies"), ["Body 1"]);
     assert.deepEqual(await rows("origin"), ["XY plane", "XZ plane", "YZ plane", "X axis", "Y axis", "Z axis"]);
     const current = () => page.$$eval("#browser [aria-current=true]", (els) => els.map((e) => e.dataset.node));
@@ -978,7 +981,7 @@ try {
     assert.equal(await page.inputValue("#width"), "40");
     assert.equal(await page.inputValue("#shape"), "box");
     assert.equal(await page.$eval("#viewport", (el) => el.dataset.framedRadius), radius);
-    assert.equal(await page.textContent("#browser [data-node=feature-1]"), "1. Box: 40 × 30 × 20 mm");
+    assert.deepEqual(await row("feature-1"), ["Box 1", "Box 1\nBox: 40 × 30 × 20 mm"]);
     await page.screenshot({ path: "e2e/workspace-design.png" });
   });
 
@@ -1065,7 +1068,7 @@ try {
     await page.screenshot({ path: "e2e/design-375-scrolled.png" });
     await page.click("#browser-toggle");
     assert.equal(await page.getAttribute("#browser-toggle", "aria-expanded"), "true");
-    assert.equal(await page.textContent("#browser [data-node=feature-1]"), "1. Box: 40 × 30 × 20 mm");
+    assert.deepEqual(await row("feature-1"), ["Box 1", "Box 1\nBox: 40 × 30 × 20 mm"]);
     await page.click("#properties-toggle");
     assert.equal(await page.isVisible("#properties"), false);
     assert.deepEqual(await overflow(), []);
@@ -1230,7 +1233,7 @@ try {
     await page.setInputFiles("#open-file", saved);
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
     assert.equal(await page.inputValue("#width"), "50");
-    assert.equal(await page.textContent("#browser [data-node=feature-1]"), "1. Box: 50 × 30 × 20 mm");
+    assert.deepEqual(await row("feature-1"), ["Box 1", "Box 1\nBox: 50 × 30 × 20 mm"]);
     assert.equal(await text("intent"), "Box: 50 × 30 × 20 mm");
     assert.equal(await text("file-status"), "");
     // Re-framed on the opened part: r = √(50² + 30² + 20²)/2 = √3800/2 ≈ 30.82.
@@ -1271,7 +1274,7 @@ try {
       await kept.reload();
       await kept.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
       assert.equal(await kept.inputValue("#width"), "50");
-      assert.equal(await kept.textContent("#browser [data-node=feature-1]"), "1. Box: 50 × 30 × 20 mm");
+      assert.deepEqual(await kept.$eval("#browser .tree-row[data-node=feature-1]", (r) => [r.textContent, r.title]), ["Box 1", "Box 1\nBox: 50 × 30 × 20 mm"]);
       assert.equal(await kept.textContent("#area"), "6,200 mm²"); // A = 2(50·30 + 30·20 + 50·20) = 2·3100
       assert.equal(await kept.evaluate(() => document.body.dataset.projectId), id, "the same stored project");
       assert.equal(await kept.textContent("#save-status"), "Saved");

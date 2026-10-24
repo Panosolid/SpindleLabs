@@ -25,14 +25,15 @@ const withMarker = (doc: DesignDocument, marker: string | undefined): DesignDocu
 test("the bar shows every item in build order, numbered and drawn by its kind", () => {
   const { items, marker } = timelineBarItems(threeItems());
   // Worked by hand: the items are the three edits above in the order made;
-  // the numbers count from 1 like the browser's Timeline rows; with no
-  // marker every item is built, so the marker stands after all 3.
+  // the numbers count from 1 in build order, before each item's short name
+  // (U0e), its description beside it; with no marker every item is built,
+  // so the marker stands after all 3.
   assert.deepEqual(
-    items.map((i) => [i.id, i.label, i.icon]),
+    items.map((i) => [i.id, i.label, i.description, i.icon]),
     [
-      ["feature-1", "1. Box: 40 × 30 × 20 mm", "box"],
-      ["sketch-2", "2. Sketch 1 on the XY plane", "sketch"],
-      ["feature-3", "3. Extrude Sketch 1 by 10 mm", "extrude"],
+      ["feature-1", "1. Box 1", "Box: 40 × 30 × 20 mm", "box"],
+      ["sketch-2", "2. Sketch 1", "Sketch 1 on the XY plane", "sketch"],
+      ["feature-3", "3. Extrude 1", "Extrude Sketch 1 by 10 mm", "extrude"],
     ],
   );
   assert.equal(marker, 3);
@@ -207,7 +208,7 @@ test("an item dropped at a place: before or after itself is nothing, a place it 
   // The box dropped at place 3 (past the last): to place 2 of the new order, so the order is sketch-2, feature-3, feature-1.
   const end = barEdit(doc, { kind: "item", id: "feature-1", place: 3 });
   assert.ok(end.kind === "edit");
-  assert.equal(end.step, "Move Feature 1 (box) in the timeline");
+  assert.equal(end.step, "Move Box 1 in the timeline");
   assert.deepEqual(end.doc.timeline.features.map((f) => f.id), ["sketch-2", "feature-3", "feature-1"]);
   // The box dropped at place 2 (between the sketch and its extrude): new order sketch-2, feature-1, feature-3.
   const mid = barEdit(doc, { kind: "item", id: "feature-1", place: 2 });
@@ -257,12 +258,12 @@ test("a delete names its undo step, and asks first exactly when something is bui
   // The extrude left with no sketch and no kept shape (the app settles one through planDelete) can't build: red.
   assert.deepEqual(timelineBarItems(sketch.doc).items.map((i) => [i.id, i.failed]), [["feature-1", false], ["feature-3", true]]);
   const box = barEdit(doc, { kind: "menu", id: "feature-1", action: "delete" });
-  assert.deepEqual(box.kind === "delete" && [box.step, box.ask, deleteWords(doc, box.doc, "feature-1")], ["Delete Feature 1 (box)", false, null]);
+  assert.deepEqual(box.kind === "delete" && [box.step, box.ask, deleteWords(doc, box.doc, "feature-1")], ["Delete Box 1", false, null]);
   // The item being edited can't be deleted or suppressed from the bar.
   assert.deepEqual(barEdit(doc, { kind: "menu", id: "sketch-2", action: "delete" }, "sketch-2"), { kind: "refused", message: "Sketch 1 is being edited: finish the sketch first" });
   assert.deepEqual(barEdit(doc, { kind: "menu", id: "sketch-2", action: "suppress" }, "sketch-2"), { kind: "refused", message: "Sketch 1 is being edited: finish the sketch first" });
   assert.deepEqual(barEdit(doc, { kind: "menu", id: "feature-3", action: "marker" }), { kind: "refused", message: "The marker is already here" });
-  assert.deepEqual(barEdit(doc, { kind: "menu", id: "feature-1", action: "unsuppress" }), { kind: "refused", message: "Feature 1 (box) has no unsuppress in its menu" });
+  assert.deepEqual(barEdit(doc, { kind: "menu", id: "feature-1", action: "unsuppress" }), { kind: "refused", message: "Box 1 has no unsuppress in its menu" });
 });
 
 test("an item failed in the rebuild is red, unless it is rolled back or suppressed", () => {

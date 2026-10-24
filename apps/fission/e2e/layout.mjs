@@ -197,8 +197,17 @@ const rolledBack = {
   },
 };
 
-/** A real design with long labels: the golden stepped boss (box, two face sketches, two extrudes). */
-const steppedBoss = readFileSync(new URL("../../../tests/golden/stepped-boss.panosolid.json", import.meta.url));
+/**
+ * A real design: the golden stepped boss (box, two face sketches, two
+ * extrudes), its first sketch given a name of 40 characters, the longest a
+ * name may be (U0e), so its row is cut.
+ */
+const LONG_NAME = "Boss outline on the top face of the base";
+const steppedBoss = (() => {
+  const file = JSON.parse(readFileSync(new URL("../../../tests/golden/stepped-boss.panosolid.json", import.meta.url), "utf8"));
+  file.workspaces.design.timeline.features.find((f) => f.id === "sketch-2").provenance.self.label = LONG_NAME;
+  return Buffer.from(JSON.stringify(file));
+})();
 /** The tallest a slim row may be: an 18 px line, 1 px padding and a 1 px border above and below (U0a). */
 const SLIM_ROW = 22;
 
@@ -215,14 +224,14 @@ const slimRows = (page) =>
     return { groups, rows, panelRight: panel.getBoundingClientRect().right, scrolls: panel.scrollHeight > panel.clientHeight };
   });
 
-/** Slim rows: every shown row one line at most SLIM_ROW tall inside the panel; a cut label ends in "…" with its whole label as the tooltip. */
+/** Slim rows: every shown row one line at most SLIM_ROW tall inside the panel; a cut label ends in "…" with its whole label as the tooltip's first line. */
 function checkSlim({ rows, panelRight }) {
   for (const r of rows) {
     assert.ok(r.h <= SLIM_ROW + 0.5, `"${r.text}" is one slim line (${r.h} px, at most ${SLIM_ROW})`);
     assert.ok(r.right <= panelRight + 0.5, `"${r.text}" stays inside the panel`);
     if (r.cut) {
       assert.equal(r.ending, "ellipsis", `"${r.text}" is cut with "…"`);
-      assert.equal(r.title, r.text, `"${r.text}": the tooltip has the whole label`);
+      assert.equal(r.title.split("\n")[0], r.text, `"${r.text}": the tooltip has the whole label`);
     }
   }
 }
@@ -355,7 +364,7 @@ try {
 
   await check("the timeline shows the new project's one item with the marker after it", async () => {
     assert.deepEqual(await barItems(page), [["feature-1", "box", false, false], "|"]);
-    assert.equal(await page.getAttribute("#timeline [data-item=feature-1]", "title"), "1. Box: 40 × 30 × 20 mm");
+    assert.equal(await page.getAttribute("#timeline [data-item=feature-1]", "title"), "1. Box 1\nBox: 40 × 30 × 20 mm");
   });
 
   await check("the browser's rows are slim single lines, the Timeline and Origin folded (U0a)", async () => {
@@ -373,10 +382,14 @@ try {
     await page.click('#browser details[data-node="timeline"] > summary');
     const open = await slimRows(page);
     checkSlim(open);
-    // "2. Sketch 1 on a face of Feature 1 (box)" is about 250 px of 13 px words, wider than the 240 px panel less its ⋯: cut.
+    // The 40-character name is about 260 px of 13 px words, wider than the 240 px panel less its ⋯: cut, its tooltip the
+    // name and under it the description, which names the box by its short name (U0e: the file's "Feature 1 (box)" is Box 1).
     const long = open.rows.find((r) => r.node === "sketch-2");
-    assert.equal(long.text, "2. Sketch 1 on a face of Feature 1 (box)");
+    assert.equal(long.text, LONG_NAME);
+    assert.equal(long.title, `${LONG_NAME}\nSketch 1 on a face of Box 1`);
     assert.ok(long.cut, "the long label is cut");
+    // Every other item's name is short and whole: the box's is Box 1.
+    assert.deepEqual(open.rows.filter((r) => r.node === "feature-1").map((r) => [r.text, r.cut]), [["Box 1", false]]);
     if (shots) await page.screenshot({ path: `${shots}/browser-slim-1280.png` });
   });
 
@@ -435,7 +448,7 @@ try {
     assert.deepEqual(looks.map((l) => l.opacity), ["1", "1", "0.4", "0.4"], "only the items after the marker are greyed");
     assert.equal(looks[3].cross, '""', "the suppressed item is crossed out");
     assert.equal(looks[2].cross, "none", "an item that isn't suppressed is not");
-    assert.equal(await page.getAttribute("#timeline [data-item=feature-3]", "title"), "3. Cylinder: ⌀10 × 5 mm (suppressed) (after the marker)");
+    assert.equal(await page.getAttribute("#timeline [data-item=feature-3]", "title"), "3. Cylinder 1\nCylinder: ⌀10 × 5 mm (suppressed) (after the marker)");
     checkTimelineRow(await measure(page));
   });
 

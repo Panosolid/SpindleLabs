@@ -192,9 +192,10 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         if (ref) row.setAttribute("type", "button");
         row.className = "tree-row";
         row.textContent = n.label;
-        // One line per row (U0a): a label too long for it ends in "…", and the tooltip has it whole.
-        row.title = n.label;
+        // One line per row (U0a): a label too long for it ends in "…", and the tooltip has it whole, or an item's description (U0e).
+        row.title = n.title ?? n.label;
         row.dataset.label = n.label;
+        row.dataset.tip = row.title;
         row.dataset.node = n.id;
         if (ref) row.addEventListener("click", (e) => onSelect(ref, (e as MouseEvent).shiftKey));
         if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith("body-")) {
@@ -429,7 +430,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     for (const row of ctx.browser.querySelectorAll<HTMLElement>(".tree-row")) {
       const words = rows.get(row.dataset.node!);
       if (words !== undefined) row.title = words;
-      else if (row.classList.contains("kept")) row.title = row.dataset.label ?? "";
+      else if (row.classList.contains("kept")) row.title = row.dataset.tip ?? "";
       row.classList.toggle("kept", words !== undefined);
     }
   }
@@ -641,7 +642,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       row.classList.toggle("timeline-menu-rolled-back", grey);
       row.classList.toggle("timeline-menu-greyed", by !== undefined);
       if (by !== undefined) row.title = `Greyed: ${by} is suppressed`;
-      else if (row.title.startsWith("Greyed: ")) row.title = row.dataset.label ?? "";
+      else if (row.title.startsWith("Greyed: ")) row.title = row.dataset.tip ?? "";
     }
   }
 

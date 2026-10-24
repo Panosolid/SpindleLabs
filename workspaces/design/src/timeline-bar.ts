@@ -17,8 +17,10 @@ export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" 
 
 export interface TimelineBarItem {
   id: string;
-  /** "2. Sketch 1 on the XY plane": numbered in build order like the browser's Timeline rows. */
+  /** "2. Sketch 1": numbered in build order, by its short name (U0e). */
   label: string;
+  /** What it is: its intent summary ("Sketch 1 on the XY plane"), shown under the name in its tooltip (U0e). */
+  description: string;
   icon: TimelineIcon;
   suppressed: boolean;
   /** After the rollback marker: not built until the marker moves past it. */
@@ -65,7 +67,8 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
     const ok = on && by === undefined;
     return {
       id: f.id,
-      label: `${i + 1}. ${f.intent.summary}`,
+      label: `${i + 1}. ${itemName(f)}`,
+      description: f.intent.summary,
       icon: Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature",
       suppressed: f.suppressed,
       rolledBack: i >= at,
@@ -543,8 +546,9 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
     if (item.failed) li.dataset.failed = "true";
     if (item.greyed !== null) li.dataset.greyed = "true";
     if (item.warning !== null) li.dataset.warned = "true";
+    // The name, then on a line of its own what it is (U0e), then its marks.
     const words =
-      item.label +
+      `${item.label}\n${item.description}` +
       (item.suppressed ? " (suppressed)" : "") +
       (item.greyed !== null ? ` (greyed: ${item.greyed} is suppressed)` : "") +
       (item.rolledBack ? " (after the marker)" : "") +
@@ -589,7 +593,7 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       more.className = "timeline-bar-more";
       more.dataset.more = item.id; // read by the e2e test
       more.textContent = "⋯";
-      more.title = `${words}: more`;
+      more.title = `${item.label}: more`;
       more.setAttribute("aria-label", `${item.label} options`);
       more.setAttribute("aria-haspopup", "menu");
       more.addEventListener("click", () => {

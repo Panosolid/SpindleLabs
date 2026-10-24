@@ -112,7 +112,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "save-drops-suppressed": {
     what: "opening a file forgets which items are suppressed",
-    edits: [{ file: DOCUMENT, find: "  return d as DesignDocument;", replace: "  for (const f of d.timeline.features) f.suppressed = false;\n  return d as DesignDocument;" }],
+    edits: [{ file: DOCUMENT, find: "  return withShortNames(d as DesignDocument);", replace: "  for (const f of d.timeline.features) f.suppressed = false;\n  return withShortNames(d as DesignDocument);" }],
     run: ["timeline"],
     caught: "save and open changed the rebuild",
   },
@@ -220,7 +220,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "save-drops-kept": {
     what: "opening a file forgets the extrudes' kept shapes",
-    edits: [{ file: DOCUMENT, find: "  return d as DesignDocument;", replace: "  delete d.kept;\n  return d as DesignDocument;" }],
+    edits: [{ file: DOCUMENT, find: "  return withShortNames(d as DesignDocument);", replace: "  delete d.kept;\n  return withShortNames(d as DesignDocument);" }],
     run: ["timeline"],
     caught: "save and open changed the rebuild",
   },

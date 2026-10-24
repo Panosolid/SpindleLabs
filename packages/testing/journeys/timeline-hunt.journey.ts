@@ -53,7 +53,7 @@ test("regression (hunt 2026-10-21): the only body suppressed, then another works
   assert.deepEqual(items(a.doc()), ["feature-1 (suppressed)"], "the timeline holds only the suppressed box: no new item");
   // Nothing builds, so nothing is drawn: 0 mm³.
   assert.ok(close(a.volume(), 0), `nothing is drawn, ${a.volume()} mm³`);
-  assert.deepEqual(await undoAll(a), ["Suppress Feature 1 (box)"], "one undo step, the user's");
+  assert.deepEqual(await undoAll(a), ["Suppress Box 1"], "one undo step, the user's");
   assert.ok(await a.close(), "every body freed");
 });
 
@@ -64,7 +64,7 @@ test("regression (hunt 2026-10-21): the only body deleted, then another workspac
   await a.settle();
   assert.deepEqual(items(a.doc()), [], "the design is empty: no preset came back");
   assert.ok(close(a.volume(), 0), `nothing is drawn, ${a.volume()} mm³`);
-  assert.deepEqual(await undoAll(a), ["Delete Feature 1 (cylinder)"], "one undo step, the user's");
+  assert.deepEqual(await undoAll(a), ["Delete Cylinder 1"], "one undo step, the user's");
   assert.ok(await a.close(), "every body freed");
 });
 

@@ -201,7 +201,7 @@ const buttonTarget = (button: (typeof BUTTONS)[number], p: number, n: number) =>
 /** Runs `steps` on Design's document through `bar` and on the model; the first step where they differ, or null. */
 export function runBarSession(bar: Bar, steps: readonly Step[]): Failure | null {
   let doc: DesignDocument = partDocument("box", 40, 30, 20);
-  let model: Model = { items: [{ id: "feature-1", name: "Feature 1 (box)", kind: "preset", uses: null, suppressed: false }], marker: null };
+  let model: Model = { items: [{ id: "feature-1", name: "Box 1", kind: "preset", uses: null, suppressed: false }], marker: null };
   let editing: string | null = null;
   const undo: [DesignDocument, Model][] = [];
   let redo: [DesignDocument, Model][] = [];

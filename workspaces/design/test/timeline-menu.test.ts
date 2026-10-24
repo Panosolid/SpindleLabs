@@ -242,7 +242,7 @@ test("hand-worked (24f4): every item deleted one by one, last first, leaves an e
   // Extrude 1 (built from by nothing: at once), Sketch 1 (now built from by nothing), the box.
   for (const id of ["feature-11", "sketch-2", "feature-1"]) await t.run(id, "delete");
   assert.deepEqual(t.log.asked, []);
-  assert.deepEqual(t.log.records, ["Delete Extrude 1", "Delete Sketch 1", "Delete Feature 1 (box)"]);
+  assert.deepEqual(t.log.records, ["Delete Extrude 1", "Delete Sketch 1", "Delete Box 1"]);
   assert.deepEqual(t.doc().timeline.features, []);
   assert.deepEqual(t.doc().profiles, []);
   assert.deepEqual(t.doc().sketches, []);
@@ -434,15 +434,15 @@ test("the bar: an item the rebuild failed is marked failed, one built from a sup
       return [d.item, d.failed ?? "", d.greyed ?? "", d.warned ?? "", (li as HTMLElement).title];
     });
   assert.deepEqual(flags(), [
-    ["feature-1", "true", "", "", "1. Box: 40 × 30 × 20 mm (failed)"],
-    ["sketch-2", "", "", "", "2. Sketch 1 on the XY plane (suppressed)"],
-    ["feature-11", "", "true", "", "3. Extrude Sketch 1 by 10 mm (greyed: Sketch 1 is suppressed)"],
+    ["feature-1", "true", "", "", "1. Box 1\nBox: 40 × 30 × 20 mm (failed)"],
+    ["sketch-2", "", "", "", "2. Sketch 1\nSketch 1 on the XY plane (suppressed)"],
+    ["feature-11", "", "true", "", "3. Extrude 1\nExtrude Sketch 1 by 10 mm (greyed: Sketch 1 is suppressed)"],
   ]);
   // A warning from the rebuild (26e) makes a built item red with its words; one on a suppressed item shows nothing.
   showTimelineBar(slot, part(), { warnings: new Map([["feature-11", "Extrude 1 keeps its last shape. Sketch 1 was deleted."]]) });
-  assert.deepEqual(flags()[2], ["feature-11", "", "", "true", "3. Extrude Sketch 1 by 10 mm (warning: Extrude 1 keeps its last shape. Sketch 1 was deleted.)"]);
+  assert.deepEqual(flags()[2], ["feature-11", "", "", "true", "3. Extrude 1\nExtrude Sketch 1 by 10 mm (warning: Extrude 1 keeps its last shape. Sketch 1 was deleted.)"]);
   showTimelineBar(slot, suppressItem(part(), "feature-11", true), { warnings: new Map([["feature-11", "words"]]) });
-  assert.deepEqual(flags()[2], ["feature-11", "", "", "", "3. Extrude Sketch 1 by 10 mm (suppressed)"]);
+  assert.deepEqual(flags()[2], ["feature-11", "", "", "", "3. Extrude 1\nExtrude Sketch 1 by 10 mm (suppressed)"]);
   showTimelineBar(slot, suppressItem(part(), "sketch-2", true), {});
   // No picked item: no ⋯ anywhere.
   assert.equal(slot.querySelector("[data-more]"), null);

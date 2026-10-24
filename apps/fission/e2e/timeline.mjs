@@ -334,7 +334,7 @@ try {
       await browserOpen();
       const greying = { bar: ["feature-1", "sketch-2 suppressed", "feature-11 greyed", "|"], drawn: { box: true, square: false }, volume: "24,000 mm³", red: [] };
       assert.deepEqual(await state(), greying);
-      assert.equal(await page.getAttribute('#timeline [data-item="feature-11"]', "title"), `3. Extrude Sketch 1 by ${layout.distance} mm (greyed: Sketch 1 is suppressed)`);
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-11"]', "title"), `3. Extrude 1\nExtrude Sketch 1 by ${layout.distance} mm (greyed: Sketch 1 is suppressed)`);
       assert.equal(await page.getAttribute('#browser [data-node="timeline"] .tree-row[data-node="feature-11"]', "title"), "Greyed: Sketch 1 is suppressed");
       assert.equal(await page.isVisible("#kept-warning"), false, "no warning");
       if (shots) await page.screenshot({ path: `${shots}/greyed-${width}.png` });
@@ -346,7 +346,7 @@ try {
       // 4. Suppress the box: the square alone; then suppressing Extrude 1 leaves no body (24f4): on, and the view is empty.
       await rowMenu("feature-1");
       await choose("suppress");
-      await undoIs(page, "Suppress Feature 1 (box)");
+      await undoIs(page, "Suppress Box 1");
       await until(page, (v) => document.querySelector("#volume")?.textContent === v, V, "the square is the part");
       const squareOnly = { bar: ["feature-1 suppressed", "sketch-2", "feature-11", "|"], drawn: { box: false, square: true }, volume: V, red: [] };
       assert.deepEqual(await state(), squareOnly);
@@ -371,7 +371,7 @@ try {
       }
       // One undo step each way.
       await undo();
-      await undoIs(page, "Suppress Feature 1 (box)");
+      await undoIs(page, "Suppress Box 1");
       await until(page, (v) => document.querySelector("#volume")?.textContent === v, V, "the square back");
       assert.deepEqual(await state(), squareOnly);
       assert.equal(await page.isVisible("#no-part"), false);
@@ -426,7 +426,7 @@ try {
       assert.equal(await menuOpen(), false);
 
       // 7. Every item deleted, last first (24f4): an empty timeline and an empty view; three Undos give everything back.
-      for (const [id, step] of [["feature-11", "Delete Extrude 1"], ["sketch-2", "Delete Sketch 1"], ["feature-1", "Delete Feature 1 (box)"]]) {
+      for (const [id, step] of [["feature-11", "Delete Extrude 1"], ["sketch-2", "Delete Sketch 1"], ["feature-1", "Delete Box 1"]]) {
         await barMenu(id);
         await choose("delete");
         await undoIs(page, step);
@@ -442,7 +442,7 @@ try {
       // was, not refused (until 24f4 a design with no body could not be opened). Then a sketch drawn on it and
       // extruded is the one body, framed; one Undo empties it again.
       for (let k = 0; k < 3; k++) await redo();
-      await undoIs(page, "Delete Feature 1 (box)");
+      await undoIs(page, "Delete Box 1");
       await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "the empty design saved");
       await page.reload();
       await until(page, () => document.querySelector("#viewport")?.dataset.shape === "none", null, "the empty design reopened");
@@ -739,14 +739,18 @@ try {
           if (shots) await page.screenshot({ path: `${shots}/reorder-drag-${width}.png` });
         },
       });
-      const MOVE_BOX = "Move Feature 1 (box) in the timeline";
+      const MOVE_BOX = "Move Box 1 in the timeline";
       await undoIs(page, MOVE_BOX);
       await settled("24,000 mm³");
       const moved = { bar: ["sketch-2", "feature-11", "feature-1", "|"], drawn: { box: true, square: true }, volume: "24,000 mm³" };
       assert.deepEqual(await state(), moved);
       assert.equal(await line(), null, "the line gone");
-      // The browser's Timeline rows in the new order, numbered again.
-      assert.deepEqual(await page.$$eval('#browser [data-node="timeline"] .tree-row', (rs) => rs.map((r) => r.textContent)), ["1. Sketch 1 on the XY plane", `2. Extrude Sketch 1 by ${layout.distance} mm`, "3. Box: 40 × 30 × 20 mm"]);
+      // The browser's Timeline rows in the new order, by their short names (U0e), the descriptions under them in the tooltips.
+      assert.deepEqual(await page.$$eval('#browser [data-node="timeline"] .tree-row', (rs) => rs.map((r) => [r.textContent, r.title])), [
+        ["Sketch 1", "Sketch 1\nSketch 1 on the XY plane"],
+        ["Extrude 1", `Extrude 1\nExtrude Sketch 1 by ${layout.distance} mm`],
+        ["Box 1", "Box 1\nBox: 40 × 30 × 20 mm"],
+      ]);
       await undo();
       await settled(V);
       assert.deepEqual(await state(), all);
@@ -997,10 +1001,10 @@ try {
       assert.deepEqual(await bodyPanel(1), { volume: "24,000 mm³", intent: "Box: 40 × 30 × 20 mm" });
       const lastStep = await undoTitle(page);
 
-      // 1. The box's menu from the bar: Edit feature first, reading "Edit Feature 1 (box)".
+      // 1. The box's menu from the bar: Edit feature first, reading "Edit Box 1".
       await barMenu("feature-1");
-      assert.deepEqual(await page.$eval("#row-menu button", (b) => [b.id, b.disabled, b.getAttribute("aria-label"), b.textContent]), ["row-menu-edit", false, "Edit Feature 1 (box)", "Edit feature"]);
-      await openEdit("Feature 1 (box)");
+      assert.deepEqual(await page.$eval("#row-menu button", (b) => [b.id, b.disabled, b.getAttribute("aria-label"), b.textContent]), ["row-menu-edit", false, "Edit Box 1", "Edit feature"]);
+      await openEdit("Box 1");
       assert.deepEqual(await boxes(), [["edit-width", "40"], ["edit-depth", "30"], ["edit-height", "20"]]);
       const box = await page.locator("#feature-edit").boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width, `the panel fits across the screen: ${JSON.stringify(box)}`);
@@ -1020,11 +1024,11 @@ try {
       assert.equal(await undoTitle(page), lastStep, "nothing recorded");
       if (shots) await page.screenshot({ path: `${shots}/edit-refused-${width}.png` });
 
-      // 3. 35 high, by Enter: one step "Edit Feature 1 (box)"; the box 40 · 30 · 35 = 42,000 mm³; Extrude 1, after it, rebuilt as it was.
+      // 3. 35 high, by Enter: one step "Edit Box 1"; the box 40 · 30 · 35 = 42,000 mm³; Extrude 1, after it, rebuilt as it was.
       await page.fill("#edit-height", "35");
       await page.press("#edit-height", "Enter");
       await panelClosed();
-      await undoIs(page, "Edit Feature 1 (box)");
+      await undoIs(page, "Edit Box 1");
       assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11", "|"]);
       assert.deepEqual(await bodyPanel(1), { volume: "42,000 mm³", intent: "Box: 40 × 30 × 35 mm" });
       assert.deepEqual(await bodyPanel(2), square);
@@ -1032,11 +1036,11 @@ try {
       if (shots) await page.screenshot({ path: `${shots}/edit-box-${width}.png` });
       // One Undo: 20 high again; one Redo: 35.
       await press(page, "#undo", tap);
-      await until(page, () => document.getElementById("undo").title !== "Undo Edit Feature 1 (box) (Ctrl+Z)", null, "undone");
+      await until(page, () => document.getElementById("undo").title !== "Undo Edit Box 1 (Ctrl+Z)", null, "undone");
       assert.equal(await undoTitle(page), lastStep);
       assert.deepEqual(await bodyPanel(1), { volume: "24,000 mm³", intent: "Box: 40 × 30 × 20 mm" });
       await press(page, "#redo", tap);
-      await undoIs(page, "Edit Feature 1 (box)");
+      await undoIs(page, "Edit Box 1");
       assert.deepEqual(await bodyPanel(1), { volume: "42,000 mm³", intent: "Box: 40 × 30 × 35 mm" });
 
       // 4. Extrude 1 from its browser row: its distance doubled; the part's numbers follow; the box stays 42,000.
@@ -1063,14 +1067,14 @@ try {
       await panelClosed();
       assert.equal(await undoTitle(page), "Undo Edit Extrude 1 (Ctrl+Z)");
       await rowMenu("feature-1");
-      await openEdit("Feature 1 (box)");
+      await openEdit("Box 1");
       await page.fill("#edit-width", "99");
       await press(page, "#feature-edit-cancel", tap);
       await panelClosed();
       assert.equal(await undoTitle(page), "Undo Edit Extrude 1 (Ctrl+Z)");
       // The same sizes typed again: OK closes, nothing recorded.
       await barMenu("feature-1");
-      await openEdit("Feature 1 (box)");
+      await openEdit("Box 1");
       await press(page, "#feature-edit-ok", tap);
       await panelClosed();
       assert.equal(await undoTitle(page), "Undo Edit Extrude 1 (Ctrl+Z)");
@@ -1342,7 +1346,7 @@ try {
       await until(page, () => document.getElementById("feature-edit")?.hidden === false, null, "the Edit feature panel");
       await page.fill("#edit-height", "35");
       await press(page, "#feature-edit-ok", tap);
-      await undoIs(page, "Edit Feature 1 (box)");
+      await undoIs(page, "Edit Box 1");
       await until(page, () => document.querySelector("#viewport").dataset.rebuilding !== "true", null, "rebuilt");
       await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
       assert.equal(await selection(page), "face:feature-1/top");
@@ -1353,11 +1357,11 @@ try {
 
       // 3. Undo: 20 high, the top still selected and lit there; Redo: 35 again.
       await press(page, "#undo", tap);
-      await until(page, () => document.getElementById("undo").title !== "Undo Edit Feature 1 (box) (Ctrl+Z)", null, "undone");
+      await until(page, () => document.getElementById("undo").title !== "Undo Edit Box 1 (Ctrl+Z)", null, "undone");
       await until(page, () => document.body.dataset.selection === "face:feature-1/top", null, "still the top after Undo");
       await checkLit(20, "after Undo");
       await press(page, "#redo", tap);
-      await undoIs(page, "Edit Feature 1 (box)");
+      await undoIs(page, "Edit Box 1");
       await until(page, () => document.body.dataset.selection === "face:feature-1/top", null, "still the top after Redo");
       await checkLit(35, "after Redo");
       assert.equal(await note(), "");

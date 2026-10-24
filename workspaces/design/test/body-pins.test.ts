@@ -94,16 +94,16 @@ test("27c, hand-worked: a drag across a pin's link is refused either way, in wor
   const xy = addSketch(twoBoxes());
   const doc = circleOn(xy.doc, xy.id, BOX2_CORNER);
   const before = reorderItem(doc, xy.id, 1);
-  assert.deepEqual(before, { refused: "before-dependency", message: "Sketch 1 can't go before Feature 2 (box): it is snapped to an edge of Feature 2 (box)" });
+  assert.deepEqual(before, { refused: "before-dependency", message: "Sketch 1 can't go before Box 2: it is snapped to an edge of Box 2" });
   const after = reorderItem(doc, "feature-2", 2);
-  assert.deepEqual(after, { refused: "after-dependent", message: "Feature 2 (box) can't go after Sketch 1: Sketch 1 is snapped to an edge of it" });
+  assert.deepEqual(after, { refused: "after-dependent", message: "Box 2 can't go after Sketch 1: Sketch 1 is snapped to an edge of it" });
   // To the very start it would be before Feature 2 too: refused the same way.
   assert.deepEqual(reorderItem(doc, xy.id, 0), before);
   // A sketch on Feature 1's top pinned to Feature 2 names each link in its own words.
   const top = addFaceSketch(twoBoxes(), { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
   const both = circleOn(top.doc, top.id, BOX2_CORNER);
-  assert.equal((reorderItem(both, "feature-1", 2) as { message: string }).message, "Feature 1 (box) can't go after Sketch 1: Sketch 1 is drawn on a face of it");
-  assert.equal((reorderItem(both, "feature-2", 2) as { message: string }).message, "Feature 2 (box) can't go after Sketch 1: Sketch 1 is snapped to an edge of it");
+  assert.equal((reorderItem(both, "feature-1", 2) as { message: string }).message, "Box 1 can't go after Sketch 1: Sketch 1 is drawn on a face of it");
+  assert.equal((reorderItem(both, "feature-2", 2) as { message: string }).message, "Box 2 can't go after Sketch 1: Sketch 1 is snapped to an edge of it");
   // The pin gone (its point moved by hand): the sketch may go straight after Feature 1, before Feature 2.
   const free = movePoint(doc, xy.id, centreOf(doc, xy.id), 3, 3);
   const moved = reorderItem(free, xy.id, 0);
@@ -137,8 +137,8 @@ test("27c, hand-worked: deleting the body a pin is on asks first, and says the s
   const xy = addSketch(twoBoxes());
   const doc = circleOn(xy.doc, xy.id, BOX2_CORNER);
   assert.deepEqual(deleteWords(doc, deleteItem(doc, "feature-2"), "feature-2"), {
-    heading: "Delete Feature 2 (box)?",
-    words: "Sketch 1 is snapped to an edge of Feature 2 (box). If you delete it, Sketch 1 keeps its snapped points where they are and shows they are lost. Undo brings Feature 2 (box) back.",
+    heading: "Delete Box 2?",
+    words: "Sketch 1 is snapped to an edge of Box 2. If you delete it, Sketch 1 keeps its snapped points where they are and shows they are lost. Undo brings Box 2 back.",
   });
   // The pin stays in the file, naming the deleted feature: the rebuild holds the point with "point lost".
   const gone = deleteItem(doc, "feature-2");
@@ -147,7 +147,7 @@ test("27c, hand-worked: deleting the body a pin is on asks first, and says the s
   const face = addFaceSketch(doc, { plane: facePlane("feature-2", "top"), feature: "feature-2" }, drawnFrame([0, 0, 1], [5, 5, 10]));
   assert.equal(
     deleteWords(face.doc, deleteItem(face.doc, "feature-2"), "feature-2")!.words,
-    "Sketch 1 and Sketch 2 are built from Feature 2 (box). If you delete it, Sketch 2 stays where it is and shows its plane is lost, and Sketch 1 keeps its snapped points where they are and shows they are lost. Undo brings Feature 2 (box) back.",
+    "Sketch 1 and Sketch 2 are built from Box 2. If you delete it, Sketch 2 stays where it is and shows its plane is lost, and Sketch 1 keeps its snapped points where they are and shows they are lost. Undo brings Box 2 back.",
   );
   // Box 1, which nothing is built on: no question.
   assert.equal(deleteWords(doc, deleteItem(doc, "feature-1"), "feature-1"), null);
