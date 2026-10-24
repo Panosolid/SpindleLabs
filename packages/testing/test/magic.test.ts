@@ -139,7 +139,8 @@ test("the baseline file: tests/baseline.json holds the owner's numbers for every
   const baselines = parseBaselines(file.journeys);
   // Confirmed by the owner on 2026-10-16: Design shape to STL, 3 clicks; slowest walk re-measured
   // on GitHub's runners the same day (owner chose "Re-measure"): 1.23 s, the worst of 12 runs.
-  assert.deepEqual(baselines.get("Design: shape to STL"), { clicks: 3, slowestMs: 1230 });
+  // 4 clicks from 2026-10-24 (owner's OK: presets moved into Insert ▾, U0d); the time is being re-measured.
+  assert.deepEqual(baselines.get("Design: shape to STL"), { clicks: 4, slowestMs: 1230 });
   for (const j of MAGIC_JOURNEYS) assert.equal(baselines.has(j.name), j.status === "ready", j.name);
 });
 
