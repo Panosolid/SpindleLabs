@@ -1224,7 +1224,8 @@ try {
     const file = JSON.parse(readFileSync(saved, "utf8"));
     assert.equal(file.formatVersion, 2);
     assert.deepEqual(file.workspaces.design.timeline.features[0].intent.parameters, { width: 50, depth: 30, height: 20 });
-    // A fresh app is empty again (U0c).
+    // A fresh app is empty again (U0c). Stored first, or the reload gets the 50 mm box back from the unsaved-change journal.
+    await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
     await page.reload();
     await page.waitForSelector("#start-hint", { state: "visible" });
     await page.setInputFiles("#open-file", saved);

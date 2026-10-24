@@ -481,12 +481,14 @@ try {
   await check("the button pins the panel open, kept after a reload, until folded (U0b)", async () => {
     await page.click("#properties-handle");
     checkShown(await fold(page), 1280);
+    // Stored first, or the reload gets the earlier checks' box back from the unsaved-change journal and the start hint stays hidden.
+    await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
     await page.reload();
     await startWithBox(page); // each load starts a new, empty project (U0c)
     checkShown(await fold(page), 1280);
     await page.click("#properties-handle");
     checkFolded(await fold(page), 1280);
-    // Stored first, so the reload's fresh storage doesn't get the box back from the unsaved-change journal.
+    // Stored again, for the same reason.
     await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
     await page.reload();
     // Left empty: an insert would open the panel for the new body's sizes, pinned or not.
