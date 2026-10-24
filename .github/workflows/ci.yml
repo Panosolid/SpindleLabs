@@ -551,12 +551,12 @@ jobs:
             test "$SHARDS" = success || { echo "an e2e share did not pass ($SHARDS)"; exit 1; }
           fi
 
-  # The sketch browser tests (and, reported only, the smoke test) in the other two engines
-  # people use: Firefox and WebKit (Safari's engine). Pixel probes run in
-  # all three; golden images are Chromium's only (testing catch-up TC4).
-  # Reported, not required: on pull requests that change app files (ci_mode.py,
-  # `ui`), and on main's daily run; not in the merge queue, which only
-  # waits for the required checks.
+  # The sketch browser tests and the whole-app smoke test in the other two
+  # engines people use: Firefox and WebKit (Safari's engine). Pixel probes
+  # run in all three; golden images are Chromium's only (testing catch-up TC4).
+  # Runs on pull requests that change app files (ci_mode.py, `ui`), and on
+  # main's daily run; not in the merge queue. A pull request where it ran
+  # merges only once it passed (automerge.py, WHEN_RUN).
   browsers:
     name: browsers (${{ matrix.browser }})
     needs: mode
@@ -601,12 +601,11 @@ jobs:
         working-directory: apps/fission
         env:
           E2E_BROWSER: ${{ matrix.browser }}
-      # The whole-app smoke test in this engine, reported but not yet required:
-      # its first run here found engine differences (docs/progress/cad.md, TC4)
-      # that are other workstreams' to fix; this step goes required once they are.
+      # The whole-app smoke test in this engine (passing in both since hunt
+      # 3e, docs/progress/testing-hunts.md). always(): it runs even when a
+      # sketch test above failed, so one run shows both.
       - run: $RUN node e2e/smoke.mjs
         if: always()
-        continue-on-error: true
         working-directory: apps/fission
         env:
           E2E_BROWSER: ${{ matrix.browser }}

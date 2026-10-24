@@ -3,6 +3,7 @@
 import io
 import os
 import random
+import re
 import urllib.error
 import sys
 import unittest
@@ -75,10 +76,9 @@ class CiState(unittest.TestCase):
                                    check("mutants-shard (0)", "in_progress", None)]), "pending")
         self.assertEqual(ci_state([check("kernel"), check("app"), check("e2e"), check("baseline"),
                                    check("mutants-shard (0)", conclusion="failure")]), "failure")
-        # Other matrix jobs still don't count: CI's browsers (reported only)
-        # and the nightly fuzzing's kernel targets, whatever their name starts with.
-        self.assertEqual(ci_state(both + [check("browsers (firefox)", "in_progress", None),
-                                          check("kernel (extrude)", conclusion="failure")]), "success")
+        # Other matrix jobs still don't count: the nightly fuzzing's kernel
+        # targets, whatever their name starts with.
+        self.assertEqual(ci_state(both + [check("kernel (extrude)", conclusion="failure")]), "success")
         # On a push run the job is skipped, which passes; the coverage
         # report never blocks.
         self.assertEqual(ci_state(both + [check("mutants-in-diff", conclusion="skipped"),
@@ -93,6 +93,39 @@ class CiState(unittest.TestCase):
         self.assertEqual(ci_state(both + [check("test (0)", "in_progress", None),
                                           check("merge", conclusion="failure")]), "success")
         self.assertEqual(ci_state([check("test (0)")]), "none")
+
+
+    def test_firefox_and_webkit_gate_when_they_ran(self):
+        # ci.yml's browsers (firefox|webkit) jobs run only on heads that
+        # change app files: present, they gate like a required check;
+        # absent (a kernel-only head), the head is still fully tested.
+        both = [check("kernel"), check("app"), check("e2e"), check("mutants-in-diff"), check("baseline")]
+        ff, wk = check("browsers (firefox)"), check("browsers (webkit)")
+        self.assertEqual(ci_state(both), "success")
+        self.assertEqual(ci_state(both + [ff, wk]), "success")
+        # A smoke test failing in WebKit alone holds the merge.
+        self.assertEqual(ci_state(both + [ff, check("browsers (webkit)", conclusion="failure")]), "failure")
+        self.assertEqual(ci_state(both + [check("browsers (firefox)", conclusion="cancelled"), wk]), "failure")
+        # Still running: wait for it rather than merge past it.
+        self.assertEqual(ci_state(both + [check("browsers (firefox)", "in_progress", None), wk]), "pending")
+        # Skipped (a docs-only or kernel-only head) passes.
+        self.assertEqual(ci_state(both + [check("browsers (firefox)", conclusion="skipped")]), "success")
+        # On their own they are not a tested head: the required jobs must be there too.
+        self.assertEqual(ci_state([ff, wk]), "none")
+        # Only the matrix shares count, not some other job named browsers-like.
+        self.assertEqual(ci_state(both + [check("browsersx (firefox)", conclusion="failure")]), "success")
+
+    def test_ci_browsers_job_fails_when_its_smoke_test_fails(self):
+        # The gate above only holds if ci.yml's browsers job goes red when
+        # a step fails: a continue-on-error step (as the smoke test's was
+        # until hunt 3e's follow-up) leaves the job green over a failure.
+        text = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workflows", "ci.yml")).read()
+        block = re.search(r"^  browsers:\n((?:(?:    .*)?\n)+)", text, re.M)
+        self.assertIsNotNone(block, "ci.yml has no browsers job")
+        self.assertIn("name: browsers (", block.group(1))
+        self.assertIn("browsers", automerge.WHEN_RUN)
+        self.assertIn("node e2e/smoke.mjs", block.group(1))
+        self.assertNotIn("continue-on-error", block.group(1))
 
 
 class HandWorked(unittest.TestCase):

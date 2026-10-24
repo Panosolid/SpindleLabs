@@ -69,6 +69,10 @@ REQUIRED_CHECKS = ("kernel", "app", "e2e", "mutants-in-diff", "baseline")
 # ci.yml's matrix jobs whose shares ("e2e (2/3)", "mutants-shard (0)") a
 # required job gathers (e2e, mutants-in-diff).
 SHARDS = ("e2e", "mutants-shard")
+# ci.yml's matrix jobs that gate a merge when they ran but may be absent:
+# browsers (firefox|webkit) runs only on heads that change app files
+# (ci_mode.py, `ui`), so a kernel-only head without it is still tested.
+WHEN_RUN = ("browsers",)
 PASSING = ("success", "skipped", "neutral")
 # ci.yml's browser check in a quick run (only while main requires the merge
 # queue): a head with it had only the quick checks.
@@ -83,9 +87,10 @@ def counts(check):
     A share of a required job ("e2e (2/3)", "mutants-shard (0)") counts too:
     the job over the shares only appears once every share has finished, and
     until then the head is being tested, not untested (as "none" it would be
-    sent to CI again, and the new run would cancel this one)."""
+    sent to CI again, and the new run would cancel this one). The Firefox and
+    WebKit checks ("browsers (webkit)") count whenever they ran."""
     return check.get("app", {}).get("slug") != "github-actions" or check["name"] in REQUIRED_CHECKS or (
-        " (" in check["name"] and check["name"].split(" (")[0] in SHARDS)
+        " (" in check["name"] and check["name"].split(" (")[0] in SHARDS + WHEN_RUN)
 
 
 def ci_state(check_runs, quick_ok=False):
