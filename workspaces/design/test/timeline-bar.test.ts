@@ -156,16 +156,19 @@ test("each item's menu: the marker here, suppress or unsuppress, delete, and why
   // No marker: it stands after feature-3, so "Move the marker here" on feature-3 is off.
   const offs = (id: string, editing: string | null = null) => itemMenu(doc, id, editing).map((e) => [e.label, e.off]);
   // A solid feature's menu opens with Edit feature (25a2), never off: it only opens the feature's sizes.
-  assert.deepEqual(offs("feature-3"), [["Edit feature", null], ["Move the marker here", "The marker is already here"], ["Suppress", null], ["Delete", null]]);
-  assert.deepEqual(offs("feature-1"), [["Edit feature", null], ["Move the marker here", null], ["Suppress", null], ["Delete", null]]);
-  // Editing Sketch 1 (sketch-2): its own suppress and delete are off; the marker on feature-1 would put Sketch 1 after it.
-  assert.deepEqual(offs("sketch-2", "sketch-2"), [["Edit Sketch", "Sketch 1 is open: you are editing it"], ["Move the marker here", null], ["Suppress", "Sketch 1 is being edited: finish the sketch first"], ["Delete", "Sketch 1 is being edited: finish the sketch first"]]);
+  // Rename (U0e2) is always on but for the sketch being edited.
+  assert.deepEqual(offs("feature-3"), [["Edit feature", null], ["Move the marker here", "The marker is already here"], ["Suppress", null], ["Rename", null], ["Delete", null]]);
+  assert.deepEqual(offs("feature-1"), [["Edit feature", null], ["Move the marker here", null], ["Suppress", null], ["Rename", null], ["Delete", null]]);
+  // Editing Sketch 1 (sketch-2): its own suppress, rename and delete are off; the marker on feature-1 would put Sketch 1 after it.
+  const busy = "Sketch 1 is being edited: finish the sketch first";
+  assert.deepEqual(offs("sketch-2", "sketch-2"), [["Edit Sketch", "Sketch 1 is open: you are editing it"], ["Move the marker here", null], ["Suppress", busy], ["Rename", busy], ["Delete", busy]]);
+  assert.deepEqual(offs("feature-3", "sketch-2")[3], ["Rename", null], "another item can be renamed while a sketch is open");
   assert.deepEqual(offs("feature-1", "sketch-2")[0], ["Edit feature", null], "editing a sketch leaves Edit feature on: opening it finishes the sketch");
   assert.deepEqual(offs("feature-1", "sketch-2")[1], ["Move the marker here", "The marker can't go before Sketch 1 while it is being edited: finish the sketch first"]);
   assert.deepEqual(offs("feature-3", "sketch-2")[2], ["Suppress", null], "other items' entries stay on");
   // A suppressed item offers Unsuppress instead.
   const sup = { ...doc, timeline: { features: doc.timeline.features.map((f) => (f.id === "feature-1" ? { ...f, suppressed: true } : f)) } };
-  assert.deepEqual(itemMenu(sup, "feature-1").map((e) => e.action), ["edit", "marker", "unsuppress", "delete"]);
+  assert.deepEqual(itemMenu(sup, "feature-1").map((e) => e.action), ["edit", "marker", "unsuppress", "rename", "delete"]);
   assert.throws(() => itemMenu(doc, "feature-9"), /there is no item feature-9 in the timeline/);
 });
 
@@ -346,12 +349,15 @@ test("seeded: the sessions reach every outcome: nothing, Edit feature opening, e
     ...bar,
     barEdit: (d, a, e) => {
       const r = bar.barEdit(d, a, e);
-      seen.add(r.kind === "edit" ? r.step.split(" ")[0] : r.kind === "delete" ? `delete-${r.ask}` : r.kind === "open" ? "open" : r.kind === "sketch" ? "sketch" : r.kind === "refused" ? (["already here", " while it is being edited", "is being edited", "can't go before", "can't go after", "you are editing it", "unsuppress it first", "move the marker past it"].find((w) => r.message.includes(w)) ?? r.message) : "none");
+      seen.add(r.kind === "edit" ? r.step.split(" ")[0] : r.kind === "delete" ? `delete-${r.ask}` : r.kind === "open" ? "open" : r.kind === "sketch" ? "sketch" : r.kind === "rename" ? "rename" : r.kind === "refused" ? (["already here", " while it is being edited", "is being edited", "can't go before", "can't go after", "you are editing it", "unsuppress it first", "move the marker past it"].find((w) => r.message.includes(w)) ?? r.message) : "none");
       return r;
     },
   };
-  for (let seed = 241; seed < 241 + SESSION_SEEDS; seed++) assert.equal(runBarSession(spy, randomSteps(seed, SESSION_STEPS)), null);
-  for (const want of ["none", "open", "sketch", "Move", "Suppress", "Unsuppress", "delete-true", "delete-false", "already here", " while it is being edited", "is being edited", "can't go before", "can't go after", "you are editing it", "unsuppress it first", "move the marker past it"])
+  // U0e2: Rename's box opened, and what the name typed into it did: saved, its own already, and each refusal.
+  const renamed = new Set<string>();
+  for (let seed = 241; seed < 241 + SESSION_SEEDS; seed++) assert.equal(runBarSession(spy, randomSteps(seed, SESSION_STEPS), (o) => renamed.add(o)), null);
+  for (const want of ["edit", "none", "empty", "too-long", "control", "taken"]) assert.ok(renamed.has(want), `no session's rename reached "${want}"; reached: ${[...renamed].join(", ")}`);
+  for (const want of ["none", "open", "sketch", "rename", "Move", "Suppress", "Unsuppress", "delete-true", "delete-false", "already here", " while it is being edited", "is being edited", "can't go before", "can't go after", "you are editing it", "unsuppress it first", "move the marker past it"])
     assert.ok(seen.has(want), `no session reached "${want}"; reached: ${[...seen].join(", ")}`);
 });
 

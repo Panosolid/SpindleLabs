@@ -16,6 +16,7 @@
 import { partDocument, insertPreset, type DesignDocument } from "../src/document.ts";
 import { addSketch } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
+import { renameItem } from "../src/timeline-edits.ts";
 import type * as BarModule from "../src/timeline-bar.ts";
 
 export type Bar = typeof BarModule;
@@ -69,7 +70,33 @@ interface Model {
   /** "start" (nothing built), an item's id (built up to and including it), or null (everything built). */
   marker: string | null;
 }
-type Outcome = { kind: "none" } | { kind: "edit"; step: string } | { kind: "delete"; step: string; ask: boolean } | { kind: "open"; id: string } | { kind: "sketch"; id: string } | { kind: "refused"; message: string };
+type Outcome = { kind: "none" } | { kind: "edit"; step: string } | { kind: "delete"; step: string; ask: boolean } | { kind: "open"; id: string } | { kind: "sketch"; id: string } | { kind: "rename"; id: string } | { kind: "refused"; message: string };
+
+/**
+ * The names a session's Rename types (U0e2), the edge cases among them:
+ * empty and blank, spaces round a name, 40 and 41 characters, a tab, a
+ * case change of an item's own name, names the next sketch, extrude or box
+ * would be given, and plain ones.
+ */
+const RENAMES = ["", "   ", " Base ", "base", "Box 1", "box 1", "Sketch 1", "sketch 2", "Sketch 3", "Extrude 1", "Extrude 2", "Box 2", "box 3", "Lid", "x".repeat(40), "x".repeat(41), "🔩".repeat(40), "Hole\tA", "Ünïcödé 名前"];
+
+/**
+ * What Rename with `typed` does to item `k`, from the owner's rules: the
+ * spaces round it dropped, refused when nothing is left, when over 40
+ * characters, with a control character, or another item's name ignoring
+ * case; nothing when it is the item's own name exactly; else one undo step
+ * "Rename <its old name>". Only the refusal's cause is compared.
+ */
+function modelRename(m: Model, k: number, typed: string): [Model, { kind: "none" } | { kind: "edit"; step: string } | { kind: "refused"; cause: string }] {
+  const item = m.items[k];
+  const name = typed.replace(/^\s+|\s+$/g, "");
+  if (name.length === 0) return [m, { kind: "refused", cause: "empty" }];
+  if (Array.from(name).length > 40) return [m, { kind: "refused", cause: "too-long" }];
+  if ([...name].some((ch) => ch.charCodeAt(0) < 32 || (ch.charCodeAt(0) >= 127 && ch.charCodeAt(0) < 160))) return [m, { kind: "refused", cause: "control" }];
+  if (name === item.name) return [m, { kind: "none" }];
+  if (m.items.some((i, j) => j !== k && i.name.toLowerCase() === name.toLowerCase())) return [m, { kind: "refused", cause: "taken" }];
+  return [{ ...m, items: m.items.map((i, j) => (j === k ? { ...i, name } : i)) }, { kind: "edit", step: `Rename ${item.name}` }];
+}
 
 const place = (m: Model) => (m.marker === "start" ? 0 : m.marker === null ? m.items.length : m.items.findIndex((i) => i.id === m.marker) + 1);
 const markerFor = (items: MItem[], p: number): string | null => (p === 0 ? "start" : p === items.length ? null : items[p - 1].id);
@@ -108,6 +135,8 @@ function modelMenu(m: Model, k: number, action: string, editing: string | null):
     return moveTo(m, k + 1, editing);
   }
   if (editing === item.id) return [m, { kind: "refused", message: editingWords(item.name) }];
+  // Rename (U0e2) opens the name's box; nothing changes until it saves (`modelRename`).
+  if (action === "rename") return [m, { kind: "rename", id: item.id }];
   if (action === "delete") {
     const items = m.items.filter((_, j) => j !== k);
     const marker = m.marker === item.id ? (k === 0 ? "start" : m.items[k - 1].id) : m.marker;
@@ -199,7 +228,7 @@ const BUTTONS = ["start", "back", "forward", "end"] as const;
 const buttonTarget = (button: (typeof BUTTONS)[number], p: number, n: number) => (button === "start" ? 0 : button === "end" ? n : button === "back" ? (p === 0 ? 0 : p - 1) : p === n ? n : p + 1);
 
 /** Runs `steps` on Design's document through `bar` and on the model; the first step where they differ, or null. */
-export function runBarSession(bar: Bar, steps: readonly Step[]): Failure | null {
+export function runBarSession(bar: Bar, steps: readonly Step[], onRename?: (outcome: string) => void): Failure | null {
   let doc: DesignDocument = partDocument("box", 40, 30, 20);
   let model: Model = { items: [{ id: "feature-1", name: "Box 1", kind: "preset", uses: null, suppressed: false }], marker: null };
   let editing: string | null = null;
@@ -260,7 +289,7 @@ export function runBarSession(bar: Bar, steps: readonly Step[]): Failure | null 
           expected = modelMenu(model, k, entry.action === "unsuppress" ? "suppress" : entry.action, editing);
           const words = model.items[k].suppressed ? "Unsuppress" : "Suppress";
           const edit = model.items[k].kind === "sketch" ? "Edit Sketch|" : "Edit feature|";
-          if (entries.map((e) => e.label).join("|") !== `${edit}Move the marker here|${words}|Delete`) return fail(`${model.items[k].id}'s menu offers ${entries.map((e) => e.label).join(", ")}`);
+          if (entries.map((e) => e.label).join("|") !== `${edit}Move the marker here|${words}|Rename|Delete`) return fail(`${model.items[k].id}'s menu offers ${entries.map((e) => e.label).join(", ")}`);
           got = bar.barEdit(doc, { kind: "menu", id: model.items[k].id, action: entry.action }, editing);
         } else if (op === "button") {
           const button = BUTTONS[Math.floor(a * 4)];
@@ -304,6 +333,8 @@ export function runBarSession(bar: Bar, steps: readonly Step[]): Failure | null 
               ? { kind: "open", id: got.id }
               : got.kind === "sketch"
                 ? { kind: "sketch", id: got.id }
+              : got.kind === "rename"
+                ? { kind: "rename", id: got.id }
               : got.kind === "refused"
                 ? { kind: "refused", message: got.message }
                 : { kind: "none" };
@@ -314,6 +345,23 @@ export function runBarSession(bar: Bar, steps: readonly Step[]): Failure | null 
       }
       // Edit Sketch opened it: it is the sketch being edited from here on, as in the app.
       if (got.kind === "sketch") editing = got.id;
+      // Rename's box opened: a name typed into it, saved as the app's box saves it (timeline-menu.ts renameEntry).
+      if (got.kind === "rename") {
+        const k = model.items.findIndex((i) => i.id === got.id);
+        // One time in ten its own name again, spaces round it (nothing to record); else one from the list.
+        const typed = c < 0.1 ? ` ${model.items[k].name} ` : RENAMES[Math.floor(((c - 0.1) / 0.9) * RENAMES.length)];
+        const [after, wantRename] = modelRename(model, k, typed);
+        const r = renameItem(doc, got.id, typed);
+        const haveRename = "refused" in r ? { kind: "refused", cause: r.refused } : r.doc === doc ? { kind: "none" } : { kind: "edit", step: `Rename ${model.items[k].name}` };
+        onRename?.("cause" in haveRename ? haveRename.cause : haveRename.kind);
+        if (JSON.stringify(haveRename) !== JSON.stringify(wantRename)) return fail(`renaming ${got.id} to ${JSON.stringify(typed)} gave ${JSON.stringify(haveRename)}, the model ${JSON.stringify(wantRename)}`);
+        if (!("refused" in r) && r.doc !== doc) {
+          // Nothing but the names changed (descriptions never do, U0e2).
+          const strip = (d: DesignDocument) => JSON.stringify(d, (key, v) => (key === "label" ? undefined : v));
+          if (strip(r.doc) !== strip(doc)) return fail(`renaming ${got.id} changed more than names`);
+          record(r.doc, after);
+        }
+      }
     }
     // Undo can take the sketch being edited away, or behind the marker: the app then leaves the sketch.
     if (editing !== null) {
@@ -327,6 +375,9 @@ export function runBarSession(bar: Bar, steps: readonly Step[]): Failure | null 
     const names = doc.timeline.features.map((f) => [f.id, f.provenance.self.label]);
     const wantNames = model.items.map((i) => [i.id, i.name]);
     if (JSON.stringify(names) !== JSON.stringify(wantNames)) return fail(`the items are ${JSON.stringify(names)}, the model's ${JSON.stringify(wantNames)}`);
+    // No two items share a name, ignoring case (U0e): a new item never takes a name a rename gave another.
+    const folded = names.map(([, name]) => name.toLowerCase());
+    if (new Set(folded).size !== folded.length) return fail(`two items share a name: ${JSON.stringify(names)}`);
     const flags = (x: typeof have) => JSON.stringify({ marker: x.marker, items: x.items.map(([id, , sup, rb, f, g]) => [id, sup, rb, f, g]) });
     if (flags(have) !== flags(want as unknown as typeof have)) return fail(`the bar shows ${flags(have)}, the model ${flags(want as unknown as typeof have)}`);
     const marker = doc.timeline.marker ?? null;

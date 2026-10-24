@@ -49,7 +49,7 @@ type Menu = typeof menu;
 function host(m: Menu, start: DesignDocument, closed = true) {
   let doc = start;
   const history = createHistory({ capture: () => JSON.stringify(doc), restore: (s) => (doc = JSON.parse(s)) });
-  const log = { records: [] as string[], refused: [] as string[], asked: [] as DeleteQuestion[], opened: [] as string[], sketches: [] as string[], confirm: null as null | (() => void) };
+  const log = { records: [] as string[], refused: [] as string[], asked: [] as DeleteQuestion[], opened: [] as string[], sketches: [] as string[], renaming: [] as string[], confirm: null as null | (() => void) };
   const h = {
     kernel: kernel(closed),
     current: () => doc,
@@ -65,6 +65,7 @@ function host(m: Menu, start: DesignDocument, closed = true) {
     refuse: (message: string) => void log.refused.push(message),
     edit: (id: string) => void log.opened.push(id),
     editSketch: (id: string) => void log.sketches.push(id),
+    rename: (id: string) => void log.renaming.push(id),
   };
   return { h, log, history, doc: () => doc, set: (d: DesignDocument) => (doc = d), run: (id: string, action: Parameters<Menu["chooseEntry"]>[2], editing: string | null = null) => m.chooseEntry(h, id, action, editing) };
 }
@@ -80,12 +81,13 @@ test("hand-worked: the menu of each item of the box, Sketch 1 and Extrude 1, wit
     { action: "edit", label: "Edit feature", off: null },
     { action: "marker", label: "Move the marker here", off: null },
     { action: "suppress", label: "Suppress", off: null },
+    { action: "rename", label: "Rename", off: null },
     { action: "delete", label: "Delete", off: null },
   ]);
   // Sketch 1 suppressed: Extrude 1 fails (its sketch is suppressed), the box still builds.
   assert.equal(menu.menuEntries(d, "sketch-2")[1].off, null);
   // A sketch has Edit Sketch in Edit feature's place (25a3), on: it is built and not open.
-  assert.deepEqual(menu.menuEntries(d, "sketch-2").map((e) => [e.action, e.off]), [["edit-sketch", null], ["marker", null], ["suppress", null], ["delete", null]]);
+  assert.deepEqual(menu.menuEntries(d, "sketch-2").map((e) => [e.action, e.off]), [["edit-sketch", null], ["marker", null], ["suppress", null], ["rename", null], ["delete", null]]);
   // Extrude 1: the marker is already just after it.
   assert.equal(menu.menuEntries(d, "feature-11")[1].off, "The marker is already here");
 });
@@ -129,7 +131,7 @@ const DESIGNS: [string, () => DesignDocument][] = [
   ["unused Sketch 2 last", withSketch2],
   ["only sketches left", () => deleteItem(deleteItem(withSketch2(), "feature-11"), "feature-1")],
 ];
-const ACTIONS = ["edit", "edit-sketch", "marker", "suppress", "unsuppress", "delete"] as const;
+const ACTIONS = ["edit", "edit-sketch", "marker", "suppress", "unsuppress", "rename", "delete"] as const;
 
 /** Runs every entry of every item of every design through `m`, confirming every ask; the first broken rule, or null. */
 async function everyEntry(m: Menu): Promise<string | null> {
@@ -146,7 +148,7 @@ async function everyEntry(m: Menu): Promise<string | null> {
           t.log.confirm?.();
           const after = json(t.doc());
           if (!entry) {
-            if (t.log.records.length > 0 || t.log.opened.length > 0 || t.log.sketches.length > 0) return `${where}: did an entry the menu doesn't offer`;
+            if (t.log.records.length > 0 || t.log.opened.length > 0 || t.log.sketches.length > 0 || t.log.renaming.length > 0) return `${where}: did an entry the menu doesn't offer`;
             continue;
           }
           // Edit Sketch (25a3) only opens the sketch: nothing recorded, the document as it was; off, refused with its words.
@@ -154,6 +156,16 @@ async function everyEntry(m: Menu): Promise<string | null> {
             const opened = entry.off === null ? id : "";
             if (t.log.sketches.join() !== opened || t.log.records.length > 0 || t.log.opened.length > 0 || after !== before) return `${where}: Edit Sketch opened ${t.log.sketches.join() || "nothing"} and recorded ${t.log.records.length}`;
             if (entry.off !== null && t.log.refused[0] !== entry.off) return `${where}: Edit Sketch refused with "${t.log.refused[0]}", not its words "${entry.off}"`;
+            continue;
+          }
+          // Rename (U0e2) only opens the name's box: nothing recorded, nothing refused, the document as it was; its save
+          // (renameEntry) records one step, "Rename <old name>", that one Undo takes back.
+          if (action === "rename") {
+            if (t.log.renaming.join() !== id || t.log.records.length > 0 || t.log.refused.length > 0 || after !== before) return `${where}: Rename opened ${t.log.renaming.join() || "nothing"} and recorded ${t.log.records.length}`;
+            const old = t.doc().timeline.features.find((f) => f.id === id)!.provenance.self.label;
+            if (m.renameEntry(t.h, id, " Renamed item ") !== null) return `${where}: a free name was refused`;
+            if (t.log.records.join() !== `Rename ${old}` || t.doc().timeline.features.find((f) => f.id === id)!.provenance.self.label !== "Renamed item") return `${where}: the save recorded ${t.log.records.join(", ") || "nothing"}`;
+            if (t.history.undo() === null || json(t.doc()) !== before) return `${where}: one Undo did not take the rename back`;
             continue;
           }
           // Edit feature (25a2) only opens the item's sizes: nothing recorded, nothing refused, the document as it was.
@@ -293,6 +305,9 @@ const MENU_PLANTS: { name: string; edits: [string, string][]; caught: string }[]
     caught: "one Undo did not give back the document before (2 records)",
   },
   { name: "delete-never-asks", edits: [["  if (plan.ask) host.ask(plan.ask, go);", "  if (plan.ask && false) host.ask(plan.ask, go);"]], caught: "a used item deleted without asking" },
+  // U0e2: Rename's save recording nothing, or naming the step by the new name.
+  { name: "rename-records-nothing", edits: [["  if (r.doc !== doc) host.record(", "  if (r.doc === null) host.record("]], caught: "the save recorded nothing" },
+  { name: "rename-step-new-name", edits: [["host.record(TIMELINE_STEPS.rename(itemName(item)), r.doc);", "host.record(TIMELINE_STEPS.rename(typed.trim()), r.doc);"]], caught: "the save recorded Rename Renamed item" },
   // 25a3: Edit Sketch opening the Edit feature panel instead, and opening a sketch whose entry is off.
   { name: "edit-sketch-opens-feature", edits: [["  if (r.kind === \"sketch\") return host.editSketch(r.id);", "  if (r.kind === \"sketch\") return host.edit(r.id);"]], caught: "Edit Sketch opened nothing" },
   { name: "edit-sketch-off-opens", edits: [["  if (r.kind === \"refused\") return host.refuse(r.message);", "  if (r.kind === \"refused\" && action === \"edit-sketch\" && itemMenu(before, id, editing).some((e) => e.action === action)) return host.editSketch(id);\n  if (r.kind === \"refused\") return host.refuse(r.message);"]], caught: "Edit Sketch opened sketch-2" },

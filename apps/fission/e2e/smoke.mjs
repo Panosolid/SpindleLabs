@@ -719,7 +719,7 @@ try {
     // Folding a group keeps it folded when an edit rebuilds the tree.
     await page.click("#browser [data-node=origin] summary");
     await setSize("height", 21);
-    await page.waitForFunction(() => document.querySelector("#browser [data-node=feature-1]").textContent.endsWith("by 21 mm"));
+    await page.waitForFunction(() => document.querySelector("#browser .tree-row[data-node=feature-1]").title.endsWith("by 21 mm"));
     assert.equal(await page.$eval("#browser [data-node=origin]", (el) => el.open), false);
     assert.deepEqual(await current(), both, "the body stays selected through the edit");
     await page.click("#browser [data-node=origin] summary");

@@ -277,6 +277,7 @@ try {
           ["row-menu-edit", false, "Edit Extrude 1"],
           ["row-menu-marker", true, "Move the marker to just after Extrude 1"],
           ["row-menu-suppress", false, "Suppress Extrude 1"],
+          ["row-menu-rename", false, "Rename Extrude 1"],
           ["row-menu-delete", false, "Delete Extrude 1"],
         ],
       );

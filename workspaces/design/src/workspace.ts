@@ -24,8 +24,9 @@ import { DEFAULT_SIZES, parameterRows, propertiesPanel, SIZE_KEYS, type SizeKey 
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
+import { renameBox } from "./rename-box.ts";
 import { itemName } from "./timeline-edits.ts";
-import { chooseBarAction, chooseEntry, menuEntries, openAction, type MenuHost } from "./timeline-menu.ts";
+import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, rebuildTimeline, settleKept, type TimelineBuild } from "./rebuild.ts";
@@ -278,6 +279,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const { insert: insertMenu } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), (kind) => void insertBody(kind));
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
   const deleting = deleteAsk(ctx.toolbar);
+  const renaming = renameBox(ctx.toolbar);
+  /** Where the last item menu opened: Rename's box opens there (U0e2). */
+  let menuAt = { x: 0, y: 0 };
   // An empty design's hint (U0c): its buttons do what the toolbar's and the top bar's do.
   const startCard = startHint(ctx.viewport.element, { sketch: () => startSketch(), insert: () => insertMenu.open(true), open: ctx.openFile });
   /** Shows the hint while the design is empty and no sketch is being started. */
@@ -668,6 +672,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!item) return;
     const editing = editingId();
     const entries = menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }));
+    menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
 
@@ -701,6 +706,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     refuse: (message) => panel.showError(message),
     edit: (id) => openEdit(id),
     editSketch: (id) => openSketch(id),
+    rename(id) {
+      const item = designDoc().timeline.features.find((f) => f.id === id);
+      if (item) renaming.show(itemName(item), menuAt, (typed) => renameEntry(menuHost, id, typed));
+    },
   };
 
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */

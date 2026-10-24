@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { isSketchItem, shown, type DesignDocument } from "./document.ts";
+import { isSketchItem, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -24,6 +24,7 @@ export const TIMELINE_STEPS = {
   unsuppress: (name: string) => `Unsuppress ${name}`,
   marker: "Move the rollback marker",
   edit: (name: string) => `Edit ${name}`,
+  rename: (name: string) => `Rename ${name}`,
 } as const;
 
 /** Why a reorder is refused: the item would come before an item it is built from, or after one built from it. */
@@ -129,4 +130,44 @@ export function moveMarker(doc: DesignDocument, at: string | null): DesignDocume
   const marker = at ?? undefined;
   if (doc.timeline.marker === marker) return doc;
   return withTimeline(doc, doc.timeline.features, marker);
+}
+
+/**
+ * The most characters a name may have (U0e2): a browser row shows about
+ * 30 before its "…" and the bar's tooltip has it whole; a name is for
+ * telling items apart, and the description says the rest.
+ */
+export const NAME_LIMIT = 40;
+
+/** Why a rename is refused: no name, one over NAME_LIMIT, one with a line break or other control character, or another item's. */
+export type RenameCause = "empty" | "too-long" | "control" | "taken";
+
+export type Renamed = { doc: DesignDocument } | { refused: RenameCause; message: string };
+
+/**
+ * The document with item `id` named `typed` (U0e2), the spaces at its ends
+ * dropped, and every copy of its name in the others' provenance following
+ * (`relabelled`); no description changes. The same document back when the
+ * name is already its own. Refused, with the words the box shows, when the
+ * name is empty, longer than NAME_LIMIT characters (each counted once,
+ * however many code units it takes), holds a line break, tab or other
+ * control character, or is another item's name ignoring case (messages
+ * name items by their names: "Delete Box 1"). Changing only the case of
+ * its own name is a rename.
+ */
+export function renameItem(doc: DesignDocument, id: string, typed: string): Renamed {
+  const item = itemIn(doc, id);
+  const old = itemName(item);
+  if (typeof typed !== "string") throw new Error(`renaming ${old} needs words, not ${shown(typed)}`);
+  const name = typed.trim();
+  if (name === "") return { refused: "empty", message: `A name can't be empty: type one, or press Escape to keep ${old}` };
+  const length = [...name].length;
+  if (length > NAME_LIMIT) return { refused: "too-long", message: `A name can have at most ${NAME_LIMIT} characters: this one has ${length}` };
+  if (/\p{Cc}/u.test(name)) return { refused: "control", message: "A name can't have a line break, a tab or another control character in it" };
+  if (name === old) return { doc };
+  if (takenNames(doc, id).has(nameKey(name))) {
+    const other = doc.timeline.features.find((f) => f.id !== id && nameKey(itemName(f)) === nameKey(name))!;
+    return { refused: "taken", message: `${itemName(other)} is already the name of another item: each item needs its own name, since messages name items by them` };
+  }
+  return { doc: withTimeline(doc, relabelled(doc.timeline.features, id, name), doc.timeline.marker) };
 }
