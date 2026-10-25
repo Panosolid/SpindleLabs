@@ -2,7 +2,8 @@
 
 Called by collect-results.sh after a "Random testing" run is on the
 test-results branch (with the golden models' golden/seed-golden-<seed>/
-golden-report.txt: one kind per failing model, step 28b), and by collect-fuzz.sh after a "Fuzzing" run (its
+golden-report.txt: one kind per failing model, step 28b; and the monkey's
+monkey/seed-monkey-<seed>/monkey-report.txt: one kind per failing seed, hunt 3f), and by collect-fuzz.sh after a "Fuzzing" run (its
 fuzz-<target>/seed-<seed>/fuzz-report.txt: one kind per failure line). Every failure folder the run produced (endless.sh's
 seed-<seed>/: the harness report and the OpenCascade disagreements) is
 reduced to its kinds: a harness failure's kind is the operation and the
@@ -107,6 +108,8 @@ FUZZ_TARGETS = {
     "Sketch-extrude sessions": "sketch-extrude sessions",
     # packages/testing/fuzz/timeline.ts (step 25b3)
     "Timeline sessions": "timeline sessions",
+    # packages/testing/fuzz/face-stack.ts (stacked face sketches)
+    "Stacked face sketches": "stacked face sketches",
     # kernel/fuzz/run.sh, the coverage-guided targets (kernel/fuzz/checks.rs)
     "Kernel extrude fuzzing": "kernel's extrude",
     "Kernel sketch fuzzing": "kernel's sketch outline",
@@ -117,7 +120,7 @@ FUZZ_TARGETS = {
 def fuzz_kinds(report):
     """Kinds in a fuzzer's fuzz-report.txt (kernel/tests/fuzz_stl.rs,
     packages/testing/src/project-fuzz.ts, packages/testing/fuzz/sketch-extrude.ts,
-    packages/testing/fuzz/timeline.ts): a first line naming the target,
+    packages/testing/fuzz/timeline.ts, packages/testing/fuzz/face-stack.ts): a first line naming the target,
     then one 'failure: <kind> | <case and input>' line per kind, each
     already one example; numbers are taken out as for the harness."""
     lines = report.splitlines()
@@ -143,6 +146,19 @@ def golden_kinds(report):
     return kinds
 
 
+def monkey_kinds(report):
+    """Kinds in the nightly monkey's monkey-report.txt (.github/scripts/
+    monkey_night.py, hunt 3f): one 'failure: <check>: <message> | <where>'
+    line per failing seed; numbers taken out as for the harness, so a page
+    4 px or 6 px too wide is one kind."""
+    kinds = []
+    for line in report.splitlines()[1:]:
+        if line.startswith("failure: "):
+            kind = line[len("failure: "):].split(" | ", 1)[0]
+            kinds.append((f"monkey {numbers_out(kind).strip()[:150]}", line))
+    return kinds
+
+
 def kinds_of(folder_files):
     """{kind: example} for one failure folder, given {file name: text}."""
     found = []
@@ -150,6 +166,8 @@ def kinds_of(folder_files):
         found += fuzz_kinds(folder_files["fuzz-report.txt"])
     if "golden-report.txt" in folder_files:
         found += golden_kinds(folder_files["golden-report.txt"])
+    if "monkey-report.txt" in folder_files:
+        found += monkey_kinds(folder_files["monkey-report.txt"])
     if "report.txt" in folder_files:
         found += harness_kinds(folder_files["report.txt"])
     if "oracle-disagreements.txt" in folder_files:
@@ -261,6 +279,23 @@ def texts(action, kind, hits, run_url, commit, branch):
             "one closed as not planned is not reported again."
         )
         return f"Golden models: {kind[len('golden model '):]}"[:250], body
+    if action == "create" and kind.startswith("monkey "):
+        body = (
+            f"{MARK.format(key(kind))}\n"
+            f"The nightly monkey (a seeded 2,000-action session in the real app, every check after every action) "
+            f"found a new kind of problem ({where}).\n\n"
+            f"**Kind:** {kind}\n\n"
+            f"Example (seed `{seed}`):\n{fenced(example)}\n\n"
+            f"Seen in {len(seeds)} session(s):\n{seed_list(seeds)}\n\n"
+            "Each folder is on the test-results branch: monkey-report.txt has the failing check and the replay "
+            "command, actions.json the shrunk action list (`MONKEY_REPLAY=<file> node e2e/monkey.mjs` in "
+            "apps/fission replays it). Keep the list in apps/fission/e2e/regressions/monkey-*.json as the "
+            "regression test, then fix.\n\n"
+            "Close this issue as completed once it is fixed, or as not planned "
+            "if it is not a bug (say why in a comment): a kind closed as fixed that comes back on main reopens it; "
+            "one closed as not planned is not reported again."
+        )
+        return f"Monkey: {kind[len('monkey '):]}"[:250], body
     if action == "create":
         body = (
             f"{MARK.format(key(kind))}\n"
@@ -285,17 +320,17 @@ def texts(action, kind, hits, run_url, commit, branch):
 
 def read_folders(incoming):
     """{seed: {file name: text}} for every endless-*/seed-*/,
-    fuzz-*/seed-*/ and golden/seed-golden-*/ folder."""
+    fuzz-*/seed-*/, golden/seed-golden-*/ and monkey/seed-monkey-*/ folder."""
     folders = {}
     for run in sorted(os.listdir(incoming)):
-        if not run.startswith(("endless-", "fuzz-")) and run != "golden":
+        if not run.startswith(("endless-", "fuzz-")) and run not in ("golden", "monkey"):
             continue
         for name in sorted(os.listdir(os.path.join(incoming, run))):
             path = os.path.join(incoming, run, name)
             if not (name.startswith("seed-") and os.path.isdir(path)):
                 continue
             files = {}
-            for f in ("report.txt", "oracle-disagreements.txt", "harness-output.txt", "fuzz-report.txt", "golden-report.txt"):
+            for f in ("report.txt", "oracle-disagreements.txt", "harness-output.txt", "fuzz-report.txt", "golden-report.txt", "monkey-report.txt"):
                 p = os.path.join(path, f)
                 if os.path.isfile(p):
                     with open(p, errors="replace") as fh:

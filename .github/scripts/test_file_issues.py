@@ -152,6 +152,11 @@ shrunk to 3 step(s) (1-minimal):
   0. {"op":"add-sketch"}
 """
 
+# The shape packages/testing/fuzz/face-stack.ts writes.
+FUZZ_STACK = """Stacked face sketches, seed 7: 6 prisms and 6 edits, shrunk to 1 and 0: 1 kind(s) of failure
+failure: volume after prism 0 | volume after prism 0 (on XY, polygon, 4.591 mm): feature-8: 108.9109355897038, the model's 108.9109379621717 | replay: FISSION_STACK_FIRST=7 FISSION_STACK_SEEDS=1 npm run journeys
+"""
+
 
 class Fuzz(unittest.TestCase):
     def test_one_kind_per_failure_line_named_by_target(self):
@@ -168,6 +173,8 @@ class Fuzz(unittest.TestCase):
         self.assertEqual([k for k, _ in fuzz_kinds(FUZZ_SESSIONS)], ["fuzzing the sketch-extrude sessions: volume #, model #"])
         # A timeline session's kind is its check (25b3); the step and the shrunk steps are not part of it.
         self.assertEqual([k for k, _ in fuzz_kinds(FUZZ_TIMELINE)], ["fuzzing the timeline sessions: the rebuild differs from the model"])
+        # A stacked chain's kind is its check and the kind of step (a prism or an edit), numbers out; the message is the example.
+        self.assertEqual([k for k, _ in fuzz_kinds(FUZZ_STACK)], ["fuzzing the stacked face sketches: volume after prism #"])
         # kernel/fuzz/run.sh's reports name the coverage-guided target.
         self.assertEqual([k for k, _ in fuzz_kinds(FUZZ_KERNEL)], ["fuzzing the kernel's extrude: volume # want # (slack #)"])
         # A report with no failure lines has no kinds; an unknown first line still files, as "?".

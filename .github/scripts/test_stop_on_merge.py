@@ -96,9 +96,10 @@ class EndlessStopFile(unittest.TestCase):
             os.mkdir(bin_dir)
             stop = os.path.join(d, "stop")
             calls = os.path.join(d, "calls")
-            # Round k is the k-th harness call (the build has --no-run).
+            # Round k is the k-th harness call (the build has --no-run; each
+            # round's devious generator, `--test devious`, is not counted).
             touch = f'[ $(grep -c . {calls}) = {touch_in_round} ] && touch {stop}\n' if touch_in_round else ""
-            fake(bin_dir, "cargo", f'case "$*" in *--no-run*) exit 0;; esac\necho r >>{calls}\n{touch}sleep 0.3\n')
+            fake(bin_dir, "cargo", f'case "$*" in *--no-run*) exit 0;; *devious*) exit 0;; esac\necho r >>{calls}\n{touch}sleep 0.3\n')
             env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
             env.pop("FISSION_ENDLESS_STOP_FILE", None)
             if stop_file:
