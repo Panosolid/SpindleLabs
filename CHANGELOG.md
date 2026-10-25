@@ -10,9 +10,13 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.31.4 (2026-10-25)
+## 0.31.5 (2026-10-25)
 
 - Step 31 bug hunt, fix 2 of 2: the kernel's solid checker passed shapes holding numbers it couldn't measure. A "not a number" in a line's direction or an edge's end point made every distance comparison come out false, so the shape was passed as fine; directions that weren't one unit long, frames whose axes weren't square, zero or negative radii and circles running more than a full turn also got through. The checker now looks at every number first (finite, directions unit length, axes square to within rounding, radii positive, circles at most one turn) and names the exact problem before measuring anything, and every measurement is written so a "not a number" fails it. Verified with a test for each kind of broken number, the exact limits on both sides, a cube scaled until its distances overflow, 2,000 random broken shapes each named correctly, and mutation testing (66 of 67 mutants caught, one too slow to finish, none missed).
+
+## 0.31.4 (2026-10-25)
+
+- Random testing (#279, #280, #281, #300): the first full night of reading every part back from its STEP file with OpenCascade flagged 12 parts. All of them had been built or moved about 100 km out and then brought back. None was a kernel bug: a number out there only resolves 0.000000015 mm, so the kernel's corners sat about 0.000000005 mm off the exact shape, 2,000 times inside its 10 nm tolerance. Two checks were holding them to more than that. The volume and area allowance looked only at where a part is now, not where it had been, unlike the harness's own position check; it now uses the farthest point reached, as that check does. And OpenCascade's checker calls a cylinder 0.01 to 0.05 mm across broken once a cap is off its axis by about a millionth of its radius, so the oracle now also tries a copy with each cap put exactly on its axis (moving none more than the 10 nm tolerance); if that copy passes everything, the miss is listed under its own heading every night, never dropped (Ben's choice). Bodies that only the looser "radius under 0.01 mm" rule used to excuse now have to pass this narrower check instead. Verified: hand-worked tests that fail without each change, the tolerance edge at 0.9× and 1.1×, the real 0.0101 mm pin kept as a regression, a planted flipped face still caught, and all 12 nights' seeds replayed with no disagreements.
 
 ## 0.31.3 (2026-10-25)
 
