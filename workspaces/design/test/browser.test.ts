@@ -10,31 +10,42 @@ const shape = (nodes: BrowserNode[]): unknown[] => nodes.map((n) => (n.children 
 
 const ORIGIN = ["Origin", ["XY plane", "XZ plane", "YZ plane", "X axis", "Y axis", "Z axis"]];
 
-const feature = (id: string, summary: string, suppressed = false): Feature => ({
+/** Each row's tooltip, for the rows whose tooltip is not their label alone (U0e: an item's short name, its description under it). */
+const tips = (nodes: BrowserNode[]): unknown[] => nodes.map((n) => (n.children ? [n.label, tips(n.children)] : (n.title ?? null)));
+
+const feature = (id: string, summary: string, suppressed = false, label = id): Feature => ({
   id,
   intent: { type: "box", parameters: {}, summary },
-  provenance: { self: { workspace: "design", id, label: id }, from: [] },
+  provenance: { self: { workspace: "design", id, label }, from: [] },
   dependsOn: [],
   suppressed,
 });
 
 test("a hand-built two-feature document: rows in build order, one body, the origin", () => {
   // Written out by hand, not from partDocument: the timeline lists both
-  // features numbered 1 and 2 with their summaries, the second suppressed;
-  // the first still builds, so there is one body.
+  // features in build order by their short names, the second suppressed,
+  // each row's tooltip its summary (U0e); the first still builds, so there
+  // is one body.
   const doc: DesignDocument = {
     version: 2,
     nextId: 3,
     sketches: [],
     profiles: [{ id: "profile-1", kind: "slot", width: 40, depth: 10, plane: XY_PLANE }],
-    timeline: { features: [feature("feature-1", "Extrude: slot by 5 mm"), feature("feature-2", "Box: 1 × 2 × 3 mm", true)] },
+    timeline: { features: [feature("feature-1", "Extrude: slot by 5 mm", false, "Slot 1"), feature("feature-2", "Box: 1 × 2 × 3 mm", true, "Box 1")] },
   };
   assert.deepEqual(shape(browserTree(doc)), [
-    ["Timeline", ["1. Extrude: slot by 5 mm", "2. Box: 1 × 2 × 3 mm (suppressed)"]],
+    ["Timeline", ["Slot 1", "Box 1 (suppressed)"]],
     ["Sketches", []],
     ["Profiles", ["Slot with round ends profile"]],
     ["Bodies", ["Body 1"]],
     ORIGIN,
+  ]);
+  // The Timeline rows' tooltips are their names with the descriptions under them; every other row's is its label (null here).
+  assert.deepEqual(tips(browserTree(doc)).slice(0, 4), [
+    ["Timeline", ["Slot 1\nExtrude: slot by 5 mm", "Box 1 (suppressed)\nBox: 1 × 2 × 3 mm"]],
+    ["Sketches", []],
+    ["Profiles", [null]],
+    ["Bodies", [null]],
   ]);
   // Rows keep the feature's own id, so a click names the feature.
   assert.deepEqual(browserTree(doc)[0].children!.map((n) => n.id), ["feature-1", "feature-2"]);
@@ -47,9 +58,10 @@ test("with every feature suppressed there is no body", () => {
   assert.deepEqual(shape(browserTree(doc))[3], ["Bodies", []]);
 });
 
-test("today's one-step part: feature #1 with its intent summary", () => {
+test("today's one-step part: feature #1 by its short name, its intent summary under it in the tooltip", () => {
+  assert.deepEqual(tips(browserTree(partDocument("cylinder", 40, 30, 20)))[0], ["Timeline", ["Cylinder 1\nCylinder: ⌀40 × 20 mm"]]);
   assert.deepEqual(shape(browserTree(partDocument("cylinder", 40, 30, 20))), [
-    ["Timeline", ["1. Cylinder: ⌀40 × 20 mm"]],
+    ["Timeline", ["Cylinder 1"]],
     ["Sketches", []],
     ["Profiles", []],
     ["Bodies", ["Body 1"]],
@@ -73,8 +85,13 @@ test("sketches are timeline rows in build order and rows of their own in Sketche
   const two = addSketch(drawLine(one.doc, one.id, [0, 0], [5, 0]).doc);
   const tree = browserTree(two.doc);
   assert.deepEqual(shape(tree).slice(0, 2), [
-    ["Timeline", ["1. Box: 40 × 30 × 20 mm", "2. Sketch 1 on the XY plane", "3. Sketch 2 on the XY plane"]],
+    ["Timeline", ["Box 1", "Sketch 1", "Sketch 2"]],
     ["Sketches", ["Sketch 1", "Sketch 2"]],
+  ]);
+  // Both of a sketch's rows have its name and description as the tooltip.
+  assert.deepEqual(tips(tree).slice(0, 2), [
+    ["Timeline", ["Box 1\nBox: 40 × 30 × 20 mm", "Sketch 1\nSketch 1 on the XY plane", "Sketch 2\nSketch 2 on the XY plane"]],
+    ["Sketches", ["Sketch 1\nSketch 1 on the XY plane", "Sketch 2\nSketch 2 on the XY plane"]],
   ]);
   // sketch-2's line took point-3, point-4 and line-5, so the second sketch is sketch-6.
   assert.deepEqual(tree[0].children!.map((n) => n.id), ["feature-1", "sketch-2", "sketch-6"]);

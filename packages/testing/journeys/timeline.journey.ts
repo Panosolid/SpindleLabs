@@ -733,7 +733,7 @@ test("Design's timeline edits on the real kernel, hand-worked (24e2): suppress, 
   // The box to the end: [sketch-2, feature-11, feature-1], the same two bodies.
   const moved = reorderItem(doc, "feature-1", 2);
   assert.ok("doc" in moved);
-  await record(TIMELINE_STEPS.reorder("Feature 1 (box)"), moved.doc);
+  await record(TIMELINE_STEPS.reorder("Box 1"), moved.doc);
   assert.deepEqual(order(), ["sketch-2", "feature-11", "feature-1"]);
   assert.ok(close(await volume("feature-1"), 24000) && close(await volume("feature-11"), 12000));
 
@@ -758,7 +758,7 @@ test("Design's timeline edits on the real kernel, hand-worked (24e2): suppress, 
   assert.deepEqual(steps.map((x) => x.name), [
     "Suppress Sketch 1",
     "Unsuppress Sketch 1",
-    "Move Feature 1 (box) in the timeline",
+    "Move Box 1 in the timeline",
     "Move the rollback marker",
     "Move the rollback marker",
     "Move the rollback marker",

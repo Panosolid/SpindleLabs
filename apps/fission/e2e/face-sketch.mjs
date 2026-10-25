@@ -397,8 +397,8 @@ try {
       await choose("suppress");
       await until(page, () => document.querySelector("#timeline [data-item][data-greyed]"), null, "greyed");
       assert.deepEqual(await flags(), [[box, "s"], [sketch, "g"], [ext, "g"]]);
-      assert.match(await titleOf(sketch), /\(greyed: Feature 1 \(box\) is suppressed\)$/);
-      assert.match(await titleOf(ext), /\(greyed: Feature 1 \(box\) is suppressed\)$/);
+      assert.match(await titleOf(sketch), /\(greyed: Box 1 is suppressed\)$/);
+      assert.match(await titleOf(ext), /\(greyed: Box 1 is suppressed\)$/);
       assert.equal(await page.$eval(`#timeline [data-item="${sketch}"]`, (li) => getComputedStyle(li).opacity), "0.6", "faded");
       assert.equal(await page.$eval(`#timeline [data-item="${sketch}"]`, (li) => getComputedStyle(li).borderTopStyle), "dashed");
       assert.equal(await rowClasses(sketch), "timeline-menu timeline-menu-greyed");
@@ -408,7 +408,7 @@ try {
       // Edit Sketch is off for the greyed sketch, with why.
       await menu(sketch);
       assert.equal(await page.isDisabled("#row-menu-edit-sketch"), true);
-      assert.equal(await page.textContent("#row-menu-edit-sketch .delete-ask-off"), "Sketch 1 is greyed: Feature 1 (box) is suppressed, unsuppress it first");
+      assert.equal(await page.textContent("#row-menu-edit-sketch .delete-ask-off"), "Sketch 1 is greyed: Box 1 is suppressed, unsuppress it first");
       await shot(page, `face-greyed-${width}`);
       await page.keyboard.press("Escape");
       await until(page, () => !document.getElementById("row-menu").open, null, "the menu closed");
@@ -419,7 +419,7 @@ try {
 
       // 2. The sketch dragged before the box: refused while held and let go, in the face's words; nothing recorded.
       const undoBefore = await page.evaluate(() => document.getElementById("undo").title);
-      const WORDS = "Sketch 1 can't go before Feature 1 (box): it is drawn on a face of Feature 1 (box)";
+      const WORDS = "Sketch 1 can't go before Box 1: it is drawn on a face of Box 1";
       const b = await page.locator(`#timeline [data-item="${sketch}"]`).boundingBox();
       const to = await page.locator(`#timeline [data-item="${box}"]`).boundingBox();
       await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
@@ -436,8 +436,8 @@ try {
       await menu(box);
       await choose("delete");
       await until(page, () => document.getElementById("delete-ask").open, null, "the box asks");
-      assert.equal(await page.textContent("#delete-ask-heading"), "Delete Feature 1 (box)?");
-      assert.equal(await page.textContent("#delete-ask-words"), "Sketch 1 is drawn on a face of Feature 1 (box). If you delete it, Sketch 1 stays where it is and shows its plane is lost, and what is built from it, Extrude 1, stays where it is and shows its source is lost. Undo brings Feature 1 (box) back.");
+      assert.equal(await page.textContent("#delete-ask-heading"), "Delete Box 1?");
+      assert.equal(await page.textContent("#delete-ask-words"), "Sketch 1 is drawn on a face of Box 1. If you delete it, Sketch 1 stays where it is and shows its plane is lost, and what is built from it, Extrude 1, stays where it is and shows its source is lost. Undo brings Box 1 back.");
       const ask = await page.locator("#delete-ask").boundingBox();
       assert.ok(ask.x >= 0 && ask.x + ask.width <= width, `the box fits the screen: ${JSON.stringify(ask)}`);
       await shot(page, `face-delete-ask-${width}`);
@@ -476,7 +476,7 @@ try {
       assert.ok((await lostRed()) >= 20, `the sketch's lines drawn red: ${await lostRed()} pixels`);
       await shot(page, `face-deleted-${width}`);
       // One undo step brings the box back, nothing warned or red; redo deletes it again.
-      assert.equal(await page.evaluate(() => document.getElementById("undo").title), "Undo Delete Feature 1 (box) (Ctrl+Z)");
+      assert.equal(await page.evaluate(() => document.getElementById("undo").title), "Undo Delete Box 1 (Ctrl+Z)");
       await press(page, "#undo", tap);
       await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 3, null, "the box back");
       await until(page, () => !document.querySelector("#timeline [data-item][data-warned]"), null, "no warnings");
