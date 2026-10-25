@@ -15,14 +15,18 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
+import { menuButton, type MenuButton } from "@fission/ui";
+import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
+import { startHint } from "./start-hint.ts";
 import { browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
+import { renameBox } from "./rename-box.ts";
 import { itemName } from "./timeline-edits.ts";
-import { chooseBarAction, chooseEntry, menuEntries, openAction, type MenuHost } from "./timeline-menu.ts";
+import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, rebuildTimeline, settleKept, type TimelineBuild } from "./rebuild.ts";
@@ -68,8 +72,8 @@ let foldKept: FoldState | null = null;
 /** How many times Design has framed the part, read by the e2e test (an undo must not add one). */
 let fits = 0;
 
-/** Fills the toolbar slot with the command groups; returns each button with its element. */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void): [ToolButton, HTMLButtonElement][] {
+/** Fills the toolbar slot: Sketch, Insert ▾ (U0d) and the command groups; returns each command button with its element, and the Insert menu. */
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onInsert: (kind: ShapeKind) => void): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   // The sketch tool is the user's, not a command yet: whether the AI gets
@@ -95,7 +99,15 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   extrude.title = "Make a solid from a closed sketch, by a distance you type: a new body in the timeline, at the marker.";
   extrude.addEventListener("click", onExtrude);
   sketch.append(sketchName, create, extrude);
-  slot.append(sketch);
+  // The presets, hidden in a menu until wanted, each a new body (insert.ts).
+  const adding = document.createElement("div");
+  adding.className = "tool-group";
+  adding.dataset.modelling = "";
+  adding.setAttribute("role", "group");
+  adding.setAttribute("aria-label", "Insert");
+  const insert = menuButton(document, { id: "insert", label: "Insert", title: INSERT_TITLE, sections: () => insertSections(onInsert) });
+  adding.append(insert.element);
+  slot.append(sketch, adding);
   for (const group of toolbarGroups()) {
     const div = document.createElement("div");
     div.className = "tool-group";
@@ -119,7 +131,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
     }
     slot.append(div);
   }
-  return made;
+  return { made, insert };
 }
 
 /** Whether two sets of ids hold the same ids. */
@@ -181,9 +193,10 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         if (ref) row.setAttribute("type", "button");
         row.className = "tree-row";
         row.textContent = n.label;
-        // One line per row (U0a): a label too long for it ends in "…", and the tooltip has it whole.
-        row.title = n.label;
+        // One line per row (U0a): a label too long for it ends in "…", and the tooltip has it whole, or an item's description (U0e).
+        row.title = n.title ?? n.label;
         row.dataset.label = n.label;
+        row.dataset.tip = row.title;
         row.dataset.node = n.id;
         if (ref) row.addEventListener("click", (e) => onSelect(ref, (e as MouseEvent).shiftKey));
         if (items.has(n.id) || n.id.startsWith("sketches/") || n.id.startsWith("body-")) {
@@ -263,9 +276,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Mounted by Undo or Redo (step 20c): the first build keeps the camera unless the body no longer fits, even for another shape. */
   let keepCamera = ctx.history.restoring() || putAwayByRestore;
   putAwayByRestore = false;
-  const buttons = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude());
+  const { insert: insertMenu } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), (kind) => void insertBody(kind));
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
   const deleting = deleteAsk(ctx.toolbar);
+  const renaming = renameBox(ctx.toolbar);
+  /** Where the last item menu opened: Rename's box opens there (U0e2). */
+  let menuAt = { x: 0, y: 0 };
+  // An empty design's hint (U0c): its buttons do what the toolbar's and the top bar's do.
+  const startCard = startHint(ctx.viewport.element, { sketch: () => startSketch(), insert: () => insertMenu.open(true), open: ctx.openFile });
+  /** Shows the hint while the design is empty and no sketch is being started. */
+  const showStart = () => startCard.update(ctx.project.workspaces.design as DesignDocument | undefined, mode.kind !== "none");
   const { kernel, viewport } = ctx;
   /** On screen (awake); false while asleep (X7) and after unmount. */
   let shown = true;
@@ -414,7 +434,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     for (const row of ctx.browser.querySelectorAll<HTMLElement>(".tree-row")) {
       const words = rows.get(row.dataset.node!);
       if (words !== undefined) row.title = words;
-      else if (row.classList.contains("kept")) row.title = row.dataset.label ?? "";
+      else if (row.classList.contains("kept")) row.title = row.dataset.tip ?? "";
       row.classList.toggle("kept", words !== undefined);
     }
   }
@@ -498,15 +518,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (refused !== null) return panel.showError(refused);
     }
     viewport.clearOverlay(STL_OVERLAY); // it described the part before this edit
-    panel.setShape(kind);
     // The panel edits the part's one solid feature, keeping the sketches; the
     // project holds it. An opened file's document is kept as it is until the
     // first edit. An extrude of a sketch has one size, its distance (the height box).
     const current = ctx.project.workspaces.design as DesignDocument | undefined;
     const doc = next ?? loaded ?? remounted ?? (kind === "sketch-extrude" && current ? setExtrudeDistance(current, Number(inputs[2].value)) : documentFor(partCommand(), current));
-    // No shape is pressed while the design has no body (24f4).
-    const pressed = partFeature(doc) === null ? null : kind;
-    for (const [b, el] of buttons) if (b.command.op === "set_part") el.setAttribute("aria-pressed", String(b.command.shape === pressed));
+    // No shape is the part's while the design has no body (24f4): the Shape choice says "—".
+    panel.setShape(kind, partFeature(doc) === null ? null : kind);
     // An opened document is all new to the graph: out of date until it builds.
     const before = loaded ? null : (current ?? null);
     loaded = undefined;
@@ -535,6 +553,27 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     inputs.forEach((input, i) => (input.value = DEFAULT_SIZES[SIZE_KEYS[i]]));
     framedKind = null; // a new part: frame it
     return update(START_FRESH_STEP, undefined, freshDesign());
+  }
+
+  /**
+   * Insert ▾ (insert.ts): a whole new `kind` body at the marker at the
+   * default sizes, as one undo step, never changing a body already there.
+   * The panel then edits it (the boxes take its sizes) and opens to show
+   * them; the first body of an empty design is framed, a later one keeps
+   * the camera.
+   */
+  function insertBody(kind: ShapeKind) {
+    leaveExtrude();
+    leaveEdit();
+    if (mode.kind !== "none") leaveSketch(false);
+    const doc = designDoc();
+    ctx.selection.clear();
+    shape = kind;
+    inputs.forEach((input, i) => (input.value = String(INSERT_SIZES[SIZE_KEYS[i]])));
+    if (partFeature(doc) === null) framedKind = null;
+    const made = update(insertStep(kind), undefined, inserted(doc, kind).doc);
+    fold?.reveal();
+    return made;
   }
 
   /** The sketches whose plane the last rebuild found lost (26e): drawn red where they stay. */
@@ -607,7 +646,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       row.classList.toggle("timeline-menu-rolled-back", grey);
       row.classList.toggle("timeline-menu-greyed", by !== undefined);
       if (by !== undefined) row.title = `Greyed: ${by} is suppressed`;
-      else if (row.title.startsWith("Greyed: ")) row.title = row.dataset.label ?? "";
+      else if (row.title.startsWith("Greyed: ")) row.title = row.dataset.tip ?? "";
     }
   }
 
@@ -633,6 +672,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!item) return;
     const editing = editingId();
     const entries = menuEntries(doc, id, editing).map((e) => ({ ...e, run: () => void chooseEntry(menuHost, id, e.action, editing).catch((err) => panel.showError(err instanceof Error ? err.message : String(err))) }));
+    menuAt = at;
     deleting.menu(itemName(item), at, entries);
   }
 
@@ -666,6 +706,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     refuse: (message) => panel.showError(message),
     edit: (id) => openEdit(id),
     editSketch: (id) => openSketch(id),
+    rename(id) {
+      const item = designDoc().timeline.features.find((f) => f.id === id);
+      if (item) renaming.show(itemName(item), menuAt, (typed) => renameEntry(menuHost, id, typed));
+    },
   };
 
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
@@ -735,6 +779,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (editBox.editing !== null && !doc.timeline.features.some((f) => f.id === editBox.editing)) leaveEdit();
     drawBrowser(doc);
     fresh.showFor(doc);
+    showStart();
     showFailed(doc);
     showKept();
     drawSketches();
@@ -885,6 +930,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.projectChanged(label);
     drawBrowser(next);
     fresh.showFor(next);
+    showStart();
     showFailed(next);
     showKept(); // the rows are new: mark them again until the rebuild says otherwise
     markStale();
@@ -896,6 +942,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveEdit();
     if (mode.kind === "edit") leaveSketch();
     mode = { kind: "pick" };
+    showStart();
     viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
     sketchBox.showPick();
   }
@@ -999,6 +1046,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     mode = { kind: "none" };
     unlock();
     editingSketch = null;
+    showStart();
     viewport.showPlanes([]);
     sketchBox.hide();
     sketchBar.hide();
@@ -1472,6 +1520,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     stopWatching();
   }
 
+  // The Shape choice (U0d) does what the toolbar's shape buttons did: set_part with this shape and the boxes' sizes.
+  panel.shapeChoice.addEventListener("change", () => {
+    const kind = panel.shapeChoice.value as ShapeKind;
+    if (kind) void run({ op: "set_part", shape: kind });
+  });
   // Typing in one box is one undo step (the merge key), named for the box.
   inputs.forEach((input, i) => {
     input.addEventListener("input", () => update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, SIZE_KEYS[i]));
@@ -1481,7 +1534,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     input.addEventListener("blur", () => restoreRefused(i));
   });
   listen();
-  const first = update();
+  // A new project's design starts empty (U0c, the owner's ask), never as a box made from the size boxes.
+  const first = held === undefined ? update(undefined, undefined, freshDesign()) : update();
   enterSketch(); // after an Undo or Redo inside a sketch: still in it
   return {
     ready: first.then(
@@ -1547,6 +1601,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       viewport.showSketches([]);
       typed.element.remove();
       hint.element.remove();
+      startCard.element.remove();
       if (fold) {
         foldKept = { ...FOLDED_AT_START, pinned: fold.state.pinned };
         fold.close();

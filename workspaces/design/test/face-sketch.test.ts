@@ -217,10 +217,10 @@ function onTop(): { doc: DesignDocument; sketch: string; extrude: string } {
 test("addFaceSketch puts a sketch on a solid item's face, depending on it, with the frame as drawn squared and its side", () => {
   const { doc, sketch } = onTop();
   const item = doc.timeline.features.find((f) => f.id === sketch)!;
-  assert.equal(item.intent.summary, "Sketch 1 on a face of Feature 1 (box)");
+  assert.equal(item.intent.summary, "Sketch 1 on a face of Box 1");
   assert.deepEqual(item.intent.parameters, { plane: "face:feature-1/top" });
   assert.deepEqual(item.dependsOn, ["feature-1"]);
-  assert.deepEqual(item.provenance.from, [{ workspace: "design", id: "feature-1", label: "Feature 1 (box)" }]);
+  assert.deepEqual(item.provenance.from, [{ workspace: "design", id: "feature-1", label: "Box 1" }]);
   const content = doc.sketches.find((s) => s.id === sketch)!;
   assert.deepEqual(content.face, { frame: { origin: [0, 0, 20], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
   // A frame drawn a little off is squared before it is kept: (2, 0, 0.5)
@@ -239,7 +239,7 @@ test("addFaceSketch refuses a face it can't put a sketch on, each with its reaso
   assert.throws(() => addFaceSketch(box, { plane: "face:feature-9/end", feature: "feature-9" }, top), /there is no solid item feature-9 to sketch on/);
   const { doc, sketch } = onTop();
   assert.throws(() => addFaceSketch(doc, { plane: `face:${sketch}/end`, feature: sketch }, top), /there is no solid item sketch-2 to sketch on/);
-  assert.throws(() => addFaceSketch(moveMarker(box, "start"), { plane: "face:feature-1/top", feature: "feature-1" }, top), /Feature 1 \(box\) comes after the rollback marker/);
+  assert.throws(() => addFaceSketch(moveMarker(box, "start"), { plane: "face:feature-1/top", feature: "feature-1" }, top), /Box 1 comes after the rollback marker/);
   assert.throws(() => addFaceSketch(box, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: plane([0, 0, 0], [0, 0, 1], [0, 0, 1]), side: 1 }), /needs a frame and a side/);
   assert.throws(() => addFaceSketch(box, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: top.plane, side: 0 as 1 }), /needs a frame and a side/);
 });
@@ -385,10 +385,10 @@ test("26e: suppressing the box greys a chain built on its face, each naming the 
   for (const id of chain) assert.equal(builds(off, item(off, id)), false, id);
   // The bar greys them (the box's name on each), with no warning (Q3).
   const bar = timelineBarItems(off).items;
-  assert.deepEqual(bar.map((b) => [b.greyed, b.warning]), [[null, null], ...chain.map(() => ["Feature 1 (box)", null])]);
+  assert.deepEqual(bar.map((b) => [b.greyed, b.warning]), [[null, null], ...chain.map(() => ["Box 1", null])]);
   // A greyed sketch can't be opened, and says why.
   const edit = (d: DesignDocument, id: string) => itemMenu(d, id).find((e) => e.action === "edit-sketch")!.off;
-  assert.equal(edit(off, end.id), `${itemName(item(off, end.id))} is greyed: Feature 1 (box) is suppressed, unsuppress it first`);
+  assert.equal(edit(off, end.id), `${itemName(item(off, end.id))} is greyed: Box 1 is suppressed, unsuppress it first`);
   assert.equal(edit(doc, end.id), null);
   // Off sketches are not drawn: both are, until the box is off; the one being edited always is.
   assert.equal(sketchDrawings(doc, null).length, 2);
@@ -415,8 +415,8 @@ test("26e: a sketch lost its plane is drawn red; one not lost, or being edited, 
 test("26e: a sketch can't go before the feature whose face it is drawn on, nor that feature after it, in words (answer 7)", () => {
   const { doc, sketch } = onTop();
   // Box (feature-1) first, Sketch 1 (sketch-2) second, Extrude (feature-5) third.
-  assert.deepEqual(reorderItem(doc, sketch, 0), { refused: "before-dependency", message: "Sketch 1 can't go before Feature 1 (box): it is drawn on a face of Feature 1 (box)" });
-  assert.deepEqual(reorderItem(doc, "feature-1", 1), { refused: "after-dependent", message: "Feature 1 (box) can't go after Sketch 1: Sketch 1 is drawn on a face of it" });
+  assert.deepEqual(reorderItem(doc, sketch, 0), { refused: "before-dependency", message: "Sketch 1 can't go before Box 1: it is drawn on a face of Box 1" });
+  assert.deepEqual(reorderItem(doc, "feature-1", 1), { refused: "after-dependent", message: "Box 1 can't go after Sketch 1: Sketch 1 is drawn on a face of it" });
   // An extrude's words stay "built from".
   assert.deepEqual(reorderItem(doc, "feature-5", 1), { refused: "before-dependency", message: "Extrude 1 can't go before Sketch 1: it is built from Sketch 1" });
 });

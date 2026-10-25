@@ -13,7 +13,7 @@ import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, Ske
 import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { curvePoints, insertAt, insertItem, isSketchItem, profileLabel, shown, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { curvePoints, insertAt, insertItem, isSketchItem, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 
@@ -122,9 +122,11 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {
   const [id, next] = take(doc, "sketch");
-  const names = new Set(doc.timeline.features.filter(isSketchItem).map((f) => f.intent.summary.split(" on ")[0]));
+  // A name no item has (U0e: one renamed to "Sketch 3" too), nor any sketch's description began with (a renamed one keeps it).
+  const names = takenNames(doc);
+  for (const f of doc.timeline.features) if (isSketchItem(f)) names.add(nameKey(f.intent.summary.split(" on ")[0]));
   let n = doc.sketches.length + 1;
-  while (names.has(`Sketch ${n}`)) n++;
+  while (names.has(nameKey(`Sketch ${n}`))) n++;
   const item: Feature = {
     id,
     intent: { type: "sketch", parameters, summary: summary(n) },

@@ -12,6 +12,8 @@ export interface BrowserNode {
   /** Stable within the document: a feature's id, "body-1", "origin-xy"… */
   id: string;
   label: string;
+  /** The row's tooltip when it is not its label alone: an item's short name, and its description under it ("Box 1\nBox: 40 × 30 × 20 mm", U0e). */
+  title?: string;
   /** Groups have children (possibly none); leaves are rows a click highlights. */
   children?: BrowserNode[];
   /** A group shown folded until the user opens it (U0a, like Fusion's browser). */
@@ -53,8 +55,10 @@ export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> =
 }
 
 /**
- * The browser's tree for a document. Each feature is a row numbered in
- * build order with its intent summary; a suppressed one says so. The
+ * The browser's tree for a document. Each feature is a row in build order
+ * by its short name ("Box 1", U0e), its tooltip the name with its
+ * description (intent summary) under it, so a name cut short is still
+ * there whole; a suppressed one says so. The
  * Timeline and the Origin start folded (U0a): the bar along the bottom
  * shows the timeline, and the origin's planes are seldom needed. Each
  * body the last rebuild built is a row (`bodyRows`; `failed` the ids it failed). Each profile
@@ -74,9 +78,19 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       label: "Timeline",
       // The bar along the bottom shows every item already, with the same menu and double-click.
       startsFolded: true,
-      children: features.map((f, i) => ({ id: f.id, label: `${i + 1}. ${f.intent.summary}${f.suppressed ? " (suppressed)" : ""}` })),
+      children: features.map((f) => {
+        const off = f.suppressed ? " (suppressed)" : "";
+        return { id: f.id, label: `${f.provenance.self.label}${off}`, title: `${f.provenance.self.label}${off}\n${f.intent.summary}` };
+      }),
     },
-    { id: "sketches", label: "Sketches", children: document.sketches.map((s) => ({ id: `sketches/${s.id}`, label: sketchItemOf(s.id).provenance.self.label })) },
+    {
+      id: "sketches",
+      label: "Sketches",
+      children: document.sketches.map((s) => {
+        const item = sketchItemOf(s.id);
+        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${item.intent.summary}` };
+      }),
+    },
     { id: "profiles", label: "Profiles", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p) })) },
     { id: "bodies", label: "Bodies", children: bodyRows(document, failed).map(({ id, label }) => ({ id, label })) },
     { id: "origin", label: "Origin", children: ORIGIN, startsFolded: true },

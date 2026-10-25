@@ -33,13 +33,13 @@ test("the setup is the one worked out above", () => {
   const d = part();
   assert.deepEqual(order(d), ["feature-1", "sketch-2", "feature-11"]);
   assert.deepEqual(d.timeline.features[2].dependsOn, ["sketch-2"]);
-  assert.deepEqual(d.timeline.features.map(itemName), ["Feature 1 (box)", "Sketch 1", "Extrude 1"]);
+  assert.deepEqual(d.timeline.features.map(itemName), ["Box 1", "Sketch 1", "Extrude 1"]);
   assert.equal(d.nextId, 12);
 });
 
 test("each edit's undo step has its name", () => {
   assert.equal(TIMELINE_STEPS.delete("Sketch 1"), "Delete Sketch 1");
-  assert.equal(TIMELINE_STEPS.reorder("Feature 1 (box)"), "Move Feature 1 (box) in the timeline");
+  assert.equal(TIMELINE_STEPS.reorder("Box 1"), "Move Box 1 in the timeline");
   assert.equal(TIMELINE_STEPS.suppress("Extrude 1"), "Suppress Extrude 1");
   assert.equal(TIMELINE_STEPS.unsuppress("Extrude 1"), "Unsuppress Extrude 1");
   assert.equal(TIMELINE_STEPS.marker, "Move the rollback marker");
@@ -142,9 +142,9 @@ test("a reorder keeps the marker on the item it names", () => {
 });
 
 test("a reorder to a place outside the timeline is refused", () => {
-  assert.throws(() => reorderItem(part(), "feature-1", 3), { message: "Feature 1 (box) can't go to place 3 of a timeline of 3 items" });
-  assert.throws(() => reorderItem(part(), "feature-1", -1), { message: "Feature 1 (box) can't go to place -1 of a timeline of 3 items" });
-  assert.throws(() => reorderItem(part(), "feature-1", 0.5), { message: "Feature 1 (box) can't go to place 0.5 of a timeline of 3 items" });
+  assert.throws(() => reorderItem(part(), "feature-1", 3), { message: "Box 1 can't go to place 3 of a timeline of 3 items" });
+  assert.throws(() => reorderItem(part(), "feature-1", -1), { message: "Box 1 can't go to place -1 of a timeline of 3 items" });
+  assert.throws(() => reorderItem(part(), "feature-1", 0.5), { message: "Box 1 can't go to place 0.5 of a timeline of 3 items" });
 });
 
 test("suppressing a used sketch stops its extrude building; unsuppressing brings both back", () => {
