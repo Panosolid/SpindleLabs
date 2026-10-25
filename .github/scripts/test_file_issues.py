@@ -1,5 +1,6 @@
 """Tests for file_issues.py: python3 -m unittest discover -s .github/scripts"""
 
+import json
 import os
 import sys
 import tempfile
@@ -266,6 +267,57 @@ class Golden(unittest.TestCase):
         self.assertIn("tests/golden/<model>.panosolid.json", body)
         self.assertIn("(failures/seed-golden-7/)", body)
         self.assertIn("FISSION_SEED=7 FISSION_GOLDEN_ROUNDS=20 npm run golden", body)
+
+
+
+class Locking(unittest.TestCase):
+    """Every issue the script files or updates is locked, so strangers can't
+    comment on issues Claude sessions read (audit 2026-10-22, M2)."""
+    K = Plan.K
+
+    def run_with(self, issues, lock_fails=False):
+        import subprocess
+        import file_issues
+        calls = []
+
+        def fake_gh(*args, stdin=None):
+            calls.append(args)
+            if args[:2] == ("issue", "list"):
+                return json.dumps(issues)
+            if args[:2] == ("issue", "create"):
+                return "https://github.com/Panosolid/fission/issues/42\n"
+            if args[:2] == ("issue", "lock") and lock_fails:
+                raise subprocess.CalledProcessError(1, "gh", stderr="already locked")
+            return ""
+        saved = file_issues.gh, file_issues.gather, file_issues.read_folders, dict(os.environ)
+        file_issues.gh, file_issues.gather = fake_gh, lambda folders: {self.K: [("1", "e")]}
+        file_issues.read_folders = lambda incoming: []
+        os.environ.update(RUN_URL="u", COMMIT="c", BRANCH="main", GH_TOKEN="t")
+        logs = []
+        try:
+            file_issues.run("unused", log=logs.append)
+        finally:
+            file_issues.gh, file_issues.gather, file_issues.read_folders = saved[:3]
+            os.environ.clear()
+            os.environ.update(saved[3])
+        return calls, logs
+
+    def test_a_new_issue_is_locked(self):
+        calls, _ = self.run_with([])
+        # The number comes from the URL gh prints: .../issues/42.
+        self.assertEqual(calls[-1], ("issue", "lock", "42"))
+
+    def test_an_issue_it_comments_on_or_reopens_is_locked(self):
+        calls, _ = self.run_with([issue(7, self.K)])
+        self.assertEqual([c[:2] for c in calls[-2:]], [("issue", "comment"), ("issue", "lock")])
+        self.assertEqual(calls[-1], ("issue", "lock", "7"))
+        calls, _ = self.run_with([issue(7, self.K, "CLOSED", "COMPLETED")])
+        self.assertEqual([c[:2] for c in calls[-3:]], [("issue", "reopen"), ("issue", "comment"), ("issue", "lock")])
+
+    def test_an_already_locked_issue_only_logs(self):
+        calls, logs = self.run_with([issue(7, self.K)], lock_fails=True)
+        self.assertEqual(calls[-1], ("issue", "lock", "7"))
+        self.assertTrue(any("Could not lock #7" in line for line in logs))
 
 
 if __name__ == "__main__":

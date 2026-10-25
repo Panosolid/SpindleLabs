@@ -302,6 +302,19 @@ class GitHub:
             return json.loads(text) if text else None
 
 
+# Who this workflow's comments come from (it posts with its own token).
+COMMENTER = "github-actions[bot]"
+
+
+def bot_comments(gh, number):
+    """The bodies of this workflow's own comments on a pull request. Anyone
+    can comment on a public pull request, so a marker in anyone else's
+    comment counts for nothing: a stranger could otherwise post one to stop
+    a conflict reminder or keep a head out of the merge queue."""
+    comments = gh.call("GET", f"/issues/{number}/comments?per_page=100")
+    return [c["body"] or "" for c in comments if (c.get("user") or {}).get("login") == COMMENTER]
+
+
 def contains(gh, head_sha, ref):
     """Does the commit head_sha already contain ref?"""
     cmp = gh.call("GET", f"/compare/{ref}...{head_sha}")
@@ -338,7 +351,7 @@ def gather_queue(gh, prs):
         p["in_queue"] = state["isInMergeQueue"]
         request = state["autoMergeRequest"]
         p["bot_auto_merge"] = request is not None and ((request.get("enabledBy") or {}).get("login") or "").startswith(BOT)
-        comments = [c["body"] or "" for c in gh.call("GET", f"/issues/{p['number']}/comments?per_page=100")]
+        comments = bot_comments(gh, p["number"])
         p["dequeued"] = any(DEQUEUED.format(p["head_sha"]) in c for c in comments)
     return prs
 
@@ -379,7 +392,7 @@ def gather(gh):
             commit = gh.call("GET", f"/commits/{pr['head_sha']}")
             pr["head_time"] = iso_seconds(commit["commit"]["committer"]["date"])
         if conflicted or not pr["up_to_date"]:
-            comments = [c["body"] or "" for c in gh.call("GET", f"/issues/{pr['number']}/comments?per_page=100")]
+            comments = bot_comments(gh, pr["number"])
             pr["reminded"] = any(MARKER.format(pr["head_sha"]) in c for c in comments)
             if not pr["up_to_date"]:
                 main_sha = main_sha or gh.call("GET", f"/commits/{MAIN}")["sha"]
@@ -475,7 +488,7 @@ def run_queue(gh, dry_run=False, log=print, now=None, files_for=conflicted_files
 
 def note_dequeued(gh, number, head_sha, reason, dry_run=False, log=print):
     """One comment per head when the queue removes a pull request."""
-    comments = [c["body"] or "" for c in gh.call("GET", f"/issues/{number}/comments?per_page=100")]
+    comments = bot_comments(gh, number)
     if any(DEQUEUED.format(head_sha) in c for c in comments):
         return False
     log(f"#{number}: removed from the merge queue ({reason or 'no reason given'}); telling its thread")
