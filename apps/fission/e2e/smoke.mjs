@@ -6,7 +6,7 @@ import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, insertPreset, reloadEmpty, startWithBox } from "./start.mjs";
+import { chooseShape, insertPreset, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4174, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4174/";
@@ -371,10 +371,10 @@ try {
 
   await check("the selection survives switching workspaces", async () => {
     await pickTopAndEdge();
-    await page.click("[data-workspace=laser]");
+    await switchTo(page, "laser");
     assert.equal(await page.isVisible(".placeholder h2"), true);
     assert.equal(await selected(), "face:feature-1/top edge:feature-1/front+top", "kept while Laser is shown");
-    await page.click("[data-workspace=design]");
+    await switchTo(page, "design");
     await page.waitForFunction(() => document.querySelector("#status")?.textContent === "valid");
     assert.equal(await selected(), "face:feature-1/top edge:feature-1/front+top");
     assert.equal(await page.$eval("#viewport", (el) => el.dataset.highlight), "faces 1 edges 4");
@@ -568,8 +568,8 @@ try {
     await settle();
     const front = await canvasImage();
     // Laser shows the same viewport; back in Design the camera is where it was.
-    await page.click("[data-workspace=laser]");
-    await page.click("[data-workspace=design]");
+    await switchTo(page, "laser");
+    await switchTo(page, "design");
     await page.waitForFunction(() => document.querySelector("#status")?.textContent === "valid");
     await settle();
     assert.ok((await canvasImage()) === front, "Front is kept across a workspace switch");
@@ -926,21 +926,30 @@ try {
     assert.equal(await text("action-note"), ""); // the warning goes once the part fits again
   });
 
-  await check("the switcher lists the ten workspaces, Design first, Design and Image working", async () => {
-    const tabs = await page.$$eval("#workspaces [role=tab]", (ts) => ts.map((t) => [t.textContent, t.classList.contains("soon")]));
-    assert.deepEqual(tabs, [
-      ["Design", false],
-      ["Render", true],
-      ["Simulate", true],
-      ["Manufacture", true],
-      ["Laser", true],
-      ["Slice", true],
-      ["Circuit", true],
-      ["Vector", true],
-      ["Image", false],
-      ["Layout", true],
+  await check("DESIGN ▾ names Design and lists the ten workspaces, Design first and marked, the eight not built yet greyed with Coming soon", async () => {
+    assert.equal(await page.textContent("#workspace-menu"), "Design ▾");
+    assert.equal(await page.$eval("#workspace-menu", (b) => getComputedStyle(b).textTransform), "uppercase", "it reads DESIGN ▾, as Fusion's");
+    assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "design");
+    await page.click("#workspace-menu");
+    const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (ts) => ts.map((t) => [t.querySelector(".menu-button-name").textContent, t.querySelector(".menu-button-note")?.textContent ?? "", t.getAttribute("aria-current") === "true"]));
+    const SOON = "Coming soon";
+    assert.deepEqual(items, [
+      ["Design", "", true],
+      ["Render", SOON, false],
+      ["Simulate", SOON, false],
+      ["Manufacture", SOON, false],
+      ["Laser", SOON, false],
+      ["Slice", SOON, false],
+      ["Circuit", SOON, false],
+      ["Vector", SOON, false],
+      ["Image", "", false],
+      ["Layout", SOON, false],
     ]);
-    assert.equal(await page.getAttribute("[data-workspace=design]", "aria-selected"), "true");
+    // Greyed: a not-yet-built workspace's words are dimmer than a working one's.
+    const colour = (id) => page.$eval(`#workspace-menu-menu [data-workspace=${id}]`, (b) => getComputedStyle(b).color);
+    assert.notEqual(await colour("render"), await colour("image"));
+    await page.keyboard.press("Escape");
+    assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false");
   });
 
   await check("each placeholder workspace says what it will do and 'Coming soon', and keeps the viewport", async () => {
@@ -953,7 +962,7 @@ try {
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
     const before = await pixel(0.5, 0.5);
     for (const [id, title] of [["render", "Render"], ["simulate", "Simulate"], ["manufacture", "Manufacture"], ["laser", "Laser"], ["slice", "Slice"], ["circuit", "Circuit"], ["vector", "Vector"], ["layout", "Layout"]]) {
-      await page.click(`[data-workspace=${id}]`);
+      await switchTo(page, id);
       assert.equal(await page.textContent(".placeholder h2"), title);
       assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
       assert.match(await page.textContent(".placeholder .starts-after"), /^Work starts after CAD step \d+/);
@@ -976,7 +985,7 @@ try {
 
   await check("back in Design the part, its numbers and the camera are as they were", async () => {
     const radius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
-    await page.click("[data-workspace=design]");
+    await switchTo(page, "design");
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
     assert.equal(await page.inputValue("#width"), "40");
     assert.equal(await page.inputValue("#shape"), "box");
@@ -988,7 +997,8 @@ try {
   await check("opening a workspace link goes straight to it", async () => {
     await page.goto(`${url}#laser`);
     assert.equal(await page.textContent(".placeholder h2"), "Laser");
-    assert.equal(await page.getAttribute("[data-workspace=laser]", "aria-selected"), "true");
+    assert.equal(await page.textContent("#workspace-menu"), "Laser ▾");
+    assert.equal(await page.getAttribute("#workspace-menu", "data-active"), "laser");
   });
 
   await check("the assistant is optional, off, and follows the active workspace", async () => {
@@ -1007,12 +1017,12 @@ try {
     assert.match(await page.textContent('[data-provider="api-key"]'), /sends your request to the provider.*Consumer chat subscriptions can't be used/s);
     await page.screenshot({ path: "e2e/assistant.png" });
     // Switching workspace keeps the panel and changes what it lists.
-    await page.click('[data-workspace="laser"]');
+    await switchTo(page, "laser");
     assert.match(await page.textContent("#assistant"), /Planned in Laser.*finger-joint boxes/s);
     assert.doesNotMatch(await page.textContent("#assistant"), /Planned in Design/);
     await page.click("#assistant-toggle");
     assert.equal(await page.isVisible("#assistant"), false);
-    await page.click('[data-workspace="design"]');
+    await switchTo(page, "design");
   });
 
   await check("desktop: focus moves top bar, toolbar, browser, View buttons, Split, properties; panel toggles hidden", async () => {
@@ -1079,12 +1089,12 @@ try {
     // V = 50·30·20 = 30000.
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
     // A placeholder fills only properties: no browser toggle, its page shows.
-    await page.click("[data-workspace=laser]");
+    await switchTo(page, "laser");
     assert.equal(await page.isVisible("#browser-toggle"), false);
     assert.equal(await page.isVisible(".placeholder h2"), true);
     assert.deepEqual(await overflow(), []);
     await page.screenshot({ path: "e2e/laser-375.png" });
-    await page.click("[data-workspace=design]");
+    await switchTo(page, "design");
     await page.setViewportSize({ width: 1000, height: 640 });
   });
 
@@ -1354,7 +1364,7 @@ try {
       return keys.map(String);
     });
 
-  await check("phone width: the workspace tabs keep the top bar; Save, Open, AI and Community are behind Menu", async () => {
+  await check("phone width: File ▾ and the workspace button keep the top bar whole; AI, Guide and Community are behind Menu", async () => {
     const phone = await browser.newPage({ viewport: { width: 375, height: 740 } });
     phone.on("pageerror", (e) => noteError(e.message));
     try {
@@ -1363,17 +1373,20 @@ try {
       await startWithBox(phone); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       const rect = (sel) => phone.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
       const visible = (sel) => phone.$eval(sel, (el) => el.getBoundingClientRect().width > 0);
-      // 19a left Save/Open squeezing the tabs to 6 px; now at least three whole tabs show.
-      const nav = await rect("#workspaces");
-      const tabs = await phone.$$eval("#workspaces [role=tab]", (els) => els.map((e) => e.getBoundingClientRect().toJSON()));
-      const whole = tabs.filter((t) => t.left >= nav.left - 0.5 && t.right <= nav.right + 0.5);
-      assert.ok(whole.length >= 3, `${whole.length} whole tabs in ${nav.width} px`);
-      for (const id of ["save", "open", "assistant-toggle", "community"]) assert.equal(await visible(`#${id}`), false, `${id} folded away`);
+      // 19a left Save/Open squeezing the tabs to 6 px; now File ▾, the workspace button and Menu show whole, in one row.
+      const bar = await rect("#topbar");
+      for (const id of ["file-menu", "workspace-menu", "menu-toggle"]) {
+        const b = await rect(`#${id}`);
+        assert.ok(b.left >= 0 && b.right <= 375 && b.top >= bar.top && b.bottom <= bar.bottom, `${id} whole in the bar: ${JSON.stringify(b)}`);
+      }
+      assert.ok((await rect("#workspace-menu")).right <= (await rect("#menu-toggle")).left, "the workspace button clear of Menu");
+      assert.equal(bar.height, 44, "one row");
+      for (const id of ["save", "assistant-toggle", "guide-open", "community"]) assert.equal(await visible(`#${id}`), false, `${id} folded away`);
       assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
-      // Menu shows all four, inside the screen.
+      // Menu shows the three, inside the screen.
       await phone.click("#menu-toggle");
       assert.equal(await phone.getAttribute("#menu-toggle", "aria-expanded"), "true");
-      for (const id of ["save", "open", "assistant-toggle", "community"]) {
+      for (const id of ["assistant-toggle", "guide-open", "community"]) {
         const b = await rect(`#${id}`);
         assert.ok(b.width > 0 && b.left >= 0 && b.right <= 375 && b.height >= 32, `${id} ${JSON.stringify(b)}`);
       }
@@ -1381,33 +1394,41 @@ try {
       await phone.screenshot({ path: "e2e/design-375-menu.png" });
       // Escape closes it and puts focus back on Menu.
       await phone.keyboard.press("Escape");
-      assert.equal(await visible("#save"), false);
+      assert.equal(await visible("#community"), false);
       assert.equal(await phone.evaluate(() => document.activeElement?.id), "menu-toggle");
-      // From the keyboard: Enter opens it and Tab moves into it, Save first.
+      // From the keyboard: Enter opens it and Tab moves into it, AI first.
       await phone.keyboard.press("Enter");
       await phone.keyboard.press("Tab");
-      assert.equal(await phone.evaluate(() => document.activeElement?.id), "save");
+      assert.equal(await phone.evaluate(() => document.activeElement?.id), "assistant-toggle");
       // Choosing an item does it and closes the menu.
-      const [download] = await Promise.all([phone.waitForEvent("download"), phone.keyboard.press("Enter")]);
-      assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
+      await phone.keyboard.press("Enter");
+      assert.equal(await phone.getAttribute("#assistant-toggle", "aria-pressed"), "true", "the assistant opened");
       assert.equal(await phone.getAttribute("#menu-toggle", "aria-expanded"), "false");
+      await phone.click("#menu-toggle");
+      await phone.click("#assistant-toggle");
+      assert.equal(await phone.getAttribute("#assistant-toggle", "aria-pressed"), "false");
       // A tap elsewhere closes it too.
       await phone.click("#menu-toggle");
       await phone.mouse.click(180, 400);
-      assert.equal(await visible("#save"), false);
-      // A workspace far along the tabs is scrolled into view when chosen.
-      await phone.goto(url + "#layout");
-      await phone.waitForFunction(() => document.body.dataset.activeWorkspace === "layout");
-      const layout = await rect("#workspaces [data-workspace=layout]");
-      const nav2 = await rect("#workspaces");
-      assert.ok(layout.left >= nav2.left - 0.5 && layout.right <= nav2.right + 0.5, `Layout tab ${JSON.stringify(layout)} in ${JSON.stringify(nav2)}`);
+      assert.equal(await visible("#community"), false);
+      // The longest workspace name still fits whole: MANUFACTURE ▾.
+      await phone.goto(url + "#manufacture");
+      await phone.waitForFunction(() => document.body.dataset.activeWorkspace === "manufacture");
+      assert.equal(await phone.textContent("#workspace-menu"), "Manufacture ▾");
+      const named = await rect("#workspace-menu");
+      assert.ok(named.left >= 0 && named.right <= (await rect("#menu-toggle")).left, `MANUFACTURE ▾ whole: ${JSON.stringify(named)}`);
+      // Again in DejaVu Sans, the wide font CI's Linux uses (it ran 23 px into Menu there before 13 px capitals on phones).
+      await phone.addStyleTag({ content: "html, body, button { font-family: 'DejaVu Sans' !important; }" });
+      const wide = await rect("#workspace-menu");
+      assert.ok(wide.left >= 0 && wide.right <= (await rect("#menu-toggle")).left, `MANUFACTURE ▾ whole in DejaVu Sans: ${JSON.stringify(wide)}`);
+      assert.equal(await phone.$eval("#workspace-menu", (b) => b.scrollWidth <= b.clientWidth), true, "its words not cut");
       await phone.screenshot({ path: "e2e/layout-375.png" });
     } finally {
       await phone.close();
     }
   });
 
-  await check("phone width: the save mark sits at the name's corner, clear of its letters and the tabs", async () => {
+  await check("phone width: the save mark sits at the name's corner, clear of its letters and File ▾", async () => {
     const phone = await browser.newPage({ viewport: { width: 375, height: 740 } });
     phone.on("pageerror", (e) => noteError(e.message));
     try {
@@ -1425,23 +1446,23 @@ try {
         document.body.append(probe);
         const w = probe.getBoundingClientRect().width;
         probe.remove();
-        return { content: after.content, right: -parseFloat(after.right), margin: parseFloat(getComputedStyle(h1).marginRight), w, name: h1.getBoundingClientRect().toJSON(), tabs: document.querySelector("#workspaces").getBoundingClientRect().toJSON(), words: getComputedStyle(document.querySelector("#save-status")).fontSize };
+        return { content: after.content, right: -parseFloat(after.right), margin: parseFloat(getComputedStyle(h1).marginRight), w, name: h1.getBoundingClientRect().toJSON(), next: document.querySelector("#file-bar").getBoundingClientRect().toJSON(), words: getComputedStyle(document.querySelector("#save-status")).fontSize };
       });
       assert.equal(m.content, '"✓"', "the mark is drawn by the name");
       assert.equal(m.words, "0px", "the status words take no room");
       // Anchored `right` px past the name's right edge: its left, name.right + right - w,
       // is clear of the last letter when w <= right; its right edge, name.right + right,
-      // is short of the tabs, which start name.right + margin + the top bar's 8 px gap.
+      // is short of File ▾, which starts name.right + margin + the top bar's 8 px gap.
       assert.ok(m.w <= m.right + 0.5, `mark ${m.w} px wide, ${m.right} px past the name`);
-      assert.ok(m.name.right + m.right <= m.tabs.left + 0.5, `mark ends ${m.name.right + m.right}, tabs start ${m.tabs.left}`);
-      assert.equal(m.tabs.left - m.name.right, m.margin + 8, "the gap is the margin plus the top bar's 8 px");
+      assert.ok(m.name.right + m.right <= m.next.left + 0.5, `mark ends ${m.name.right + m.right}, File ▾ starts ${m.next.left}`);
+      assert.equal(m.next.left - m.name.right, m.margin + 8, "the gap is the margin plus the top bar's 8 px");
       await phone.screenshot({ path: "e2e/design-375-save-mark.png", clip: { x: 0, y: 0, width: 375, height: 44 } });
     } finally {
       await phone.close();
     }
   });
 
-  await check("wide screen: every tab, Save, Open, AI and Community in one row, no Menu", async () => {
+  await check("wide screen: File ▾, Save, Undo, Redo, the workspace button, the status, AI, Guide and Community in one row, no Menu", async () => {
     const wide = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     wide.on("pageerror", (e) => noteError(e.message));
     try {
@@ -1452,19 +1473,11 @@ try {
       assert.equal((await rect("#menu-toggle")).width, 0, "no Menu");
       const bar = await rect("#topbar");
       assert.equal(bar.height, 44, "one row");
-      const nav = await rect("#workspaces");
-      for (const t of await wide.$$eval("#workspaces [role=tab]", (els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
-        assert.ok(t.right <= nav.right + 0.5, "every tab shows");
-      }
       // Again in DejaVu Sans, the wide font CI's Linux uses for system-ui: the
       // row once fitted locally and overflowed there (20b's Undo/Redo).
       await wide.addStyleTag({ content: "html, body { font-family: 'DejaVu Sans' !important; }" });
-      const navDejaVu = await rect("#workspaces");
-      for (const t of await wide.$$eval("#workspaces [role=tab]", (els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
-        assert.ok(t.right <= navDejaVu.right + 0.5, "every tab shows in DejaVu Sans");
-      }
       assert.equal((await rect("#topbar")).height, 44, "one row in DejaVu Sans");
-      for (const id of ["save", "open", "save-status", "assistant-toggle", "community"]) {
+      for (const id of ["file-menu", "save", "undo", "redo", "workspace-menu", "save-status", "assistant-toggle", "guide-open", "community"]) {
         const b = await rect(`#${id}`);
         assert.ok(b.width > 0 && b.right <= 1280 && b.top >= bar.top && b.bottom <= bar.bottom, id);
       }
@@ -1630,7 +1643,7 @@ try {
 
       // Choosing the second pane's workspace in the switcher swaps the panes:
       // Image in the first, Design (its panels, its picking) in the second.
-      await wide.click("[data-workspace=image]");
+      await switchTo(wide, "image");
       await wide.waitForFunction(() => document.body.dataset.split === "design");
       assert.equal(await wide.$eval("body", (b) => b.dataset.activeWorkspace), "image");
       assert.equal(await wide.textContent("#split-properties #status"), "valid");
@@ -1698,7 +1711,7 @@ try {
       assert.ok(isBody(await pixelOnceDrawn("#split-viewport", topInSplit.x, topInSplit.y)), "drawn from the top again");
 
       // Back to Design in the first pane and Image beside it.
-      await wide.click("[data-workspace=design]");
+      await switchTo(wide, "design");
       await wide.waitForFunction(() => document.body.dataset.split === "image");
       assert.equal(await wide.textContent("#properties #status"), "valid");
 
@@ -1742,7 +1755,9 @@ try {
       await wide.addInitScript(() => indexedDB.deleteDatabase("fission"));
       await wide.goto(url + "?test-hooks#design");
       await startWithBox(wide); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
-      const titles = Object.fromEntries(await wide.$$eval("[data-workspace]", (tabs) => tabs.map((t) => [t.dataset.workspace, t.textContent.trim()])));
+      await wide.click("#workspace-menu");
+      const titles = Object.fromEntries(await wide.$$eval("#workspace-menu-menu [data-workspace]", (items) => items.map((t) => [t.dataset.workspace, t.querySelector(".menu-button-name").textContent.trim()])));
+      await wide.keyboard.press("Escape");
       const placeholders = ["render", "simulate", "manufacture", "laser", "slice", "circuit", "vector", "layout"];
 
       /** What the layout checks read, in page pixels. */
@@ -1818,7 +1833,7 @@ try {
       const cases = [...placeholders.map((id) => ["design", id]), ["design", "image"], ["image", "design"]];
       for (const [main, id] of cases) {
         if ((await wide.$eval("body", (b) => b.dataset.activeWorkspace)) !== main) {
-          await wide.click(`[data-workspace=${main}]`); // swaps the panes
+          await switchTo(wide, main); // swaps the panes
           await wide.waitForFunction((id) => document.body.dataset.split === id, main === "image" ? "design" : "image");
         }
         if ((await wide.$eval("body", (b) => b.dataset.split)) !== id) await choose(id);
@@ -1845,7 +1860,7 @@ try {
         }
         assert.ok(failed, `the check passed on the broken page: ${label}`);
       };
-      await wide.click("[data-workspace=design]");
+      await switchTo(wide, "design");
       await wide.waitForFunction(() => document.body.dataset.split === "image");
       // Each group on a row of its own: Design's toolbar is short since its shape buttons went into Insert ▾ (U0d), so wrapping alone no longer breaks it.
       const wrap = await wide.addStyleTag({ content: ".split-view #toolbar, .split-view #split-toolbar, .split-view .tool-group { flex-wrap: wrap !important; } .split-view .tool-group { flex-basis: 100% !important; }" });
@@ -1939,7 +1954,7 @@ try {
       // Close split: Slice is off screen, so is its note; showing Slice brings it back.
       await wide.click("#split-close");
       await wide.waitForFunction(() => !document.querySelector(".change-note"));
-      await wide.click("#workspaces [data-workspace=slice]");
+      await switchTo(wide, "slice");
       await wide.waitForSelector("#viewport .change-note");
       assert.deepEqual(await notesIn("#viewport"), [text]);
     } finally {

@@ -6,7 +6,7 @@
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { partFeature, shapeOf, type DesignDocument } from "./document.ts";
+import { isHidden, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
@@ -52,13 +52,14 @@ const NONE_FAILED: ReadonlySet<string> = new Set();
 /**
  * The solid feature a body reference names, when it is one of the bodies
  * shown (`bodyFeatures`, less `failed`: the last rebuild's failed ids);
- * null for a face, an edge, or a body rolled back, suppressed, deleted or
- * failed (25c1: any body shown, not only the part's).
+ * null for a face, an edge, or a body rolled back, suppressed, deleted,
+ * failed (25c1: any body shown, not only the part's) or hidden by its eye
+ * (U0f3).
  */
 export function shownBodyFeature(ref: Selected, doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Feature | null {
   if (ref.kind !== "body") return null;
   const r = readDesignReference(ref as GeometryReference);
-  if (r === null || r.kind !== "body" || failed.has(r.featureId)) return null;
+  if (r === null || r.kind !== "body" || failed.has(r.featureId) || isHidden(doc, r.featureId)) return null;
   return bodyFeatures(doc).find((f) => f.id === r.featureId) ?? null;
 }
 
@@ -83,6 +84,12 @@ export function targetsOf(items: readonly Selected[], doc: DesignDocument | unde
 
 /** What the toolbar's STL button says for a design with no body (24f4). */
 export const NO_BODY_STL = "There is no body to download: nothing in the timeline builds.";
+/** Why the whole design's STL has nothing in it when every body built is hidden by its eye (U0f3). */
+export const ALL_HIDDEN_STL = "There is no body to download: every body is hidden. Show one with its eye in the browser.";
+
+/** Why the whole design's STL is empty (`shownBodyRefs` lists none): every body built is hidden, or nothing builds. */
+export const noBodyWords = (doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string =>
+  bodyFeatures(doc).some((f) => !failed.has(f.id)) ? ALL_HIDDEN_STL : NO_BODY_STL;
 
 /** The reference to the part's body (the last solid feature that builds); null for a design with no body (24f4). */
 export function partBody(doc: DesignDocument): Selected | null {
@@ -92,7 +99,7 @@ export function partBody(doc: DesignDocument): Selected | null {
 
 /** Every body shown, for "the whole design" (the toolbar's STL button, the AI's export_stl; 25c1), in build order; none for a design with no body. */
 export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Selected[] {
-  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) ? [] : [bodyReference(f.id)]));
+  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) || isHidden(doc, f.id) ? [] : [bodyReference(f.id)]));
 }
 
 const STL_HEADER = 80;

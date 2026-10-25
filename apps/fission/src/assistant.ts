@@ -323,7 +323,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
           ? `Using ${info.title}: your requests go to the provider${origin ? ` at ${origin}` : ""}.`
           : `Using ${info.title}: nothing leaves your machine.`;
     status.textContent = s ? SHORT[s.kind] : "off";
-    status.parentElement!.title = s ? `The AI assistant: ${info!.title}${away ? " (sends requests to the provider)" : " (stays on your machine)"}.` : "The optional AI assistant. No AI provider is active: nothing is sent anywhere.";
+    status.closest("button")!.title = s ? `The AI assistant: ${info!.title}${away ? " (sends requests to the provider)" : " (stays on your machine)"}.` : "The optional AI assistant. No AI provider is active: nothing is sent anywhere.";
     const here = workspace === "design";
     $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here;
     $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here;

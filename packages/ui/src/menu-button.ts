@@ -26,6 +26,10 @@ export interface MenuItem {
   off?: string;
   /** The icon before the name (U0f). */
   icon?: IconName;
+  /** A few words at the item's right in place of a key, e.g. "Coming soon" (U0f2b). */
+  note?: string;
+  /** The one item that is what the button now shows (DESIGN ▾'s workspace on screen, U0f2b): aria-current, marked. */
+  current?: boolean;
   run(): void;
 }
 
@@ -40,6 +44,8 @@ export interface MenuButton {
   button: HTMLButtonElement;
   menu: HTMLElement;
   readonly isOpen: boolean;
+  /** Changes the button's words (" ▾" is added after them), keeping its icon. */
+  setLabel(label: string): void;
   open(focusFirst?: boolean): void;
   close(refocus?: boolean): void;
 }
@@ -78,6 +84,10 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
   button.className = "menu-button-toggle";
   button.textContent = `${options.label} ▾`;
   if (options.icon) withIcon(button, options.icon, options.iconSize);
+  const setLabel = (label: string) => {
+    (button.querySelector(":scope > .tool-word") ?? button).textContent = `${label} ▾`;
+    menu.setAttribute("aria-label", label);
+  };
   button.title = options.title;
   button.setAttribute("aria-haspopup", "menu");
   button.setAttribute("aria-expanded", "false");
@@ -126,7 +136,13 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
           key.className = "menu-button-key";
           key.textContent = item.key;
           b.append(key);
+        } else if (item.note) {
+          const note = doc.createElement("span");
+          note.className = "menu-button-note";
+          note.textContent = item.note;
+          b.append(note);
         }
+        if (item.current) b.setAttribute("aria-current", "true");
         if (item.off) {
           b.setAttribute("aria-disabled", "true");
           b.title = item.off;
@@ -200,6 +216,7 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
     get isOpen() {
       return isOpen;
     },
+    setLabel,
     open,
     close,
   };

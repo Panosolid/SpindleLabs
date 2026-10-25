@@ -88,3 +88,28 @@ test("a press outside closes it; the sections are read again each time it opens"
   m.menu.querySelector("button")!.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event);
   assert.equal(m.isOpen, true, "a press inside keeps it open");
 });
+
+test("setLabel renames the button and its menu, keeping an icon; a note shows at an item's right only without a key", () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const m = menuButton(doc, {
+    id: "w",
+    label: "Design",
+    title: "t",
+    icon: "insert",
+    sections: () => [{ items: [{ id: "a", label: "A", key: "K", note: "never shown", run() {} }, { id: "b", label: "B", note: "Coming soon", current: true, run() {} }] }],
+  });
+  doc.body.append(m.element);
+  m.setLabel("Image");
+  assert.equal(m.button.textContent, "Image ▾");
+  assert.equal(m.button.querySelector("svg.icon")?.getAttribute("data-icon"), "insert", "the icon kept");
+  assert.equal(m.menu.getAttribute("aria-label"), "Image");
+  m.button.click();
+  const a = doc.getElementById("a")!;
+  const b = doc.getElementById("b")!;
+  assert.equal(a.querySelector(".menu-button-note"), null, "a key wins over a note");
+  assert.equal(a.querySelector(".menu-button-key")?.textContent, "K");
+  assert.equal(b.querySelector(".menu-button-note")?.textContent, "Coming soon");
+  assert.deepEqual([a.getAttribute("aria-current"), b.getAttribute("aria-current")], [null, "true"]);
+  window.happyDOM.close();
+});

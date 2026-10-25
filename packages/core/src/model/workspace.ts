@@ -54,6 +54,24 @@ export interface AIView {
   adds: string | null;
 }
 
+/** One entry a workspace puts in the top bar's File ▾ (U0f2a). */
+export interface FileEntry {
+  /** The entry's element id (read by the e2e tests). */
+  id: string;
+  label: string;
+  /** The tooltip: what it does. */
+  title: string;
+  /** Why it is off now; an off entry can't be chosen, and its tooltip says this instead. */
+  off?: string;
+  run(): void;
+}
+
+/** What a workspace puts in File ▾ (U0f2a): New, clearing its work after asking, and its exports. */
+export interface FileEntries {
+  new?: FileEntry;
+  exports?: FileEntry[];
+}
+
 /** What the shell hands a workspace when it is shown. */
 export interface WorkspaceContext {
   project: Project;
@@ -132,6 +150,8 @@ export interface MountedWorkspace {
   run?(command: Command): void | Promise<void>;
   /** What the AI assistant is told before a request, as things stand now (`AIView`). Leave out when the workspace offers the AI no command. */
   aiView?(): AIView;
+  /** Its entries in the top bar's File ▾ (U0f2a), read each time the menu opens so an entry's off state is current. Leave out when it has none. */
+  fileEntries?(): FileEntries;
   /** Gone for good (a project opened, its pane closed): stops listening if awake, and empties every slot it filled. */
   unmount(): void;
   /**

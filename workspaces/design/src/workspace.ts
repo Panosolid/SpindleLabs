@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isSketchItem, partFeature, partOf, readDesignDocument, type DesignDocument, type PartKind } from "./document.ts";
+import { insertAt, isHidden, isSketchItem, partFeature, partOf, readDesignDocument, type DesignDocument, type PartKind } from "./document.ts";
 import { DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_USABLE_SKETCH, extrudeStep, featureSpec, setExtrudeDistance } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -15,17 +15,17 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { toolGroup, type MenuButton } from "@fission/ui";
+import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
-import { browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { bodyRows, browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
-import { itemName } from "./timeline-edits.ts";
+import { hideBody, itemName, TIMELINE_STEPS } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
@@ -47,7 +47,7 @@ import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import { designAIView } from "./ai-view.ts";
-import { COPY_SVG, DOWNLOAD_STL, NO_BODY_STL, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
  * What the user last entered (as typed), kept while other workspaces are
@@ -158,6 +158,13 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   return { made, insert: inserting.menu!, facts };
 }
 
+/** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
+const rowIcon = (document: Document, name: IconName) => {
+  const icon = iconSvg(document, name, 16);
+  icon.classList.add("browser-row-icon");
+  return icon;
+};
+
 /** Whether two sets of ids hold the same ids. */
 const sameIds = (a: ReadonlySet<string>, b: ReadonlySet<string>) => a.size === b.size && [...a].every((id) => b.has(id));
 
@@ -187,7 +194,7 @@ function lightRows(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<s
  * Timeline rows select nothing. Rebuilt on every edit and after every
  * rebuild that changes `failed`; folding is kept by id.
  */
-function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, onSelect: (ref: GeometryReference, shift: boolean) => void, onMenu: (node: string, at: { x: number; y: number }) => void, onOpen: (node: string) => void) {
+function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, onSelect: (ref: GeometryReference, shift: boolean) => void, onMenu: (node: string, at: { x: number; y: number }) => void, onOpen: (node: string) => void, onEye: (node: string) => void) {
   // Rows with the timeline's item menu (24f3): every Timeline row by its item's id, and each sketch's row in Sketches.
   const items = new Set(doc.timeline.features.map((f) => f.id));
   const refOf = rowReferences(doc, failed);
@@ -209,6 +216,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         });
         const summary = document.createElement("summary");
         summary.textContent = n.label;
+        summary.prepend(rowIcon(document, n.icon)); // U0f3: a folder before each group's name
         details.append(summary, list(n.children));
         li.append(details);
       } else {
@@ -217,6 +225,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         if (ref) row.setAttribute("type", "button");
         row.className = "tree-row";
         row.textContent = n.label;
+        row.prepend(rowIcon(document, n.icon)); // U0f3: the item's icon before its words (its words stay its name)
         // One line per row (U0a): a label too long for it ends in "…", and the tooltip has it whole, or an item's description (U0e).
         row.title = n.title ?? n.label;
         row.dataset.label = n.label;
@@ -245,6 +254,21 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
           const line = document.createElement("div");
           line.className = "delete-ask delete-ask-row";
           line.append(row, more);
+          // A body's eye (U0f3, Fusion's): hides or shows it, one undo step; a hidden body's row is dimmed.
+          if (n.hidden !== undefined) {
+            const eye = document.createElement("button");
+            eye.type = "button";
+            eye.className = "browser-row-eye";
+            eye.dataset.eye = n.id; // read by the e2e test
+            const words = `${n.hidden ? "Show" : "Hide"} ${n.label}`;
+            eye.setAttribute("aria-label", words);
+            eye.setAttribute("aria-pressed", String(!n.hidden)); // pressed while the body shows
+            eye.title = words;
+            eye.append(iconSvg(document, n.hidden ? "eye-off" : "eye", 16));
+            eye.addEventListener("click", () => onEye(n.id));
+            line.prepend(eye);
+            if (n.hidden) line.classList.add("browser-row-hidden");
+          }
           li.append(line);
         } else li.append(row);
       }
@@ -337,7 +361,21 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Draws the browser for `doc` with the last rebuild's failed items (no Body row for them). */
   function drawBrowser(doc: DesignDocument) {
     rowsFailed = failedNow;
-    browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)));
+    browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden);
+  }
+
+  /**
+   * A Body row's eye (U0f3): hides its body, or shows it again, as one undo
+   * step ("Hide Body 1"), in any mode (a sketch being drawn stays open, as
+   * in Fusion). Hiding clears the selection: what was picked may be on it.
+   */
+  function toggleHidden(node: string) {
+    const doc = designDoc();
+    const row = bodyRows(doc, failedNow).find((r) => r.id === node);
+    if (row === undefined) return;
+    const hide = !isHidden(doc, row.feature.id);
+    if (hide) ctx.selection.clear();
+    void update(hide ? TIMELINE_STEPS.hide(row.label) : TIMELINE_STEPS.show(row.label), undefined, hideBody(doc, row.feature.id, hide));
   }
 
   /** The browser's Body 1 row: a click selects the body, Shift adds or takes it out. */
@@ -505,7 +543,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (command.op === "export_stl") {
       const doc = ctx.project.workspaces.design as DesignDocument | undefined;
       const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
-      if (bodies.length === 0) return panel.showActionNote(NO_BODY_STL, true);
+      if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
       return runAction(DOWNLOAD_STL, bodies);
     }
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
@@ -811,7 +849,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // The item the Edit feature panel is open on was deleted (the bar, Undo in another way): the panel goes with it.
     if (editBox.editing !== null && !doc.timeline.features.some((f) => f.id === editBox.editing)) leaveEdit();
     drawBrowser(doc);
-    fresh.showFor(doc);
     showStart();
     showFailed(doc);
     showKept();
@@ -964,7 +1001,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     saved = { doc: next, shape, sizes: inputs.map((i) => i.value) };
     ctx.projectChanged(label);
     drawBrowser(next);
-    fresh.showFor(next);
     showStart();
     showFailed(next);
     showKept(); // the rows are new: mark them again until the rebuild says otherwise
@@ -1579,6 +1615,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ),
     sleep,
     run,
+    // File ▾ (U0f2a): New clears the design after asking (start-fresh.ts); Export STL downloads every body shown, as the toolbar's STL does.
+    fileEntries: () => {
+      const doc = designDoc();
+      const stl = DESIGN_COMMANDS.find((c) => c.op === "export_stl")!;
+      const bodies = shownBodyRefs(doc, failedNow);
+      return {
+        new: fresh.entry(doc, mode.kind !== "none"),
+        exports: [{ id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? noBodyWords(doc, failedNow) : undefined, run: () => run({ op: "export_stl" }) }],
+      };
+    },
     // What the AI assistant is told before a request (25c3): the timeline as last built, and the panel's sizes, which a set_part keeps for each it leaves out.
     aiView: () => {
       const [width, depth, height] = inputs.map((i) => Number(i.value));

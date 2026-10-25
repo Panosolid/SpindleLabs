@@ -107,11 +107,11 @@ try {
   for (const [width, tap] of [[1280, false], [375, true]]) {
     const at = `${width} px${tap ? ", taps" : ""}`;
 
-    await check(`${at}: every toolbar button an icon drawn on the grid, its words its name and tooltip; the groups Create ▾, Insert ▾, Inspect ▾, Export, Design`, async () => {
+    await check(`${at}: every toolbar button an icon drawn on the grid, its words its name and tooltip; the groups Create ▾, Insert ▾, Inspect ▾, Export`, async () => {
       const page = await fresh(width, tap);
       try {
         assert.deepEqual(await toolbarProblems(page), []);
-        assert.deepEqual(await groupNames(page), ["Create ▾", "Insert ▾", "Inspect ▾", "Export", "Design"]);
+        assert.deepEqual(await groupNames(page), ["Create ▾", "Insert ▾", "Inspect ▾", "Export"]);
         // Hand-worked, from icons.ts: the sketch icon's line runs M4 20 V15 L15 4 20 9 9 20 Z, so x and y both from 4 to 20:
         // a 16 × 16 box at (4, 4); the export icon's (M4 15 V20 H20 V15, M12 14 V3, the arrow head) x 4 to 20, y 3 to 20.
         const box = (sel) => page.$eval(`${sel} > svg.icon path:last-child`, (p) => {
@@ -147,8 +147,8 @@ try {
         // The STL button's words shown, as a lost style rule would show them.
         await page.evaluate(() => (document.querySelector("[data-op=export_stl] .tool-word").style.cssText = "position: static; width: auto; height: auto; clip-path: none"));
         assert.ok((await toolbarProblems(page)).some((p) => /^tool-export_stl: its words (show|leak)/.test(p)), "the words shown are caught");
-        await page.evaluate(() => document.querySelector("#start-fresh svg.icon path:last-child").setAttribute("d", "M1 12H20"));
-        assert.ok((await toolbarProblems(page)).some((p) => p.startsWith("start-fresh: icon marks at 1,")), "a mark off the grid is caught");
+        await page.evaluate(() => document.querySelector("#inspect-facts svg.icon path:last-child").setAttribute("d", "M1 12H20"));
+        assert.ok((await toolbarProblems(page)).some((p) => p.startsWith("inspect-facts: icon marks at 1,")), "a mark off the grid is caught");
       } finally {
         await page.context().close();
       }
@@ -248,7 +248,7 @@ try {
         await page.keyboard.press("Escape");
         await press(page, "#finish-sketch", tap);
         await until(page, () => document.getElementById("create-sketch").checkVisibility(), null, "back to modelling");
-        assert.deepEqual(await groupNames(page), ["Create ▾", "Insert ▾", "Inspect ▾", "Export", "Design"], "the modelling groups back");
+        assert.deepEqual(await groupNames(page), ["Create ▾", "Insert ▾", "Inspect ▾", "Export"], "the modelling groups back");
       } finally {
         await page.context().close();
       }

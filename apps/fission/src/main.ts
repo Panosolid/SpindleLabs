@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
-import { changeNote, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, iconSvg, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
@@ -248,10 +248,12 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
   },
   unmount: (_pane, _id, { view }) => view.unmount(), // asleep: its slots are already out of the page
 });
+// DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the ten workspaces, in place of the tabs.
 const markTab = workspaceSwitcher(
   $("workspaces"),
   workspaces.map((w) => ({ id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
   (id) => show(id as WorkspaceId),
+  { community: "Community" },
 );
 
 // The assistant (AI2): changes Design's part through Design's own run, as one undo step.
@@ -466,9 +468,9 @@ function closeSplit() {
   });
 }
 
-// At phone width Save, Open, AI and Community fold behind Menu (theme.css),
-// leaving the top bar's row to the workspace tabs. Choosing one, Escape or
-// a tap anywhere else closes it; Escape puts focus back on Menu.
+// At phone width AI, Guide and Community fold behind Menu (theme.css),
+// leaving the top bar's row to File ▾ and the workspace button. Choosing one,
+// Escape or a tap anywhere else closes it; Escape puts focus back on Menu.
 {
   const toggle = $("menu-toggle");
   const setMenu = (open: boolean) => {
@@ -558,7 +560,7 @@ function keepOnFirstChange() {
 // project as it was and says why.
 const fileStatus = (message: string) => ($("file-status").textContent = message);
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
-$("save").addEventListener("click", async () => {
+async function save() {
   try {
     await started; // the project shown, not the empty one the app starts with
     const url = URL.createObjectURL(new Blob([projectToJson(ctx.project)], { type: "application/json" }));
@@ -569,14 +571,35 @@ $("save").addEventListener("click", async () => {
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
   }
-});
+}
+const SAVE_TITLE = $("save").title;
+withIcon($("save"), "save"); // its word kept as its name, out of sight (styles/app-bar.css)
+$("save").addEventListener("click", () => void save());
 // Open takes what a drop or paste takes (X6): every format with an importer,
 // routed by its contents, so a PNG opens in Image and a project as a project.
 $<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => representations.importerFor(f.format))
   .flatMap((f) => (f.format === "project" ? [".json"] : f.extensions))
   .join(",");
-$("open").title = `Open ${FILE_FORMATS.filter((f) => representations.importerFor(f.format)).map((f) => f.many).join(", ")}`;
-$("open").addEventListener("click", () => $("open-file").click());
+const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFor(f.format)).map((f) => f.many).join(", ")}`;
+// File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
+// the workspace's in use (the pane last clicked, as for keys), Open and
+// Save the shell's. Save also stays one click, as the icon beside it.
+const file = fileMenu(document, {
+  open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
+  save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
+  where: () => {
+    const id = panesInUse().map((p) => pool.showing(p))[0];
+    return id ? workspaceTitle(id) : "Community";
+  },
+  entries: () => {
+    for (const p of panesInUse()) {
+      const entries = pool.awake(p)?.view.fileEntries?.();
+      if (entries) return entries;
+    }
+    return null;
+  },
+});
+$("file-bar").prepend(file.element);
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   ctx.selection.clear(); // it named the old part's faces
@@ -796,24 +819,29 @@ function showUndoRedo() {
     b.title = label === null ? `Nothing to ${id}` : `${verb} ${label} (${chordLabel(chord, mac)})`;
   }
 }
-// At phone width the pair leaves Menu for the main viewport's bottom-right
-// corner, across from the View buttons (step 20c): one tap, by the thumb,
-// beside the part it changes; the bar keeps its room for the workspace
-// tabs. Wider screens keep it on the bar before Save.
+// At phone width the pair leaves the bar for the main viewport's
+// bottom-right corner, across from the View buttons (step 20c): one tap, by
+// the thumb, beside the part it changes; the bar keeps its room for the
+// workspace button. Wider screens keep it on the bar after Save, as Fusion.
 const phone = matchMedia("(max-width: 640px)");
 function placeUndoRedo() {
   const pair = $("undo-redo");
   pair.classList.toggle("docked", phone.matches);
   // Before the View buttons in the page: its top is higher, so keyboard focus still moves down the screen.
   if (phone.matches) $("view-controls").before(pair);
-  else $("topbar-actions").prepend(pair);
+  else $("save").after(pair);
 }
 phone.addEventListener("change", placeUndoRedo);
 placeUndoRedo();
+for (const id of ["undo", "redo"] as const) $(id).append(iconSvg(document, id)); // named by aria-label
 $("undo").addEventListener("click", () => undoRedo("undo"));
 $("redo").addEventListener("click", () => undoRedo("redo"));
 ctx.history.onChange(showUndoRedo);
 showUndoRedo();
+// AI, Guide and Community, small at the bar's right (styles/app-bar.css).
+withIcon($("assistant-toggle"), "ai", 16);
+withIcon($("guide-open"), "guide", 16);
+withIcon($("community"), "community", 16);
 // One assistant panel for every workspace, beside the viewport.
 $("assistant-toggle").addEventListener("click", () => {
   const panel = $("assistant");

@@ -151,7 +151,12 @@ export interface DesignDocument {
   timeline: { features: Feature[]; marker?: Marker };
   /** Each extrude's kept shape while its sketch is lost (24d2), by the extrude's id; left out when there is none. */
   kept?: Record<string, KeptShape>;
+  /** The solid features whose bodies are hidden by the browser's eye (U0f3), by id in timeline order; left out when every body shows. */
+  hidden?: string[];
 }
+
+/** Whether feature `id`'s body is hidden by the browser's eye (U0f3): built as ever, but not drawn, picked or exported as a whole. */
+export const isHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => doc.hidden?.includes(id) ?? false;
 
 const profileNames: Record<ProfileKind, string> = {
   "l-bracket": "L-bracket",
@@ -196,7 +201,7 @@ export function freshName(base: string, count: number, taken: ReadonlySet<string
 }
 
 /** The preset shape each solid feature is ("box", "slot"…), null for a sketch or an extrude of one; the profiles looked up once. */
-function presetKinds(doc: Pick<DesignDocument, "profiles">): (f: Feature) => ShapeKind | null {
+export function presetKinds(doc: Pick<DesignDocument, "profiles">): (f: Feature) => ShapeKind | null {
   const profiles = new Map<unknown, ShapeKind>();
   for (const p of doc.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p.kind);
   return (f) => {
@@ -784,6 +789,18 @@ export function readDesignDocument(data: unknown): DesignDocument {
       checkKept(kept, id);
       content += (kept as KeptShape).points.length + (kept as KeptShape).curves.length;
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
+    }
+  }
+  // Hidden bodies (U0f3): each a solid feature in the timeline, once.
+  if (Object.hasOwn(d, "hidden")) {
+    const hidden: unknown = (d as { hidden?: unknown }).hidden;
+    if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden bodies are not a list of solid feature ids (left out when every body shows)");
+    const once = new Set<string>();
+    for (const id of hidden) {
+      const at = byId.get(id as string);
+      if (typeof id !== "string" || !at || isSketchItem(at.item)) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature in the timeline`);
+      if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
+      once.add(id);
     }
   }
   // Ids are unique in the document (a sketch shares its id with its timeline item), and the counter is above all of them.

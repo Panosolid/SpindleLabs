@@ -20,7 +20,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { reloadEmpty, startWithBox } from "./start.mjs";
+import { reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4181, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4181/";
@@ -462,7 +462,7 @@ try {
       assert.equal(await page.textContent("#assistant-toggle"), "AI Ollama");
       await page.click("#assistant-toggle");
       await page.waitForFunction(() => document.querySelector("#ai-model-pick").value === "qwen2.5:1.5b");
-      await page.click('[data-workspace="laser"]');
+      await switchTo(page, "laser");
       assert.equal(await page.isDisabled("#ai-ask-button"), true);
       assert.match(await page.textContent("#ai-ask-note"), /can change Design's part/);
       assert.match(await page.textContent("#assistant"), /Planned in Laser.*finger-joint boxes/s);

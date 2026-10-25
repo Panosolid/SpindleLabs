@@ -1,10 +1,11 @@
 // Start fresh: the design cleared back to the empty one a new project
 // opens with (U0c), as one undo step, after asking. Every sketch, feature,
-// profile and kept shape goes. The workspace runs it from the toolbar's
-// Start fresh button (workspace.ts); the dialog asks first, says what goes,
-// and that Undo brings it back. Styles: src/styles/start-fresh.css.
+// profile and kept shape goes. The workspace offers it as the top bar's
+// File ▾ > New (U0f2a, `entry`; the toolbar's Start fresh button it
+// replaces went with it); the dialog asks first, says what goes, and that
+// Undo brings it back. Styles: src/styles/start-fresh.css.
 
-import { toolGroup } from "@fission/ui";
+import type { FileEntry } from "@fission/core";
 import { isSketchItem, type DesignDocument } from "./document.ts";
 
 /** The undo step Start fresh is recorded as. */
@@ -37,21 +38,21 @@ export function clearedWords(doc: DesignDocument): string {
 }
 
 export interface StartFresh {
-  /** The toolbar's button. */
-  button: HTMLButtonElement;
-  /** Turns the button on, or off with the reason as its tooltip, for this design. */
-  showFor(doc: DesignDocument): void;
+  /** File ▾'s New for this design: off with the reason as its tooltip when there is nothing to clear or a sketch is edited. */
+  entry(doc: DesignDocument, sketching: boolean): FileEntry;
   /** Opens the dialog for this design; `confirm` runs only on its Start fresh button. */
   ask(doc: DesignDocument): void;
   /** Whether the dialog is open. */
   readonly open: boolean;
 }
 
-export const START_FRESH_TITLE = "Start fresh: clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
-export const ALREADY_FRESH_TITLE = "Start fresh: nothing to clear, the design is already empty.";
+export const START_FRESH_TITLE = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back.";
+export const ALREADY_FRESH_TITLE = "New: nothing to clear, the design is already empty.";
+/** Why New is off while a sketch is edited (the toolbar's Start fresh was hidden then, with the other modelling buttons). */
+export const SKETCHING_TITLE = "New: finish or cancel the sketch first.";
 
 /**
- * The Start fresh button and its dialog, in the toolbar slot's page. The
+ * Start fresh's dialog, in the toolbar slot's page. The
  * dialog is modal (native <dialog>): Cancel, Escape or a click outside it
  * close it and nothing changes; keys pressed in it never reach the app's
  * shortcuts, so a sketch tool key can't act behind it. Cancel has the
@@ -59,17 +60,6 @@ export const ALREADY_FRESH_TITLE = "Start fresh: nothing to clear, the design is
  */
 export function startFresh(slot: HTMLElement, events: { current(): DesignDocument; confirm(): void }): StartFresh {
   const document = slot.ownerDocument;
-  const designing = toolGroup(document, { name: "Design" });
-  const group = designing.element;
-  group.classList.add("start-fresh");
-  group.dataset.modelling = ""; // hidden while a sketch is edited, as the other modelling buttons are
-  const button = document.createElement("button");
-  button.type = "button";
-  button.id = "start-fresh";
-  button.textContent = "Start fresh";
-  button.title = START_FRESH_TITLE;
-  designing.add([button, "new"]);
-
   const dialog = document.createElement("dialog");
   dialog.id = "start-fresh-dialog";
   dialog.setAttribute("aria-labelledby", "start-fresh-heading");
@@ -91,8 +81,7 @@ export function startFresh(slot: HTMLElement, events: { current(): DesignDocumen
   go.textContent = "Start fresh";
   actions.append(cancel, go);
   dialog.append(heading, words, actions);
-  group.append(dialog);
-  slot.append(group);
+  slot.append(dialog);
 
   const close = () => {
     if (dialog.open) dialog.close();
@@ -124,17 +113,15 @@ export function startFresh(slot: HTMLElement, events: { current(): DesignDocumen
     else dialog.setAttribute("open", "");
     cancel.focus();
   };
-  button.addEventListener("click", () => {
-    const doc = events.current();
-    if (!isFresh(doc)) ask(doc);
-  });
-
   return {
-    button,
-    showFor(doc) {
-      const fresh = isFresh(doc);
-      button.disabled = fresh;
-      button.title = fresh ? ALREADY_FRESH_TITLE : START_FRESH_TITLE;
+    entry(doc, sketching) {
+      const off = sketching ? SKETCHING_TITLE : isFresh(doc) ? ALREADY_FRESH_TITLE : undefined;
+      // The design when New is chosen, not when the menu opened.
+      const run = () => {
+        const now = events.current();
+        if (!isFresh(now)) ask(now);
+      };
+      return { id: "start-fresh", label: "New", title: START_FRESH_TITLE, off, run };
     },
     ask,
     get open() {

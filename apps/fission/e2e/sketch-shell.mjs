@@ -13,7 +13,7 @@ import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { startWithBox, switchTo } from "./start.mjs";
 
 /** A 20 × 10 RGBA PNG, all mid grey, with no size in mm (Image shows it at 96 DPI). */
 function grey() {
@@ -156,7 +156,7 @@ try {
       assert.equal(await drop(page, [{ name: "grey.png", bytes: png }]), "taken");
       await onScreen(page, "image");
       await until(page, () => document.querySelector("#layer-list")?.textContent.includes("Layer 1"), null, "the image's layer");
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "design");
       await onScreen(page, "design");
       assert.deepEqual(await state(page), before, "Design comes back with the sketch as it was");
       // The chain is still going: the next click is its third line, (40, 30) → (0, 30).
@@ -180,7 +180,7 @@ try {
       if (!emptied("a pasted image", pasted)) {
         assert.equal(pasted.taken, true);
         await onScreen(page, "image");
-        await page.click("[data-workspace=design]");
+        await switchTo(page, "design");
         await onScreen(page, "design");
         assert.deepEqual(await state(page), closed);
       }
@@ -207,7 +207,7 @@ try {
       await page.tap("#menu-toggle");
       await page.setInputFiles("#open-file", { name: "grey.png", mimeType: "image/png", buffer: png });
       await onScreen(page, "image");
-      await page.tap("[data-workspace=design]");
+      await switchTo(page, "design", true);
       await onScreen(page, "design");
       assert.deepEqual(await state(page), before);
       await page.setInputFiles("#open-file", { name: "part.stl", mimeType: "model/stl", buffer: Buffer.from("solid x\n") });

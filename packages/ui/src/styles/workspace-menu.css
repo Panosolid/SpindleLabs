@@ -1,0 +1,14 @@
+/* The workspace button (switcher.ts, U0f2b): Fusion's "DESIGN ▾", the
+   workspace on screen in capitals, a little bolder than the bar's other
+   words; its menu marks the one on screen with the accent bar at its left
+   and greys the ones not built yet, "Coming soon" at their right. */
+.workspace-menu .menu-button-toggle:not(#none) { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; color: #e6e8eb; }
+.workspace-menu .menu-button-item[aria-current="true"]:not(#none) { box-shadow: inset 2px 0 0 #4aa8ff; color: #e6e8eb; font-weight: 600; }
+.workspace-menu .menu-button-item[data-soon]:not(#none) { color: #8a919c; }
+.workspace-menu .menu-button-note { font-size: 12px; color: #8a919c; }
+/* At phone width the longest name, MANUFACTURE ▾, must fit whole between
+   File ▾ and Menu in CI's wide DejaVu Sans too (it ran 23 px into Menu):
+   no extra letter spacing, slimmer sides and 13 px capitals. */
+@media (max-width: 640px) {
+  .workspace-menu .menu-button-toggle:not(#none) { letter-spacing: 0; padding-left: 6px; padding-right: 6px; font-size: 13px; }
+}

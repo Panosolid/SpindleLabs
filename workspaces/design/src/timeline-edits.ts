@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { isSketchItem, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { isHidden, isSketchItem, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -25,6 +25,8 @@ export const TIMELINE_STEPS = {
   marker: "Move the rollback marker",
   edit: (name: string) => `Edit ${name}`,
   rename: (name: string) => `Rename ${name}`,
+  hide: (name: string) => `Hide ${name}`,
+  show: (name: string) => `Show ${name}`,
 } as const;
 
 /** Why a reorder is refused: the item would come before an item it is built from, or after one built from it. */
@@ -66,10 +68,36 @@ export function deleteItem(doc: DesignDocument, id: string): DesignDocument {
   const used = new Set(features.flatMap((f) => f.dependsOn));
   const profiles = doc.profiles.filter((p) => !item.dependsOn.includes(p.id) || used.has(p.id));
   const sketches = isSketchItem(item) ? doc.sketches.filter((s) => s.id !== id) : doc.sketches;
-  const { kept: old, ...rest } = next;
-  if (old === undefined || !Object.hasOwn(old, id)) return { ...next, profiles, sketches };
+  const left = withoutHidden(next, id);
+  const { kept: old, ...rest } = left;
+  if (old === undefined || !Object.hasOwn(old, id)) return { ...left, profiles, sketches };
   const { [id]: _, ...kept } = old;
   return Object.keys(kept).length === 0 ? { ...rest, profiles, sketches } : { ...rest, profiles, sketches, kept };
+}
+
+/** The document with feature `id` no longer hidden; `hidden` left out once it lists none. */
+function withoutHidden(doc: DesignDocument, id: string): DesignDocument {
+  if (!isHidden(doc, id)) return doc;
+  const { hidden, ...rest } = doc;
+  const left = hidden!.filter((h) => h !== id);
+  return left.length === 0 ? rest : { ...rest, hidden: left };
+}
+
+/**
+ * The browser's eye (U0f3): solid feature `id`'s body hidden (`hide`) or
+ * shown again. A hidden body is still built (what is built on it still
+ * is), but not drawn, picked or exported as one of the bodies shown. The
+ * list is put in timeline order as it grows (a later reorder may leave it
+ * in another; any order reads). The same document back when nothing
+ * changes; a sketch or an id not in the timeline is refused.
+ */
+export function hideBody(doc: DesignDocument, id: string, hide: boolean): DesignDocument {
+  const item = itemIn(doc, id);
+  if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
+  if (isHidden(doc, id) === hide) return doc;
+  if (!hide) return withoutHidden(doc, id);
+  const now = new Set([...(doc.hidden ?? []), id]);
+  return { ...doc, hidden: doc.timeline.features.flatMap((f) => (now.has(f.id) ? [f.id] : [])) };
 }
 
 /**

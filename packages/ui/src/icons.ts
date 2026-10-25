@@ -62,6 +62,9 @@ export const ICONS = {
   feature: [tone("M5 5H19V19H5Z"), line("M5 5H19V19H5ZM9 9H15M9 12H15M9 15H12.5")],
   origin: [tone("M3 19A2 2 0 1 0 7 19A2 2 0 1 0 3 19Z"), line("M5 19V4M5 19H20M5 19 14 10M2.5 6.5 5 4 7.5 6.5M17.5 16.5 20 19 17.5 21.5")],
   eye: [tone("M9 12A3 3 0 1 0 15 12A3 3 0 1 0 9 12Z"), line("M2.5 12C5 7 8.25 5 12 5S19 7 21.5 12C19 17 15.75 19 12 19S5 17 2.5 12ZM9 12A3 3 0 1 0 15 12A3 3 0 1 0 9 12Z")],
+  plane: [tone("M3 16 8 8H21L16 16Z"), line("M3 16 8 8H21L16 16Z")],
+  axis: [line("M4 20 20 4M14 4H20V10")],
+  profile: [tone("M4 6H14L20 12 14 18H4Z"), line("M4 6H14L20 12 14 18H4Z")],
   "eye-off": [line("M2.5 12C5 7 8.25 5 12 5S19 7 21.5 12C19 17 15.75 19 12 19S5 17 2.5 12ZM4 20 20 4")],
   // The menus' own mark.
   chevron: [line("M7 10 12 15 17 10")],

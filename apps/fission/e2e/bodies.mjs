@@ -4,17 +4,18 @@
 // each top face), the view frames both, the browser's Bodies group lists
 // Body 1 and Body 2, a click on either top face selects that body's face by
 // its stable name, and Body 2's row tints only its own faces. The same at
-// 375 px with taps. Start fresh (start-fresh.ts) with both bodies there:
+// 375 px with taps. File ▾ > New (start-fresh.ts) with both bodies there:
 // it asks, Cancel and Escape change nothing, confirmed it leaves the fresh
 // box alone, and one Undo brings everything back. Screenshots go to
 // E2E_SHOTS when set. Run with
 // `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { withPropertiesFolded } from "./properties.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { chooseFile, fileItem, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4205, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4205/";
@@ -25,9 +26,12 @@ const shots = process.env.E2E_SHOTS;
 const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 5000 }).catch(async () => assert.fail(`${what}: timed out`));
 
 async function fresh(width, touch, { box = true } = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
+  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch, acceptDownloads: true });
   const page = await context.newPage();
-  await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  // A reload the test marks ("kept") keeps the stored project.
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("kept")) indexedDB.deleteDatabase("fission");
+  });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -97,8 +101,8 @@ async function addSquare(page, { square, distance, volume }, tap) {
   await press(page, "#create-sketch", tap);
   await press(page, "#sketch-plane-XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-  // While a sketch is edited Start fresh is out of the way, as the other modelling buttons are.
-  assert.equal(await page.isVisible("#start-fresh"), false, "Start fresh hidden while sketching");
+  // While a sketch is edited File ▾'s New is off, saying why, as the toolbar's Start fresh was hidden then (U0f2a).
+  assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: finish or cancel the sketch first."], "New off while sketching");
   await page.check("#sketch-grid-snap");
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
   await press(page, "#sketch-tool-rectangle", tap);
@@ -114,6 +118,16 @@ async function addSquare(page, { square, distance, volume }, tap) {
   await until(page, (v) => document.querySelector("#volume")?.textContent === v, volume, `the second body, ${volume}`);
   await until(page, () => document.querySelector("#viewport").dataset.sketching !== "true", null, "the sketch finished");
 }
+
+/** Opens (`open`) or closes the browser: a drawer at phone width, the floating panel's fold on a wide screen. */
+async function foldBrowser(page, open, tap) {
+  if (await page.isVisible("#browser-toggle")) {
+    if ((await page.getAttribute("#browser-toggle", "aria-expanded")) !== String(open)) await press(page, "#browser-toggle", tap);
+  } else if ((await page.$eval("#browser .browser-fold", (d) => d.open)) !== open) await press(page, "#browser .browser-fold > summary", tap);
+}
+
+/** Each Body row's eye as [its row, its words, pressed, its icon], read in the page. */
+const eyes = (page) => page.$$eval("#browser [data-eye]", (es) => es.map((e) => [e.dataset.eye, e.getAttribute("aria-label"), e.getAttribute("aria-pressed"), e.querySelector("svg")?.dataset.icon]));
 
 let failed = 0;
 async function check(name, fn) {
@@ -179,11 +193,7 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
 
     // Listed in build order, in the browser (a drawer at phone width,
     // opened for the rows and closed again before looking at the canvas).
-    const fold = async (open) => {
-      if (await page.isVisible("#browser-toggle")) {
-        if ((await page.getAttribute("#browser-toggle", "aria-expanded")) !== String(open)) await press(page, "#browser-toggle", tap);
-      } else if ((await page.$eval("#browser .browser-fold", (d) => d.open)) !== open) await press(page, "#browser .browser-fold > summary", tap);
-    };
+    const fold = (open) => foldBrowser(page, open, tap);
     await fold(true);
     await page.evaluate(() => document.querySelector('#browser [data-node="bodies"]')?.closest("details")?.setAttribute("open", ""));
     assert.deepEqual(await bodyRows(page), ["body-1 Body 1", "body-2 Body 2"]);
@@ -226,25 +236,23 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
         volume: document.querySelector("#volume")?.textContent,
         sketches: document.querySelectorAll('#browser [data-node^="sketches/"]').length,
         timeline: document.querySelectorAll("#timeline [data-item]").length,
-        button: [document.getElementById("start-fresh").disabled, document.getElementById("start-fresh").title],
         open: document.getElementById("start-fresh-dialog").open,
         undo: document.getElementById("undo").title,
       }));
-    const ALREADY = "Start fresh: nothing to clear, the design is already empty.";
-    const ON = "Start fresh: clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
-    // A new design is already empty (U0c): the button is off and says why.
-    assert.deepEqual((await state()).button, [true, ALREADY]);
+    const ALREADY = "New: nothing to clear, the design is already empty.";
+    const ON = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back.";
+    // A new design is already empty (U0c): File ▾'s New is off and says why.
+    assert.deepEqual(await fileItem(page, "start-fresh"), [true, ALREADY]);
     await startWithBox(page, tap);
     await addSquare(page, { square, distance, volume }, tap);
     assert.deepEqual(await bodyRows(page), ["body-1 Body 1", "body-2 Body 2"]);
     const before = await state();
     assert.equal(before.sketches, 1);
-    assert.deepEqual(before.button, [false, ON]);
+    assert.deepEqual(await fileItem(page, "start-fresh"), [false, ON]);
 
     // Asks first, naming what goes: the box and Extrude 1 are features, Sketch 1 a sketch.
     const ask = async () => {
-      await page.locator("#start-fresh").scrollIntoViewIfNeeded();
-      await press(page, "#start-fresh", tap);
+      await chooseFile(page, "start-fresh", tap);
       await until(page, () => document.getElementById("start-fresh-dialog").open, null, "the dialog");
     };
     await ask();
@@ -271,7 +279,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await press(page, "#start-fresh-confirm", tap);
     await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "the empty design's hint");
     const after = await state();
-    assert.deepEqual(after, { volume: "—", sketches: 0, timeline: 0, button: [true, ALREADY], open: false, undo: "Undo Start fresh (Ctrl+Z)" });
+    assert.deepEqual(after, { volume: "—", sketches: 0, timeline: 0, open: false, undo: "Undo Start fresh (Ctrl+Z)" });
+    assert.deepEqual(await fileItem(page, "start-fresh"), [true, ALREADY], "New off again");
     assert.deepEqual(await bodyRows(page), []);
     // Nothing drawn: the view shows no part.
     await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "no part drawn");
@@ -285,6 +294,79 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await press(page, "#redo", tap);
     await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "redone");
     assert.deepEqual(await bodyRows(page), []);
+    if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
+    await page.context().close();
+  });
+
+  // U0f3: the eye before each Body row (Fusion's) hides its body and shows it again.
+  await check(`the eye hides Body 2 and shows it again: pixels probed, one undo step each, kept on reload, left out of the STL (${width} px${tap ? ", taps" : ""})`, async () => {
+    const page = await fresh(width, tap);
+    await addSquare(page, { square, distance, volume }, tap);
+    await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+    const view = { toward: [0.6, -0.8, 0.55], up: [0, 0, 1], centre, radius: want };
+    const framed = () => page.evaluate(() => document.querySelector("#viewport").dataset.framedRadius);
+    const radius = await framed();
+    // A body's lit grey-blue is far brighter than the dark background and the floor's grid (smoke.mjs's rule).
+    const isBody = ([r, g, b]) => r + g + b > 3 * 80;
+    const box2 = await colourAt(page, top2, view);
+    assert.ok(isBody(box2), `body 2 drawn first: ${box2}`);
+    await foldBrowser(page, true, tap);
+    assert.deepEqual(await eyes(page), [["body-1", "Hide Body 1", "true", "eye"], ["body-2", "Hide Body 2", "true", "eye"]]);
+    // The eye is the row's first thing on its line, before its icon and words; a finger's 44 px on a phone.
+    const eye = await page.locator('#browser [data-eye="body-2"]').boundingBox();
+    const row = await page.locator('#browser .tree-row[data-node="body-2"]').boundingBox();
+    assert.ok(eye.x + eye.width <= row.x + 0.5 && Math.abs(eye.y + eye.height / 2 - (row.y + row.height / 2)) < 2, `the eye ${JSON.stringify(eye)} left of its row ${JSON.stringify(row)}, on its line`);
+    if (tap) assert.ok(eye.width >= 44 && eye.height >= 44, `the eye ${eye.width} × ${eye.height} px, under a finger's 44`);
+    if (shots) await page.screenshot({ path: `${shots}/eye-${width}-shown.png` });
+
+    // Hidden: the eye crossed out, the row dimmed and selecting nothing, the body gone from the view, the camera kept.
+    await press(page, '#browser [data-eye="body-2"]', tap);
+    await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "Body 2 hidden");
+    assert.deepEqual(await eyes(page), [["body-1", "Hide Body 1", "true", "eye"], ["body-2", "Show Body 2", "false", "eye-off"]]);
+    assert.equal(await page.getAttribute("#undo", "title"), "Undo Hide Body 2 (Ctrl+Z)");
+    assert.equal(await page.$eval('#browser .tree-row[data-node="body-2"]', (r) => r.tagName), "SPAN", "a hidden body's row is no button");
+    const dim = await page.$eval('#browser .tree-row[data-node="body-2"]', (r) => Number(getComputedStyle(r).opacity));
+    assert.ok(dim < 0.7, `the hidden row dimmed: opacity ${dim}`);
+    if (shots) await page.screenshot({ path: `${shots}/eye-${width}-hidden-browser.png` });
+    await foldBrowser(page, false, tap);
+    assert.equal(await framed(), radius, "hiding keeps the camera where it is");
+    const gone = await colourAt(page, top2, view);
+    assert.ok(!isBody(gone) && differs(gone, box2), `body 2's top hidden: ${gone}, drawn it was ${box2}`);
+    assert.ok(isBody(await colourAt(page, [20, 15, 20], view)), "body 1 still drawn");
+    if (shots) await page.screenshot({ path: `${shots}/eye-${width}-hidden.png` });
+    // A click where it was picks nothing of it.
+    await at(page, top2, view, tap);
+    await page.waitForTimeout(200);
+    assert.doesNotMatch(await selection(page), /\/end$/, "nothing of the hidden body picked");
+    await page.keyboard.press("Escape");
+    // The whole design's STL holds Body 1 alone: 80 + 4 + 12 · 50 = 684 bytes (the box's 12 triangles).
+    const [stl] = await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-export-stl", tap)]);
+    assert.equal(readFileSync(await stl.path()).length, 684, "the STL leaves the hidden body out");
+
+    // Undo shows it again, Redo hides it again: one step each.
+    await press(page, "#undo", tap);
+    await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Hide Body 2", null, "undone: shown");
+    assert.ok(isBody(await colourAt(page, top2, view)), "undone: body 2 drawn again");
+    await press(page, "#redo", tap);
+    await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "redone: hidden");
+
+    // Saved with the project: still hidden after a reload.
+    await until(page, () => document.querySelector("#save-status")?.dataset.state === "saved", null, "saved");
+    await page.evaluate(() => sessionStorage.setItem("kept", "1"));
+    await page.reload();
+    await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "hidden after a reload");
+    await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+    assert.ok(!isBody(await colourAt(page, top2, view)), "still not drawn after a reload");
+
+    // Shown again by its eye: drawn, and a 12 + 12 = 24-triangle STL, 80 + 4 + 24 · 50 = 1,284 bytes.
+    await foldBrowser(page, true, tap);
+    await press(page, '#browser [data-eye="body-2"]', tap);
+    await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Hide Body 2", null, "shown again");
+    assert.equal(await page.getAttribute("#undo", "title"), "Undo Show Body 2 (Ctrl+Z)");
+    await foldBrowser(page, false, tap);
+    assert.ok(isBody(await colourAt(page, top2, view)), "drawn again");
+    const [both] = await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-export-stl", tap)]);
+    assert.equal(readFileSync(await both.path()).length, 1284, "both bodies in the STL");
     if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     await page.context().close();
   });

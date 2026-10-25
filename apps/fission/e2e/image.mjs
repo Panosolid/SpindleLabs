@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { crc32, deflateSync } from "node:zlib";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { startWithBox, switchTo } from "./start.mjs";
 
 /** A PNG: 8-bit RGBA, `pixel(x, y)` gives [r, g, b, a]; `ppm` pixels per metre in a pHYs chunk (none if null). */
 function makePng(width, height, pixel, ppm) {
@@ -153,7 +153,7 @@ try {
   const designCentre = await pixel(0.5, 0.5);
   const designRadius = await page.$eval("#viewport", (el) => el.dataset.framedRadius);
 
-  await page.click("[data-workspace=image]");
+  await switchTo(page, "image");
 
   await check("Image opens empty: an Open button, no layers, and the Design body hidden", async () => {
     assert.equal(await page.textContent("#image-open"), "Open…");
@@ -252,7 +252,7 @@ try {
   });
 
   await check("back in Design the body and its camera are as they were, with orbit and the view cube", async () => {
-    await page.click("[data-workspace=design]");
+    await switchTo(page, "design");
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
     await settle();
     assert.equal(await page.$eval("#viewport", (el) => el.dataset.image ?? null), null);
@@ -262,7 +262,7 @@ try {
   });
 
   await check("returning to Image shows the same image again", async () => {
-    await page.click("[data-workspace=image]");
+    await switchTo(page, "image");
     await page.waitForFunction(() => document.querySelector("#image-mm")?.textContent === "40 × 20 mm");
     await settle();
     near(await pixel(0.4, 0.45), RED, "top-left");

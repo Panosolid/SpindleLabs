@@ -1,5 +1,5 @@
 // Start fresh (start-fresh.ts): the fresh design worked out by hand, what
-// the dialog says goes, when the button is off, and the dialog itself in a
+// the dialog says goes, when File ▾'s New is off (U0f2a), and the dialog itself in a
 // real DOM (happy-dom): it asks first, Cancel and Escape change nothing,
 // its keys never reach the app's shortcuts. That it is one undo step that
 // Undo takes back, in the real app on the real kernel, is the Chromium
@@ -11,7 +11,7 @@ import { insertPreset, partDocument, readDesignDocument, withPart, type DesignDo
 import { addSketch, drawCircle, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { documentFor } from "../src/commands.ts";
-import { ALREADY_FRESH_TITLE, clearedWords, freshDesign, isFresh, START_FRESH_STEP, START_FRESH_TITLE, startFresh } from "../src/start-fresh.ts";
+import { ALREADY_FRESH_TITLE, clearedWords, freshDesign, isFresh, SKETCHING_TITLE, START_FRESH_STEP, START_FRESH_TITLE, startFresh } from "../src/start-fresh.ts";
 
 const DESIGN = [{ id: "design" as const, readData: readDesignDocument }];
 const reopen = (d: DesignDocument) => projectFromJson(projectToJson({ ...emptyProject("Fresh"), workspaces: { design: d } }), DESIGN).workspaces.design as DesignDocument;
@@ -82,7 +82,7 @@ test("isFresh: only a design with nothing in it; anything at all, even an empty 
 
 const { Window } = await import("happy-dom");
 
-/** A toolbar slot with Start fresh in a real DOM, a listener on the document standing in for the app's shortcuts. */
+/** A toolbar slot with Start fresh's dialog in a real DOM, a listener on the document standing in for the app's shortcuts; `choose()` picks New as File ▾ would. */
 function setup(design: DesignDocument) {
   const window = new Window();
   const doc = window.document as unknown as Document;
@@ -93,33 +93,37 @@ function setup(design: DesignDocument) {
   const shortcutKeys: string[] = [];
   doc.addEventListener("keydown", (e) => shortcutKeys.push((e as KeyboardEvent).key));
   const f = startFresh(slot, { current: () => current, confirm: () => confirmed++ });
-  f.showFor(current);
   const $ = (id: string) => doc.getElementById(id) as HTMLElement;
   const key = (target: HTMLElement, k: string) => target.dispatchEvent(new window.KeyboardEvent("keydown", { key: k, bubbles: true }) as unknown as Event);
-  const set = (d: DesignDocument) => ((current = d), f.showFor(d));
-  return { doc, slot, f, $, key, set, confirmed: () => confirmed, shortcutKeys };
+  const set = (d: DesignDocument) => (current = d);
+  /** New as File ▾ lists it when it opens, for the design then; run as the menu runs an entry that is on. */
+  const choose = () => {
+    const entry = f.entry(current, false);
+    assert.equal(entry.off, undefined, "New is on");
+    entry.run();
+  };
+  return { doc, slot, f, $, key, set, choose, confirmed: () => confirmed, shortcutKeys };
 }
 
-test("the button: its own Design group, hidden while a sketch is edited, off with its reason on a fresh design", () => {
-  const { $, set } = setup(freshDesign());
-  const button = $("start-fresh") as HTMLButtonElement;
-  const group = button.closest<HTMLElement>(".tool-group")!;
-  assert.equal(group.getAttribute("aria-label"), "Design");
-  assert.equal(group.hasAttribute("data-modelling"), true, "the sketch toolbar stands in for it while sketching");
-  assert.equal(button.textContent, "Start fresh");
-  assert.equal(button.disabled, true);
-  assert.equal(button.title, ALREADY_FRESH_TITLE);
-  set(part());
-  assert.equal(button.disabled, false);
-  assert.equal(button.title, START_FRESH_TITLE);
-  set(freshDesign());
-  assert.equal(button.disabled, true, "back off once fresh again");
+test("File ▾'s New: its id, words and tooltip; off with its reason on a fresh design and while a sketch is edited", () => {
+  const { f, slot } = setup(freshDesign());
+  assert.equal(slot.querySelector(".tool-group"), null, "no toolbar group: New is in File ▾");
+  assert.deepEqual([...slot.querySelectorAll("button")].filter((b) => !b.closest("dialog")), [], "nor a button outside the dialog");
+  const fresh = f.entry(freshDesign(), false);
+  assert.deepEqual([fresh.id, fresh.label, fresh.title, fresh.off], ["start-fresh", "New", START_FRESH_TITLE, ALREADY_FRESH_TITLE]);
+  assert.equal(f.entry(part(), false).off, undefined, "on with something to clear");
+  // While a sketch is edited (the plane prompt or the sketch), as the old toolbar button was hidden then; ahead of an empty design's reason.
+  assert.equal(f.entry(part(), true).off, SKETCHING_TITLE);
+  assert.equal(f.entry(freshDesign(), true).off, SKETCHING_TITLE);
+  assert.match(SKETCHING_TITLE, /^New: /);
+  assert.match(ALREADY_FRESH_TITLE, /^New: /, "every tooltip starts with its words");
+  assert.match(START_FRESH_TITLE, /^New: /);
 });
 
 test("the dialog asks first and says what goes; Cancel closes it and clears nothing", () => {
-  const { f, $, confirmed } = setup(part());
+  const { f, $, choose, confirmed } = setup(part());
   assert.equal(f.open, false);
-  $("start-fresh").click();
+  choose();
   assert.equal(f.open, true);
   assert.equal($("start-fresh-heading").textContent, "Start fresh?");
   assert.equal(
@@ -132,17 +136,17 @@ test("the dialog asks first and says what goes; Cancel closes it and clears noth
   assert.equal(confirmed(), 0);
 });
 
-test("the dialog's words are for the design when the button is pressed, not when it was last drawn", () => {
-  const { $, set } = setup(part());
-  const s2 = addSketch(part());
-  set(s2.doc);
-  $("start-fresh").click();
+test("the dialog's words are for the design when New is chosen, not when the menu opened", () => {
+  const { f, $, set } = setup(part());
+  const entry = f.entry(part(), false); // the menu opened on part()
+  set(addSketch(part()).doc);
+  entry.run();
   assert.match($("start-fresh-words").textContent!, /\(2 sketches and 2 features\)/);
 });
 
 test("Escape closes the dialog without clearing, and no key pressed in it reaches the app's shortcuts", () => {
-  const { f, $, key, confirmed, shortcutKeys } = setup(part());
-  $("start-fresh").click();
+  const { f, $, key, choose, confirmed, shortcutKeys } = setup(part());
+  choose();
   // R would choose the rectangle tool and Escape would clear the selection, behind the dialog.
   key($("start-fresh-cancel"), "r");
   key($("start-fresh-cancel"), "Escape");
@@ -150,23 +154,23 @@ test("Escape closes the dialog without clearing, and no key pressed in it reache
   assert.equal(f.open, false);
   assert.equal(confirmed(), 0);
   // Outside the dialog the keys do reach them: the listener itself works.
-  key($("start-fresh"), "r");
+  key($("start-fresh-dialog").parentElement!, "r");
   assert.deepEqual(shortcutKeys, ["r"]);
 });
 
 test("Start fresh in the dialog confirms exactly once and closes it", () => {
-  const { f, $, confirmed } = setup(part());
-  $("start-fresh").click();
+  const { f, $, choose, confirmed } = setup(part());
+  choose();
   $("start-fresh-confirm").click();
   assert.equal(confirmed(), 1);
   assert.equal(f.open, false);
 });
 
-test("pressing the button on a fresh design opens nothing, even if it was left on", () => {
-  const { f, $, confirmed } = setup(freshDesign());
-  const button = $("start-fresh") as HTMLButtonElement;
-  button.disabled = false; // as if drawn for an older design
-  button.click();
+test("New chosen once the design is fresh opens nothing, even from a menu drawn for an older design", () => {
+  const { f, set, confirmed } = setup(part());
+  const entry = f.entry(part(), false); // on, as drawn for the part
+  set(freshDesign()); // everything deleted meanwhile
+  entry.run();
   assert.equal(f.open, false);
   assert.equal(confirmed(), 0);
 });
