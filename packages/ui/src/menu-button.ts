@@ -8,7 +8,10 @@
 // outside closes it, Escape giving the focus back to the button. The menu
 // is placed under the button with fixed positioning, so a toolbar that
 // scrolls sideways (phones) never clips it, and kept on the screen.
-// Styles: src/styles/menu-button.css.
+// An item may carry an icon before its name, and the button one before its
+// words (U0f, icons.ts). Styles: src/styles/menu-button.css.
+
+import { iconSvg, withIcon, type IconName } from "./icons.ts";
 
 export interface MenuItem {
   /** The item's element id (read by the e2e tests). */
@@ -21,6 +24,8 @@ export interface MenuItem {
   data?: Record<string, string>;
   /** Why the item is off; an off item can't be chosen. */
   off?: string;
+  /** The icon before the name (U0f). */
+  icon?: IconName;
   run(): void;
 }
 
@@ -44,6 +49,10 @@ export interface MenuButtonOptions {
   /** The button's words; " ▾" is added after them. */
   label: string;
   title: string;
+  /** An icon before the button's words (U0f: a toolbar group that is only a menu, as Insert ▾). */
+  icon?: IconName;
+  /** The icon's size in px (20 unless given). */
+  iconSize?: number;
   /** The sections, read each time the menu opens (so an item's off state is current). */
   sections: () => readonly MenuSection[];
 }
@@ -68,6 +77,7 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
   button.id = options.id;
   button.className = "menu-button-toggle";
   button.textContent = `${options.label} ▾`;
+  if (options.icon) withIcon(button, options.icon, options.iconSize);
   button.title = options.title;
   button.setAttribute("aria-haspopup", "menu");
   button.setAttribute("aria-expanded", "false");
@@ -108,7 +118,8 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
         for (const [k, v] of Object.entries(item.data ?? {})) b.dataset[k] = v;
         const name = doc.createElement("span");
         name.className = "menu-button-name";
-        name.textContent = item.label;
+        if (item.icon) name.append(iconSvg(doc, item.icon, 16));
+        name.append(item.label);
         b.append(name);
         if (item.key) {
           const key = doc.createElement("kbd");

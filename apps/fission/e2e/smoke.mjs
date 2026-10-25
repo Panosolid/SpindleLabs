@@ -1776,7 +1776,7 @@ try {
         assert.ok(m.toolbarRows <= 1 && m.splitToolbarRows <= 1, `${id}: each toolbar keeps to one row (${m.toolbarRows}, ${m.splitToolbarRows})`);
         const [main, second] = m.views;
         assert.ok(Math.abs(main.view.y - second.view.y) <= 1, `${id}: both views start at the same height`);
-        // One row: a button 7 px + 13 px text + 7 px tall plus the bar's padding and border is at most 48 px; three rows were 120.
+        // One row: a 32 px icon button (toolbar-group.css, split view) plus the bar's 2 × 6 px padding and 1 px border is 45 px, at most 48; three rows were 120.
         assert.ok(second.view.y - m.workspaceTop <= 48, `${id}: no band over the second view (${second.view.y - m.workspaceTop} px)`);
         assert.ok(m.bar.y >= m.workspaceTop - 1 && m.bar.bottom <= second.view.y + 1, `${id}: the choice and Close split sit in the toolbar row`);
         if (m.splitToolbar) assert.ok(m.bar.x >= m.splitToolbar.right - 1, `${id}: the choice is clear of the second pane's tools`);

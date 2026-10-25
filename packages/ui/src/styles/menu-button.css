@@ -13,6 +13,8 @@
 .menu-button .menu-button-item:not(#none) { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 16px; padding: 6px 10px; background: none; border: 1px solid transparent; border-radius: 4px; color: inherit; font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
 .menu-button .menu-button-item:not(#none):hover, .menu-button .menu-button-item:not(#none):focus-visible { background: #2e333b; outline: none; border-color: #353a43; }
 .menu-button .menu-button-item[aria-disabled="true"]:not(#none) { color: #8a919c; cursor: default; background: none; }
+.menu-button .menu-button-name { display: inline-flex; align-items: center; gap: 8px; }
+.menu-button .menu-button-name > .icon { flex-shrink: 0; }
 .menu-button .menu-button-key { font-family: ui-monospace, monospace; font-size: 12px; color: #8a919c; }
 @media (max-width: 640px) {
   .menu-button .menu-button-item:not(#none) { min-height: 44px; }

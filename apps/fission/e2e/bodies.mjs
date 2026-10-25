@@ -230,8 +230,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
         open: document.getElementById("start-fresh-dialog").open,
         undo: document.getElementById("undo").title,
       }));
-    const ALREADY = "Nothing to clear: the design is already empty.";
-    const ON = "Clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
+    const ALREADY = "Start fresh: nothing to clear, the design is already empty.";
+    const ON = "Start fresh: clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
     // A new design is already empty (U0c): the button is off and says why.
     assert.deepEqual((await state()).button, [true, ALREADY]);
     await startWithBox(page, tap);
