@@ -19,7 +19,9 @@ marker in its body (the kind's hash), so issues never pile up:
 - an issue closed as fixed is reopened if the kind comes back on main (a
   branch may not have the fix yet, so there it only gets a comment);
 - an issue closed as not planned (a known OpenCascade weakness, say) is
-  left alone.
+  left alone;
+- every issue it files or updates is locked, so strangers can't comment on
+  it (Claude sessions read these issues; see `lock`).
 
 `kinds_of` and `plan` are pure (tested in test_file_issues.py); `run` does
 the `gh` calls.
@@ -351,6 +353,19 @@ def gh(*args, stdin=None):
     return subprocess.run(["gh", *args], input=stdin, capture_output=True, text=True, check=True).stdout
 
 
+def lock(number, log):
+    """Lock an issue this script filed, so only people with write access (Ben,
+    his Claude sessions and this workflow) can comment: anyone on GitHub can
+    comment on an open issue of a public repository, and Claude sessions
+    read these issues to fix what they report, so a stranger's comment
+    there would be text a session reads. Locking an issue that is already
+    locked fails; that, or any other failure, only gets a log line."""
+    try:
+        gh("issue", "lock", str(number))
+    except subprocess.CalledProcessError as e:
+        log(f"Could not lock #{number} (it may be locked already): {e.stderr.strip()}")
+
+
 def run(incoming, dry_run=False, log=print):
     run_url, commit, branch = os.environ["RUN_URL"], os.environ["COMMIT"], os.environ["BRANCH"]
     found = gather(read_folders(incoming))
@@ -374,11 +389,16 @@ def run(incoming, dry_run=False, log=print):
         if not live:
             continue
         if action == "create":
-            gh("issue", "create", "--title", title, "--label", LABEL, "--body-file", "-", stdin=body)
+            url = gh("issue", "create", "--title", title, "--label", LABEL, "--body-file", "-", stdin=body)
+            m = re.search(r"/issues/(\d+)", url)
+            if m:
+                lock(m.group(1), log)
         else:
             if action == "reopen":
                 gh("issue", "reopen", str(number))
             gh("issue", "comment", str(number), "--body-file", "-", stdin=body)
+            # Issues filed before locking began get locked the next time they come back.
+            lock(number, log)
     return actions
 
 

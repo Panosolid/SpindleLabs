@@ -208,6 +208,14 @@ class Calls(unittest.TestCase):
             ("POST", "/actions/workflows/pages.yml/dispatches", {"ref": "main"}),
         ])
 
+    def test_a_strangers_behind_marker_doesnt_stop_the_ask(self):
+        gh = fake_repo(behind=True)
+        gh.table["/issues/1/comments?per_page=100"] = [stranger("<!-- automerge-behind:h1:m1 -->")]
+        automerge.run(gh, log=lambda s: None)
+        # (The fake doesn't keep what is posted, so run keeps asking; the first write is what counts.)
+        self.assertEqual(gh.writes[0][:2], ("POST", "/issues/1/comments"))
+        self.assertIn("<!-- automerge-behind:h1:m1 -->", gh.writes[0][2]["body"])
+
     def test_behind_asks_once_pushes_nothing_starts_nothing(self):
         gh = fake_repo(behind=True)
         orig = gh.call
@@ -215,7 +223,7 @@ class Calls(unittest.TestCase):
         def call(method, path, body=None):
             r = orig(method, path, body)
             if method == "POST" and path == "/issues/1/comments":
-                gh.table["/issues/1/comments?per_page=100"] = [body]
+                gh.table["/issues/1/comments?per_page=100"] = [bot(body["body"])]
             return r
         gh.call = call
         self.assertEqual(automerge.run(gh, log=lambda s: None), 0)
@@ -470,6 +478,16 @@ class ConflictReminder(unittest.TestCase):
         self.assertEqual(automerge.iso_seconds("1970-01-02T00:00:15Z"), 86415)
 
 
+def bot(body):
+    """A comment this workflow posted (it posts with its own token)."""
+    return dict(body=body, user=dict(login="github-actions[bot]"))
+
+
+def stranger(body):
+    """A comment anyone on GitHub could post on a public pull request."""
+    return dict(body=body, user=dict(login="someone"))
+
+
 def conflict_repo(comments=()):
     raw = dict(number=7, draft=False, labels=[],
                head=dict(ref="claude/c", sha="c7", repo=dict(full_name="o/r")),
@@ -483,7 +501,7 @@ def conflict_repo(comments=()):
         "/commits/c7/check-runs?filter=latest&per_page=100": dict(check_runs=[check("kernel"), check("app")]),
         "/commits/c7": stamp("1970-01-01T00:10:00Z"),     # 600 s
         "/commits/main": dict(stamp("1970-01-01T00:20:00Z"), sha="m1"),   # 1200 s
-        "/issues/7/comments?per_page=100": [dict(body=b) for b in comments],
+        "/issues/7/comments?per_page=100": [c if isinstance(c, dict) else bot(c) for c in comments],
     })
 
 
@@ -508,6 +526,14 @@ class ConflictCalls(unittest.TestCase):
         gh = conflict_repo(comments=["hi", "x <!-- automerge-conflict:c7 --> y"])
         self.run_at(gh, 10 * GRACE)
         self.assertEqual(gh.writes, [])
+
+    def test_a_strangers_marker_counts_for_nothing(self):
+        # Anyone can comment on a public pull request; pasting the marker for
+        # this head must not silence the reminder (only the bot's own count).
+        gh = conflict_repo(comments=[stranger("<!-- automerge-conflict:c7 -->")])
+        self.run_at(gh, 10 * GRACE)
+        self.assertEqual(len(gh.writes), 1)
+        self.assertEqual(automerge.bot_comments(gh, 7), [])
 
     def test_again_for_a_new_head(self):
         gh = conflict_repo(comments=["<!-- automerge-conflict:old -->"])
@@ -701,7 +727,7 @@ def queue_repo(labels=(), state=None, comments=(), pages_sha="m1", queue_token="
     q = QueueFake(gh.table, {1: state or dict(isInMergeQueue=False, autoMergeRequest=None)}, queue_token)
     q.table.update({
         "/rules/branches/main": QUEUE_RULES,
-        "/issues/1/comments?per_page=100": [dict(body=b) for b in comments],
+        "/issues/1/comments?per_page=100": [c if isinstance(c, dict) else bot(c) for c in comments],
         "/actions/workflows/pages.yml/runs?branch=main&per_page=5": dict(workflow_runs=[dict(head_sha=pages_sha)]),
     })
     return q
@@ -779,6 +805,16 @@ class QueueCalls(unittest.TestCase):
         automerge.run(gh, log=lambda s: None)
         self.assertEqual(gh.writes, [("GRAPHQL", "enqueuePullRequest", {"id": "N1"}, "owner")])
 
+    def test_a_strangers_dequeued_marker_doesnt_keep_a_head_out(self):
+        # A stranger pastes the "queue removed this head" marker on our pull
+        # request: it is still queued, and the note is still written.
+        marker = automerge.dequeued_text("h1", "CI_FAILURE", "o/r")
+        gh = queue_repo(comments=[stranger(marker)])
+        automerge.run(gh, log=lambda s: None)
+        self.assertEqual(gh.writes, [("GRAPHQL", "enqueuePullRequest", {"id": "N1"}, "owner")])
+        gh = queue_repo(comments=[stranger(marker)])
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_FAILURE", log=lambda s: None))
+
     def test_dequeued_note_once_per_head(self):
         gh = queue_repo()
         orig = gh.call
@@ -786,7 +822,7 @@ class QueueCalls(unittest.TestCase):
         def call(method, path, body=None):
             r = orig(method, path, body)
             if method == "POST":
-                gh.table["/issues/1/comments?per_page=100"].append(body)
+                gh.table["/issues/1/comments?per_page=100"].append(bot(body["body"]))
             return r
         gh.call = call
         self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_FAILURE", log=lambda s: None))
