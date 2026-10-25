@@ -14,7 +14,7 @@ test("a part is feature #1 of a one-step timeline, with its intent", () => {
   assert.deepEqual(timeline.features[0], {
     id: "feature-1",
     intent: { type: "box", parameters: { width: 40, depth: 30, height: 20 }, summary: "Box: 40 × 30 × 20 mm" },
-    provenance: { self: { workspace: "design", id: "feature-1", label: "Feature 1 (box)" }, from: [] },
+    provenance: { self: { workspace: "design", id: "feature-1", label: "Box 1" }, from: [] },
     dependsOn: [],
     suppressed: false,
   });
@@ -31,7 +31,7 @@ test("an extrusion depends on its profile, and says it came from it", () => {
   const doc = partDocument("l-bracket", 40, 30, 20);
   const f = lastFeature(doc);
   assert.deepEqual(f.dependsOn, ["profile-1"]);
-  assert.equal(describeProvenance(f.provenance), "Feature 1 (extrude) comes from L-bracket profile in Design.");
+  assert.equal(describeProvenance(f.provenance), "L-bracket 1 comes from L-bracket profile in Design.");
 });
 
 test("the body is built from the intent: changing a parameter changes the body", () => {
@@ -170,8 +170,11 @@ test("a version-1 file with a Design part opens (outer migration, then Design's 
   delete v1.links;
   const p = projectFromJson(JSON.stringify(v1), DESIGN);
   assert.deepEqual(p.links, []);
-  // Its ids are feature-1 only, so the counter starts at 2; then version 2 to 3 changes nothing for one solid feature.
-  assert.deepEqual(p.workspaces.design, { ...JSON.parse(HAND_WRITTEN).workspaces.design, version: 3, nextId: 2, sketches: [] });
+  // Its ids are feature-1 only, so the counter starts at 2; then version 2 to 3 changes nothing for one solid feature,
+  // and its old name "Feature 1 (box)" is the short name of the first box (U0e).
+  const design = JSON.parse(HAND_WRITTEN).workspaces.design;
+  design.timeline.features[0].provenance.self.label = "Box 1";
+  assert.deepEqual(p.workspaces.design, { ...design, version: 3, nextId: 2, sketches: [] });
 });
 
 test("partOf undoes partDocument for every shape (self-consistency)", () => {

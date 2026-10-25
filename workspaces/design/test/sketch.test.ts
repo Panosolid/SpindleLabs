@@ -188,11 +188,15 @@ test("a real version 1 file (saved by the SpindleLabs before 21b) opens as versi
   // v1-bracket.fission.json was saved by main before this step: an
   // L-bracket 40 × 30 extruded 20. Its ids are profile-1 and feature-1, so
   // the counter starts at 2; there are no sketches; its one solid feature
-  // is not suppressed by the step to version 3; nothing else changes.
+  // is not suppressed by the step to version 3; its old name "Feature 1
+  // (extrude)" is the first L-bracket's short name, "L-bracket 1" (U0e);
+  // nothing else changes.
   const v1 = JSON.parse(REAL_V1).workspaces.design;
   assert.equal(v1.version, 1);
+  assert.equal(v1.timeline.features[0].provenance.self.label, "Feature 1 (extrude)");
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
+  v1.timeline.features[0].provenance.self.label = "L-bracket 1";
   assert.deepEqual(doc, { ...v1, version: 3, nextId: 2, sketches: [] });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
   // Saved, it is version 3; opened and saved again, byte-identical.

@@ -338,7 +338,7 @@ test("a click on an edge takes it; on a face, every edge of it; on a body after 
   for (const [s, p, under] of [[scene, XY, {}], [null, XY, { edge: 4 }], [scene, undefined, { edge: 4 }]] as const) assert.deepEqual(projectPick(doc, id, s, p, under), { edges: [], note: PROJECT_NOTHING });
   // The sketch moved before the box: the box is after it.
   const first = { ...doc, timeline: { features: [doc.timeline.features[1], doc.timeline.features[0]] } };
-  assert.deepEqual(projectPick(first, id, scene, XY, { edge: 4 }), { edges: [], note: projectAfter("Feature 1 (box)", "Sketch 1") });
+  assert.deepEqual(projectPick(first, id, scene, XY, { edge: 4 }), { edges: [], note: projectAfter("Box 1", "Sketch 1") });
   // An edge with no name of its own.
   const unnamed = onlyBody(view, { ...names, edges: names.edges.map((e, k) => (k === 4 ? null : e)) });
   assert.deepEqual(projectPick(doc, id, unnamed, XY, { edge: 4 }), { edges: [], note: PROJECT_UNNAMED });

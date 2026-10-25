@@ -63,7 +63,7 @@ test("hand-worked: extruding Sketch 1 adds a new feature after the sketch and ke
   // A second extrude of the same sketch is Extrude 2, after the first: nothing is replaced.
   const again = extrudeSketch(made.doc, sketch, 4);
   assert.equal(again.id, "feature-12");
-  assert.deepEqual(again.doc.timeline.features.map((f) => [f.id, f.provenance.self.label]), [["feature-1", "Feature 1 (box)"], ["sketch-2", "Sketch 1"], ["feature-11", "Extrude 1"], ["feature-12", "Extrude 2"]]);
+  assert.deepEqual(again.doc.timeline.features.map((f) => [f.id, f.provenance.self.label]), [["feature-1", "Box 1"], ["sketch-2", "Sketch 1"], ["feature-11", "Extrude 1"], ["feature-12", "Extrude 2"]]);
   // The document it was given is unchanged.
   assert.equal(doc.timeline.features[0].id, "feature-1");
 });
@@ -112,7 +112,8 @@ test("ids are never reused: extrude, back to a box, extrude again, every feature
   const box = withPart(one, "box", 20, 20, 20);
   assert.deepEqual(box.timeline.features.map((f) => f.id), ["feature-1", "sketch-2", "feature-11", "feature-12"]);
   assert.equal(box.timeline.features[3].provenance.self.id, "feature-12");
-  assert.equal(box.timeline.features[3].provenance.self.label, "Feature 12 (box)");
+  // The design's second box (feature-1 is Box 1): named for its shape, not its id (U0e).
+  assert.equal(box.timeline.features[3].provenance.self.label, "Box 2");
   assert.equal(box.nextId, 13);
   assert.deepEqual(partOf(box), { shape: "box", sizes: { width: 20, depth: 20, height: 20 } });
   // Editing that box keeps its id (the same feature, changed), as for any preset.

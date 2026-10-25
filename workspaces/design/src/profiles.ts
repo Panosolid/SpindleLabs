@@ -9,6 +9,17 @@ export type ShapeKind = "box" | "cylinder" | "sphere" | "l-bracket" | "plate" | 
 /** The shapes made by extruding a ready-made profile. */
 export type ProfileKind = Exclude<ShapeKind, "box" | "cylinder" | "sphere">;
 
+/** Each shape's name: Insert ▾'s entries, the panel's Shape choice, and a preset's short name ("Box 1", U0e). */
+export const SHAPE_LABELS: Record<ShapeKind, string> = {
+  box: "Box",
+  cylinder: "Cylinder",
+  sphere: "Sphere",
+  "l-bracket": "L-bracket",
+  plate: "Plate",
+  slot: "Slot",
+  star: "Star",
+};
+
 import type { Loop, Outline } from "@fission/core";
 
 export type { Loop, Outline };
