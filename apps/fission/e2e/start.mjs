@@ -57,3 +57,14 @@ export async function fileItem(page, id) {
   await page.click("#file-menu");
   return state;
 }
+
+/**
+ * DESIGN ▾ (U0f2b): shows workspace `id` (design, image, laser…) by its
+ * item in the workspace button's menu, as a person would, by a click or a
+ * tap on the button and then on the item.
+ */
+export async function switchTo(page, id, tap = false) {
+  const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+  await press("#workspace-menu");
+  await press(`#workspace-menu-menu [data-workspace="${id}"]`);
+}

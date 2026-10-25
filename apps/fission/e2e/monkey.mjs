@@ -42,6 +42,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
+import { switchTo } from "./start.mjs";
 import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, shrink, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
@@ -93,9 +94,9 @@ async function open(browser) {
 
 /** In the page: what can be clicked, typed into and right-clicked now, each with a selector a replay can find again. */
 function offered() {
-  // The modelling flow (sketch, draw, extrude, delete, start fresh) is picked more often than the other workspaces' tabs.
-  const HOT = '#create-sketch, [id^="sketch-"], [id^="extrude"], [id^="start-fresh"], [id^="delete-ask"], [id^="row-menu"], #finish-sketch, [data-workspace="design"], #extrude-panel button, #sketch-panel button, #feature-edit button';
-  const COLD = '[data-workspace]:not([data-workspace="design"]), #community, #split-toggle';
+  // The modelling flow (sketch, draw, extrude, delete, start fresh: File ▾'s New, U0f2a) is picked more often than the other workspaces (DESIGN ▾'s items, U0f2b).
+  const HOT = '#create-sketch, [id^="sketch-"], [id^="extrude"], #file-menu, [id^="start-fresh"], [id^="delete-ask"], [id^="row-menu"], #finish-sketch, [data-workspace="design"], #extrude-panel button, #sketch-panel button, #feature-edit button';
+  const COLD = '#workspace-menu, [data-workspace]:not([data-workspace="design"]), #community, #split-toggle';
   // The controls of the mode the app is in (a sketch, the Extrude panel, the Edit feature panel (25a5), a dialog, a menu): a user mostly works there.
   const LOCAL = "#sketch-panel, .sketchbar, #typed-entry, #extrude-panel, dialog[open], #row-menu, #feature-edit";
   const KEYS = ["workspace", "op", "shape", "node", "nav", "view", "item", "field", "kind"];
@@ -443,7 +444,7 @@ async function act(s, a) {
       const view = await settle(page);
       if (view.dialogs.length) fail("never stuck", `${view.dialogs.join(", ")} stays open after Escape`);
       if (!view.design) {
-        await page.locator('[data-workspace="design"]').first().click({ timeout: 2000 });
+        await switchTo(page, "design");
         await settle(page);
       }
       if ((await settle(page)).sketching) {

@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { reloadEmpty, startWithBox } from "./start.mjs";
+import { reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4198, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4198/";
@@ -634,12 +634,12 @@ try {
   });
 
   await check("a workspace with no timeline gives the row back to the view", async () => {
-    await page.click("#workspaces [role=tab] >> text=Image");
+    await switchTo(page, "image");
     await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
     const m = await measure(page);
     assert.equal(m.timeline, null, "no timeline row");
     assert.ok(Math.abs(m.viewport.bottom - m.window.h) <= 1, "the view reaches the bottom");
-    await page.click("#workspaces [role=tab] >> text=Design");
+    await switchTo(page, "design");
     await page.waitForFunction(() => document.querySelector("#timeline .timeline-bar"));
     checkTimelineRow(await measure(page));
   });

@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, startWithBox } from "./start.mjs";
+import { chooseShape, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4180/";
@@ -180,13 +180,13 @@ try {
     try {
       await page.fill("#width", "50");
       await volume(page, "30,000 mm³");
-      await page.click("[data-workspace=laser]");
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "laser");
+      await switchTo(page, "design");
       assert.deepEqual((await buttons(page))[0], [false, "Undo Change width (Ctrl+Z)"]);
-      await page.click("[data-workspace=laser]");
+      await switchTo(page, "laser");
       await blur(page);
       await page.keyboard.press("Control+z"); // undone while Laser is on screen
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "design");
       await volume(page, "24,000 mm³");
       assert.equal(await width(page), "40");
     } finally {
@@ -198,7 +198,7 @@ try {
     const page = await fresh("#laser");
     try {
       assert.deepEqual(await buttons(page), [[true, "Nothing to undo"], [true, "Nothing to redo"]]);
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "design");
       await page.waitForSelector("#start-hint", { state: "visible" });
       await volume(page, "—");
       assert.deepEqual(await buttons(page), [[true, "Nothing to undo"], [true, "Nothing to redo"]]);
@@ -311,9 +311,9 @@ try {
       await page.fill("#width", "50");
       await volume(page, "30,000 mm³");
       const before = await fits();
-      await page.click("[data-workspace=laser]");
+      await switchTo(page, "laser");
       await page.click("#undo");
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "design");
       await volume(page, "24,000 mm³");
       assert.equal(await fits(), before);
     } finally {
@@ -362,16 +362,16 @@ try {
         }
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), w);
         await page.click("#menu-toggle");
-        assert.equal(await page.$$eval("#topbar-actions #undo", (els) => els.length), 0, "no longer in Menu");
+        assert.equal(await page.$$eval("#topbar #undo", (els) => els.length), 0, "no longer on the bar or in Menu");
         await page.click("#menu-toggle");
         await page.screenshot({ path: `e2e/undo-${w}.png` });
         await page.click("#undo"); // one tap
         await volume(page, "24,000 mm³");
-        // Back to a wide screen: the pair returns to the bar before Save.
+        // Back to a wide screen: the pair returns to the bar after Save, as Fusion's (U0f2a).
         await page.setViewportSize({ width: 1280, height: 800 });
-        await page.waitForFunction(() => document.getElementById("undo-redo").parentElement.id === "topbar-actions"); // on the media query's change event
-        assert.equal(await page.$eval("#undo-redo", (el) => el.nextElementSibling?.id), "save");
-        assert.equal(await page.$eval("#undo-redo", (el) => el.parentElement.id), "topbar-actions");
+        await page.waitForFunction(() => document.getElementById("undo-redo").parentElement.id === "file-bar"); // on the media query's change event
+        assert.equal(await page.$eval("#undo-redo", (el) => el.previousElementSibling?.id), "save");
+        assert.equal(await page.$eval("#undo-redo", (el) => el.classList.contains("docked")), false);
       } finally {
         await page.close();
       }

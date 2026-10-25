@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { insertPreset } from "./start.mjs";
+import { insertPreset, switchTo } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
 
 const server = await preview({ preview: { port: 4236, strictPort: true }, logLevel: "error" });
@@ -84,8 +84,8 @@ try {
         // ✕ closes it; it stays closed through Undo, Start fresh and switching, until the page loads again.
         await press(page, "#start-hint-close", tap);
         assert.equal(await page.isVisible("#start-hint"), false);
-        await press(page, '[data-workspace="image"]', tap);
-        await press(page, '[data-workspace="design"]', tap);
+        await switchTo(page, "image", tap);
+        await switchTo(page, "design", tap);
         await until(page, () => document.querySelector("#start-hint") !== null, null, "Design back");
         assert.equal(await page.isVisible("#start-hint"), false, "still closed after switching");
         await page.reload();

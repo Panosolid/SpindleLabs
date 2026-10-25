@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4179, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4179/";
@@ -83,7 +83,7 @@ try {
     const page = await fresh();
     try {
       await page.click("#browser [data-node=body-1]");
-      await page.click('#workspaces [data-workspace="image"]');
+      await switchTo(page, "image");
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
       await page.keyboard.press("Escape");
       assert.equal(await selection(page), "body:feature-1", "Design is asleep: Escape in Image leaves its selection alone");
@@ -91,7 +91,7 @@ try {
       await page.keyboard.press("?");
       assert.deepEqual((await listed(page)).map((s) => s.title), ["Everywhere", "Design"]);
       await page.keyboard.press("Escape");
-      await page.click('#workspaces [data-workspace="design"]');
+      await switchTo(page, "design");
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "design");
       await page.keyboard.press("Escape");
       assert.equal(await selection(page), "", "awake again: Escape clears");
@@ -110,7 +110,7 @@ try {
     const page = await fresh();
     try {
       // Render in the first pane, Design beside it in the second.
-      await page.click('#workspaces [data-workspace="render"]');
+      await switchTo(page, "render");
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "render");
       await page.click("#split-toggle");
       await page.waitForFunction(() => document.body.dataset.split !== "");

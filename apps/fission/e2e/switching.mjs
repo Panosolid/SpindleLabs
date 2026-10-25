@@ -1,6 +1,6 @@
 // Browser check of warm workspaces (X7, docs/integration.md principle 10):
 // switching between workspaces takes under 100 ms, every time, measured from
-// the tab's click to the first frame painted after it; a workspace switched
+// the item's click (DESIGN ▾, U0f2b) to the first frame painted after it; a workspace switched
 // away and back is the very same page (not rebuilt), and the page never holds
 // two slots with one id.
 // Run with `npm run e2e` (after `npm run build`).
@@ -34,13 +34,16 @@ async function fresh(width = 1280, plant = null) {
 }
 
 /**
- * Clicks workspace `id`'s tab (or Community) and returns the milliseconds
- * until the frame after it was painted: the second animation frame runs
- * once the first one's frame is on screen.
+ * Clicks workspace `id`'s item in DESIGN ▾ (or Community) and returns the
+ * milliseconds from that click until the frame after it was painted: the
+ * second animation frame runs once the first one's frame is on screen.
+ * Opening the menu comes before the clock starts (U0f2b: the switch is
+ * timed from the item's click, as it was from the tab's).
  */
 const switchTo = (page, id) =>
   page.evaluate(async (id) => {
-    const target = id === "community" ? document.getElementById("community") : document.querySelector(`#workspaces [data-workspace="${id}"]`);
+    if (id !== "community") document.getElementById("workspace-menu").click();
+    const target = id === "community" ? document.getElementById("community") : document.querySelector(`#workspace-menu-menu [data-workspace="${id}"]`);
     const t0 = performance.now();
     target.click();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -103,7 +106,7 @@ async function slowSwitches(page, plant = null) {
   return slow;
 }
 
-/** A planted slowdown for the checks below: a click on `which` workspace's tab holds the page for 150 ms, on the clicks numbered in `on` (1 is the first; null, every click). */
+/** A planted slowdown for the checks below: a click on `which` workspace's item in DESIGN ▾ holds the page for 150 ms, on the clicks numbered in `on` (1 is the first; null, every click). */
 const slowTab = (which, on) => `(() => {
   let n = 0;
   document.addEventListener("click", (e) => {
@@ -137,7 +140,7 @@ try {
     }
   });
 
-  await check(`the ${LIMIT_MS} ms check fails a switch slowed every time (a 150 ms hold on every click on Image's tab), first visit and returns`, async () => {
+  await check(`the ${LIMIT_MS} ms check fails a switch slowed every time (a 150 ms hold on every click on Image's item), first visit and returns`, async () => {
     const plant = slowTab("image", null);
     const page = await fresh(1280, plant);
     try {
@@ -150,7 +153,7 @@ try {
     }
   });
 
-  await check(`the ${LIMIT_MS} ms check passes a switch slow only once (a 150 ms hold on the second click on Design's tab, its first return)`, async () => {
+  await check(`the ${LIMIT_MS} ms check passes a switch slow only once (a 150 ms hold on the second click on Design's item, its first return)`, async () => {
     const page = await fresh(1280, slowTab("design", [2]));
     try {
       assert.deepEqual(await slowSwitches(page), [], "a one-off stall is timed again and passes");

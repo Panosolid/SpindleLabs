@@ -12,7 +12,7 @@ import { crc32, deflateSync } from "node:zlib";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { startWithBox, switchTo } from "./start.mjs";
 
 /** A 200 × 100 RGBA PNG at 10000 px/m (254 DPI, 0.1 mm per pixel), all mid grey. */
 function plate() {
@@ -169,7 +169,7 @@ try {
       assert.equal(await status(page), "");
       await page.screenshot({ path: "e2e/files-dropped-png.png" });
       // Back in Design, a paste into the width field does nothing but paste.
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "design");
       await page.waitForSelector("#width");
       assert.equal(await paste(page, "#width", [{ name: "plate.png", bytes: png }]), false);
       await page.waitForTimeout(200);
@@ -237,7 +237,7 @@ try {
       assert.equal(await status(page), "");
       await page.screenshot({ path: "e2e/files-open-png.png" });
       // A project still opens as a project.
-      await page.click("[data-workspace=design]");
+      await switchTo(page, "design");
       await page.waitForSelector("#width");
       await page.fill("#width", "50");
       await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³"); // 50 · 30 · 20

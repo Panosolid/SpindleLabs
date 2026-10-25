@@ -1,5 +1,7 @@
 // Browser checks of the app bar's left and right ends (U0f2a, the owner's
-// Fusion-like top bar): File ▾ first after the name, listing New, Open…,
+// Fusion-like top bar): File ▾ first after the name, then DESIGN ▾ in
+// place of the ten workspace tabs (U0f2b), naming the page on screen and
+// listing the ten, by mouse, keyboard and taps; listing New, Open…,
 // Save and Export STL with their icons, each off and saying why when it
 // would do nothing (an empty design, a workspace with nothing to clear or
 // export, a sketch being edited); New asks and clears as one undo step;
@@ -15,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { chooseFile, fileItem, insertPreset } from "./start.mjs";
+import { chooseFile, fileItem, insertPreset, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4241, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4241/";
@@ -88,7 +90,7 @@ const barProblems = (page) =>
 /** The bar's things left to right, as ids, those on screen only. */
 const barOrder = (page) =>
   page.evaluate(() =>
-    ["#topbar h1", "#file-menu", "#save", "#undo", "#redo", "#workspaces", "#save-status", "#assistant-toggle", "#guide-open", "#community"]
+    ["#topbar h1", "#file-menu", "#save", "#undo", "#redo", "#workspace-menu", "#save-status", "#assistant-toggle", "#guide-open", "#community"]
       .map((s) => [s, document.querySelector(s)])
       .filter(([, el]) => el.closest("#topbar") && el.checkVisibility() && el.getBoundingClientRect().width > 0)
       .sort((a, b) => a[1].getBoundingClientRect().left - b[1].getBoundingClientRect().left)
@@ -113,7 +115,7 @@ try {
   await check("1280 px: one 44 px row: the name, File ▾, Save, Undo, Redo, the tabs, then the status, AI, Guide and Community small at the right; icons on the grid", async () => {
     const page = await fresh(1280, false);
     try {
-      assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#save", "#undo", "#redo", "#workspaces", "#save-status", "#assistant-toggle", "#guide-open", "#community"]);
+      assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#save", "#undo", "#redo", "#workspace-menu", "#save-status", "#assistant-toggle", "#guide-open", "#community"]);
       assert.equal((await rect(page, "#topbar")).height, 44, "one row");
       assert.equal((await rect(page, "#menu-toggle")).width, 0, "no Menu");
       assert.deepEqual(await barProblems(page), []);
@@ -268,6 +270,59 @@ try {
     });
   }
 
+  for (const [width, tap] of [[1280, false], [375, true]]) {
+    await check(`${width} px${tap ? ", taps" : ""}: DESIGN ▾ names the page on screen; choosing an item shows that workspace, marks it and renames the button; Escape and a press outside close it`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        const label = () => page.textContent("#workspace-menu");
+        assert.equal(await label(), "Design ▾");
+        await press(page, "#workspace-menu", tap);
+        const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()));
+        assert.equal(items.length, 10);
+        for (const r of items) {
+          assert.ok(r.left >= 0 && r.right <= width && r.bottom <= (width > 640 ? 800 : 667), `on screen: ${JSON.stringify(r)}`);
+          if (tap) assert.ok(r.height >= 44, `44 px to tap: ${r.height}`);
+        }
+        if (shots) await page.screenshot({ path: `${shots}/workspace-menu-${width}.png` });
+        await press(page, '#workspace-menu-menu [data-workspace="image"]', tap);
+        await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Image");
+        assert.equal(await label(), "Image ▾");
+        assert.equal(new URL(page.url()).hash, "#image");
+        await press(page, "#workspace-menu", tap);
+        assert.deepEqual(await page.$$eval("#workspace-menu-menu [aria-current=true]", (bs) => bs.map((b) => b.dataset.workspace)), ["image"], "the one on screen marked");
+        await page.mouse.click(width / 2, (width > 640 ? 800 : 667) - 60);
+        assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false", "a press outside closes it");
+        // A placeholder is chosen as before: its page says Coming soon.
+        await switchTo(page, "slice", tap);
+        assert.equal(await page.textContent(".placeholder .coming-soon"), "Coming soon");
+        assert.equal(await label(), "Slice ▾");
+        await switchTo(page, "design", tap);
+        await until(page, () => document.body.dataset.activeWorkspace === "design", null, "Design again");
+        assert.equal(await label(), "Design ▾");
+        if (!tap) {
+          await page.click("#community");
+          assert.equal(await label(), "Community ▾", "Community, not a workspace, named on the button too");
+          // The keyboard: ArrowDown opens it on the first item, arrows move, Enter chooses, Escape gives the focus back.
+          await page.focus("#workspace-menu");
+          await page.keyboard.press("ArrowDown");
+          assert.equal(await page.evaluate(() => document.activeElement?.dataset.workspace), "design");
+          await page.keyboard.press("End");
+          assert.equal(await page.evaluate(() => document.activeElement?.dataset.workspace), "layout");
+          await page.keyboard.press("ArrowUp");
+          await page.keyboard.press("Enter");
+          await until(page, () => document.body.dataset.activeWorkspace === "image", null, "Image by keys");
+          await page.focus("#workspace-menu");
+          await page.keyboard.press("ArrowDown");
+          await page.keyboard.press("Escape");
+          assert.equal(await page.getAttribute("#workspace-menu", "aria-expanded"), "false");
+          assert.equal(await page.evaluate(() => document.activeElement?.id), "workspace-menu");
+        }
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
   await check("1280 px, keyboard: ArrowDown on File ▾ opens it on the first item that is on, arrows move, Enter saves, Escape gives the focus back", async () => {
     const page = await fresh(1280, false);
     try {
@@ -291,7 +346,7 @@ try {
   await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as 44 px icons; AI, Guide and Community behind Menu", async () => {
     const page = await fresh(375, true);
     try {
-      assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#workspaces"]);
+      assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#workspace-menu"]);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
       assert.equal(await page.evaluate(() => document.getElementById("undo-redo").classList.contains("docked")), true);
       for (const id of ["undo", "redo"]) {

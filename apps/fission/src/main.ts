@@ -248,10 +248,12 @@ const pool = new WarmPool<WorkspaceId, PaneId, { slots: Slots; view: MountedWork
   },
   unmount: (_pane, _id, { view }) => view.unmount(), // asleep: its slots are already out of the page
 });
+// DESIGN ▾ (U0f2b): one button naming the page on screen, its menu the ten workspaces, in place of the tabs.
 const markTab = workspaceSwitcher(
   $("workspaces"),
   workspaces.map((w) => ({ id: w.id, title: w.title, summary: w.summary, placeholder: w.status === "placeholder" })),
   (id) => show(id as WorkspaceId),
+  { community: "Community" },
 );
 
 // The assistant (AI2): changes Design's part through Design's own run, as one undo step.
@@ -467,7 +469,7 @@ function closeSplit() {
 }
 
 // At phone width AI, Guide and Community fold behind Menu (theme.css),
-// leaving the top bar's row to File ▾ and the workspace tabs. Choosing one,
+// leaving the top bar's row to File ▾ and the workspace button. Choosing one,
 // Escape or a tap anywhere else closes it; Escape puts focus back on Menu.
 {
   const toggle = $("menu-toggle");
@@ -820,7 +822,7 @@ function showUndoRedo() {
 // At phone width the pair leaves the bar for the main viewport's
 // bottom-right corner, across from the View buttons (step 20c): one tap, by
 // the thumb, beside the part it changes; the bar keeps its room for the
-// workspace tabs. Wider screens keep it on the bar after Save, as Fusion.
+// workspace button. Wider screens keep it on the bar after Save, as Fusion.
 const phone = matchMedia("(max-width: 640px)");
 function placeUndoRedo() {
   const pair = $("undo-redo");

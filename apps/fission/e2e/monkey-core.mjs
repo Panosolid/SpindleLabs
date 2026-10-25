@@ -46,7 +46,7 @@ export const SIZES = [
 ];
 
 /** Buttons the monkey never presses: the guide and the assistant are tested on their own and the assistant would call out; full screen leaves the test's window. */
-export const SKIP_TARGETS = new Set(["#guide-open", "#assistant-toggle", 'button[data-view="full-screen"]', "#save", "#open"]);
+export const SKIP_TARGETS = new Set(["#guide-open", "#assistant-toggle", 'button[data-view="full-screen"]', "#save", "#file-save", "#open"]);
 
 /**
  * The next action, from a snapshot of the page: `targets` (what can be
