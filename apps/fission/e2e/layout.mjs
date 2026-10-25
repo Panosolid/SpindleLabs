@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
+import { reloadEmpty, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4198, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4198/";
@@ -36,7 +37,7 @@ async function fresh(width = 1280) {
     if (m.type() === "error") errors.push(m.text());
   });
   await page.goto(url);
-  await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+  await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   return page;
 }
 
@@ -480,13 +481,12 @@ try {
   await check("the button pins the panel open, kept after a reload, until folded (U0b)", async () => {
     await page.click("#properties-handle");
     checkShown(await fold(page), 1280);
-    await page.reload();
-    await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+    await reloadEmpty(page);
+    await startWithBox(page); // each load starts a new, empty project (U0c)
     checkShown(await fold(page), 1280);
     await page.click("#properties-handle");
     checkFolded(await fold(page), 1280);
-    await page.reload();
-    await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+    await reloadEmpty(page); // left empty: an insert would open the panel for the new body's sizes, pinned or not
     checkFolded(await fold(page), 1280);
   });
 
