@@ -171,7 +171,17 @@ async function reopen(page, tap, id = "sketch-2") {
   await until(page, () => document.querySelector("#viewport").dataset.rebuilding !== "true", null, "rebuilt");
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const item = page.locator(`#timeline [data-item="${id}"]`);
-  await item.scrollIntoViewIfNeeded();
+  // A redraw can still land after that wait and detach the row while it is
+  // being scrolled to (seen once at 375 px with taps, in the queue's run for
+  // #318); the locator then finds the new row, a few times at most.
+  for (let tries = 1; ; tries++) {
+    try {
+      await item.scrollIntoViewIfNeeded();
+      break;
+    } catch (e) {
+      if (tries >= 5 || !/not attached to the DOM/.test(String(e))) throw e;
+    }
+  }
   if (tap) {
     const b = await item.boundingBox();
     await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
