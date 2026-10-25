@@ -769,12 +769,12 @@ test("Edit feature on an early item and Edit Sketch on an earlier sketch, by han
   // Edit feature on the box (not the part, which is Extrude 1, the last solid): width 40 → 55, one step named for the box.
   project = { ...project, workspaces: { design: editFeature(designOf(project), "feature-1", { width: 55 }) } };
   assert.equal(h.record(editStep(doc, "feature-1")), true);
-  assert.equal(h.undoLabel(), "Edit Feature 1 (box)");
+  assert.equal(h.undoLabel(), "Edit Box 1");
   assert.deepEqual(box(), { width: 55, depth: 30, height: 20 });
   assert.equal(partFeature(designOf(project))!.id, e1.id);
   // The same width again: the same document, nothing recorded.
   assert.equal(editFeature(designOf(project), "feature-1", { width: 55 }), designOf(project));
-  assert.equal(h.record("Edit Feature 1 (box)"), false);
+  assert.equal(h.record("Edit Box 1"), false);
   // Extrude 1's distance 10 → 4 through Edit feature (its height box): a second step; the box keeps 55.
   project = { ...project, workspaces: { design: editFeature(designOf(project), e1.id, { height: 4 }) } };
   assert.equal(h.record(editStep(designOf(project), e1.id)), true);
@@ -790,10 +790,10 @@ test("Edit feature on an early item and Edit Sketch on an earlier sketch, by han
   assert.deepEqual([lines(s1.id), lines(s2.id), extrude(), box().width], [1, 1, 4, 55]);
   assert.equal(h.undo(), "Edit Extrude 1");
   assert.deepEqual([extrude(), box().width], [10, 55]);
-  assert.equal(h.undo(), "Edit Feature 1 (box)");
+  assert.equal(h.undo(), "Edit Box 1");
   assert.deepEqual([extrude(), box().width], [10, 40]);
   assert.equal(h.undo(), null);
-  assert.equal(h.redo(), "Edit Feature 1 (box)");
+  assert.equal(h.redo(), "Edit Box 1");
   assert.equal(h.redo(), "Edit Extrude 1");
   assert.equal(h.redo(), SKETCH_STEPS.draw);
   assert.deepEqual([lines(s1.id), lines(s2.id), extrude(), box().width], [2, 1, 4, 55]);

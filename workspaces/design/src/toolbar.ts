@@ -7,7 +7,6 @@
 
 import type { Command, CommandSpec } from "@fission/core";
 import { DESIGN_COMMANDS } from "./commands.ts";
-import type { ShapeKind } from "./profiles.ts";
 
 export interface ToolButton {
   label: string;
@@ -22,15 +21,8 @@ export interface ToolGroup {
   buttons: ToolButton[];
 }
 
-export const SHAPE_LABELS: Record<ShapeKind, string> = {
-  box: "Box",
-  cylinder: "Cylinder",
-  sphere: "Sphere",
-  "l-bracket": "L-bracket",
-  plate: "Plate",
-  slot: "Slot",
-  star: "Star",
-};
+/** Each shape's name (profiles.ts, where a preset's short name "Box 1" takes it from too). */
+export { SHAPE_LABELS } from "./profiles.ts";
 
 const EXPORT_LABELS: Record<string, string> = { export_stl: "STL" };
 

@@ -4,7 +4,8 @@
 // the host; nothing is recorded until its OK) or Edit Sketch (step 25a3:
 // opens the sketch again through the host; nothing is recorded until
 // something is drawn), Move the marker here,
-// Suppress or Unsuppress, and Delete, from 24f2's `itemMenu` and `barEdit`. Each choice is recorded as one
+// Suppress or Unsuppress, Rename (U0e2: a box for the name through the host;
+// nothing is recorded until it saves one) and Delete, from 24f2's `itemMenu` and `barEdit`. Each choice is recorded as one
 // undo step with its `TIMELINE_STEPS` name; a delete records 24e4's
 // settled document (`planDelete`) and asks first through its box when
 // something is built from the item. An edit that leaves no body is made
@@ -15,6 +16,7 @@ import type { KernelCalls } from "@fission/core";
 import { isSketchItem, type DesignDocument } from "./document.ts";
 import { planDelete, type DeleteQuestion } from "./delete-ask.ts";
 import { barEdit, itemMenu, type BarAction, type MenuEntry } from "./timeline-bar.ts";
+import { itemName, renameItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 
 /**
  * Item `id`'s menu with sketch `editing` open (its id) or none: 24f2's
@@ -39,6 +41,8 @@ export interface MenuHost {
   edit(id: string): void;
   /** Opens sketch `id` again to draw in (Edit Sketch, step 25a3); Finish Sketch rebuilds what is built from it. */
   editSketch(id: string): void;
+  /** Opens the box that names item `id` (U0e2); its save is `renameEntry`. */
+  rename(id: string): void;
 }
 
 /**
@@ -57,6 +61,7 @@ export async function chooseEntry(host: MenuHost, id: string, action: MenuEntry[
   if (r.kind === "edit") return host.record(r.step, r.doc);
   if (r.kind === "open") return host.edit(r.id);
   if (r.kind === "sketch") return host.editSketch(r.id);
+  if (r.kind === "rename") return host.rename(r.id);
   const plan = await planDelete(host.kernel, before, id);
   if (host.current() !== before) return;
   const go = () => {
@@ -83,4 +88,22 @@ export function chooseBarAction(host: MenuHost, a: Exclude<BarAction, { kind: "m
   const r = barEdit(host.current(), a, editing);
   if (r.kind === "refused") host.refuse(r.message);
   else if (r.kind === "edit") host.record(r.step, r.doc);
+}
+
+/**
+ * The rename box's save (U0e2): item `id` named `typed`, recorded as one
+ * undo step named with its old name ("Rename Box 1"); nothing when the
+ * name is already its own, or when the item is gone (the design changed
+ * while the box was open). Returns the refusal's words for the box to
+ * show (`renameItem`: an empty name, a long one, a control character or
+ * another item's), or null when the box can close.
+ */
+export function renameEntry(host: Pick<MenuHost, "current" | "record">, id: string, typed: string): string | null {
+  const doc = host.current();
+  const item = doc.timeline.features.find((f) => f.id === id);
+  if (!item) return null;
+  const r = renameItem(doc, id, typed);
+  if ("refused" in r) return r.message;
+  if (r.doc !== doc) host.record(TIMELINE_STEPS.rename(itemName(item)), r.doc);
+  return null;
 }

@@ -84,6 +84,8 @@ const project = {
 };
 
 const rows = (page, group) => page.$$eval(`#browser [data-node=${group}] .tree-row`, (els) => els.map((e) => e.textContent));
+/** The browser's Timeline rows as each item's description: its tooltip's line under the short name (U0e). */
+const described = (page) => page.$$eval("#browser [data-node=timeline] .tree-row", (els) => els.map((e) => e.title.split("\n")[1]));
 const open = (page, name, text) => page.setInputFiles("#open-file", { name, mimeType: "application/json", buffer: Buffer.from(text) });
 
 let failed = false;
@@ -104,7 +106,8 @@ try {
       try {
         await open(page, "Sketched.fission.json", JSON.stringify(project));
         await page.waitForFunction(() => document.querySelector("#browser [data-node='sketches/sketch-2']"));
-        assert.deepEqual(await rows(page, "timeline"), ["1. Box: 40 × 30 × 20 mm", "2. Sketch 1 on the XY plane"]);
+        assert.deepEqual(await rows(page, "timeline"), ["Box 1", "Sketch 1"]);
+        assert.deepEqual(await described(page), ["Box: 40 × 30 × 20 mm", "Sketch 1 on the XY plane"]);
         assert.deepEqual(await rows(page, "sketches"), ["Sketch 1"]);
         // On a phone the browser is a panel opened by its button; the rows must be there to see.
         if (width < 700) await page.click("#browser-toggle");
@@ -114,7 +117,7 @@ try {
         if (width === 1280) {
           await page.fill("#width", "50");
           await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³"); // 50 · 30 · 20
-          assert.deepEqual(await rows(page, "timeline"), ["1. Box: 50 × 30 × 20 mm", "2. Sketch 1 on the XY plane"]);
+          assert.deepEqual(await described(page), ["Box: 50 × 30 × 20 mm", "Sketch 1 on the XY plane"]);
           await page.click("#viewport");
           await page.keyboard.press("Control+z");
           await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
@@ -140,7 +143,7 @@ try {
       await open(page, "Old.fission.json", JSON.stringify(v1));
       await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
       assert.deepEqual(await rows(page, "sketches"), []);
-      assert.deepEqual(await rows(page, "timeline"), ["1. Box: 50 × 30 × 20 mm"]);
+      assert.deepEqual(await described(page), ["Box: 50 × 30 × 20 mm"]);
     } finally {
       await page.close();
     }

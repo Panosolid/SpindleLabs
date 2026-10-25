@@ -11,7 +11,7 @@
 // them: it is added to the timeline at the marker and replaces nothing.
 
 import type { BodySpec, Feature, KernelCalls } from "@fission/core";
-import { insertAt, insertItem, isSketchExtrude, partFeature, shown, specOf, type DesignDocument } from "./document.ts";
+import { freshName, insertAt, insertItem, isSketchExtrude, takenNames, partFeature, shown, specOf, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -37,7 +37,7 @@ export const isFlipped = (f: Feature): boolean => f.intent.parameters.flip === t
  * new feature with the next id, put in at the marker (insertItem), which
  * must be after the sketch, depending on the sketch; every feature already
  * there stays. It is named "Extrude n", n one more than the extrudes of
- * sketches there are, skipping a name in use. The kernel judges the
+ * sketches there are, skipping a name any item has (`freshName`, U0e). The kernel judges the
  * distance and the outline when the feature is built. `flip` sends it the
  * other way from the sketch's plane, its start cap still on the plane
  * (step 26c, Fusion's Flip; kernel/src/ops/place.rs).
@@ -48,14 +48,11 @@ export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: n
   if (doc.timeline.features.indexOf(sketch) >= insertAt(doc)) throw new Error(`${sketch.provenance.self.label} comes after the rollback marker, so an extrude put in at the marker can't use it`);
   const id = `feature-${doc.nextId}`;
   const label = sketch.provenance.self.label;
-  const extrudes = doc.timeline.features.filter(isSketchExtrude);
-  const names = new Set(extrudes.map((f) => f.provenance.self.label));
-  let n = extrudes.length + 1;
-  while (names.has(`Extrude ${n}`)) n++;
+  const name = freshName("Extrude", doc.timeline.features.filter(isSketchExtrude).length, takenNames(doc));
   const feature: Feature = {
     id,
     intent: { type: "extrude", parameters: flip ? { sketch: sketchId, distance, flip: true } : { sketch: sketchId, distance }, summary: summary(label, distance, flip) },
-    provenance: { self: { workspace: "design", id, label: `Extrude ${n}` }, from: [{ workspace: "design", id: sketchId, label }] },
+    provenance: { self: { workspace: "design", id, label: name }, from: [{ workspace: "design", id: sketchId, label }] },
     dependsOn: [sketchId],
     suppressed: false,
   };
