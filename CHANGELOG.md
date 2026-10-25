@@ -10,9 +10,13 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.31.3 (2026-10-25)
+## 0.31.4 (2026-10-25)
 
 - Fixed: drawing a line or rectangle near the right or bottom edge of the view, the Length and Angle boxes by the pointer stuck 4 px out past the window and the whole page scrolled sideways. The boxes, and the hint by the pointer, now measure where they were drawn and move back inside the view at every edge (on a phone too, where the boxes sit centred under a finger near the left edge). Found by the daily bug hunt's new long sessions (3f): the seeded "monkey" tester drove the real app for 2,000 actions with every check after every action, and on seed 2001 it failed at action 65; it shrank that to three actions (Create sketch, pick YZ, click near the bottom-right corner), now kept as a browser regression test, with seven hand-worked unit cases for the placement. With the fix, four sessions of 2,000 actions ran clean. Two sessions like that now run every night, and a failure files an issue by itself.
+
+## 0.31.3 (2026-10-25)
+
+- Step 31 bug hunt, fix 1 of 2: the kernel's solid checker measured how far each edge strays from its faces at only five points along it, a quarter of the way apart. A circle edge tilted slightly against its face peaks between those points, so a circle up to 1.4 times its allowed distance off a flat face, or 1.9 times off a cylinder, was passed as fine. The checker now finds each edge's farthest point exactly (worked out for every kind of edge on every kind of face), so 0.9 times the allowance passes and 1.1 times fails wherever the circle starts. Verified with tests that fail on the old checker, a hand-worked answer for every edge and face pair, 3,000 random edges against dense sampling (agreeing to 2e-15), and mutation testing; speed at most 5% slower on cylinders. The hunt also put the plane-crossing code from 31c through 50 million hostile random cases and found nothing wrong.
 
 ## 0.31.2 (2026-10-24)
 
