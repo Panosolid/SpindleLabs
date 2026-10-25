@@ -108,7 +108,7 @@ test("hand-worked: a drop is one undo step \"Move … in the timeline\"; one Und
   const before = json(t.doc());
   // The box dropped past Extrude 1: Sketch 1, Extrude 1, box.
   chooseBarAction(t.h, { kind: "item", id: "feature-1", place: 3 });
-  assert.deepEqual(t.log.records, ["Move Feature 1 (box) in the timeline"]);
+  assert.deepEqual(t.log.records, ["Move Box 1 in the timeline"]);
   assert.deepEqual(order(t.doc()), ["sketch-2", "feature-3", "feature-1"]);
   const after = json(t.doc());
   t.history.undo();

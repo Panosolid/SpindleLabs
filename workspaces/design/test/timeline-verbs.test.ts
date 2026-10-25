@@ -47,7 +47,7 @@ const outline = (id: string): Selected => profileReference(id);
 test("the timeline is the one the tests describe", () => {
   assert.deepEqual(
     doc.timeline.features.map((f) => `${f.id} ${f.provenance.self.label}${f.suppressed ? " (suppressed)" : ""}`),
-    ["feature-1 Feature 1 (box)", "sketch-2 Sketch 1", "feature-11 Extrude 1", "feature-12 Feature 12 (cylinder) (suppressed)", "sketch-13 Sketch 2", "feature-17 Feature 17 (extrude)", "feature-19 Feature 19 (sphere)"],
+    ["feature-1 Box 1", "sketch-2 Sketch 1", "feature-11 Extrude 1", "feature-12 Cylinder 1 (suppressed)", "sketch-13 Sketch 2", "feature-17 Slot 1", "feature-19 Sphere 1"],
   );
   assert.equal(doc.timeline.marker, "feature-17");
   assert.deepEqual(doc.profiles.map((p) => p.id), ["profile-18"]);

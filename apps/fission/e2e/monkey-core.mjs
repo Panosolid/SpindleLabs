@@ -137,11 +137,17 @@ export function nextAction(random, page) {
 /** Edits a user could make to a saved file before opening it (24f's timeline edits, ahead of their buttons, and plain damage). */
 export const FILE_EDITS = ["same", "suppress", "suppress", "suppress", "marker", "marker", "marker-start", "no-marker", "swap", "drop", "bad-number", "truncate", "add-solid", "add-solid", "add-solid"];
 
-/** The solids "add-solid" appends: a body of its own each (24d1), as the app writes them (document.ts's presets). */
+/**
+ * The solids "add-solid" appends: a body of its own each (24d1), as the app
+ * writes them (document.ts's presets), named for the shape (U0e) with the
+ * id's number, a name the app keeps as it is when the file opens. (An
+ * older file's "Feature n (type)" names are renamed on opening, which
+ * short-names.test.ts checks.)
+ */
 const ADDED = [
-  (n) => ({ type: "box", parameters: { width: 10 + n, depth: 20, height: 5 }, summary: `Box: ${10 + n} × 20 × 5 mm`, label: "box" }),
-  (n) => ({ type: "cylinder", parameters: { diameter: 8 + n, height: 30 }, summary: `Cylinder: ⌀${8 + n} × 30 mm`, label: "cylinder" }),
-  (n) => ({ type: "sphere", parameters: { diameter: 12 + n }, summary: `Sphere: ⌀${12 + n} mm`, label: "sphere" }),
+  (n) => ({ type: "box", parameters: { width: 10 + n, depth: 20, height: 5 }, summary: `Box: ${10 + n} × 20 × 5 mm`, label: "Box" }),
+  (n) => ({ type: "cylinder", parameters: { diameter: 8 + n, height: 30 }, summary: `Cylinder: ⌀${8 + n} × 30 mm`, label: "Cylinder" }),
+  (n) => ({ type: "sphere", parameters: { diameter: 12 + n }, summary: `Sphere: ⌀${12 + n} mm`, label: "Sphere" }),
 ];
 
 /**
@@ -157,7 +163,7 @@ export function editFile(text, edit, at) {
     const n = design.nextId;
     const { label, ...intent } = ADDED[at % ADDED.length](n);
     const id = `feature-${n}`;
-    features.push({ dependsOn: [], id, intent, provenance: { from: [], self: { id, label: `Feature ${n} (${label})`, workspace: "design" } }, suppressed: false });
+    features.push({ dependsOn: [], id, intent, provenance: { from: [], self: { id, label: `${label} ${n}`, workspace: "design" } }, suppressed: false });
     design.nextId = n + 1;
     return JSON.stringify(file, null, 2);
   }

@@ -121,7 +121,10 @@ try {
         await insertPreset(page, "cylinder", tap);
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 2, null, "two items");
         assert.deepEqual(await items(page), ["feature-1", "feature-2"]);
-        assert.equal(await page.textContent("#browser [data-node=feature-1]"), "1. Box: 40 × 30 × 20 mm", "the box is as it was");
+        // Each named for its shape (U0e), its name over its description the row's tooltip: the box as it was.
+        const named = (id) => page.$eval(`#browser .tree-row[data-node=${id}]`, (r) => [r.textContent, r.title]);
+        assert.deepEqual(await named("feature-1"), ["Box 1", "Box 1\nBox: 40 × 30 × 20 mm"], "the box is as it was");
+        assert.deepEqual(await named("feature-2"), ["Cylinder 1", "Cylinder 1\nCylinder: ⌀40 × 20 mm"]);
         assert.equal(await undoTitle(page), "Undo Insert Cylinder (Ctrl+Z)");
         assert.equal(await page.inputValue("#shape"), "cylinder", "the panel edits the new body");
         // One Undo takes only the cylinder away.

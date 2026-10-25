@@ -1,0 +1,17 @@
+/* Renaming a timeline item (rename-box.ts, U0e2): a small box where the
+   item's menu was, its one line holding the name, a refusal in amber under
+   it, Cancel and Rename. The row menu's look (delete-ask.css).
+   ":not(#none)" lifts a rule over the base layout's "#workspace button"
+   and "input" while every selector still starts with .rename-box. */
+.rename-box .rename-box-dialog { position: fixed; inset: auto; margin: 0; padding: 10px; width: min(280px, calc(100vw - 32px)); box-sizing: border-box; background: #1c1f24; color: #e6e9ee; border: 1px solid #353a43; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+.rename-box .rename-box-dialog::backdrop { background: transparent; }
+.rename-box .rename-box-dialog label { display: block; margin: 0 0 6px; font-size: 0.85em; color: #b5bbc4; }
+.rename-box .rename-box-dialog input:not(#none) { display: block; width: 100%; box-sizing: border-box; padding: 4px 6px; font: inherit; color: #e6e9ee; background: #14161a; border: 1px solid #4aa8ff; border-radius: 4px; }
+.rename-box .rename-box-dialog input:not(#none)[aria-invalid="true"] { border-color: #e0a84a; }
+.rename-box .rename-box-why { margin: 6px 0 0; font-size: 0.8em; line-height: 1.3; color: #f0c06a; }
+.rename-box .rename-box-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.rename-box .rename-box-actions button:not(#none) { padding: 3px 10px; font: inherit; color: #e6e9ee; background: #2a2e35; border: 1px solid #353a43; border-radius: 4px; cursor: pointer; }
+.rename-box .rename-box-actions #rename-save:not(#none) { border-color: #4aa8ff; }
+@media (max-width: 640px) {
+  .rename-box .rename-box-actions button:not(#none), .rename-box .rename-box-dialog input:not(#none) { min-height: 44px; }
+}

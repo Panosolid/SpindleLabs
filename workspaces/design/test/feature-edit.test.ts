@@ -40,14 +40,14 @@ test("hand-worked: each shape's boxes and sizes, as the main panel names them", 
     const f = edit.editableFeature(d, id);
     return [f.name, f.shape, f.keys, f.sizes];
   };
-  assert.deepEqual(shown("feature-1"), ["Feature 1 (box)", "box", ["width", "depth", "height"], { width: 40, depth: 30, height: 20 }]);
+  assert.deepEqual(shown("feature-1"), ["Box 1", "box", ["width", "depth", "height"], { width: 40, depth: 30, height: 20 }]);
   // An extrude of a sketch has one size, its distance, kept in the height box.
   assert.deepEqual(shown("feature-11"), ["Extrude 1", "sketch-extrude", ["height"], { height: 10 }]);
   // A cylinder: its diameter (the width box) and height, no depth.
-  assert.deepEqual(shown("feature-12"), ["Feature 12 (cylinder)", "cylinder", ["width", "height"], { width: 20, height: 30 }]);
+  assert.deepEqual(shown("feature-12"), ["Cylinder 1", "cylinder", ["width", "height"], { width: 20, height: 30 }]);
   // A sphere: its diameter alone.
-  assert.deepEqual(shown("feature-13"), ["Feature 13 (sphere)", "sphere", ["width"], { width: 12 }]);
-  assert.deepEqual(shown("feature-14"), ["Feature 14 (extrude)", "plate", ["width", "depth", "height"], { width: 60, depth: 20, height: 4 }]);
+  assert.deepEqual(shown("feature-13"), ["Sphere 1", "sphere", ["width"], { width: 12 }]);
+  assert.deepEqual(shown("feature-14"), ["Plate 1", "plate", ["width", "depth", "height"], { width: 60, depth: 20, height: 4 }]);
   assert.equal(edit.canEditFeature(d.timeline.features[1]), false, "a sketch is edited with Edit Sketch (25a3)");
   assert.throws(() => edit.editableFeature(d, "sketch-2"), { message: "Sketch 1 is a sketch: it has no sizes to edit" });
   assert.throws(() => edit.editableFeature(d, "feature-99"), { message: "there is no item feature-99 in the timeline" });
@@ -94,7 +94,7 @@ test("typed boxes: empty or not a number names the box; spaces and exponents are
   // Only the shown boxes are read.
   assert.deepEqual(edit.readTyped(["height"], { width: "junk", height: "7" }), { sizes: { height: 7 } });
   // Numbers that aren't finite never reach a document.
-  assert.throws(() => edit.editFeature(design(), "feature-1", { width: Number.NaN }), { message: "Feature 1 (box): its width must be a number of mm, not NaN" });
+  assert.throws(() => edit.editFeature(design(), "feature-1", { width: Number.NaN }), { message: "Box 1: its width must be a number of mm, not NaN" });
 });
 
 /**
@@ -310,7 +310,7 @@ test("hand-worked: Edit feature flips an extrude with its distance as one change
   assert.equal(edit.editFeature(flipped, "feature-11", { height: 10 }, true), flipped);
   assert.deepEqual(item(edit.editFeature(flipped, "feature-11", { height: 10 }, false), "feature-11").intent.parameters, { sketch: "sketch-2", distance: 10 });
   assert.equal(edit.editFeature(d, "feature-11", { height: 10 }), d, "Flip left out keeps it");
-  assert.throws(() => edit.editFeature(d, "feature-1", { width: 40 }, true), { message: "Feature 1 (box) has no Flip: only an extrude of a sketch goes either way" });
+  assert.throws(() => edit.editFeature(d, "feature-1", { width: 40 }, true), { message: "Box 1 has no Flip: only an extrude of a sketch goes either way" });
   assert.throws(() => edit.editFeature(d, "feature-11", {}, 1 as unknown as boolean), { message: "Extrude 1: Flip must be true or false, not 1" });
 });
 
@@ -336,7 +336,7 @@ test("the panel: a box per size its shape uses with its value, Enter or OK repor
   panel.show(edit.editableFeature(d, "feature-12"));
   assert.equal(panel.editing, "feature-12");
   assert.equal($("feature-edit").hidden, false);
-  assert.equal($("feature-edit-title").textContent, "Edit Feature 12 (cylinder)");
+  assert.equal($("feature-edit-title").textContent, "Edit Cylinder 1");
   // A cylinder: Diameter and Height, filled with ⌀20 and 30; no depth box.
   assert.deepEqual(
     [...doc.querySelectorAll(".feature-edit-row")].map((r) => [r.textContent!.trim(), (r.querySelector("input") as HTMLInputElement).id, (r.querySelector("input") as HTMLInputElement).value]),

@@ -143,6 +143,8 @@ test("add-solid appends a body with the next id", () => {
   assert.equal(d.nextId, 7);
   const f = d.timeline.features.at(-1);
   assert.equal(f.id, "feature-6");
+  // Named as the app names it (U0e): the shape and the id's number, so opening keeps it.
+  assert.equal(f.provenance.self.label, "Cylinder 6");
   assert.deepEqual(f.intent, { type: "cylinder", parameters: { diameter: 14, height: 30 }, summary: "Cylinder: ⌀14 × 30 mm" });
   assert.deepEqual(documentRules(d), []);
   assert.equal(expectedView(d).bodies, 3);

@@ -17,7 +17,7 @@ import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
-import { outline, type ProfileKind, type ShapeKind } from "./profiles.ts";
+import { outline, SHAPE_LABELS, type ProfileKind, type ShapeKind } from "./profiles.ts";
 
 /** A ready-made outline on a plane (until the sketcher, step 21, adds sketches next to these). */
 export interface ReadyProfile {
@@ -170,17 +170,78 @@ const SHAPE_TYPES = { box: "box", cylinder: "cylinder", sphere: "sphere" } as co
 const isPrimitive = (kind: ShapeKind): kind is keyof typeof SHAPE_TYPES => Object.hasOwn(SHAPE_TYPES, kind);
 
 /**
- * A preset's feature with this id, and the ready-made profile it extrudes
- * (with `profileId`) for a profile shape. Boxes, cylinders and spheres are
- * primitives (a cylinder's or sphere's width is its diameter); other shapes
- * extrude a ready-made profile by the height.
+ * A name folded for comparing: two items' names must differ, ignoring case
+ * ("Box 1" and "box 1" are one name), since messages name items by them
+ * (U0e: "Delete Box 1").
  */
-function presetFeature(id: string, profileId: string | undefined, kind: ShapeKind, w: number, d: number, h: number): { feature: Feature; profile?: ReadyProfile } {
-  const n = idNumber(id);
+export const nameKey = (name: string): string => name.toLowerCase();
+
+/** Every timeline item's name (`nameKey`), but item `except`'s. */
+export function takenNames(doc: Pick<DesignDocument, "timeline">, except?: string): Set<string> {
+  const taken = new Set<string>();
+  for (const f of doc.timeline.features) if (f.id !== except && typeof f.provenance?.self?.label === "string") taken.add(nameKey(f.provenance.self.label));
+  return taken;
+}
+
+/**
+ * A new item's short name: `base` and the first number from `count + 1`
+ * whose name no item has (`taken`, from `takenNames`), the way Sketch n and
+ * Extrude n are named: "Box 3" for a third box, "Box 4" when "Box 3" is
+ * taken (U0e).
+ */
+export function freshName(base: string, count: number, taken: ReadonlySet<string>): string {
+  let n = count + 1;
+  while (taken.has(nameKey(`${base} ${n}`))) n++;
+  return `${base} ${n}`;
+}
+
+/** The preset shape each solid feature is ("box", "slot"…), null for a sketch or an extrude of one; the profiles looked up once. */
+function presetKinds(doc: Pick<DesignDocument, "profiles">): (f: Feature) => ShapeKind | null {
+  const profiles = new Map<unknown, ShapeKind>();
+  for (const p of doc.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p.kind);
+  return (f) => {
+    if (isSketchItem(f) || isSketchExtrude(f)) return null;
+    if (isPrimitive(f.intent.type as ShapeKind)) return f.intent.type as ShapeKind;
+    return f.intent.type === "extrude" ? (profiles.get(f.intent.parameters.profile) ?? null) : null;
+  };
+}
+
+/** A new preset's short name ("Box 3", `freshName`), counting the presets of its shape there are, but item `except`. */
+function presetName(doc: DesignDocument, kind: ShapeKind, except?: string): string {
+  const kindOf = presetKinds(doc);
+  const count = doc.timeline.features.filter((f) => f.id !== except && kindOf(f) === kind).length;
+  return freshName(SHAPE_LABELS[kind], count, takenNames(doc, except));
+}
+
+/** Whether `label` is the short name a preset of shape `kind` is given ("Box 3"), not one the user typed. */
+const isShapeName = (label: string, kind: ShapeKind): boolean => label.startsWith(`${SHAPE_LABELS[kind]} `) && /^[1-9]\d*$/.test(label.slice(SHAPE_LABELS[kind].length + 1));
+
+/**
+ * The features with item `id` named `label`, and every copy of its name in
+ * the others' provenance (`from`: a sketch on its face, an extrude of it)
+ * following, so a deleted item is remembered by its name now.
+ */
+export function relabelled(features: readonly Feature[], id: string, label: string): Feature[] {
+  return features.map((f) => {
+    const own = f.id === id;
+    const from = f.provenance.from.some((p) => p.workspace === "design" && p.id === id) ? f.provenance.from.map((p) => (p.workspace === "design" && p.id === id ? { ...p, label } : p)) : f.provenance.from;
+    if (!own && from === f.provenance.from) return f;
+    return { ...f, provenance: { ...f.provenance, self: own ? { ...f.provenance.self, label } : f.provenance.self, from } };
+  });
+}
+
+/**
+ * A preset's feature with this id and short name (`label`, "Box 1"), and
+ * the ready-made profile it extrudes (with `profileId`) for a profile shape.
+ * Boxes, cylinders and spheres are primitives (a cylinder's or sphere's
+ * width is its diameter); other shapes extrude a ready-made profile by the
+ * height.
+ */
+function presetFeature(id: string, label: string, profileId: string | undefined, kind: ShapeKind, w: number, d: number, h: number): { feature: Feature; profile?: ReadyProfile } {
   const feature = (intent: Feature["intent"], dependsOn: string[] = [], from: Feature["provenance"]["from"] = []): Feature => ({
     id,
     intent,
-    provenance: { self: { workspace: "design", id, label: `Feature ${n ?? id} (${intent.type})` }, from },
+    provenance: { self: { workspace: "design", id, label }, from },
     dependsOn,
     suppressed: false,
   });
@@ -199,9 +260,9 @@ function presetFeature(id: string, profileId: string | undefined, kind: ShapeKin
   };
 }
 
-/** The document for a new project: one preset, feature-1 (and profile-1 for a profile shape), the counter at 2. */
+/** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
-  const { feature, profile } = presetFeature("feature-1", "profile-1", kind, w, d, h);
+  const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
   return { version: 3, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } };
 }
 
@@ -222,12 +283,13 @@ export function insertItem(doc: DesignDocument, item: Feature): DesignDocument["
 
 /**
  * A new preset feature (a new body), its ids from the counter, put in at
- * the marker. A profile shape takes a second id for its ready-made profile.
+ * the marker, named for its shape ("Box 2", `presetName`). A profile shape
+ * takes a second id for its ready-made profile.
  */
 export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d: number, h: number): { doc: DesignDocument; id: string } {
   let nextId = doc.nextId;
   const id = `feature-${nextId++}`;
-  const { feature, profile } = presetFeature(id, isPrimitive(kind) ? undefined : `profile-${nextId++}`, kind, w, d, h);
+  const { feature, profile } = presetFeature(id, presetName(doc, kind), isPrimitive(kind) ? undefined : `profile-${nextId++}`, kind, w, d, h);
   return { id, doc: { ...doc, nextId, profiles: profile ? [...doc.profiles, profile] : doc.profiles, timeline: insertItem(doc, feature) } };
 }
 
@@ -235,15 +297,21 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
  * The document with the preset feature `id` changed to this shape and
  * these sizes: the same feature, so it keeps its id, its place and its
  * profile's id (a profile shape that had none takes one from the counter;
- * a profile no feature uses any more goes).
+ * a profile no feature uses any more goes). It keeps its name, but for
+ * the short name of its old shape when the shape changes: "Box 1" made a
+ * cylinder is the next cylinder's name ("Cylinder 1"), a name the user
+ * gave stays (U0e), and the copies of it follow (`relabelled`).
  */
 export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const old = doc.timeline.features.find((f) => f.id === id);
   if (!old || isSketchItem(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
   let nextId = doc.nextId;
   const oldProfile = old.dependsOn.find((p) => doc.profiles.some((x) => x.id === p));
-  const { feature, profile } = presetFeature(id, isPrimitive(kind) ? undefined : (oldProfile ?? `profile-${nextId++}`), kind, w, d, h);
-  const features = doc.timeline.features.map((f) => (f === old ? { ...feature, suppressed: old.suppressed } : f));
+  const oldKind = presetKinds(doc)(old);
+  const label = oldKind !== null && oldKind !== kind && isShapeName(old.provenance.self.label, oldKind) ? presetName(doc, kind, id) : old.provenance.self.label;
+  const { feature, profile } = presetFeature(id, label, isPrimitive(kind) ? undefined : (oldProfile ?? `profile-${nextId++}`), kind, w, d, h);
+  const changed = doc.timeline.features.map((f) => (f === old ? { ...feature, suppressed: old.suppressed } : f));
+  const features = label === old.provenance.self.label ? changed : relabelled(changed, id, label);
   const used = new Set(features.flatMap((f) => f.dependsOn));
   const kept = doc.profiles.flatMap((p) => (p.id === profile?.id ? [profile] : p.id !== oldProfile || used.has(p.id) ? [p] : []));
   const profiles = profile && !kept.includes(profile) ? [...kept, profile] : kept;
@@ -579,6 +647,53 @@ function checkKept(kept: unknown, feature: string): void {
   }
 }
 
+/** The name a preset was given before U0e, from its id's number and its type: "Feature 3 (box)", "Feature 5 (extrude)" for a slot. */
+export const oldPresetName = (f: Feature): string => `Feature ${idNumber(f.id) ?? f.id} (${f.intent.type})`;
+
+/**
+ * An older project's presets with short names (U0e): each named exactly
+ * as presets were before (`oldPresetName`) is named for its shape and its
+ * place among the presets of that shape ("Box 1", "Box 2", `freshName`,
+ * skipping names in use), and every copy of its old name follows: in the
+ * others' provenance (`from`) and in the descriptions of the items made
+ * from it ("Sketch 3 on a face of Box 1"). A name the user gave, or any
+ * other, stays. The document itself when nothing is renamed.
+ */
+export function withShortNames(doc: DesignDocument): DesignDocument {
+  const kindOf = presetKinds(doc);
+  const taken = takenNames(doc);
+  const counts = new Map<ShapeKind, number>();
+  const renamed = new Map<string, { old: string; label: string }>();
+  for (const f of doc.timeline.features) {
+    const kind = kindOf(f);
+    if (kind === null) continue;
+    const count = counts.get(kind) ?? 0;
+    counts.set(kind, count + 1);
+    const old = f.provenance?.self?.label;
+    if (old !== oldPresetName(f)) continue;
+    const label = freshName(SHAPE_LABELS[kind], count, taken);
+    taken.add(nameKey(label));
+    renamed.set(f.id, { old, label });
+  }
+  if (renamed.size === 0) return doc;
+  const features = doc.timeline.features.map((f) => {
+    const own = renamed.get(f.id);
+    const from = Array.isArray(f.provenance?.from) ? f.provenance.from : [];
+    const made = from.flatMap((p) => {
+      const r = p?.workspace === "design" ? renamed.get(p.id) : undefined;
+      return r === undefined ? [] : [r];
+    });
+    if (own === undefined && made.length === 0) return f;
+    const summary = made.reduce((words, r) => words.split(r.old).join(r.label), f.intent.summary);
+    const copies = from.map((p) => {
+      const r = p?.workspace === "design" ? renamed.get(p.id) : undefined;
+      return r !== undefined && p.label === r.old ? { ...p, label: r.label } : p;
+    });
+    return { ...f, intent: { ...f.intent, summary }, provenance: { ...f.provenance, self: own ? { ...f.provenance.self, label: own.label } : f.provenance.self, from: copies } };
+  });
+  return { ...doc, timeline: { ...doc.timeline, features } };
+}
+
 /**
  * Design's part of a loaded project, checked all the way down to the
  * numbers the panel shows, so a bad file is refused when it is opened
@@ -697,7 +812,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
   for (const f of d.timeline.features) if (!isSketchItem(f)) shapeWith(f, (id) => profiles.get(id));
-  return d as DesignDocument;
+  return withShortNames(d as DesignDocument);
 }
 
 /**

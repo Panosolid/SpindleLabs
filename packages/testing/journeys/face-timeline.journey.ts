@@ -46,10 +46,11 @@ function bar(a: App): Record<string, string> {
   }
   return out;
 }
-/** Item `id`'s words on the bar with nothing wrong: its place and summary ("2. Sketch 1 on a face of Feature 1 (box)"). */
+/** Item `id`'s words on the bar with nothing wrong: its place and name, then its summary ("2. Sketch 1", "Sketch 1 on a face of Box 1"). */
 const label = (a: App, id: string) => {
   const at = a.doc().timeline.features.findIndex((f) => f.id === id);
-  return `${at + 1}. ${a.doc().timeline.features[at].intent.summary}`;
+  const f = a.doc().timeline.features[at];
+  return `${at + 1}. ${f.provenance.self.label}\n${f.intent.summary}`;
 };
 const title = (a: App, id: string) => a.$(`.timeline-bar-item[data-item="${id}"]`)!.title;
 /** The browser's Timeline row of item `id`. */
@@ -80,17 +81,17 @@ async function journey(plugin: WorkspacePlugin) {
   // ---- The box suppressed: everything on it greyed, naming it, no warning (Q3). ----
   assert.equal(await a.menu(box, "suppress"), null);
   assert.deepEqual(bar(a), { [box]: "s", [sketch]: "g", [extrude]: "g" }, "greyed, not warned or failed");
-  for (const id of [sketch, extrude]) assert.equal(title(a, id), `${label(a, id)} (greyed: Feature 1 (box) is suppressed)`);
+  for (const id of [sketch, extrude]) assert.equal(title(a, id), `${label(a, id)} (greyed: Box 1 is suppressed)`);
   for (const id of [sketch, extrude]) {
     assert.ok(row(a, id).classList.contains("timeline-menu-greyed"), `${id}'s browser row greyed`);
-    assert.equal(row(a, id).title, "Greyed: Feature 1 (box) is suppressed");
+    assert.equal(row(a, id).title, "Greyed: Box 1 is suppressed");
   }
   assert.equal(a.warning(), null, "no warning while greyed");
   assert.equal(a.drawings().length, 0, "the greyed sketch isn't drawn");
   assert.equal(a.volume(), 0, "nothing built");
-  assert.equal(await a.menu(sketch, "edit-sketch"), "Sketch 1 is greyed: Feature 1 (box) is suppressed, unsuppress it first");
+  assert.equal(await a.menu(sketch, "edit-sketch"), "Sketch 1 is greyed: Box 1 is suppressed, unsuppress it first");
   assert.equal(a.sketching(), false);
-  assert.equal(await a.undo(), "Suppress Feature 1 (box)");
+  assert.equal(await a.undo(), "Suppress Box 1");
   assert.deepEqual(bar(a), { [box]: "", [sketch]: "", [extrude]: "" });
   assert.ok(!row(a, sketch).classList.contains("timeline-menu-greyed"));
   assert.equal(row(a, sketch).title.startsWith("Greyed"), false);
@@ -98,17 +99,17 @@ async function journey(plugin: WorkspacePlugin) {
   assert.equal(a.drawings().length, 1);
 
   // ---- Drops across the face's link refused in words (answer 7). ----
-  assert.deepEqual(dropState(a.doc(), sketch, 0), { kind: "refused", message: "Sketch 1 can't go before Feature 1 (box): it is drawn on a face of Feature 1 (box)" });
-  assert.deepEqual(dropState(a.doc(), box, 2), { kind: "refused", message: "Feature 1 (box) can't go after Sketch 1: Sketch 1 is drawn on a face of it" });
+  assert.deepEqual(dropState(a.doc(), sketch, 0), { kind: "refused", message: "Sketch 1 can't go before Box 1: it is drawn on a face of Box 1" });
+  assert.deepEqual(dropState(a.doc(), box, 2), { kind: "refused", message: "Box 1 can't go after Sketch 1: Sketch 1 is drawn on a face of it" });
 
   // ---- The box deleted: asked first; Cancel changes nothing. ----
   const steps = a.history.undoLabel();
   assert.equal(await a.menu(box, "delete"), null);
   assert.ok((a.$("#delete-ask") as HTMLDialogElement).open, "asked first");
-  assert.equal(a.$("#delete-ask-heading")!.textContent, "Delete Feature 1 (box)?");
+  assert.equal(a.$("#delete-ask-heading")!.textContent, "Delete Box 1?");
   assert.equal(
     a.$("#delete-ask-words")!.textContent,
-    "Sketch 1 is drawn on a face of Feature 1 (box). If you delete it, Sketch 1 stays where it is and shows its plane is lost, and what is built from it, Extrude 1, stays where it is and shows its source is lost. Undo brings Feature 1 (box) back.",
+    "Sketch 1 is drawn on a face of Box 1. If you delete it, Sketch 1 stays where it is and shows its plane is lost, and what is built from it, Extrude 1, stays where it is and shows its source is lost. Undo brings Box 1 back.",
   );
   a.$("#delete-ask-cancel")!.click();
   await a.settle();
@@ -139,13 +140,13 @@ async function journey(plugin: WorkspacePlugin) {
     assert.deepEqual(d.plane.origin, [0, 0, 20]);
   };
   deleted();
-  assert.equal(await a.undo(), "Delete Feature 1 (box)", "one undo step");
+  assert.equal(await a.undo(), "Delete Box 1", "one undo step");
   assert.deepEqual(bar(a), { [box]: "", [sketch]: "", [extrude]: "" });
   assert.ok(close(a.volume(), 28000));
   assert.equal(a.warning(), null);
   for (const id of [sketch, extrude]) assert.ok(!row(a, id).classList.contains("kept"), `${id} no longer red`);
   assert.equal(a.drawings()[0].lost, undefined, "not red once the box is back");
-  assert.equal(await a.redo(), "Delete Feature 1 (box)");
+  assert.equal(await a.redo(), "Delete Box 1");
   deleted();
   assert.ok(await a.close(), "every body freed");
 }

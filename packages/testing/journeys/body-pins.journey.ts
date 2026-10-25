@@ -129,15 +129,15 @@ test("hand-worked: a sketch on the ground plane snaps onto the box's corner seen
   // ---- The box suppressed: the sketch and its extrude greyed through the pin, naming the box (Q3, rule 13). ----
   assert.equal(await a.menu(box, "suppress"), null);
   assert.deepEqual(bar(a), { [box]: "s", [sketch]: "g", [extrude]: "g" });
-  assert.equal(a.$(`.timeline-bar-item[data-item="${sketch}"]`)!.title, `2. ${a.doc().timeline.features[1].intent.summary} (greyed: Feature 1 (box) is suppressed)`);
+  assert.equal(a.$(`.timeline-bar-item[data-item="${sketch}"]`)!.title, `2. Sketch 1\n${a.doc().timeline.features[1].intent.summary} (greyed: Box 1 is suppressed)`);
   assert.equal(a.volume(), 0, "nothing built");
   assert.equal(a.warning(), null, "no warning while greyed");
-  assert.equal(await a.undo(), "Suppress Feature 1 (box)");
+  assert.equal(await a.undo(), "Suppress Box 1");
   assert.deepEqual(bar(a), { [box]: "", [sketch]: "", [extrude]: "" });
 
   // ---- Drops across the pin's link refused in words. ----
-  assert.deepEqual(dropState(a.doc(), sketch, 0), { kind: "refused", message: "Sketch 1 can't go before Feature 1 (box): it is snapped to an edge of Feature 1 (box)" });
-  assert.deepEqual(dropState(a.doc(), box, 2), { kind: "refused", message: "Feature 1 (box) can't go after Sketch 1: Sketch 1 is snapped to an edge of it" });
+  assert.deepEqual(dropState(a.doc(), sketch, 0), { kind: "refused", message: "Sketch 1 can't go before Box 1: it is snapped to an edge of Box 1" });
+  assert.deepEqual(dropState(a.doc(), box, 2), { kind: "refused", message: "Box 1 can't go after Sketch 1: Sketch 1 is snapped to an edge of it" });
 
   // ---- Saved and opened: the same file, the same view. ----
   const doc = a.doc();
@@ -147,7 +147,7 @@ test("hand-worked: a sketch on the ground plane snaps onto the box's corner seen
   // ---- The box deleted: asked first; the circle held at (60, 30) with its point lost, one undo step. ----
   assert.equal(await a.menu(box, "delete"), null);
   assert.ok((a.$("#delete-ask") as HTMLDialogElement).open, "asked first");
-  assert.equal(a.$("#delete-ask-words")!.textContent, "Sketch 1 is snapped to an edge of Feature 1 (box). If you delete it, Sketch 1 keeps its snapped points where they are and shows they are lost. Undo brings Feature 1 (box) back.");
+  assert.equal(a.$("#delete-ask-words")!.textContent, "Sketch 1 is snapped to an edge of Box 1. If you delete it, Sketch 1 keeps its snapped points where they are and shows they are lost. Undo brings Box 1 back.");
   a.$("#delete-ask-confirm")!.click();
   await a.settle();
   assert.deepEqual(a.doc().timeline.features.map((f) => f.id), [sketch, extrude]);
@@ -156,7 +156,7 @@ test("hand-worked: a sketch on the ground plane snaps onto the box's corner seen
   assert.deepEqual(bar(a), { [sketch]: "w", [extrude]: "" }, "the sketch warned; its extrude still builds from its outline");
   assert.ok(round(a.volume()), `the cylinder alone: ${a.volume()} mm³`);
   assert.ok(cylinderAbout(a, [60, 30]), "still round (60, 30)");
-  assert.equal(await a.undo(), "Delete Feature 1 (box)");
+  assert.equal(await a.undo(), "Delete Box 1");
   assert.ok(close(a.volume(), was));
   assert.equal(a.warning(), null);
   assert.ok(await a.close(), "every body freed");
