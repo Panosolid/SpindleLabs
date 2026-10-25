@@ -17,8 +17,10 @@ export type TimelineIcon = "sketch" | "extrude" | "box" | "cylinder" | "sphere" 
 
 export interface TimelineBarItem {
   id: string;
-  /** "2. Sketch 1 on the XY plane": numbered in build order like the browser's Timeline rows. */
+  /** "2. Sketch 1": numbered in build order, by its short name (U0e). */
   label: string;
+  /** What it is: its intent summary ("Sketch 1 on the XY plane"), shown under the name in its tooltip (U0e). */
+  description: string;
   icon: TimelineIcon;
   suppressed: boolean;
   /** After the rollback marker: not built until the marker moves past it. */
@@ -65,7 +67,8 @@ export function timelineBarItems(document: DesignDocument, failed: ReadonlySet<s
     const ok = on && by === undefined;
     return {
       id: f.id,
-      label: `${i + 1}. ${f.intent.summary}`,
+      label: `${i + 1}. ${itemName(f)}`,
+      description: f.intent.summary,
       icon: Object.hasOwn(ICON_OF, f.intent.type) ? ICON_OF[f.intent.type] : "feature",
       suppressed: f.suppressed,
       rolledBack: i >= at,
@@ -177,7 +180,7 @@ export function playbackButtons(doc: DesignDocument, editing: string | null = nu
 
 /** An entry of an item's menu: what it does, its words, and why it is off (null when it can be chosen). */
 export interface MenuEntry {
-  action: "edit" | "edit-sketch" | "marker" | "suppress" | "unsuppress" | "delete";
+  action: "edit" | "edit-sketch" | "marker" | "suppress" | "unsuppress" | "rename" | "delete";
   label: string;
   off: string | null;
 }
@@ -208,11 +211,11 @@ function sketchOff(doc: DesignDocument, at: number, editing: string | null): str
  * Item `id`'s menu (a right-click on it, or its ⋯ on a phone): Edit
  * feature (a solid feature's sizes, step 25a2) or Edit Sketch (a sketch
  * opened again, step 25a3), Move the marker here, Suppress or Unsuppress,
- * and Delete. Edit Sketch is off for the sketch already open, a suppressed
+ * Rename (U0e2) and Delete. Edit Sketch is off for the sketch already open, a suppressed
  * one and one after the marker (`sketchOff`). Moving the marker is off
  * when it is already just after the item, or when it would put the sketch
- * being edited (`editing`, its id) after it; suppressing and deleting are
- * off for the sketch being edited.
+ * being edited (`editing`, its id) after it; suppressing, renaming and
+ * deleting are off for the sketch being edited.
  */
 export function itemMenu(doc: DesignDocument, id: string, editing: string | null = null): MenuEntry[] {
   const { items, marker } = timelineBarItems(doc);
@@ -225,6 +228,7 @@ export function itemMenu(doc: DesignDocument, id: string, editing: string | null
     edit,
     { action: "marker", label: "Move the marker here", off: marker === at + 1 ? "The marker is already here" : rollsBack(doc, editing, at + 1) },
     item.suppressed ? { action: "unsuppress", label: "Unsuppress", off: busy } : { action: "suppress", label: "Suppress", off: busy },
+    { action: "rename", label: "Rename", off: busy },
     { action: "delete", label: "Delete", off: busy },
   ];
 }
@@ -259,8 +263,9 @@ export type BarAction =
  * with kept shapes settled) and which asks first when other items are
  * built from it; an item's Edit feature panel to open (step 25a2: nothing
  * changes until its OK); a sketch to open again (Edit Sketch, step 25a3:
- * nothing changes until something is drawn); or refused, with the message
- * the bar shows.
+ * nothing changes until something is drawn); an item's name to type
+ * (Rename, U0e2: nothing changes until its box saves one); or refused,
+ * with the message the bar shows.
  */
 export type BarResult =
   | { kind: "none" }
@@ -268,6 +273,7 @@ export type BarResult =
   | { kind: "delete"; step: string; doc: DesignDocument; ask: boolean }
   | { kind: "open"; id: string }
   | { kind: "sketch"; id: string }
+  | { kind: "rename"; id: string }
   | { kind: "refused"; message: string };
 
 /** The marker moved to place `place`: nothing when it is already there, refused when it would roll back the sketch being edited. */
@@ -306,6 +312,7 @@ export function barEdit(doc: DesignDocument, a: BarAction, editing: string | nul
   if (entry.off) return { kind: "refused", message: entry.off };
   if (a.action === "edit") return { kind: "open", id: a.id };
   if (a.action === "edit-sketch") return { kind: "sketch", id: a.id };
+  if (a.action === "rename") return { kind: "rename", id: a.id };
   if (a.action === "marker") return markerTo(doc, k + 1, editing);
   if (a.action === "delete") return { kind: "delete", step: TIMELINE_STEPS.delete(name), doc: deleteItem(doc, a.id), ask: features.some((f) => f.dependsOn.includes(a.id)) };
   const on = a.action === "suppress";
@@ -543,8 +550,9 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
     if (item.failed) li.dataset.failed = "true";
     if (item.greyed !== null) li.dataset.greyed = "true";
     if (item.warning !== null) li.dataset.warned = "true";
+    // The name, then on a line of its own what it is (U0e), then its marks.
     const words =
-      item.label +
+      `${item.label}\n${item.description}` +
       (item.suppressed ? " (suppressed)" : "") +
       (item.greyed !== null ? ` (greyed: ${item.greyed} is suppressed)` : "") +
       (item.rolledBack ? " (after the marker)" : "") +
@@ -589,7 +597,7 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       more.className = "timeline-bar-more";
       more.dataset.more = item.id; // read by the e2e test
       more.textContent = "⋯";
-      more.title = `${words}: more`;
+      more.title = `${item.label}: more`;
       more.setAttribute("aria-label", `${item.label} options`);
       more.setAttribute("aria-haspopup", "menu");
       more.addEventListener("click", () => {

@@ -1,9 +1,9 @@
 // Plants each of MODEL_FAULTS in the real code (model-faults.ts), one at a
 // time, runs the check meant to catch it and reports which caught it
-// (step 24e3); from step 26c NAMING_PLANTS too, Design's sketch on a face. Edits the source in place and always puts it back; refuses to
+// (step 24e3); from step 26c NAMING_PLANTS too, Design's sketch on a face, and STACK_PLANTS, stacked face sketches. Edits the source in place and always puts it back; refuses to
 // start when a file it would edit has changes of its own.
 //
-//   node --experimental-strip-types --no-warnings planted/run.ts [fault ... | --naming]
+//   node --experimental-strip-types --no-warnings planted/run.ts [fault ... | --naming | --stack]
 //
 // from packages/testing, after the WASM build (`npm run build` in
 // apps/fission). With no faults named it first runs everything unplanted
@@ -14,13 +14,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { MODEL_FAULTS, type ModelFault } from "../src/timeline-model.ts";
 import { NAMING_PLANTS, PLANTS, type Plant } from "./model-faults.ts";
+import { STACK_PLANTS, type StackPlant } from "./stack-plants.ts";
 
 const ROOT = new URL("../../../", import.meta.url);
 const TESTING = new URL("../", import.meta.url);
 const node = ["--experimental-strip-types", "--no-warnings"];
 
 /** The text of `file` with every edit of the plant made; throws when a find isn't there exactly once. */
-export function planted(text: string, plant: Plant, file: string): string {
+export function planted(text: string, plant: Pick<Plant, "edits">, file: string): string {
   for (const e of plant.edits.filter((x) => x.file === file)) {
     const at = text.indexOf(e.find);
     if (at < 0 || text.indexOf(e.find, at + 1) >= 0) throw new Error(`${file}: the text to replace is in it ${at < 0 ? "no" : "more than one"} time(s): ${e.find}`);
@@ -30,7 +31,7 @@ export function planted(text: string, plant: Plant, file: string): string {
 }
 
 /** The check that failed: the timeline session's, or "history-fuzz: <first assertion line>"; null when it passed. */
-function runCheck(run: Plant["run"][number]): string | null {
+function runCheck(run: Plant["run"][number] | "stack"): string | null {
   if (run === "timeline") {
     const r = spawnSync(process.execPath, [...node, "planted/session.ts"], { cwd: TESTING, encoding: "utf8" });
     const line = r.stdout.trim().split("\n").pop() ?? "";
@@ -48,6 +49,14 @@ function runCheck(run: Plant["run"][number]): string | null {
     }
     return null;
   }
+  if (run === "stack") {
+    // The stacked face sketches' journey, stopping at its first failure and saving no regression (FISSION_PLANTED).
+    const r = spawnSync(process.execPath, [...node, "--test", "journeys/face-stack.journey.ts"], { cwd: TESTING, encoding: "utf8", env: { ...process.env, FISSION_PLANTED: "1" } });
+    if (r.status === 0) return null;
+    const title = /^not ok \d+ - (.*)$/m.exec(r.stdout)?.[1] ?? "failed";
+    const words = /^\s+error: (?:\|-\n\s+)?(.*)$/m.exec(r.stdout)?.[1] ?? "";
+    return `face-stack: ${title}: ${words.slice(0, 200)}`;
+  }
   const r = spawnSync(process.execPath, [...node, "--test", "test/history-fuzz.test.ts"], { cwd: TESTING, encoding: "utf8" });
   if (r.status === 0) return null;
   // Its assertions name the step ("seed 1 step 286: line-5 was used before"); the first one that failed is the record.
@@ -55,21 +64,23 @@ function runCheck(run: Plant["run"][number]): string | null {
   return `history-fuzz: ${why.trim()}`;
 }
 
-/** A plant by name: one of MODEL_FAULTS, or of NAMING_PLANTS (step 26c). */
-const plantOf = (name: string): Plant => (Object.hasOwn(PLANTS, name) ? PLANTS[name as ModelFault] : NAMING_PLANTS[name]);
+/** A plant by name: one of MODEL_FAULTS, of NAMING_PLANTS (step 26c) or of STACK_PLANTS. */
+const plantOf = (name: string): Plant | StackPlant => (Object.hasOwn(PLANTS, name) ? PLANTS[name as ModelFault] : Object.hasOwn(NAMING_PLANTS, name) ? NAMING_PLANTS[name] : STACK_PLANTS[name]);
 
 function main(names: string[]) {
   // "--naming": every naming plant.
   if (names.length === 1 && names[0] === "--naming") names = Object.keys(NAMING_PLANTS);
-  for (const n of names) if (!(MODEL_FAULTS as readonly string[]).includes(n) && !Object.hasOwn(NAMING_PLANTS, n)) throw new Error(`${n} is not one of MODEL_FAULTS or NAMING_PLANTS`);
-  const faults: string[] = names.length ? names : [...MODEL_FAULTS, ...Object.keys(NAMING_PLANTS)];
+  // "--stack": every stacked face sketch plant.
+  if (names.length === 1 && names[0] === "--stack") names = Object.keys(STACK_PLANTS);
+  for (const n of names) if (!(MODEL_FAULTS as readonly string[]).includes(n) && !Object.hasOwn(NAMING_PLANTS, n) && !Object.hasOwn(STACK_PLANTS, n)) throw new Error(`${n} is not one of MODEL_FAULTS, NAMING_PLANTS or STACK_PLANTS`);
+  const faults: string[] = names.length ? names : [...MODEL_FAULTS, ...Object.keys(NAMING_PLANTS), ...Object.keys(STACK_PLANTS)];
   const files = [...new Set(faults.flatMap((f) => plantOf(f).edits.map((e) => e.file)))];
   const dirty = execFileSync("git", ["status", "--porcelain", "--", ...files], { cwd: ROOT, encoding: "utf8" }).trim();
   if (dirty) throw new Error(`these files have changes of their own; commit or stash them first:\n${dirty}`);
 
   let bad = 0;
   if (names.length === 0)
-    for (const run of ["timeline", "history", "naming"] as const) {
+    for (const run of ["timeline", "history", "naming", "stack"] as const) {
       const got = runCheck(run);
       console.log(`unplanted ${run}: ${got === null ? "passes" : `FAILS (${got})`}`);
       if (got !== null) return 1;

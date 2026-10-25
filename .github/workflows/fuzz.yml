@@ -13,7 +13,12 @@ name: Fuzzing
 # long sessions (packages/testing/fuzz/timeline.ts, step 25b3: rounds of 5
 # sessions × 500 steps against the timeline model, failures shrunk to the
 # fewest steps; each round's simulated-user numbers, Tier 3 item 4, go to
-# numbers.jsonl and the summary, step 30d). And the kernel's entry points (extrude,
+# numbers.jsonl and the summary, step 30d). Stacked face sketches
+# (packages/testing/fuzz/face-stack.ts: rounds of 25 seeded chains, each 5 to
+# 8 prisms sketched on random faces of the ones before and extruded, then
+# edited, every step checked against an exact model, saved and reopened,
+# undone and redone; failures shrunk to the fewest prisms and edits), with a
+# self-test that a bug planted in it is caught. And the kernel's entry points (extrude,
 # sketch outline, moves and turns) with coverage-guided fuzzing
 # (kernel/fuzz/, cargo-fuzz on nightly Rust), every body their corpus builds
 # then compared with exact values and OpenCascade
@@ -275,8 +280,56 @@ jobs:
           path: ${{ runner.temp }}/fuzz/
           if-no-files-found: ignore
 
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: kernel
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: wasm-pack
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run kernel -w @fission/app
+      # A third of the readers' time: a chain takes about 0.3 s, so 15 minutes is about 3,000 chains and 55,000 checked steps.
+      - name: Stacked face sketches until the time is up
+        env:
+          MINUTES: ${{ inputs.minutes || '45' }}
+          FISSION_FUZZ_OUT: ${{ runner.temp }}/fuzz
+        run: |
+          case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
+          FISSION_FUZZ_SECONDS=$(( MINUTES * 20 )) npm run stack -w @fission/testing
+      # Its self-test: a few seconds with the model's prisms a tenth of a nanometre long, which every chain must fail.
+      - name: A bug planted in the stacked chains is caught
+        if: always()
+        env:
+          PLANTED: ${{ runner.temp }}/planted
+        run: |
+          if FISSION_STACK_FAULT=model-long FISSION_FUZZ_SECONDS=1 FISSION_FUZZ_OUT="$PLANTED" npm run stack -w @fission/testing >"$RUNNER_TEMP/planted.txt"; then
+            echo "the planted bug was not caught"; exit 1
+          fi
+          caught=$(ls -d "$PLANTED"/seed-stack-* | wc -l)
+          echo "planted bug caught in $caught of 25 chains"
+          [ "$caught" -eq 25 ]
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fuzz-stack
+          path: ${{ runner.temp }}/fuzz/
+          if-no-files-found: ignore
+
   collect:
-    needs: [stl, project, sessions, timeline, kernel]
+    needs: [stl, project, sessions, timeline, stack, kernel]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15

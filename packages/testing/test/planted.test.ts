@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { MODEL_FAULTS } from "../src/timeline-model.ts";
 import { NAMING_PLANTS, PLANTS, type Plant } from "../planted/model-faults.ts";
+import { STACK_PLANTS } from "../planted/stack-plants.ts";
 import { NAMING_FAULTS } from "../src/naming-model.ts";
 import { planted } from "../planted/run.ts";
 
@@ -31,8 +32,17 @@ test("every naming plant (26c) records what caught it, and names a model bug onl
   }
 });
 
+test("no two plant tables use one name (run.ts finds a plant by its name alone)", () => {
+  const names = [...Object.keys(PLANTS), ...Object.keys(NAMING_PLANTS), ...Object.keys(STACK_PLANTS)];
+  assert.deepEqual(names.filter((n, k) => names.indexOf(n) !== k), []);
+});
+
+test("every stacked face sketch plant records the check that caught it", () => {
+  for (const [name, p] of Object.entries(STACK_PLANTS)) assert.ok(p.edits.length > 0 && / after$/.test(p.caught) && p.run.includes("stack"), name);
+});
+
 test("every plant still applies: each text it replaces is in its file exactly once, and planting changes the file", () => {
-  for (const [fault, p] of [...Object.entries(PLANTS), ...Object.entries(NAMING_PLANTS)])
+  for (const [fault, p] of [...Object.entries(PLANTS), ...Object.entries(NAMING_PLANTS), ...Object.entries(STACK_PLANTS)])
     for (const file of new Set(p.edits.map((e) => e.file))) {
       const text = read(file);
       assert.notEqual(planted(text, p, file), text, `${fault} changes nothing in ${file}`);
