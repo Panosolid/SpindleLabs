@@ -1417,6 +1417,10 @@ try {
       assert.equal(await phone.textContent("#workspace-menu"), "Manufacture ▾");
       const named = await rect("#workspace-menu");
       assert.ok(named.left >= 0 && named.right <= (await rect("#menu-toggle")).left, `MANUFACTURE ▾ whole: ${JSON.stringify(named)}`);
+      // Again in DejaVu Sans, the wide font CI's Linux uses (it ran 23 px into Menu there before 13 px capitals on phones).
+      await phone.addStyleTag({ content: "html, body, button { font-family: 'DejaVu Sans' !important; }" });
+      const wide = await rect("#workspace-menu");
+      assert.ok(wide.left >= 0 && wide.right <= (await rect("#menu-toggle")).left, `MANUFACTURE ▾ whole in DejaVu Sans: ${JSON.stringify(wide)}`);
       assert.equal(await phone.$eval("#workspace-menu", (b) => b.scrollWidth <= b.clientWidth), true, "its words not cut");
       await phone.screenshot({ path: "e2e/layout-375.png" });
     } finally {

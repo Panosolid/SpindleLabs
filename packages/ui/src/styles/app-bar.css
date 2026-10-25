@@ -17,4 +17,6 @@
   /* File ▾ fills the bar's row, top to bottom, to be as easy a tap as can fit. */
   .app-bar.app-bar-file { align-self: stretch; }
   .app-bar.app-bar-file .menu-button, .app-bar.app-bar-file .menu-button-toggle { height: 100%; }
+  /* Slimmer sides leave the workspace button room for MANUFACTURE ▾ (workspace-menu.css). */
+  .app-bar.app-bar-file .menu-button-toggle:not(#none) { padding-left: 6px; padding-right: 6px; }
 }
