@@ -1,14 +1,19 @@
 // The sketch's own toolbar (sketch feel SF3b): while a sketch is edited the
-// toolbar becomes the sketch's, as the sketch tab of a CAD suite does. A
-// Create menu at the left lists every tool with its key (the three arcs
-// under an Arc row that opens a menu of its own), the tools sit
-// beside it as buttons (the one in use pressed), and a big Finish Sketch
-// stands at the right. Modify and Inspect groups join as their tools
+// toolbar becomes the sketch's, as the sketch tab of a CAD suite does. The
+// tools sit in a row as icons (the one in use pressed) over the group's
+// name, Create ▾ (U0f, the Fusion layout of @fission/ui tool-group.ts),
+// a menu listing every tool with its key (the three arcs under an Arc row
+// that opens a menu of its own), and a big Finish Sketch stands at the
+// right. Modify and Inspect groups join as their tools
 // arrive (trim and offset: step 52); none is shown before it has a
 // tool. The workspace drives it; the toolbar only shows what it is given
 // and reports clicks. Styles: src/styles/sketchbar.css.
 
+import { iconSvg, TOOL_ICON_SIZE, withIcon, type IconName } from "@fission/ui";
 import { SKETCH_TOOLS, type ToolKind } from "./sketch-tool.ts";
+
+/** Each sketch tool's icon (U0f). */
+export const TOOL_ICONS: Record<ToolKind, IconName> = { line: "line", rectangle: "rectangle", circle: "circle", arc: "arc", centre: "centre-arc", tangent: "tangent-arc", project: "project" };
 
 export interface SketchToolbarEvents {
   /** A tool chosen, from its button or the Create menu. */
@@ -95,21 +100,28 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     return b;
   };
 
-  // Create: the menu button (the group's name), then a button per tool.
-  const create = group("sketchbar-create", "Create");
+  // Create: a row of a button per tool, over the menu button (the group's name).
+  const create = group("sketchbar-create toolbar-group", "Create");
+  const row = document.createElement("div");
+  row.className = "toolbar-group-row";
+  const name = document.createElement("span");
+  name.className = "tool-group-name toolbar-group-name";
   const menuButton = button("Create ▾", "sketch-create");
-  menuButton.className = "sketchbar-menu-button";
+  menuButton.className = "sketchbar-menu-button menu-button-toggle";
   menuButton.title = "Every sketch tool, with its key";
   menuButton.setAttribute("aria-haspopup", "menu");
   menuButton.setAttribute("aria-expanded", "false");
   menuButton.setAttribute("aria-controls", "sketch-create-menu");
-  create.append(menuButton);
+  name.append(menuButton);
+  create.append(row, name);
   const tools = SKETCH_TOOLS.map((t) => {
     const b = button(t.label, `sketch-tool-${t.kind}`); // ids read by the e2e tests
     b.title = t.key ? `${t.label} (${t.key})` : t.label;
+    b.setAttribute("aria-label", t.label);
+    b.className = "toolbar-group-tool";
     if (t.key) b.setAttribute("aria-keyshortcuts", t.key);
     b.addEventListener("click", () => on.tool(t.kind));
-    create.append(b);
+    row.append(withIcon(b, TOOL_ICONS[t.kind], TOOL_ICON_SIZE));
     return { kind: t.kind, button: b };
   });
 
@@ -130,7 +142,8 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     item.setAttribute("aria-checked", "false");
     item.tabIndex = -1;
     const name = document.createElement("span");
-    name.textContent = r.label;
+    name.className = "sketchbar-menu-name";
+    name.append(iconSvg(document, TOOL_ICONS[r.kind], 16), r.label);
     const key = document.createElement("kbd");
     key.textContent = r.key ?? "";
     item.append(name, key);
@@ -164,7 +177,8 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     item.setAttribute("aria-controls", `sketch-${slug}-menu`);
     item.tabIndex = -1;
     const name = document.createElement("span");
-    name.textContent = e.group;
+    name.className = "sketchbar-menu-name";
+    name.append(iconSvg(document, "arc", 16), e.group);
     const more = document.createElement("span");
     more.className = "sketchbar-menu-more";
     more.setAttribute("aria-hidden", "true");
@@ -221,7 +235,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
 
   // Finish Sketch, at the far right.
   const finishGroup = group("sketchbar-finish", "Finish");
-  const finish = button("✓ Finish Sketch", "finish-sketch");
+  const finish = withIcon(button("Finish Sketch", "finish-sketch"), "finish");
   finish.title = FINISH_TITLE;
   finish.addEventListener("click", () => {
     closeMenu();

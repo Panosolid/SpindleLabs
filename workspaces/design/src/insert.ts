@@ -13,7 +13,7 @@ import type { ShapeKind } from "./profiles.ts";
 import { DEFAULT_SIZES } from "./properties.ts";
 import { SHAPE_LABELS } from "./toolbar.ts";
 
-export const INSERT_TITLE = "Add a ready-made shape as a new body, at 40 × 30 × 20 mm: change its sizes in the properties.";
+export const INSERT_TITLE = "Insert: add a ready-made shape as a new body, at 40 × 30 × 20 mm. Change its sizes in the properties.";
 /** Why the Community item is off (placeholders never pretend to work). */
 export const COMMUNITY_OFF = "Models shared on Community will be added from here. Community isn't built yet.";
 
@@ -36,8 +36,8 @@ export function insertSections(onInsert: (kind: ShapeKind) => void): MenuSection
   return [
     {
       heading: "Presets",
-      items: SHAPES.map((kind) => ({ id: `insert-${kind}`, label: SHAPE_LABELS[kind], title: `Add ${aShape(kind)} as a new body`, data: { shape: kind }, run: () => onInsert(kind) })),
+      items: SHAPES.map((kind) => ({ id: `insert-${kind}`, label: SHAPE_LABELS[kind], title: `Add ${aShape(kind)} as a new body`, data: { shape: kind }, icon: kind, run: () => onInsert(kind) })),
     },
-    { heading: "From Community", items: [{ id: "insert-community", label: "Community models", off: COMMUNITY_OFF, run: () => {} }] },
+    { heading: "From Community", items: [{ id: "insert-community", label: "Community models", icon: "community", off: COMMUNITY_OFF, run: () => {} }] },
   ];
 }

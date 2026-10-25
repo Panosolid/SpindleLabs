@@ -108,15 +108,28 @@ async function canvasImage(page) {
   const u = await page.evaluate(() => document.querySelector("#viewport canvas").toDataURL("image/png"));
   return decodePng(Buffer.from(u.slice(u.indexOf(",") + 1), "base64"));
 }
-/** A sketch line's blue (0x6cc4ff: blue well above red) within 1 px of the world point `p`. */
+/**
+ * A sketch line's blue (0x6cc4ff: blue well above red) within 1 px of the
+ * world point `p`, whole in one pixel or shared by two side by side. A line
+ * that falls on the boundary between two pixels is drawn as half its colour
+ * in each (multisampling): the line's blue less red is 0xff - 0x6c = 147,
+ * the faded box's grey (53, 58, 65) 12, so each half is (147 + 12) / 2 = 79,
+ * read as (81, 127, 160) at 1280 px; the two summed are 158. So a pixel, or
+ * a pixel and its neighbour, summing to 80 or more is a line; grey beside
+ * grey sums to about 24.
+ */
 async function lineNear(page, img, p) {
   const box = await canvasBox(page);
   const s = toScreen(await camera(page), box, p);
   const [cx, cy] = [Math.round(s.x - box.x), Math.round(s.y - box.y)];
+  const blue = (x, y) => {
+    const i = 4 * (y * img.width + x);
+    return img.data[i + 2] - img.data[i];
+  };
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
-      const i = 4 * ((cy + dy) * img.width + cx + dx);
-      if (img.data[i + 2] - img.data[i] >= 80) return true;
+      const [x, y] = [cx + dx, cy + dy];
+      if (blue(x, y) >= 80 || blue(x, y) + blue(x + 1, y) >= 80 || blue(x, y) + blue(x, y + 1) >= 80) return true;
     }
   return false;
 }
