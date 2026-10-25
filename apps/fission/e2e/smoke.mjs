@@ -6,7 +6,7 @@ import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, insertPreset, startWithBox } from "./start.mjs";
+import { chooseShape, insertPreset, reloadEmpty, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4174, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4174/";
@@ -1227,9 +1227,7 @@ try {
     const file = JSON.parse(readFileSync(saved, "utf8"));
     assert.equal(file.formatVersion, 2);
     assert.deepEqual(file.workspaces.design.timeline.features[0].intent.parameters, { width: 50, depth: 30, height: 20 });
-    // A fresh app is empty again (U0c).
-    await page.reload();
-    await page.waitForSelector("#start-hint", { state: "visible" });
+    await reloadEmpty(page); // a fresh app is empty again (U0c)
     await page.setInputFiles("#open-file", saved);
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
     assert.equal(await page.inputValue("#width"), "50");

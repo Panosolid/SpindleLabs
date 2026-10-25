@@ -26,3 +26,15 @@ export async function chooseShape(page, kind) {
   await pinProperties(page);
   await page.selectOption("#shape", kind);
 }
+
+/**
+ * Reloads to a new, empty project, as every load starts (U0c). The open
+ * project is stored first: a reload while a change still waits puts it back
+ * from the unsaved-change journal (main.ts), and the hint stays hidden (CI
+ * runs 40138678915 and 40141969867).
+ */
+export async function reloadEmpty(page) {
+  await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+  await page.reload();
+  await page.waitForSelector("#start-hint", { state: "visible" });
+}

@@ -20,7 +20,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { reloadEmpty, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4181, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4181/";
@@ -458,8 +458,7 @@ try {
     const { page } = await fresh();
     try {
       await useOllama(page);
-      await page.reload();
-      await page.waitForSelector("#start-hint", { state: "visible" }); // each load is a new, empty project here (U0c)
+      await reloadEmpty(page); // each load is a new, empty project here (U0c)
       assert.equal(await page.textContent("#assistant-toggle"), "AI Ollama");
       await page.click("#assistant-toggle");
       await page.waitForFunction(() => document.querySelector("#ai-model-pick").value === "qwen2.5:1.5b");
@@ -553,8 +552,7 @@ try {
       await useOllama(page);
       await page.selectOption("#ai-provider", "");
       assert.equal(await page.textContent("#assistant-toggle"), "AI off");
-      await page.reload();
-      await page.waitForSelector("#start-hint", { state: "visible" }); // each load is a new, empty project here (U0c)
+      await reloadEmpty(page); // each load is a new, empty project here (U0c)
       await page.click("#assistant-toggle");
       await looked(page);
       await page.click("#ai-detect");
@@ -583,8 +581,7 @@ try {
       assert.equal(await page.isVisible("#ai-model"), true);
       await page.fill("#ai-model", "my-tuned-model");
       await page.dispatchEvent("#ai-model", "change");
-      await page.reload();
-      await page.waitForSelector("#start-hint", { state: "visible" }); // each load is a new, empty project here (U0c)
+      await reloadEmpty(page); // each load is a new, empty project here (U0c)
       await page.click("#assistant-toggle");
       await page.waitForFunction(() => document.querySelector("#ai-model").value === "my-tuned-model");
       assert.equal(await page.isVisible("#ai-model"), true, "a name not in the list stays a typed name");
