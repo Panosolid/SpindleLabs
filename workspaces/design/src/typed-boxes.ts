@@ -8,6 +8,7 @@
 // outside, ends the line as before). Styles: src/styles/typed-entry.css.
 
 import { readAngle, readLength, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
+import { keepInside } from "./pointer-hint.ts";
 
 export interface TypedBoxEvents {
   /** The locks changed (a box's text now reads as a size, or no longer does). */
@@ -163,6 +164,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
       root.hidden = false;
       root.style.left = `${Math.round(x)}px`;
       root.style.top = `${Math.round(y)}px`;
+      keepInside(root, host);
     },
     start(text) {
       if (fields.length === 0) return;

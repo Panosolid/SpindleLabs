@@ -1,0 +1,20 @@
+{
+  "seed": 2001,
+  "what": "Drawing a line with the pointer near the view's right edge: the typed Length and Angle boxes stuck out 4 px past the window, and the page scrolled sideways (found by hunt 3f's 2,000-action session, seed 2001, action 65; the boxes now keep inside the view)",
+  "actions": [
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-YZ"
+    },
+    {
+      "do": "canvas",
+      "x": 0.924,
+      "y": 0.937,
+      "double": false
+    }
+  ]
+}

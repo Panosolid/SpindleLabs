@@ -10,6 +10,10 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.1 (2026-10-25)
+
+- Fixed: drawing a line or rectangle near the right or bottom edge of the view, the Length and Angle boxes by the pointer stuck 4 px out past the window and the whole page scrolled sideways. The boxes, and the hint by the pointer, now measure where they were drawn and move back inside the view at every edge (on a phone too, where the boxes sit centred under a finger near the left edge). Found by the daily bug hunt's new long sessions (3f): the seeded "monkey" tester drove the real app for 2,000 actions with every check after every action, and on seed 2001 it failed at action 65; it shrank that to three actions (Create sketch, pick YZ, click near the bottom-right corner), now kept as a browser regression test, with seven hand-worked unit cases for the placement. With the fix, four sessions of 2,000 actions ran clean. Two sessions like that now run every night, and a failure files an issue by itself.
+
 ## 0.32.0 (2026-10-25)
 
 - Step 32 (3 of 6 parts of 32a): the facts table now measures edges. Two edges are checked against each other first: crossing (within their two tolerances added together), meeting only at a shared corner, or lying along each other over a stretch, with that stretch's two ends. Then each edge against each nearby face of the other body: where it passes through the face's plane, and whether that point is inside the face, on one of its edges or corners, or outside; or, if the edge lies flat in the plane, which parts of it are inside the face, outside, or along the face's edge. Two boxes sharing an edge (a hinge) are recorded as an overlap, not missed. Checked by hand-worked cases, the limits at 0.9 and 1.1 times the tolerance, crossings at angles down to 0.000000003 radians found to 0.000000000001 mm, hundreds of random turned boxes checked fact by fact, and mutation testing.
