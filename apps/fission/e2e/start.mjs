@@ -38,3 +38,22 @@ export async function reloadEmpty(page) {
   await page.reload();
   await page.waitForSelector("#start-hint", { state: "visible" });
 }
+
+/**
+ * File ▾ (U0f2a): chooses item `id` (start-fresh for New, open, file-save,
+ * file-export-stl), as a person would, by a click or a tap on File ▾ and
+ * then on the item.
+ */
+export async function chooseFile(page, id, tap = false) {
+  const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+  await press("#file-menu");
+  await press(`#${id}`);
+}
+
+/** File ▾'s item `id` as the menu shows it now, [off, tooltip], read with the menu open and the menu closed again. */
+export async function fileItem(page, id) {
+  await page.click("#file-menu");
+  const state = await page.$eval(`#${id}`, (b) => [b.getAttribute("aria-disabled") === "true", b.title]);
+  await page.click("#file-menu");
+  return state;
+}

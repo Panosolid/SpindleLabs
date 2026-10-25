@@ -498,11 +498,16 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const view = plugins.find((p) => p.id === "design")!.mount(ctx);
   await settle();
   assert.match(ctx.properties.querySelector("#error")!.textContent!, /no kernel in this test/);
-  // Its toolbar (16b), Fusion's way (U0f1): Create ▾ (the sketch tool, 21c, and Extrude), Insert ▾ (U0d), Inspect ▾, the command groups, then Start fresh's Design group.
+  // Its toolbar (16b), Fusion's way (U0f1): Create ▾ (the sketch tool, 21c, and Extrude), Insert ▾ (U0d), Inspect ▾, then the command groups; Start fresh is File ▾'s New (U0f2a).
   const groups = [...ctx.toolbar.querySelectorAll<HTMLElement>(":scope > [role=group], :scope > * > [role=group]")].filter((g) => g.closest(".menu-button-menu") === null);
-  assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Insert", "Inspect", "Export", "Design"]);
+  assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Insert", "Inspect", "Export"]);
   // The sketch's own toolbar (SF3b) is there too, hidden until a sketch is edited: its Create menu and tools first, Finish Sketch last.
-  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Insert", false], ["Inspect", false], ["Export", false], ["Design", false], ["Finish", true]]);
+  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Insert", false], ["Inspect", false], ["Export", false], ["Finish", true]]);
+  // Its File ▾ entries (U0f2a): New is on (the box is there to clear); Export STL is off, saying why, as the failed kernel built nothing.
+  const file = view.fileEntries!();
+  assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);
+  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", "There is no body to download: nothing in the timeline builds."]]);
+  assert.match(file.exports![0].title, /^Export STL: Download every body shown/);
   // The part's shape is the panel's Shape choice now: the box.
   assert.equal(ctx.properties.querySelector<HTMLSelectElement>("#shape")!.value, "box");
   view.unmount();

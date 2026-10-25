@@ -4,7 +4,7 @@
 // each top face), the view frames both, the browser's Bodies group lists
 // Body 1 and Body 2, a click on either top face selects that body's face by
 // its stable name, and Body 2's row tints only its own faces. The same at
-// 375 px with taps. Start fresh (start-fresh.ts) with both bodies there:
+// 375 px with taps. File ▾ > New (start-fresh.ts) with both bodies there:
 // it asks, Cancel and Escape change nothing, confirmed it leaves the fresh
 // box alone, and one Undo brings everything back. Screenshots go to
 // E2E_SHOTS when set. Run with
@@ -14,7 +14,7 @@ import { launch } from "./browser.mjs";
 import { withPropertiesFolded } from "./properties.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { chooseFile, fileItem, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4205, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4205/";
@@ -97,8 +97,8 @@ async function addSquare(page, { square, distance, volume }, tap) {
   await press(page, "#create-sketch", tap);
   await press(page, "#sketch-plane-XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-  // While a sketch is edited Start fresh is out of the way, as the other modelling buttons are.
-  assert.equal(await page.isVisible("#start-fresh"), false, "Start fresh hidden while sketching");
+  // While a sketch is edited File ▾'s New is off, saying why, as the toolbar's Start fresh was hidden then (U0f2a).
+  assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: finish or cancel the sketch first."], "New off while sketching");
   await page.check("#sketch-grid-snap");
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
   await press(page, "#sketch-tool-rectangle", tap);
@@ -226,25 +226,23 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
         volume: document.querySelector("#volume")?.textContent,
         sketches: document.querySelectorAll('#browser [data-node^="sketches/"]').length,
         timeline: document.querySelectorAll("#timeline [data-item]").length,
-        button: [document.getElementById("start-fresh").disabled, document.getElementById("start-fresh").title],
         open: document.getElementById("start-fresh-dialog").open,
         undo: document.getElementById("undo").title,
       }));
-    const ALREADY = "Start fresh: nothing to clear, the design is already empty.";
-    const ON = "Start fresh: clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
-    // A new design is already empty (U0c): the button is off and says why.
-    assert.deepEqual((await state()).button, [true, ALREADY]);
+    const ALREADY = "New: nothing to clear, the design is already empty.";
+    const ON = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back.";
+    // A new design is already empty (U0c): File ▾'s New is off and says why.
+    assert.deepEqual(await fileItem(page, "start-fresh"), [true, ALREADY]);
     await startWithBox(page, tap);
     await addSquare(page, { square, distance, volume }, tap);
     assert.deepEqual(await bodyRows(page), ["body-1 Body 1", "body-2 Body 2"]);
     const before = await state();
     assert.equal(before.sketches, 1);
-    assert.deepEqual(before.button, [false, ON]);
+    assert.deepEqual(await fileItem(page, "start-fresh"), [false, ON]);
 
     // Asks first, naming what goes: the box and Extrude 1 are features, Sketch 1 a sketch.
     const ask = async () => {
-      await page.locator("#start-fresh").scrollIntoViewIfNeeded();
-      await press(page, "#start-fresh", tap);
+      await chooseFile(page, "start-fresh", tap);
       await until(page, () => document.getElementById("start-fresh-dialog").open, null, "the dialog");
     };
     await ask();
@@ -271,7 +269,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await press(page, "#start-fresh-confirm", tap);
     await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "the empty design's hint");
     const after = await state();
-    assert.deepEqual(after, { volume: "—", sketches: 0, timeline: 0, button: [true, ALREADY], open: false, undo: "Undo Start fresh (Ctrl+Z)" });
+    assert.deepEqual(after, { volume: "—", sketches: 0, timeline: 0, open: false, undo: "Undo Start fresh (Ctrl+Z)" });
+    assert.deepEqual(await fileItem(page, "start-fresh"), [true, ALREADY], "New off again");
     assert.deepEqual(await bodyRows(page), []);
     // Nothing drawn: the view shows no part.
     await until(page, () => document.querySelector("#viewport").dataset.shape === "none", null, "no part drawn");

@@ -18,7 +18,7 @@ import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { MAGIC_JOURNEYS, baselineLine, compareToBaseline, judge, parseBaselines, reportLine } from "../../../packages/testing/src/magic.ts";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { chooseFile, fileItem, startWithBox } from "./start.mjs";
 
 /** Walks per journey; the slowest one is judged, so a limit holds every time. */
 const WALKS = 5;
@@ -76,15 +76,16 @@ function stlVolume(bytes) {
  * Insert ▾ and click Box, click the width and type 50, click STL. Returns
  * the clicks counted on the page, the milliseconds from the first click to
  * the file, and the file. `extraClick` adds a needless click (the
- * deliberate break). Set-up, not counted: Start fresh (asked and
+ * deliberate break). Set-up, not counted: File ▾ > New (asked and
  * confirmed) empties the design again for the next walk.
  */
 async function designShapeToStl(page, { extraClick = false } = {}) {
-  if (await page.isEnabled("#start-fresh")) {
-    await page.click("#start-fresh");
+  if (!(await fileItem(page, "start-fresh"))[0]) {
+    await chooseFile(page, "start-fresh");
     await page.click("#start-fresh-confirm");
   }
-  await page.waitForFunction(() => document.querySelector("#viewport").dataset.shape === "none" && document.querySelector("#start-fresh").disabled);
+  await page.waitForFunction(() => document.querySelector("#viewport").dataset.shape === "none");
+  assert.equal((await fileItem(page, "start-fresh"))[0], true, "empty again: New is off");
   await page.evaluate(() => (window.journeyClicks = 0));
 
   const t0 = performance.now();

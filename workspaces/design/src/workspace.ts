@@ -811,7 +811,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // The item the Edit feature panel is open on was deleted (the bar, Undo in another way): the panel goes with it.
     if (editBox.editing !== null && !doc.timeline.features.some((f) => f.id === editBox.editing)) leaveEdit();
     drawBrowser(doc);
-    fresh.showFor(doc);
     showStart();
     showFailed(doc);
     showKept();
@@ -964,7 +963,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     saved = { doc: next, shape, sizes: inputs.map((i) => i.value) };
     ctx.projectChanged(label);
     drawBrowser(next);
-    fresh.showFor(next);
     showStart();
     showFailed(next);
     showKept(); // the rows are new: mark them again until the rebuild says otherwise
@@ -1579,6 +1577,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ),
     sleep,
     run,
+    // File ▾ (U0f2a): New clears the design after asking (start-fresh.ts); Export STL downloads every body shown, as the toolbar's STL does.
+    fileEntries: () => {
+      const doc = designDoc();
+      const stl = DESIGN_COMMANDS.find((c) => c.op === "export_stl")!;
+      const bodies = shownBodyRefs(doc, failedNow);
+      return {
+        new: fresh.entry(doc, mode.kind !== "none"),
+        exports: [{ id: "file-export-stl", label: "Export STL", title: `Export STL: ${stl.summary}`, off: bodies.length === 0 ? NO_BODY_STL : undefined, run: () => run({ op: "export_stl" }) }],
+      };
+    },
     // What the AI assistant is told before a request (25c3): the timeline as last built, and the panel's sizes, which a set_part keeps for each it leaves out.
     aiView: () => {
       const [width, depth, height] = inputs.map((i) => Number(i.value));

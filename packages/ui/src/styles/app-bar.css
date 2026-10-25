@@ -1,0 +1,20 @@
+/* The app bar's ends (U0f2a), as in Fusion: at the left File ▾, Save as an
+   icon and Undo and Redo as icons (the pair's own look is undo-redo.css);
+   at the right AI, Guide and Community, small, each an icon before its
+   word. Save's word stays its name, out of sight, as a toolbar icon's
+   does. At phone width Save is File ▾'s (the bar keeps its room for the
+   tabs) and the right end folds behind Menu (theme.css). ":not(#none)"
+   lifts a rule over the base layout's "#topbar button". */
+.app-bar.app-bar-file { display: flex; align-items: center; flex-shrink: 0; }
+/* Icon buttons as tall as the bar's text buttons (41 px: 11 + 20 + 8 and the 2 px line under a chosen one), the icon's middle 1 px under the words' middle. */
+.app-bar.app-bar-file #save:not(#none) { display: inline-flex; align-items: center; padding: 11px 6px 8px; }
+.app-bar.app-bar-file #save .tool-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.app-bar.app-bar-file .undo-redo button:not(#none) { display: inline-flex; align-items: center; justify-content: center; padding-top: 11px; padding-bottom: 8px; }
+.app-bar.app-bar-end button.with-icon:not(#none) { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.app-bar.app-bar-end button.with-icon .icon { flex-shrink: 0; }
+@media (max-width: 640px) {
+  .app-bar.app-bar-file #save:not(#none) { display: none; }
+  /* File ▾ fills the bar's row, top to bottom, to be as easy a tap as can fit. */
+  .app-bar.app-bar-file { align-self: stretch; }
+  .app-bar.app-bar-file .menu-button, .app-bar.app-bar-file .menu-button-toggle { height: 100%; }
+}
