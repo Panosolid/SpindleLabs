@@ -10,6 +10,10 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.0 (2026-10-25)
+
+- Step 32 (1 of 6 parts of 32a), the facts table begins. Before a boolean measures anything, it now checks what it was given: flat faces only until curved booleans arrive, and no corner or edge looser than 500 nm, refused with words naming it. It puts each body's corners, edges and faces in an order that comes from their positions alone, so the answer never depends on the order they happen to be stored in. It finds which corners, edges and faces of one body are near enough to the other's to be worth measuring, by sorting boxes rather than trying every pair, smallest things first (corner to corner, corner to edge, edge to edge, then against faces), as other kernels' lessons advise. Checked by hand-counted cases, the near-or-not limit at 0.9 and 1.1 times the tolerances, hundreds of random cases against trying every pair (including how much work it does), shuffled storage giving the same answer, and mutation testing.
+
 ## 0.31.5 (2026-10-25)
 
 - Boolean plan, lessons from other kernels (docs only, Ben's ask): OpenCascade's boolean design and sources, Manifold and SolveSpace were read for ideas, nothing copied, and compared with steps 32 to 36. The plan already matched them on the facts table, splitting and classifying; it now also says to find facts in order (corners, then edges, then faces) so one point is never measured twice, to record edges lying along edges or in faces (a box turned about its own edge, with hand-worked volumes), to check again after a corner's tolerance grows, to refuse a merge that would collapse two corners of one body, to leave two edges meeting at a small angle out of the closeness check, and how the edge wedge test breaks ties. Where OpenCascade loosens tolerances afterwards, drops tiny edges or snaps near misses, the plan keeps refusing with an error that says where.
