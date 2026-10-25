@@ -108,7 +108,7 @@ Booleans
 - [ ] 32. Splitting planar faces along intersection lines
 - [ ] 33. Inside/outside classification with exact predicates: three-valued IN/OUT/ON, seeded ray retries (B0 decision 7)
 - [ ] 34. Naming rules for booleans (pulled forward from full naming, 40, by the architecture review of 2026-10-22, item 1; testing area, so it can run alongside 31–33, which are kernel; it must land before 35). Today a name belongs to one feature, but Combine mixes features, so a name must be able to say which features' faces made it, and edges between faces of different features must be nameable (fillets need them). Every name valid today stays valid (old names are a subset of the new rules), and 35's history map carries the names through. 40 finishes the rest after 39. Substeps: `docs/progress/booleans.md` (34a)
-- [ ] 35. Union/subtract/intersect for planar solids + boolean property tests + oracle comparison; add cargo-fuzz (coverage-guided) over the harness's operation set. Baking a placement rounds corners off their planes: before booleans bake turned geometry, `mass.rs` needs a volume formula that stays consistent then (a 1 km frame with 1 µm walls, turned and baked, gives 4010.3 instead of 4000.0 today; 37231 instead of 40000 at the old 10 km limit; see the step 12 regressions). The Combine tool (from 54) lands with 35, as 35f, the first piece of booleans to try in the app: join, cut or intersect two chosen bodies; a body with curved faces is refused with a message naming the face until 37 and 38 (a tracked compromise, never a wrong answer). With 35, as 35d (architecture review): a kernel watchdog in `kernel-client.ts` (a kernel call that hangs or the worker dies is reported and the worker restarted, never a frozen app), and the body store keeps a display mesh only for bodies on screen, made when asked for
+- [ ] 35. Union/subtract/intersect for planar solids + boolean property tests + oracle comparison; add cargo-fuzz (coverage-guided) over the harness's operation set. Baking a placement rounds corners off their planes: before booleans bake turned geometry, `mass.rs` needs a volume formula that stays consistent then (a 1 km frame with 1 µm walls, turned and baked, gives 4010.3 instead of 4000.0 today; 37231 instead of 40000 at the old 10 km limit; see the step 12 regressions). The basic tools (Move/Rotate, Duplicate, Measure, Mirror) land just before it, as 35e2. The Combine tool (from 54) lands with 35, as 35f, the first piece of booleans to try in the app: join, cut or intersect two chosen bodies; a body with curved faces is refused with a message naming the face until 37 and 38 (a tracked compromise, never a wrong answer). With 35, as 35d (architecture review): a kernel watchdog in `kernel-client.ts` (a kernel call that hangs or the worker dies is reported and the worker restarted, never a frozen app), and the body store keeps a display mesh only for bodies on screen, made when asked for
 - [ ] 36. Coplanar faces, touching edges, shared vertices; the vertex-fan check and `NonManifoldResult`, decided on the result (B0 decision 2); merging faces and edges, and the history map (decision 6)
 
 Curved booleans and extrude modes
@@ -164,7 +164,7 @@ Modelling tools
 - [ ] 61. Rectangular/circular patterns, mirror
 - [ ] 62. Shell
 - [ ] 63. Draft
-- [ ] 64. Move/copy/align bodies
+- [ ] 64. Move/copy/align bodies (its basics, Move/Rotate, Duplicate and Mirror, already land earlier as 35e2; this step adds align and the rest)
 - [ ] 65. Measure, section view
 - [ ] 66. Appearances, physical properties
 

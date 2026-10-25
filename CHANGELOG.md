@@ -12,6 +12,8 @@ Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `
 
 ## 0.32.2 (2026-10-25)
 
+- Roadmap: a new step 35e2, basic tools (Move/Rotate, Duplicate body, Measure, Mirror body), just before Combine (35f), so there is something to test on and to demo (Ben's ask, demo around 8 Nov). Step 64 notes that it covers the basics. Words only.
+
 - Fixed: two ways a stranger on GitHub could get in the way of the repository's own bots (Ben's ask: outsiders can do no damage or annoyance). Auto-merge recognised its own earlier comments by a hidden marker, and counted that marker in anyone's comment, so a stranger could paste one on our pull request to stop a conflict reminder or keep a pull request out of the merge queue; it now counts only comments posted by the workflow itself (github-actions[bot]). And the nightly testing's issues were open for anyone to comment on, while Claude sessions read those issues to fix what they report; every issue it files or updates is now locked, so only people with write access can comment (audit 2026-10-22, M2). Checked by unit tests where a stranger's comment carries each marker (conflict, behind main, removed from the queue), issue filing with a fake `gh` (a new issue, a comment, a reopen and an issue already locked), and planted breaks: counting every comment again fails two of the new tests, and leaving out the lock fails all three. Already safe and unchanged: auto-merge acts only on `claude/` branches of this repository, never on a fork's branch of the same name, and never runs a pull request's code; forks get no secrets; a fork can't cancel our CI runs.
 
 ## 0.32.1 (2026-10-25)
