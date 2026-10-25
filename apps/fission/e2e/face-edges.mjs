@@ -31,7 +31,7 @@ import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { chooseFile, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/?test-hooks";
@@ -229,10 +229,10 @@ async function settle(page) {
 }
 
 /** Feature 1, the 40 × 30 × 20 box; Sketch 1 on XY, the line (50, 0) → (70, 0) and the arc from (70, 0) counter-clockwise round (60, 0) back; Extrude 1 by 10. */
-/** The project saved (Save, behind Menu at 375 px), as JSON. */
+/** The project saved (the Save icon; File ▾'s Save at 375 px, U0f2a), as JSON. */
 async function saveFile(page, tap) {
-  if (!(await page.isVisible("#save"))) await press(page, "#menu-toggle", tap);
-  const [download] = await Promise.all([page.waitForEvent("download"), press(page, "#save", tap)]);
+  const save = (await page.isVisible("#save")) ? press(page, "#save", tap) : chooseFile(page, "file-save", tap);
+  const [download] = await Promise.all([page.waitForEvent("download"), save]);
   return JSON.parse(readFileSync(await download.path(), "utf8"));
 }
 /** Waits for the part's volume to read like `pattern`, saying what it read on failure. */

@@ -4,7 +4,8 @@
 // longer timeline only adds rows here.
 
 import type { Feature, GeometryReference } from "@fission/core";
-import { buildingItems, isSketchItem, profileLabel, type DesignDocument } from "./document.ts";
+import { ICONS, type IconName } from "@fission/ui";
+import { buildingItems, isHidden, isSketchItem, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -18,17 +19,30 @@ export interface BrowserNode {
   children?: BrowserNode[];
   /** A group shown folded until the user opens it (U0a, like Fusion's browser). */
   startsFolded?: boolean;
+  /** The icon before its words (U0f3, like Fusion's browser): a folder for a group, the item's own for a row. */
+  icon: IconName;
+  /** A Body row's eye (U0f3): whether the body is hidden. Left out on every other row. */
+  hidden?: boolean;
 }
 
 /** The origin every part is built on; the same for every document. */
 const ORIGIN: BrowserNode[] = [
-  { id: "origin-xy", label: "XY plane" },
-  { id: "origin-xz", label: "XZ plane" },
-  { id: "origin-yz", label: "YZ plane" },
-  { id: "origin-x", label: "X axis" },
-  { id: "origin-y", label: "Y axis" },
-  { id: "origin-z", label: "Z axis" },
+  { id: "origin-xy", label: "XY plane", icon: "plane" },
+  { id: "origin-xz", label: "XZ plane", icon: "plane" },
+  { id: "origin-yz", label: "YZ plane", icon: "plane" },
+  { id: "origin-x", label: "X axis", icon: "axis" },
+  { id: "origin-y", label: "Y axis", icon: "axis" },
+  { id: "origin-z", label: "Z axis", icon: "axis" },
 ];
+
+/** A timeline item's icon, as its toolbar button's: a preset's own shape's (the slot's for a slot, though an extrude of its profile), else a sketch's or an extrude's; any other feature the plain feature icon. */
+export function itemIcons(doc: Pick<DesignDocument, "profiles">): (f: Feature) => IconName {
+  const kindOf = presetKinds(doc);
+  return (f) => {
+    const name = kindOf(f) ?? f.intent.type;
+    return Object.hasOwn(ICONS, name) ? (name as IconName) : "feature";
+  };
+}
 
 /**
  * The solid features that build (`builds`: not suppressed, not after the
@@ -72,28 +86,31 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
   const items = new Map<string, Feature>();
   for (const f of features) if (isSketchItem(f) && !items.has(f.id)) items.set(f.id, f);
   const sketchItemOf = (id: string) => items.get(id) ?? sketchItem(document, id);
+  const iconOf = itemIcons(document);
   return [
     {
       id: "timeline",
       label: "Timeline",
+      icon: "folder",
       // The bar along the bottom shows every item already, with the same menu and double-click.
       startsFolded: true,
       children: features.map((f) => {
         const off = f.suppressed ? " (suppressed)" : "";
-        return { id: f.id, label: `${f.provenance.self.label}${off}`, title: `${f.provenance.self.label}${off}\n${f.intent.summary}` };
+        return { id: f.id, label: `${f.provenance.self.label}${off}`, title: `${f.provenance.self.label}${off}\n${f.intent.summary}`, icon: iconOf(f) };
       }),
     },
     {
       id: "sketches",
       label: "Sketches",
+      icon: "folder",
       children: document.sketches.map((s) => {
         const item = sketchItemOf(s.id);
-        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${item.intent.summary}` };
+        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${item.intent.summary}`, icon: "sketch" };
       }),
     },
-    { id: "profiles", label: "Profiles", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p) })) },
-    { id: "bodies", label: "Bodies", children: bodyRows(document, failed).map(({ id, label }) => ({ id, label })) },
-    { id: "origin", label: "Origin", children: ORIGIN, startsFolded: true },
+    { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
+    { id: "bodies", label: "Bodies", icon: "folder", children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", hidden: isHidden(document, feature.id) })) },
+    { id: "origin", label: "Origin", icon: "origin", children: ORIGIN, startsFolded: true },
   ];
 }
 
@@ -130,7 +147,8 @@ export function rowReference(node: string, doc: DesignDocument, failed: Readonly
  * number (security audit S2: listing them per row took its square).
  */
 export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): (node: string) => GeometryReference | null {
-  const rows = new Map(bodyRows(doc, failed).map((r) => [r.id, r.feature.id]));
+  // A hidden body (U0f3) is not drawn, so its rows select nothing: a selection of something unseen.
+  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (isHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));
   const solids = new Set(rows.values());
   // A profile, and (25c1) a sketch with curves by either of its rows: its outline.
   const outlines = new Set([...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))]);

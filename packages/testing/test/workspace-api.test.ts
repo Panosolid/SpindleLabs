@@ -597,6 +597,73 @@ test("a body the kernel failed is not shown: it offers no verb, and the STL butt
   view.unmount();
 });
 
+// The browser's eye (U0f3): a Body row's eye hides its body and shows it
+// again, one undo step each; a hidden body is not drawn, selected, or in the
+// whole design's STL, and the panel says why.
+test("Design's eye hides Body 1 and shows it again, one undo step each, and a hidden body is not drawn, picked or exported", async () => {
+  // The box as make_box gives it, its mesh one triangle so what is drawn can be counted: 3 corners shown, or none.
+  const triangle = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], triangle_faces: [0], edge_lines: [], edge_line_edges: [] };
+  const view = { vertices: 8, edges: 12, faces: 6, face_types: Array(6).fill("plane"), edge_types: Array(12).fill("line"), face_roles: [{ role: "bottom" }, { role: "top" }, { role: "front" }, { role: "back" }, { role: "left" }, { role: "right" }], edge_faces: [[0, 4], [0, 3], [5, 0], [2, 0], [1, 2], [1, 5], [3, 1], [4, 1], [2, 5], [4, 2], [3, 4], [5, 3]], mesh: triangle, volume: 24000, area: 5200, errors: [] } as unknown as BodyView;
+  const base = testContext();
+  const steps: string[] = [];
+  const ctx: WorkspaceContext = {
+    ...base,
+    kernel: { call: ((op: string) => (op === "body_build" ? Promise.resolve(1) : op === "body_view" ? Promise.resolve(view) : op === "body_free" ? Promise.resolve() : Promise.reject(new Error("no STL in this test")))) as KernelCalls["call"] },
+    // The shell records an undo step for each change, by the name Design gives it (20b).
+    projectChanged: (label?: string) => void steps.push(label ?? ""),
+  };
+  const drawn: number[] = [];
+  ctx.viewport.showBody = (mesh) => void drawn.push(mesh.indices.length);
+  const design = plugins.find((p) => p.id === "design")!;
+  design.registerActions!(ctx.actions);
+  const mounted = design.mount(ctx);
+  await settle();
+  const eye = () => ctx.browser.querySelector<HTMLButtonElement>("[data-eye=body-1]")!;
+  const bodyRow = () => ctx.browser.querySelector<HTMLElement>(".tree-row[data-node=body-1]")!;
+  const note = () => ctx.properties.querySelector("#action-note")!.textContent;
+  const hidden = () => (ctx.project.workspaces.design as { hidden?: string[] }).hidden;
+  // Shown: the eye open and pressed, before Body 1's row on its line; the row a button that selects the body.
+  assert.deepEqual([eye().getAttribute("aria-label"), eye().title, eye().getAttribute("aria-pressed"), eye().querySelector("svg")!.dataset.icon], ["Hide Body 1", "Hide Body 1", "true", "eye"]);
+  assert.equal(eye().nextElementSibling, bodyRow());
+  assert.equal(bodyRow().tagName, "BUTTON");
+  assert.equal(drawn.at(-1), 3, "the box is drawn");
+  // Every row and group has its icon before its words, and its words are its name alone.
+  const rows = [...ctx.browser.querySelectorAll<HTMLElement>(".tree-row, .tree summary")];
+  assert.deepEqual(rows.filter((r) => r.firstElementChild?.matches("svg.browser-row-icon") !== true).map((r) => r.textContent), []);
+  assert.equal(bodyRow().textContent, "Body 1");
+  // Body 1 selected, then hidden: the selection goes, the row is dimmed and selects nothing, nothing is drawn.
+  bodyRow().click();
+  assert.deepEqual(ctx.selection.items.map((i) => i.id), ["body:feature-1"]);
+  eye().click();
+  await settle();
+  assert.deepEqual(hidden(), ["feature-1"]);
+  assert.deepEqual(ctx.selection.items, []);
+  assert.deepEqual([eye().getAttribute("aria-label"), eye().getAttribute("aria-pressed"), eye().querySelector("svg")!.dataset.icon], ["Show Body 1", "false", "eye-off"]);
+  assert.ok(eye().parentElement!.classList.contains("browser-row-hidden"));
+  assert.equal(bodyRow().tagName, "SPAN", "a hidden body's row selects nothing");
+  assert.equal(drawn.at(-1), 0, "nothing drawn");
+  assert.deepEqual(steps, ["Hide Body 1"], "one undo step, by the row's name");
+  // The whole design's STL: none shown, so the toolbar's button and File ▾'s entry say why, and the verb never runs.
+  const real = ctx.actions.get("design.download-stl")!;
+  const run = real.run;
+  real.run = () => assert.fail("nothing is shown to download");
+  (ctx.toolbar.querySelector("[data-op=export_stl]") as HTMLElement).click();
+  await settle();
+  assert.equal(note(), "There is no body to download: every body is hidden. Show one with its eye in the browser.");
+  assert.equal(mounted.fileEntries!().exports![0].off, "There is no body to download: every body is hidden. Show one with its eye in the browser.");
+  real.run = run;
+  // Shown again: the list goes, the row selects, the box is drawn; one more undo step.
+  eye().click();
+  await settle();
+  assert.equal(hidden(), undefined);
+  assert.equal(bodyRow().tagName, "BUTTON");
+  assert.equal(eye().getAttribute("aria-label"), "Hide Body 1");
+  assert.equal(drawn.at(-1), 3);
+  assert.equal(mounted.fileEntries!().exports![0].off, undefined);
+  assert.deepEqual(steps, ["Hide Body 1", "Show Body 1"]);
+  mounted.unmount();
+});
+
 // Autosave (19c): the shell saves when told the project changed, so a
 // workspace that edits the project must say so, and one that doesn't edit it
 // must not (a placeholder that did would mark the project changed for nothing).

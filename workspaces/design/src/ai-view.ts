@@ -6,7 +6,7 @@
 
 import type { AIView, Command } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { insertAt, isSketchItem, keptOf, partFeature, partOf, type DesignDocument } from "./document.ts";
+import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, type DesignDocument } from "./document.ts";
 import { timelineBarItems } from "./timeline-bar.ts";
 
 /** The most timeline items the prompt lists: a small local model's prompt stays short. The last ones are kept. */
@@ -49,7 +49,8 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     if (isSketchItem(f)) return `${label} A sketch: builds no body.`;
     if (item.failed) return `${label} Failed: builds no body${failed.has(f.id) ? "" : " (its sketch is gone)"}.`;
     const kept = keptOf(doc, f) ? " Its sketch is lost (deleted, or no longer a closed outline), so it builds from the shape it kept." : "";
-    return `${label} Builds Body ${bodies.indexOf(f) + 1}.${kept}${f === part && adds === null ? " This is the part set_part changes." : ""}`;
+    const hidden = isHidden(doc, f.id) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";
+    return `${label} Builds Body ${bodies.indexOf(f) + 1}.${kept}${hidden}${f === part && adds === null ? " This is the part set_part changes." : ""}`;
   });
   const shown = lines.length > AI_TIMELINE_ITEMS ? [`(${lines.length - AI_TIMELINE_ITEMS} earlier item${lines.length - AI_TIMELINE_ITEMS === 1 ? "" : "s"} left out)`, ...lines.slice(-AI_TIMELINE_ITEMS)] : lines;
   const where =

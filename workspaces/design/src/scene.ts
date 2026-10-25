@@ -7,7 +7,7 @@
 
 import type { BodyView, DisplayMesh, GeometryReference } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import type { DesignDocument } from "./document.ts";
+import { isHidden, type DesignDocument } from "./document.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, readDesignReference, resolveReference, sharedBy } from "./references.ts";
@@ -34,7 +34,8 @@ export interface Scene {
  * The bodies to show after a rebuild: one for every solid feature that
  * builds (`bodyFeatures`, the browser's Body rows, in build order) and the
  * rebuild built, with its view from `cache` and its names. A feature the
- * kernel refused has no body, so none is shown for it.
+ * kernel refused has no body, so none is shown for it; nor is a body the
+ * browser's eye hides (U0f3), which keeps its place number.
  */
 export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cache: BodyCache): Promise<ShownBody[]> {
   const shown: ShownBody[] = [];
@@ -42,7 +43,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
   // Every view asked at once, before the loop waits on one (security audit S2: one round trip each took minutes on a big file).
   for (const f of features) {
     const r = build.results[f.id];
-    if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
+    if (r?.status !== "built" || r.body === undefined || r.spec === undefined || isHidden(doc, f.id)) continue;
     try {
       cache.view(r.body).catch(() => {}); // a refusal is read in the loop below
     } catch {
@@ -50,6 +51,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
     }
   }
   for (const [i, f] of features.entries()) {
+    if (isHidden(doc, f.id)) continue;
     const r = build.results[f.id];
     if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
     const spec = r.spec;

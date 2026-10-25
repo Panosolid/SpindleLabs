@@ -17,8 +17,7 @@
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row:not(#none),
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none) { pointer-events: auto; width: fit-content; max-width: 100%; box-sizing: border-box; margin: 3px 0; background: var(--browser-block); border-radius: 3px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree summary { padding: 2px 8px 2px 6px; font-size: 13px; text-transform: none; letter-spacing: 0; color: #c4cbd5; }
-  /* A plain folder shape after the fold arrow marks a group. */
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree summary::before { content: ""; display: inline-block; width: 13px; height: 10px; margin: 0 6px 0 2px; vertical-align: -1px; background: currentColor; clip-path: polygon(0 0, 40% 0, 52% 22%, 100% 22%, 100% 100%, 0 100%); opacity: 0.75; }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .browser-row-eye:not(#none) { pointer-events: auto; margin: 1px 0; background: var(--browser-block); }
   /* The rows' colour comes from the panel, not the rows, so a red row (a failed item, a kept shape) keeps its red. */
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row:not(#none) { padding: 2px 8px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree summary:hover,
@@ -37,6 +36,22 @@
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row { gap: 2px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree .tree { padding-left: 12px; }
 }
+/* Row icons and body eyes (U0f3, Fusion's browser): a 16 px icon before
+   every row's words (a folder on a group, the origin's plane and axis
+   shapes, a sketch, a profile, a body, a feature's toolbar icon), and an
+   eye before each body's row that hides it or shows it. A hidden body's
+   row is dimmed and its eye crossed out. The icon takes the row's colour,
+   so a red row's icon is red too. */
+.browser-fold .browser-row-icon { flex: none; margin-right: 5px; vertical-align: -3px; opacity: 0.85; }
+.browser-fold .tree summary .browser-row-icon { margin-left: 2px; }
+.browser-fold .browser-row-eye:not(#none) { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; padding: 1px 3px; background: none; border: 1px solid transparent; border-radius: 3px; color: #b5bbc4; cursor: pointer; }
+.browser-fold .browser-row-eye:not(#none):hover, .browser-fold .browser-row-eye:not(#none):focus-visible { border-color: #353a43; color: #e6e9ee; }
+.browser-fold .browser-row-eye[aria-pressed="false"]:not(#none) { color: #6f7680; }
+.browser-fold .browser-row-hidden > .tree-row { opacity: 0.55; }
+@media (max-width: 640px) {
+  .browser-fold .browser-row-eye:not(#none) { min-height: 44px; min-width: 44px; }
+}
+
 /* With a mouse, a row's ⋯ shows only while the pointer is on its row or
    the keyboard is in it, as Fusion's row buttons do; it keeps its place, so
    nothing moves when it shows. A touch screen keeps it shown: it is the

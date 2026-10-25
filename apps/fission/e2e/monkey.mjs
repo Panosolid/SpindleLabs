@@ -181,9 +181,9 @@ async function save(s) {
   return text;
 }
 
-/** Opens `text` as a file through Open's file picker. */
+/** Opens `text` as a file through the file picker File ▾'s Open… opens (U0f2a). */
 async function openFile(s, text, name) {
-  const [chooser] = await Promise.all([s.page.waitForEvent("filechooser", { timeout: 5000 }), s.page.evaluate(() => document.getElementById("open").click())]);
+  const [chooser] = await Promise.all([s.page.waitForEvent("filechooser", { timeout: 5000 }), s.page.evaluate(() => document.getElementById("open-file").click())]);
   await chooser.setFiles({ name, mimeType: "application/json", buffer: Buffer.from(text) });
 }
 
