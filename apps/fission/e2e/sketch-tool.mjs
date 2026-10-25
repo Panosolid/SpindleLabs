@@ -318,9 +318,9 @@ try {
     assert.equal(await page.getAttribute("#sketch-tool-rectangle", "aria-pressed"), "true", "R chose Rectangle");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "false");
     assert.match(await page.textContent("#sketch-help"), /^Click one corner, then the opposite corner/);
-    // Pressed looks pressed (sketch.css, the toolbar's pressed colours), the other not.
+    // Pressed looks pressed (the toolbar's pressed colours), the other flat, with no fill of its own (U0f1, toolbar-group.css).
     const fill = (id) => page.evaluate((i) => getComputedStyle(document.getElementById(i)).backgroundColor, id);
-    assert.deepEqual([await fill("sketch-tool-rectangle"), await fill("sketch-tool-line")], ["rgb(35, 56, 79)", "rgb(38, 42, 49)"]);
+    assert.deepEqual([await fill("sketch-tool-rectangle"), await fill("sketch-tool-line")], ["rgb(35, 56, 79)", "rgba(0, 0, 0, 0)"]);
     // Corner (0, 0), then the pointer at (38, 31) snaps to (40, 30): the preview is the four sides.
     await at(page, [1.5, -2], TOP);
     await points(page, "0,0");

@@ -6,6 +6,9 @@
 .sketchbar.sketchbar-finish:not(#none) { margin-left: auto; }
 .sketchbar #finish-sketch:not(#none) { background: #1f5f3f; border-color: #3ddc97; font-weight: 600; padding: 7px 16px; }
 .sketchbar #finish-sketch:not(#none):hover { background: #26744c; }
+/* U0f: Finish Sketch's icon before its words, and each menu row's icon before its name. */
+.sketchbar #finish-sketch:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
+.sketchbar .sketchbar-menu .sketchbar-menu-name { display: inline-flex; align-items: center; gap: 8px; }
 .sketchbar .sketchbar-menu-button:not(#none) { background: none; border-color: transparent; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #b7c0cc; }
 .sketchbar .sketchbar-menu-button[aria-expanded="true"]:not(#none) { border-color: #4aa8ff; }
 /* The Create menu: fixed to the page under its button, so the toolbar's
@@ -21,7 +24,8 @@
    the sketch panel below as well. */
 @media (max-width: 640px) {
   .sketchbar button:not(#none) { min-height: 44px; }
-  .sketchbar.sketchbar-create:not(#none) { flex-wrap: wrap; max-width: calc(100vw - 24px); flex-shrink: 0; }
+  .sketchbar.sketchbar-create:not(#none) { flex-wrap: nowrap; max-width: calc(100vw - 24px); flex-shrink: 0; }
+  .sketchbar.sketchbar-create .toolbar-group-row { flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
   .sketchbar .sketchbar-menu button:not(#none) { min-height: 44px; align-items: center; }
 }
 /* The Arc row and its own menu of the three arcs, beside the row (under it

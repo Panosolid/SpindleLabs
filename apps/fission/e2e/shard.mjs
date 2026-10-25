@@ -29,6 +29,7 @@ export const SECONDS = {
   "sketch-view.mjs": 15,
   "navigation.mjs": 32,
   "sketch-toolbar.mjs": 20,
+  "toolbar.mjs": 25,
   "centre-arc.mjs": 11,
   "extrude.mjs": 12,
   "face-sketch.mjs": 15,

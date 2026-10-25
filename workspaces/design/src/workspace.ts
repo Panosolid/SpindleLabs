@@ -15,7 +15,7 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { menuButton, type MenuButton } from "@fission/ui";
+import { toolGroup, type MenuButton } from "@fission/ui";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
@@ -72,66 +72,90 @@ let foldKept: FoldState | null = null;
 /** How many times Design has framed the part, read by the e2e test (an undo must not add one). */
 let fits = 0;
 
-/** Fills the toolbar slot: Sketch, Insert ▾ (U0d) and the command groups; returns each command button with its element, and the Insert menu. */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onInsert: (kind: ShapeKind) => void): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton } {
+/** What Inspect ▾ does (U0f): show the body facts, and why there are none yet (null once a body is built). */
+interface Inspecting {
+  facts(): void;
+  none(): string | null;
+}
+
+/** Why Body facts is off with nothing built. */
+const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and its volume, area and faces show here.";
+
+/**
+ * Fills the toolbar slot the way Fusion lays it out (U0f): groups of icons,
+ * each over its name. Create ▾ (Create sketch, Extrude), Insert ▾ (the
+ * presets, U0d), Inspect ▾ (Body facts), then the command groups. Returns
+ * each command button with its element, the Insert menu and the Body facts
+ * button.
+ */
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
+  const button = (id: string, words: string, title: string, run: () => void) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.id = id;
+    b.textContent = words;
+    b.title = title;
+    b.addEventListener("click", run);
+    return b;
+  };
   // The sketch tool is the user's, not a command yet: whether the AI gets
   // create_sketch and draw_line is the AI workstream's call (docs/ai.md).
-  const sketch = document.createElement("div");
-  sketch.className = "tool-group";
-  sketch.setAttribute("role", "group");
-  sketch.setAttribute("aria-label", "Sketch");
-  const sketchName = document.createElement("span");
-  sketchName.className = "tool-group-name";
-  sketchName.textContent = "Sketch";
-  const create = document.createElement("button");
-  create.type = "button";
-  create.id = "create-sketch";
-  create.textContent = "Create sketch";
-  create.title = "Draw lines, rectangles, circles and arcs on a plane: pick the plane, then click.";
+  const sketchTitle = "Create sketch: draw lines, rectangles, circles and arcs on a plane. Pick the plane, then click.";
+  const extrudeTitle = "Extrude: make a solid from a closed sketch, by a distance you type. A new body in the timeline, at the marker.";
+  const create = button("create-sketch", "Create sketch", sketchTitle, onSketch);
   create.dataset.modelling = ""; // hidden while a sketch is edited (SF3b): the sketch's toolbar stands in
-  create.addEventListener("click", onSketch);
-  const extrude = document.createElement("button");
-  extrude.type = "button";
-  extrude.id = "extrude";
-  extrude.textContent = "Extrude";
-  extrude.title = "Make a solid from a closed sketch, by a distance you type: a new body in the timeline, at the marker.";
-  extrude.addEventListener("click", onExtrude);
-  sketch.append(sketchName, create, extrude);
+  const extrude = button("extrude", "Extrude", extrudeTitle, onExtrude);
+  const creating = toolGroup(document, {
+    name: "Create",
+    menu: {
+      id: "create-menu",
+      title: "Every way to make a solid, by name",
+      sections: () => [
+        {
+          items: [
+            { id: "create-menu-sketch", label: "Create sketch", icon: "sketch", title: sketchTitle, run: onSketch },
+            { id: "create-menu-extrude", label: "Extrude", icon: "extrude", title: extrudeTitle, run: onExtrude },
+          ],
+        },
+      ],
+    },
+  });
+  creating.add([create, "sketch"], [extrude, "extrude"]);
+  // While a sketch is edited its own Create ▾ stands in, and Extrude (kept, SF3b) sits over the plain name Solid.
+  creating.menu!.element.dataset.modelling = "";
+  const solid = document.createElement("span");
+  solid.textContent = "Solid";
+  solid.dataset.sketching = "";
+  solid.hidden = true;
+  creating.menu!.element.after(solid);
   // The presets, hidden in a menu until wanted, each a new body (insert.ts).
-  const adding = document.createElement("div");
-  adding.className = "tool-group";
-  adding.dataset.modelling = "";
-  adding.setAttribute("role", "group");
-  adding.setAttribute("aria-label", "Insert");
-  const insert = menuButton(document, { id: "insert", label: "Insert", title: INSERT_TITLE, sections: () => insertSections(onInsert) });
-  adding.append(insert.element);
-  slot.append(sketch, adding);
+  const inserting = toolGroup(document, { name: "Insert", solo: "insert", menu: { id: "insert", title: INSERT_TITLE, sections: () => insertSections(onInsert) } });
+  inserting.element.dataset.modelling = "";
+  // The body facts (volume, area, faces), from the properties panel, folded since U0b.
+  const facts = button("inspect-facts", "Body facts", "Body facts: the volume, area and faces of what is built, in the properties.", () => inspect.facts());
+  facts.disabled = true; // until a body is built (workspace: after each build)
+  const inspecting = toolGroup(document, {
+    name: "Inspect",
+    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }] },
+  });
+  inspecting.add([facts, "inspect"]);
+  inspecting.element.dataset.modelling = "";
+  slot.append(creating.element, inserting.element, inspecting.element);
   for (const group of toolbarGroups()) {
-    const div = document.createElement("div");
-    div.className = "tool-group";
-    div.dataset.modelling = "";
-    div.setAttribute("role", "group");
-    div.setAttribute("aria-label", group.name);
-    const name = document.createElement("span");
-    name.className = "tool-group-name";
-    name.textContent = group.name;
-    div.append(name);
+    const g = toolGroup(document, { name: group.name });
+    g.element.dataset.modelling = "";
     for (const b of group.buttons) {
-      const el = document.createElement("button");
-      el.type = "button";
-      el.textContent = b.label;
-      el.title = b.title;
+      const el = button(`tool-${b.command.op}`, b.label, `${b.label}: ${b.title}`, () => onClick(b));
       el.dataset.op = b.command.op; // read by the e2e test
       if (typeof b.command.shape === "string") el.dataset.shape = b.command.shape;
-      el.addEventListener("click", () => onClick(b));
-      div.append(el);
+      g.add([el, b.icon]);
       made.push([b, el]);
     }
-    slot.append(div);
+    slot.append(g.element);
   }
-  return { made, insert };
+  return { made, insert: inserting.menu!, facts };
 }
 
 /** Whether two sets of ids hold the same ids. */
@@ -276,7 +300,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Mounted by Undo or Redo (step 20c): the first build keeps the camera unless the body no longer fits, even for another shape. */
   let keepCamera = ctx.history.restoring() || putAwayByRestore;
   putAwayByRestore = false;
-  const { insert: insertMenu } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), (kind) => void insertBody(kind));
+  const inspecting: Inspecting = {
+    // Opens the folded panel until the user moves on (U0b), at the numbers.
+    facts() {
+      if (inspecting.none()) return;
+      fold?.reveal();
+      ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
+    },
+    none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
+  };
+  const { insert: insertMenu, facts: factsButton } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), (kind) => void insertBody(kind), inspecting);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);
@@ -833,6 +866,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
       const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines);
       lastScene = scene;
+      factsButton.disabled = inspecting.none() !== null;
       if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
       const part = partFeature(doc);
       partShown = scene.bodies.find((b) => b.feature === part?.id) ?? (failure === undefined ? null : partShown);
@@ -890,6 +924,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Shows the modelling buttons (true) or the sketch's toolbar in their place (false). */
   function modelling(on: boolean) {
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-modelling]")) el.hidden = !on;
+    for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-sketching]")) el.hidden = on;
   }
   const designDoc = () => ctx.project.workspaces.design as DesignDocument;
   /** Counts tool changes (a tool chosen, Escape, the sketch entered again): a click the kernel was still snapping across one is dropped. */

@@ -9,3 +9,5 @@ export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from 
 export { WarmPool, type WarmHooks } from "./warm.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
+export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
+export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from "./tool-group.ts";

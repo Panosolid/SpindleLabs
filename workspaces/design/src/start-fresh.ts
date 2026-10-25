@@ -4,6 +4,7 @@
 // Start fresh button (workspace.ts); the dialog asks first, says what goes,
 // and that Undo brings it back. Styles: src/styles/start-fresh.css.
 
+import { toolGroup } from "@fission/ui";
 import { isSketchItem, type DesignDocument } from "./document.ts";
 
 /** The undo step Start fresh is recorded as. */
@@ -46,8 +47,8 @@ export interface StartFresh {
   readonly open: boolean;
 }
 
-export const START_FRESH_TITLE = "Clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
-export const ALREADY_FRESH_TITLE = "Nothing to clear: the design is already empty.";
+export const START_FRESH_TITLE = "Start fresh: clear the whole design and start again from a new one. It asks first, and Undo brings it back.";
+export const ALREADY_FRESH_TITLE = "Start fresh: nothing to clear, the design is already empty.";
 
 /**
  * The Start fresh button and its dialog, in the toolbar slot's page. The
@@ -58,20 +59,16 @@ export const ALREADY_FRESH_TITLE = "Nothing to clear: the design is already empt
  */
 export function startFresh(slot: HTMLElement, events: { current(): DesignDocument; confirm(): void }): StartFresh {
   const document = slot.ownerDocument;
-  const group = document.createElement("div");
-  group.className = "tool-group start-fresh";
+  const designing = toolGroup(document, { name: "Design" });
+  const group = designing.element;
+  group.classList.add("start-fresh");
   group.dataset.modelling = ""; // hidden while a sketch is edited, as the other modelling buttons are
-  group.setAttribute("role", "group");
-  group.setAttribute("aria-label", "Design");
-  const name = document.createElement("span");
-  name.className = "tool-group-name";
-  name.textContent = "Design";
   const button = document.createElement("button");
   button.type = "button";
   button.id = "start-fresh";
   button.textContent = "Start fresh";
   button.title = START_FRESH_TITLE;
-  group.append(name, button);
+  designing.add([button, "new"]);
 
   const dialog = document.createElement("dialog");
   dialog.id = "start-fresh-dialog";

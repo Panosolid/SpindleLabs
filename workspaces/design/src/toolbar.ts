@@ -6,6 +6,7 @@
 // hidden away until wanted).
 
 import type { Command, CommandSpec } from "@fission/core";
+import type { IconName } from "@fission/ui";
 import { DESIGN_COMMANDS } from "./commands.ts";
 
 export interface ToolButton {
@@ -14,6 +15,8 @@ export interface ToolButton {
   title: string;
   /** What the button issues. */
   command: Command;
+  /** Its icon (U0f, @fission/ui icons.ts). */
+  icon: IconName;
 }
 
 export interface ToolGroup {
@@ -24,11 +27,11 @@ export interface ToolGroup {
 /** Each shape's name (profiles.ts, where a preset's short name "Box 1" takes it from too). */
 export { SHAPE_LABELS } from "./profiles.ts";
 
-const EXPORT_LABELS: Record<string, string> = { export_stl: "STL" };
+const EXPORT_LABELS: Record<string, { label: string; icon: IconName }> = { export_stl: { label: "STL", icon: "export" } };
 
 /** The toolbar's groups for these commands; a command it doesn't know gets no button. */
 export function toolbarGroups(specs: readonly CommandSpec[] = DESIGN_COMMANDS): ToolGroup[] {
   const exports: ToolButton[] = [];
-  for (const spec of specs) if (spec.op in EXPORT_LABELS) exports.push({ label: EXPORT_LABELS[spec.op], title: spec.summary, command: { op: spec.op } });
+  for (const spec of specs) if (spec.op in EXPORT_LABELS) exports.push({ ...EXPORT_LABELS[spec.op], title: spec.summary, command: { op: spec.op } });
   return [{ name: "Export", buttons: exports }].filter((g) => g.buttons.length > 0);
 }

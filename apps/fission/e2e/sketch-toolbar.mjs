@@ -102,10 +102,15 @@ await check("picking a plane swaps the modelling buttons for the sketch's toolba
     await sketching(page, true);
     for (const sel of ["#create-sketch", "#insert", "[data-op=export_stl]"]) assert.equal(await visible(page, sel), false, `${sel} hidden while sketching`);
     for (const sel of ["#sketch-create", "#extrude", "#finish-sketch", ...TOOLS.map((t) => `#sketch-tool-${t}`)]) assert.equal(await visible(page, sel), true, `${sel} shown while sketching`);
-    // Order along the bar: Create, then the tools, Extrude, Finish Sketch last and flush right.
+    // Order along the bar: the tools, Extrude, Finish Sketch last and flush right (U0f: Create ▾ is the tools' name, under them).
     const xs = [];
-    for (const sel of ["#sketch-create", ...TOOLS.map((t) => `#sketch-tool-${t}`), "#extrude", "#finish-sketch"]) xs.push((await rect(page, sel)).left);
+    for (const sel of [...TOOLS.map((t) => `#sketch-tool-${t}`), "#extrude", "#finish-sketch"]) xs.push((await rect(page, sel)).left);
     assert.deepEqual([...xs].sort((a, b) => a - b), xs, `left to right: ${xs.map(Math.round)}`);
+    const first = await rect(page, `#sketch-tool-${TOOLS[0]}`);
+    const last = await rect(page, `#sketch-tool-${TOOLS.at(-1)}`);
+    const name = await rect(page, "#sketch-create");
+    assert.ok(name.top >= first.bottom - 1, `Create ▾ under the tools: its top ${name.top}, the tools' bottom ${first.bottom}`);
+    assert.ok(name.left >= first.left && name.right <= last.right, `Create ▾ within the tools' span: ${name.left}-${name.right}, the tools ${first.left}-${last.right}`);
     const bar = await rect(page, "#toolbar");
     const finish = await rect(page, "#finish-sketch");
     // The toolbar's padding is 12 px each side.
@@ -114,7 +119,8 @@ await check("picking a plane swaps the modelling buttons for the sketch's toolba
     const look = await page.$eval("#finish-sketch", (el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).fontWeight]);
     assert.deepEqual(look, ["rgb(31, 95, 63)", "600"], "Finish Sketch is the green, bold button");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "true", "a sketch starts with Line");
-    assert.equal(await page.textContent("#finish-sketch"), "✓ Finish Sketch");
+    assert.equal(await page.textContent("#finish-sketch"), "Finish Sketch");
+    assert.equal(await page.$eval("#finish-sketch", (b) => b.querySelector("svg.icon")?.dataset.icon), "finish", "its tick is the finish icon (U0f)");
     if (shots) await page.screenshot({ path: `${shots}/sketch-toolbar-1280.png` });
   } finally {
     await page.context().close();
