@@ -107,6 +107,8 @@ FUZZ_TARGETS = {
     "Sketch-extrude sessions": "sketch-extrude sessions",
     # packages/testing/fuzz/timeline.ts (step 25b3)
     "Timeline sessions": "timeline sessions",
+    # packages/testing/fuzz/face-stack.ts (stacked face sketches)
+    "Stacked face sketches": "stacked face sketches",
     # kernel/fuzz/run.sh, the coverage-guided targets (kernel/fuzz/checks.rs)
     "Kernel extrude fuzzing": "kernel's extrude",
     "Kernel sketch fuzzing": "kernel's sketch outline",
@@ -117,7 +119,7 @@ FUZZ_TARGETS = {
 def fuzz_kinds(report):
     """Kinds in a fuzzer's fuzz-report.txt (kernel/tests/fuzz_stl.rs,
     packages/testing/src/project-fuzz.ts, packages/testing/fuzz/sketch-extrude.ts,
-    packages/testing/fuzz/timeline.ts): a first line naming the target,
+    packages/testing/fuzz/timeline.ts, packages/testing/fuzz/face-stack.ts): a first line naming the target,
     then one 'failure: <kind> | <case and input>' line per kind, each
     already one example; numbers are taken out as for the harness."""
     lines = report.splitlines()
