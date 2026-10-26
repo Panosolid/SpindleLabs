@@ -10,6 +10,20 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.14 (2026-10-26)
+
+- Fixed: an edge crossing a face right on one of the face's edges, where that edge met the crossing edge only at a corner of the crossing edge, was placed on the wrong spot (at the corner rather than where the two edges are nearest), and when two face edges were both within reach the one picked depended on where the face's loop started. The holding face edge is now read at the two edges' nearest points within reach, and the nearest face edge wins, ties broken by position, never by loop order. Regression tests failed first, among them issue #352's own case (frontier testing's same-answer check: the generator's side touch at 1 km, B moved 2.2e-5 mm, on the nearer edge from every loop start).
+
+- Fixed: two long edges crossing at an angle smaller than the angle tolerance (a few billionths of a radian) were treated as parallel, so their crossing was lost. The closest-points routine now only falls back to the parallel case when the two are exactly parallel. Regression test (and the seeded closest-points test, now with every eighth pair leaning by 1e-9 to 1e-13 rad) failed first.
+
+- Fixed: an edge lying along an edge of a face (an overlap) could also be given a crossing of its own inside that overlap, two facts for one place. A crossing inside an overlap is now left to the overlap. Regression test failed first.
+
+- Fixed: the "is this point inside the face" test walked straight from corner to corner, but a valid corner may sit up to its tolerance off its edge's curve, so a point clear of the real edge could be called outside (and an edge crossing the face there was lost), or inside when it was outside. The test now walks each edge along its curve, from the corner to the curve's start, along the curve, then to the next corner. Four hand-worked regression tests failed first.
+
+- Fixed: two corners of a face both within tolerance of one place along an edge lying in that face were each given their own mark, two points for one place. That is now the clean rule-1 refusal naming both corners. Regression test (0.9× and 1.1× of where the two corners' reaches meet) failed first.
+
+- Fixed: an edge lying in a face, whose short stretch next to one of the face's corners is within reach of both edges meeting there, had that stretch labelled "along" whichever edge the face's loop listed first (issue #355, frontier testing's same-answer check: seed 30008's prisms touching along an edge at 100 km, moved 2.2e-5 mm, changed answer when the loops started one coedge later). The stretch now lies along the nearer edge at its middle. For crossings and stretches alike, edges as near as each other to rounding (a few ulps, which moving or turning the part changes) are now taken by position, not by which rounded distance came out smaller: the exact model found one such tie (seed 30003, boxes touching along an edge, a crossing exactly as far from two edges). Hand-worked test of the tie rule at 0.9× and 1.1× of the rounding allowance; both real cases failed first. #328's exact model now applies the same nearest-edge rule and agrees on five seeds.
+
 ## 0.32.13 (2026-10-26)
 
 - Fixed: the boolean's facts table crashed on ordinary parts. When an edge of the tool lay inside a longer edge of the target (a box sitting flush on a longer box, say), the check for "is this tool corner the same place as a target corner already listed" looked the tool corner's number up in the target's list. That read the wrong corner, and when the tool had more corners than the target it ran off the end of the list and the kernel panicked. Found by a cold read of step 32's code. Two regression tests failed with the panic first (one edge inside another, worked by hand; a 3 × 1 × 1 box with a cube sitting flush on its top as part of a 16-corner tool) and pass now.
