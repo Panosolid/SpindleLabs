@@ -10,6 +10,10 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.14 (2026-10-26)
+
+- Fixed: the nightly Design mutation check still failed after its tests were all run (#336): 9 changes to the code that renames an older project's presets (`withShortNames`) and reads hidden bodies went unnoticed. Eight were real gaps, each a project file the tests never opened: a sketch named in the old preset form (it must keep its name), a preset with no provenance or without its own name (it must open unchanged), and a sketch listing another workspace's entry, an empty entry and a name the user gave beside its copy of the old name (only Design's copy of the old name may follow). Three new tests cover them; each of the eight changes was put in by hand and each failed a new test. The ninth is harmless and explained: a hidden entry that isn't a string is refused anyway, with the same message. Checked with the Design unit tests and typecheck; tonight's nightly reruns the mutation check.
+
 ## 0.32.13 (2026-10-26)
 
 - Fixed: the boolean's facts table crashed on ordinary parts. When an edge of the tool lay inside a longer edge of the target (a box sitting flush on a longer box, say), the check for "is this tool corner the same place as a target corner already listed" looked the tool corner's number up in the target's list. That read the wrong corner, and when the tool had more corners than the target it ran off the end of the list and the kernel panicked. Found by a cold read of step 32's code. Two regression tests failed with the panic first (one edge inside another, worked by hand; a 3 × 1 × 1 box with a cube sitting flush on its top as part of a 16-corner tool) and pass now.
