@@ -16,6 +16,8 @@ Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `
 
 - Fixed: a valid part with loose (imported-size) tolerances could be refused by the facts table even where the other part touched nothing of it. A corner may sit as far as its own tolerance plus an edge's from its own face's plane and still be valid, but the table measured every corner against its own faces and, past the cap, refused: a cube at 500 nm with one corner 800 nm off its own top was refused with the other part 5 mm away. A corner nothing touches is now kept as it is, with its own tolerance; one the other part does touch is still measured (the same corner with the tool's corner on it is still refused, rightly, because a cut line in that face would end there). Regression test failed first.
 
+- Fixed: the facts table could miss where two edges cross. When a corner of one part touched an edge of the other only through its own looser tolerance (a corner grown to 100 nm by an earlier boolean, its edges still 10 nm), the table took it to mean the two edges meet only at that corner, even when they really crossed 10 µm further along; with the crossing just outside the part, no point was made there at all, which the next step would have tripped over. A corner now holds the meeting only when it is itself within the two edges' own tolerance of the other edge; otherwise the crossing is recorded as well. Regression test failed first (at 0 and 5 nm, and 0.9× and 1.1× of the edges' tolerance); step 32a6b's exact-model check of every generator pair still agrees.
+
 - Also: the kernel's WebAssembly build no longer warns about an unused name in the merge's failure report.
 
 ## 0.32.3 (2026-10-26)
