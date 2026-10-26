@@ -5,7 +5,9 @@
 // is off says why in its tooltip and can't be chosen. It opens with a
 // click or tap, or ArrowDown from the button; ArrowUp and ArrowDown, Home
 // and End move through the items; Escape, Tab, a choice or a press
-// outside closes it, Escape giving the focus back to the button. The menu
+// outside closes it, Escape giving the focus back to the button. While it
+// is open, a letter goes to the next item starting with it and no key
+// reaches the app's shortcuts (? would open the shortcut list over it). The menu
 // is placed under the button with fixed positioning, so a toolbar that
 // scrolls sideways (phones) never clips it, and kept on the screen.
 // An item may carry an icon before its name, and the button one before its
@@ -203,11 +205,16 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
     else if (e.key === "Tab" && isOpen) {
       close(false);
       handled = false; // the focus moves on as Tab says
+    } else if (isOpen && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // A letter typed with the menu open goes to the next item starting with it (as native menus), never to the app's shortcuts.
+      const typed = e.key.toLowerCase();
+      const next = [...list.slice(at + 1), ...list.slice(0, at + 1)].find((b) => (b.querySelector(".menu-button-name")?.textContent ?? "").trim().toLowerCase().startsWith(typed));
+      next?.focus();
     } else handled = false;
     if (handled) {
       e.preventDefault();
       e.stopPropagation(); // the menu's keys are its own: Escape here never also clears Design's selection
-    }
+    } else if (isOpen && e.key !== "Tab") e.stopPropagation(); // while the menu is open, no key is the app's shortcut (Ctrl+Z under an open menu would undo unseen)
   });
   return {
     element,
