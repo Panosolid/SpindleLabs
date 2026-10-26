@@ -12,6 +12,7 @@ Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `
 
 ## 0.32.6 (2026-10-26)
 
+- Testing: a hand-worked lib test for `tessellate.rs`'s `reaches_into` with a chord that shares one end with an arc's chord and reaches into the arc with its other end (and one whose other end is outside), from a 101-mutant sample run by the 10-26 hunt: deleting the `!` before `shared[0]` survived (the nightly whole-kernel run that would have caught it has not finished since 10-23, fixed in 0.32.8). The test fails against that mutant and its `shared[1]` twin, both tried by hand.
 - Fixed: File ▾ could run New (or Export STL) from a design that had already been replaced (issue #323, found by the nightly monkey). With the menu open, a project file opened (every workspace is set up afresh), then New chosen from the still-open menu ran the old setup's New, whose dialog had left the page, and the browser threw an error instead of asking. Each File ▾ item now runs the entry on screen at the moment it is chosen; if that entry is off or gone by then, nothing runs. Checked by a unit test written first and seen failing (the menu opened, a new design put in place, then New, Export STL, an entry turned off and one gone), the monkey's shrunk case kept as a regression replay (it failed on main with the same error, and passes), and the full 2,000-action session of seed 202610251.
 
 ## 0.32.5 (2026-10-26)
