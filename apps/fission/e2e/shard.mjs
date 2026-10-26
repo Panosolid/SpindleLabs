@@ -33,6 +33,7 @@ export const SECONDS = {
   "app-bar.mjs": 20,
   "centre-arc.mjs": 11,
   "extrude.mjs": 12,
+  "extrude-drag.mjs": 20,
   "face-sketch.mjs": 15,
   "assistant.mjs": 25,
   "guide.mjs": 262,

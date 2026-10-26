@@ -5,7 +5,7 @@
 // kernel; the viewport is a stand-in that keeps the last mesh and the last
 // selection highlight it was asked to draw. Not a journey itself.
 import assert from "node:assert/strict";
-import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type KernelCalls, type MountedWorkspace, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 import { designWorkspace, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
@@ -69,6 +69,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   let planes: { planes: readonly OriginPlane[]; faces: readonly number[] } = { planes: [], faces: [] };
   const looks: { plane: Plane; side: 1 | -1 }[] = [];
   let drawings: readonly SketchDrawing[] = [];
+  let extrudeShown: ExtrudeShow | null = null;
   const counted: KernelCalls = {
     call: ((op: string, ...args: unknown[]) => {
       if (op === "body_build") builds++;
@@ -94,6 +95,8 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     clearImage() {},
     showSketches: (d) => void (drawings = d),
     showPlanes: (p, faces = []) => void (planes = { planes: p, faces }),
+    showExtrude: (show) => void (extrudeShown = show),
+    onExtrudePointer: null,
   };
   let view: MountedWorkspace;
   let mounting = false;
@@ -200,6 +203,13 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     planes: () => planes,
     looks: () => looks,
     drawings: () => drawings,
+    /** What Extrude last showed in the view (UX1b): its outlines, chosen one, preview and arrow; null when closed. */
+    extrudeShown: () => extrudeShown,
+    /** A click on an outline (or none) or a drag of the arrow, as the viewport hands it over while Extrude is shown. */
+    async extrudePointer(pointer: ExtrudePointer) {
+      viewport.onExtrudePointer?.(pointer);
+      await settle();
+    },
     /** A click on the view while nothing is sketched on: a face, an edge or a plane, as the viewport hands it over. */
     async pick(p: Partial<ViewportPick>) {
       viewport.onPick?.({ face: null, shift: false, ...p });

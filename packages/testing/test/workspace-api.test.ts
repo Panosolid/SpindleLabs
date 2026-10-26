@@ -151,6 +151,8 @@ function testContext({ empty = false } = {}): WorkspaceContext {
     clearImage() {},
     showSketches() {},
     showPlanes() {},
+    showExtrude() {},
+    onExtrudePointer: null,
   };
   // A new project's design starts empty (U0c); these tests work on a part, the 40 × 30 × 20 box (feature-1).
   const project = emptyProject();

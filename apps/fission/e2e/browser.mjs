@@ -10,6 +10,22 @@ const ENGINES = { chromium, firefox, webkit };
 export const browserName = process.env.E2E_BROWSER || "chromium";
 if (!(browserName in ENGINES)) throw new Error(`E2E_BROWSER must be chromium, firefox or webkit, not ${browserName}`);
 
+/**
+ * Waits until the kernel holds `n` bodies (`window.fissionTest.bodyCount()`,
+ * `?test-hooks`), polling from here: Playwright's waitForFunction takes the
+ * Promise an async predicate returns as true at once, so it never waited
+ * on a count. Fails naming the count it saw last.
+ */
+export async function untilBodies(page, n, what = `${n} bodies in the kernel`, timeout = 15000) {
+  const end = Date.now() + timeout;
+  for (;;) {
+    const count = await page.evaluate(() => window.fissionTest?.bodyCount() ?? null);
+    if (count === n) return;
+    if (Date.now() > end) throw new Error(`${what}: the kernel holds ${count} bodies, not ${n}`);
+    await page.waitForTimeout(50);
+  }
+}
+
 /** Launches the chosen browser. */
 export function launch() {
   // E2E_CHROMIUM runs the Chromium checks on another build, for example CI's
