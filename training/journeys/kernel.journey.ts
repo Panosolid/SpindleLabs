@@ -31,9 +31,9 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
   let checked = 0;
   for (const e of g.examples) {
     const last = [...e.setup, ...e.commands].filter((c) => c.op === "set_part").at(-1);
-    // A request no command can do, or a sketch started (AI7a), about a new project: no part to build (AI5c).
+    // A request no command can do, or a sketch started (AI7a) and drawn in (AI7b), about a new project: no part to build (AI5c).
     if (!last) {
-      assert.ok(e.task === "cannot" || (e.commands.length > 0 && e.commands.every((c) => c.op === "create_sketch")), `${e.task}: ${e.prompt}`);
+      assert.ok(e.task === "cannot" || (e.commands[0]?.op === "create_sketch" && e.commands.every((c) => c.op === "create_sketch" || c.op.startsWith("draw_"))), `${e.task}: ${e.prompt}`);
       continue;
     }
     const { shape, width, depth, height } = last as { shape: Parameters<typeof specFor>[0]; width: number; depth: number; height: number };
