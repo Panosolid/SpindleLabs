@@ -10,6 +10,10 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.19 (2026-10-26)
+
+- Fixed: the Extrude drag browser check at 375 px failed now and then in the merge queue ("the body made: timed out"), dropping other pull requests from it. The check read the dragged distance as soon as the box showed a new number, but a finger's moves reach the page once a frame, so on a busy machine the drag's last moves could still be on their way: the check then expected the body at an earlier distance than the one OK built. The view now counts each finished arrow drag (`data-arrow-drags`), and the check waits for that count before reading the distance, checks the distance is still the one dragged to and OK is on before pressing it, and a timed-out wait for the body now prints what the panel showed (volume, distance, OK, status, error, undo title, body count), so a failure on CI says what it saw. It could not be made to fail here (16 runs with the kernel slowed 0 to 400 ms, and runs with the CPU slowed 3 to 30 times during the drag all passed), so the cause is the likeliest one from reading the code, not one seen. Checked: the file passes at kernel delays of 0, 200, 300 and 400 ms; with the count planted out every drag check fails on the new wait; with OK planted to do nothing the failure prints the panel's state.
+
 ## 0.32.18 (2026-10-26)
 
 - Fixed: a corner of the other part touching just one corner of a part 1 µm wide (whose corners are their summed tolerance apart, as validation allows) had the part refused as "two corners at one point": the re-check treated the merged corner as a new point and joined it to the part's other corner. A shared vertex placed by a corner and no looser than it (to rounding) is that corner's own ball, so its relation to its own part is the part's own; only a tolerance grown past the corner's reaches further. Found by this batch's mutation run; hand-worked regression test (0.9× and 1.1× of the touch, at the origin and 30 km out) failed first.
