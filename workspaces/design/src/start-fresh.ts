@@ -62,8 +62,8 @@ export function startFresh(slot: HTMLElement, events: { current(): DesignDocumen
   const document = slot.ownerDocument;
   const dialog = document.createElement("dialog");
   dialog.id = "start-fresh-dialog";
-  // Styled by its own class: the slot it lives in (the toolbar since U0) has no start-fresh class of its own.
-  dialog.className = "start-fresh-dialog";
+  // Styled by its own class (start-fresh.css): the slot it lives in, the toolbar since U0, has none.
+  dialog.className = "start-fresh";
   dialog.setAttribute("aria-labelledby", "start-fresh-heading");
   dialog.setAttribute("aria-describedby", "start-fresh-words");
   const heading = document.createElement("h2");
