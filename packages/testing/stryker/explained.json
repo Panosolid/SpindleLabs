@@ -915,5 +915,12 @@
     "original": "timer === null",
     "replacement": "true",
     "why": "In followed(), `storedVersion === version` already implies no save is waiting or running: every change adds one to `version` and starts the timer, and a save stores a version only once it has finished, so while a timer or a save is live the stored version is below `version`. The `timer === null` and `!inFlight` terms therefore never change the answer."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof id !== \"string\"",
+    "replacement": "false",
+    "why": "A hidden entry that is not a string is refused anyway, with the same message: byId's keys are the timeline's ids, all strings, and Map.get never matches a string key with a number, object or null, so !at is true for it."
   }
 ]
