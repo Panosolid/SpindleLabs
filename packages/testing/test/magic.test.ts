@@ -159,6 +159,51 @@ test("a broken baseline throws, naming the entry", () => {
   assert.deepEqual(parseBaselines({}, journeys).size, 0);
 });
 
+test("hand-worked: a relative baseline judges the slowest walk as a multiple of the fixed workload, not in seconds", () => {
+  // The 10-26 runs: the slowest walk 1,372.8 ms where the fixed workload's fastest run took 650 ms on the same (busy)
+  // runner, so 1372.8 / 650 = 2.112 (to 4 decimals 2.1120). The baseline day: 1,157 ms slowest with the workload at
+  // 550 ms, 1157 / 550 = 2.1036. 2.1120 / 2.1036 = 1.0040, 0.4% over: fine, where 1372.8 / 1157 = 1.1865, 19% over,
+  // flags in seconds. The relative baseline is what makes a slow runner cancel out.
+  const measured = { clicks: 4, slowestMs: 1372.8, slowestRelative: 2.112 };
+  assert.deepEqual(compareToBaseline(ready, measured, { clicks: 4, slowestMs: 1157, slowestRelative: 2.1036 }), { kind: "ok" });
+  const absolute = compareToBaseline(ready, measured, { clicks: 4, slowestMs: 1157 });
+  assert.deepEqual(absolute.kind === "flag" && absolute.flags.map((f) => f.kind), ["time"]);
+  // The seconds flag carries the relative number along, so the nightly summaries collect it before the owner sets the baseline.
+  assert.deepEqual(absolute.kind === "flag" && absolute.flags[0].text, "slowest 1.37 s = 2.11× the fixed workload, baseline 1.16 s (19% over, flag above 15%)");
+  // The OK line shows both numbers too.
+  assert.equal(
+    baselineLine(ready, measured, { clicks: 4, slowestMs: 1157, slowestRelative: 2.1036 }, { kind: "ok" }),
+    "OK ready one: 4 clicks (baseline 4), slowest 1.37 s = 2.11× the fixed workload (baseline 2.10×) (baseline 1.16 s)",
+  );
+  assert.equal(baselineLine(ready, measured, { clicks: 4, slowestMs: 1157 }, { kind: "ok" }), "OK ready one: 4 clicks (baseline 4), slowest 1.37 s = 2.11× the fixed workload (baseline 1.16 s)");
+});
+
+test("relative margin boundaries: 0.9× of the 15% margin passes, exactly 15% passes, 1.1× of it flags", () => {
+  // Baseline 2.0×: the margin allows up to 2.0 × 1.15 = 2.3. 0.9 × 15% = 13.5% over is 2.27; 1.1 × 15% = 16.5% over is 2.33.
+  const base = { clicks: 4, slowestMs: 1000, slowestRelative: 2 };
+  assert.deepEqual(compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.27 }, base), { kind: "ok" });
+  assert.deepEqual(compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.3 }, base), { kind: "ok" });
+  // 2.33 / 2 − 1 = 16.5% over, which prints rounded to 17%.
+  const slow = compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.33 }, base);
+  assert.deepEqual(slow, { kind: "flag", flags: [{ kind: "time", text: "slowest 5.00 s = 2.33× the fixed workload, baseline 2.00× (17% over, flag above 15%)" }] });
+  // With a relative baseline the seconds are only shown: 5 s against a 1 s baseline passed above. Without it, 5 s flags.
+  assert.equal(compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.27 }, { clicks: 4, slowestMs: 1000 }).kind, "flag");
+});
+
+test("a relative baseline with a measurement that did not time the workload is flagged as missing, never quietly passed", () => {
+  const got = compareToBaseline(ready, { clicks: 4, slowestMs: 1 }, { clicks: 4, slowestMs: 1000, slowestRelative: 2 });
+  assert.deepEqual(got, { kind: "flag", flags: [{ kind: "missing", text: "the fixed workload was not timed, so the slowest walk cannot be judged against the relative baseline" }] });
+});
+
+test("the baseline's slowestRelative is optional, and when given must be a number > 0", () => {
+  const journeys = [ready];
+  assert.deepEqual(parseBaselines({ "ready one": { clicks: 3, slowestMs: 700 } }, journeys).get("ready one"), { clicks: 3, slowestMs: 700 });
+  assert.deepEqual(parseBaselines({ "ready one": { clicks: 3, slowestMs: 700, slowestRelative: 2.1036 } }, journeys).get("ready one"), { clicks: 3, slowestMs: 700, slowestRelative: 2.1036 });
+  for (const bad of [0, -1, NaN, Infinity, "2.1", null]) {
+    assert.throws(() => parseBaselines({ "ready one": { clicks: 3, slowestMs: 700, slowestRelative: bad } }, journeys), /"ready one": slowestRelative/, JSON.stringify(bad));
+  }
+});
+
 test("seeded random measurements agree with a simple baseline model (5 seeds × 500)", () => {
   for (const seed of [11n, 12n, 13n, 14n, 15n]) {
     const r = seeded(seed);
