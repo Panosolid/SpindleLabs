@@ -10,6 +10,10 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.4 (2026-10-26)
+
+- Fixed: the Start fresh dialog (File ▾ > New) showed as a plain white box with the browser's own buttons (Ben's screenshot). Its styles were written for the old toolbar button's group, which the new toolbar (U0) no longer has, so none of them applied. The dialog now carries its own class and its dark panel and red Start fresh button are back. Checked in a real browser at 1280 and 375 px: the File ▾ check now reads the dialog's colours (the panel #1c1f24 and the button #6b2328), which failed before the fix with a white panel, and screenshots at both widths.
+
 ## 0.32.3 (2026-10-26)
 
 - Fixed: the nightly devious-parts test raised a false alarm about once a night (issue #315's rounds). It turns and moves awkward parts and predicts whether the kernel should build or refuse each one, but it judged a part's size only by its box, while the kernel's 1,000,000 mm limit is on each line's length and each arc's radius. A part filling 0.999 of the 1 km limit, turned so one line ran corner to corner, came out with a line just over 1,000,000 mm: the kernel rightly refused it and the test wrongly expected it to build. The prediction now reads the longest line and largest arc radius too (with 2% to spare either side, as for every other limit). Checked by hand-worked cases written first and seen failing: a right triangle whose box is inside the limit but whose long side is 0.9 and 1.1 times it, and a flat arc over a 1,000 mm strip whose radius is 0.9 and 1.1 times it (each predicted and built or refused as the maths says); the three nightly cases replayed from their seeds; and 3,000 cases on each of 12 seeds, including six that failed before, all passing.
