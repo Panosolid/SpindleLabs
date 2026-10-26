@@ -138,16 +138,22 @@ try {
     assert.equal(await data(page, "sketching"), "false", "the sketch is finished");
     assert.equal(await page.isVisible("#sketch-panel"), false);
     assert.equal(await page.isVisible("#extrude-panel"), true);
-    assert.equal(await page.inputValue("#extrude-sketch"), "sketch-2");
+    // UX1b: no dropdown; the sketch just drawn is the profile chosen, its outline lit in the view.
+    assert.equal(await page.textContent("#extrude-profile"), "Sketch 1");
+    assert.equal(await page.getAttribute("#extrude-panel", "data-chosen"), "sketch-2");
     assert.equal(await page.inputValue("#extrude-distance"), "10");
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     assert.equal(await page.isEnabled("#extrude-ok"), true);
     if (shots) await page.screenshot({ path: `${shots}/extrude-panel-1280.png` });
-    // 0 mm is no solid: the kernel says why, the panel stays, nothing is recorded.
+    // 0 mm is no solid (UX1b: a negative distance goes the other way, so only 0 is refused before the kernel): the panel says why, nothing is recorded.
     await page.fill("#extrude-distance", "0");
     await page.click("#extrude-ok");
     await until(page, () => !document.querySelector("#extrude-error").hidden, null, "a refused distance");
-    assert.match(await page.textContent("#extrude-error"), /extrude distance must be between/);
+    assert.equal(await page.textContent("#extrude-error"), "Type a distance other than 0 mm: a negative one goes the other way.");
+    // 2 km is past the kernel's 1 km: the kernel says why (the preview already did), the panel stays, nothing is recorded.
+    await page.fill("#extrude-distance", "2000000");
+    await page.click("#extrude-ok");
+    await until(page, () => /extrude distance must be between/.test(document.querySelector("#extrude-error").textContent), null, "the kernel's refusal");
     assert.equal(await undoTitle(page), "Undo Draw line (Ctrl+Z)");
     assert.equal(await page.textContent("#volume"), "24,000 mm³", "the box is still the part");
     // 10 mm, Enter: 40 · 30 · 10 = 12,000 mm³; area 2(1200) + 2(400) + 2(300) = 3,800 mm².
@@ -208,7 +214,8 @@ try {
     await page.click("#extrude");
     await extrudeStatus(page, "There is no sketch to extrude yet: draw one with Create sketch.");
     assert.equal(await page.isDisabled("#extrude-ok"), true);
-    assert.equal(await page.isDisabled("#extrude-sketch"), true);
+    assert.equal(await page.textContent("#extrude-profile"), "Click a closed sketch in the view");
+    assert.equal(await page.isVisible("#extrude-clear"), false, "nothing to clear");
     await page.click("#extrude-cancel");
     assert.equal(await page.isVisible("#extrude-panel"), false);
     await drawn(page, [[0, 0], [40, 0], [40, 30]]);
@@ -230,7 +237,7 @@ try {
     await status(page, "3 lines, a closed outline.");
     await page.tap("#extrude");
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
-    for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-sketch"]) {
+    for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-flip", "#extrude-clear"]) {
       const box = await page.locator(id).boundingBox();
       assert.ok(box.height >= 44, `${id} is ${box.height} px tall, at least 44 to tap`);
     }
@@ -510,12 +517,12 @@ try {
       await status(page, "4 lines, a closed outline.");
       await press("#sketch-extrude");
       await extrudeStatus(page, "Sketch 1 makes a closed outline");
-      assert.equal(await page.isChecked("#extrude-flip"), false, "Flip starts unticked");
-      // The row is the target: a tap on its word ticks it (44 px tall at phone width).
-      const row = await page.locator(".extrude-flip").boundingBox();
-      if (width === 375) assert.ok(row.height >= 44, `the Flip row is ${row.height} px tall`);
-      await press(".extrude-flip");
-      assert.equal(await page.isChecked("#extrude-flip"), true);
+      assert.equal(await page.inputValue("#extrude-distance"), "10", "it starts going up");
+      // UX1b: Flip turns the distance's sign (a 44 px button at phone width); the preview goes down at once.
+      if (width === 375) assert.ok((await page.locator("#extrude-flip").boundingBox()).height >= 44, "Flip is 44 px tall");
+      await press("#extrude-flip");
+      assert.equal(await page.inputValue("#extrude-distance"), "-10");
+      await until(page, () => document.getElementById("viewport").dataset.extrudeDistance === "-10", null, "the arrow below the plane");
       if (shots) await page.screenshot({ path: `${shots}/extrude-flip-${width}.png` });
       await press("#extrude-ok");
       await volume(page, "12,000 mm³");

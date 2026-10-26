@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { launch } from "./browser.mjs";
+import { launch, untilBodies } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
 import { startWithBox } from "./start.mjs";
@@ -254,7 +254,7 @@ try {
         assert.equal(await status(page), "Started a new project instead. The last one is still kept in this browser: reload the page, before changing anything, to try it again.");
         assert.equal(await page.isVisible("#opening-fresh"), false);
         assert.equal(await mark(page), null, "the plate didn't freeze the tab: the next visit opens it");
-        await page.waitForFunction(async () => (await window.fissionTest.bodyCount()) === 0, null, { timeout: 10_000 });
+        await untilBodies(page, 0, "the plate's late bodies freed", 10_000);
         await page.waitForTimeout(1000);
         assert.equal(await volume(page), "—", "the plate never replaced it");
         assert.equal(await page.isVisible("#start-hint"), true, "still the empty new project");

@@ -74,6 +74,31 @@ test("the keyboard: ArrowDown opens on the first item, arrows wrap past the off 
   assert.equal(leaked, 1, "with the menu closed, Escape is the app's again");
 });
 
+test("with the menu open, a letter goes to the next item starting with it and no other key reaches the app's shortcuts", () => {
+  // Hunt 10-26: ? pressed with File ▾ open opened the shortcut list over the still-open menu.
+  const { doc, m, key, window } = made(() => [{ items: [{ id: "new", label: "New" }, { id: "open", label: "Open…" }, { id: "save", label: "Save" }, { id: "export", label: "Export STL" }].map((i) => ({ ...i, run: () => {} })) }]);
+  const leaked: string[] = [];
+  doc.addEventListener("keydown", (e) => leaked.push((e as KeyboardEvent).key));
+  m.button.focus();
+  key(m.button, "ArrowDown");
+  assert.equal(doc.activeElement?.id, "new");
+  key(doc.activeElement!, "s");
+  assert.equal(doc.activeElement?.id, "save", "s goes to Save");
+  key(doc.activeElement!, "e");
+  assert.equal(doc.activeElement?.id, "export", "e goes to Export STL");
+  key(doc.activeElement!, "O");
+  assert.equal(doc.activeElement?.id, "open", "O wraps round to Open…, whatever the case");
+  key(doc.activeElement!, "?");
+  key(doc.activeElement!, "z");
+  assert.equal(doc.activeElement?.id, "open", "a letter no item starts with stays put");
+  doc.activeElement!.dispatchEvent(new window.KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true }) as unknown as Event);
+  assert.deepEqual(leaked, [], "?, z and Ctrl+Z never reach the app while the menu is open");
+  assert.equal(m.isOpen, true, "and the menu stays open");
+  key(doc.activeElement!, "Escape");
+  key(m.button, "?");
+  assert.deepEqual(leaked, ["?"], "with the menu closed, ? is the app's again");
+});
+
 test("a press outside closes it; the sections are read again each time it opens", () => {
   let n = 1;
   const { doc, m, window } = made(() => [{ items: [{ id: `item-${n}`, label: `Item ${n}`, run: () => {} }] }]);

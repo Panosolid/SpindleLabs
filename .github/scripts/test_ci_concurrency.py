@@ -19,12 +19,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CI = os.path.join(os.path.dirname(HERE), "workflows", "ci.yml")
 
 
-def concurrency():
-    """The group and cancel-in-progress text of ci.yml's top-level concurrency block."""
-    text = open(CI).read()
+NIGHTLY = os.path.join(os.path.dirname(HERE), "workflows", "nightly.yml")
+
+
+def concurrency(path=CI):
+    """The group and cancel-in-progress text of a workflow's top-level concurrency block (ci.yml's by default)."""
+    text = open(path).read()
     block = re.search(r"^concurrency:\n((?:  .*\n)+)", text, re.M)
     if not block:
-        raise AssertionError("ci.yml has no top-level concurrency block")
+        raise AssertionError(f"{os.path.basename(path)} has no top-level concurrency block")
     fields = dict(re.findall(r"^  ([a-z-]+): (.*)$", block.group(1), re.M))
     return fields["group"], fields["cancel-in-progress"]
 
@@ -40,7 +43,7 @@ def lookup(context, name):
 
 
 def evaluate(expr, context):
-    """`a || b`, `a != 'x'`, quoted strings and dotted names: all ci.yml's group uses."""
+    """`a || b`, `a && b`, `a != 'x'`, `a == 'x'`, quoted strings and dotted names: all ci.yml's and nightly.yml's groups use."""
     expr = expr.strip()
     if "||" in expr:
         for alternative in expr.split("||"):
@@ -48,9 +51,18 @@ def evaluate(expr, context):
             if value:
                 return value
         return value
+    if "&&" in expr:
+        for part in expr.split("&&"):
+            value = evaluate(part, context)
+            if not value:
+                return value
+        return value
     if "!=" in expr:
         left, right = expr.split("!=")
         return evaluate(left, context) != evaluate(right, context)
+    if "==" in expr:
+        left, right = expr.split("==")
+        return evaluate(left, context) == evaluate(right, context)
     if expr.startswith("'") and expr.endswith("'"):
         return expr[1:-1]
     if not re.fullmatch(r"[a-z_]+(\.[a-z_]+)*", expr):
@@ -139,6 +151,40 @@ class Groups(unittest.TestCase):
         plant = before["no event (a dispatch cancels the pull request's run)"]
         self.assertEqual(expand(plant, dispatch("claude/x")), expand(plant, pull_request(174, "claude/x")))
 
+
+
+def schedule():
+    return {"github": {"event_name": "schedule", "repository": REPO, "ref": "refs/heads/main", "ref_name": "main", "head_ref": "", "event": {}}}
+
+
+class RandomTestingGroups(unittest.TestCase):
+    """nightly.yml: the night's run, main's runs by hand, and every branch's runs in one shared group (Ben, 2026-10-26)."""
+
+    def group(self, context):
+        return expand(concurrency(NIGHTLY)[0], context)
+
+    def test_worked_by_hand(self):
+        self.assertEqual(self.group(schedule()), "random-testing-nightly")
+        self.assertEqual(self.group(dispatch("main")), "random-testing-main")
+        self.assertEqual(self.group(dispatch("claude/project-thread-e53sft")), "random-testing-branches")
+
+    def test_two_branches_share_one_group_so_only_one_runs(self):
+        self.assertEqual(self.group(dispatch("claude/a")), self.group(dispatch("claude/b")))
+
+    def test_branch_runs_never_hold_up_the_night_or_main(self):
+        branch = self.group(dispatch("claude/a"))
+        self.assertNotEqual(branch, self.group(schedule()))
+        self.assertNotEqual(branch, self.group(dispatch("main")))
+        self.assertNotEqual(self.group(schedule()), self.group(dispatch("main")))
+
+    def test_nothing_is_cancelled_by_a_newer_run(self):
+        # A newer run waits; the running one's rounds give way (branch_testing.py), keeping what they found.
+        self.assertEqual(concurrency(NIGHTLY)[1], "false")
+
+    def test_the_old_group_fails_the_one_at_a_time_rule(self):
+        # Before: one group per branch, so two branches ran at once.
+        before = "random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}"
+        self.assertNotEqual(expand(before, dispatch("claude/a")), expand(before, dispatch("claude/b")))
 
 if __name__ == "__main__":
     unittest.main()

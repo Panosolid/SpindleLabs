@@ -1,9 +1,10 @@
 // The AI assistant's panel: one panel for every workspace, aware of the
 // active one. Off until the user picks a provider (nothing is sent
 // anywhere, and every feature works without it). In Design it turns a
-// request into Design's own command (set_part), shows what would change,
-// and an accepted change is one "AI: …" undo step; a rejected one changes
-// nothing. A remote provider is shown exactly what it will be sent before
+// request into Design's own command (set_part), shows the AI's working
+// out and then what would change, and an accepted change is one "AI: …"
+// undo step; a rejected one changes nothing. A request no command can do
+// gets the AI's plain reason and nothing to accept (AI5c). A remote provider is shown exactly what it will be sent before
 // the first request to it. Opening the panel for the first time picks an
 // AI that runs on this computer if one is found (AI6); options that can't
 // run here are greyed out with the reason. Ollama is looked for only when
@@ -549,6 +550,8 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       const view = viewOf(host);
       const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, AI_COMMANDS, view.notes), messages: [{ role: "user", content: words }] }, AI_COMMANDS);
       if (!answer.ok) return say(answer.error, true);
+      // No commands: the AI says it can't do this with the commands it has (AI5c). Shown, never stood in for.
+      if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       const design = host.design();
       if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
       const { before, after } = partAfter(view, answer.commands);
@@ -560,7 +563,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
         state: () => projectToJson(host.project()),
       });
       pending = action;
-      showPreview(action, await action.preview(), before, after, view.adds, answer.attempts);
+      showPreview(action, await action.preview(), before, after, view.adds, answer.attempts, answer.explanation);
     } catch (e) {
       say((e as Error).message, true);
     } finally {
@@ -568,7 +571,29 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     }
   });
 
-  function showPreview(action: AIAction, preview: Preview, before: Record<string, unknown>, after: Record<string, unknown>, adds: string | null, attempts: 1 | 2) {
+  /** The AI's working out, as plain text (it is untrusted), or a note that it gave none. */
+  function working(explanation: string): HTMLElement {
+    const block = document.createElement("div");
+    block.className = "ai-working";
+    block.innerHTML = `<p class="ai-working-title">Working out</p><p class="ai-working-text"></p>`;
+    const text = block.querySelector(".ai-working-text")!;
+    text.textContent = explanation || "The AI gave no working out for this answer.";
+    text.classList.toggle("ai-working-none", explanation === "");
+    return block;
+  }
+
+  /** An honest "can't do that yet": the AI sent no commands and says why. Nothing to accept. */
+  function showCannot(explanation: string, attempts: 1 | 2) {
+    const box = document.createElement("div");
+    box.id = "ai-cannot";
+    box.className = "ai-preview ai-cannot";
+    box.innerHTML = `<p class="ai-label">The AI can't do this yet.</p><p class="ai-note"></p>`;
+    box.querySelector(".ai-label")!.after(working(explanation));
+    box.querySelector(".ai-note")!.textContent = `Nothing was changed.${attempts === 2 ? " The first answer couldn't be used; this is the second." : ""}`;
+    result.replaceChildren(box);
+  }
+
+  function showPreview(action: AIAction, preview: Preview, before: Record<string, unknown>, after: Record<string, unknown>, adds: string | null, attempts: 1 | 2, explanation: string) {
     const box = document.createElement("div");
     box.id = "ai-preview";
     box.className = "ai-preview";
@@ -579,6 +604,8 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       <details><summary>Commands</summary><pre></pre></details>
       <button id="ai-accept" type="button">Accept</button> <button id="ai-reject" type="button">Reject</button>`;
     box.querySelector(".ai-label")!.textContent = rows.length ? `${preview.label}` : "No change: the part is already like that.";
+    // The working out comes before what would change (docs/ai.md, "Full working out").
+    box.querySelector(".ai-label")!.after(working(explanation));
     const added = adds === null ? "" : ` Accept adds ${adds}; nothing already in the timeline changes.`;
     box.querySelector(".ai-note")!.textContent = `Nothing has changed yet.${added}${attempts === 2 ? " The first answer couldn't be used; this is the second." : ""}`;
     box.querySelector("pre")!.textContent = JSON.stringify(action.commands, null, 2);
