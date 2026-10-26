@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type Framing, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
@@ -9,7 +12,7 @@ import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from ".
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
-import { BASE_COLOUR, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
+import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
 // The kernel is Z-up (like most CAD); Three.js defaults to Y-up.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -669,7 +672,7 @@ export class Viewer implements SharedViewport {
   private mesh: DisplayMesh | null = null;
   private faces: THREE.BufferGeometry | null = null;
   private faceMesh: THREE.Mesh | null = null;
-  private edges: THREE.BufferGeometry | null = null;
+  private edges: LineSegmentsGeometry | null = null;
   private picker: ((pick: ViewportPick) => void) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
   /** The face or edge under the pointer while picking is on (at most one is set). */
@@ -777,7 +780,10 @@ export class Viewer implements SharedViewport {
 
   showBody(mesh: DisplayMesh) {
     this.body.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) o.geometry.dispose();
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
     });
     this.body.clear();
 
@@ -795,11 +801,22 @@ export class Viewer implements SharedViewport {
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
     });
-    const edges = new THREE.BufferGeometry();
-    edges.setAttribute("position", new THREE.Float32BufferAttribute(mesh.edge_lines, 3));
+    // Edges as screen-space strips EDGE_WIDTH_PX wide (a WebGL line is one
+    // device pixel, faint and jagged); the width is in CSS pixels, so each
+    // view's own size is the material's resolution, set as it draws. The
+    // strips are triangles, so they take a polygon offset too: pulled the
+    // other way from the faces, so a finished sketch's line lying on an edge
+    // (an extrude's sketch on its bottom edges) never speckles through it.
+    // They write no depth, so a lost sketch's red, drawn after the body
+    // (LOST_SKETCH_ORDER), still shows on the edges it lies on.
+    const edges = new LineSegmentsGeometry();
+    edges.setPositions(mesh.edge_lines);
     this.edges = edges;
+    const edgeMaterial = new LineMaterial({ vertexColors: true, linewidth: EDGE_WIDTH_PX, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthWrite: false });
+    const edgeLines = new LineSegments2(edges, edgeMaterial);
+    edgeLines.onBeforeRender = (renderer) => renderer.getSize(edgeMaterial.resolution);
     this.faceMesh = new THREE.Mesh(geometry, material);
-    this.body.add(this.faceMesh, new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ vertexColors: true })));
+    this.body.add(this.faceMesh, edgeLines);
     this.hover = { face: null, edge: null }; // indices of the old body
     this.fadeBody();
     this.paint();
@@ -974,12 +991,12 @@ export class Viewer implements SharedViewport {
   private fadeBody() {
     const faded = this.editedPlane !== null;
     for (const o of this.body.children) {
-      if (!(o instanceof THREE.Mesh || o instanceof THREE.LineSegments)) continue;
+      if (!(o instanceof THREE.Mesh)) continue; // the faces, and the edges (LineSegments2 is a Mesh)
       const m = o.material as THREE.Material;
       if (m.transparent !== faded) m.needsUpdate = true;
       m.transparent = faded;
-      m.depthWrite = !faded;
-      m.opacity = faded ? (o instanceof THREE.Mesh ? BODY_FADE.faces : BODY_FADE.edges) : 1;
+      m.depthWrite = !faded && o === this.faceMesh; // the edges never write depth (showBody)
+      m.opacity = faded ? (o === this.faceMesh ? BODY_FADE.faces : BODY_FADE.edges) : 1;
     }
     this.element.dataset.bodyFaded = String(faded);
   }
@@ -1100,7 +1117,7 @@ export class Viewer implements SharedViewport {
       lineColours.set(colour, 6 * s);
       lineColours.set(colour, 6 * s + 3);
     });
-    this.edges.setAttribute("color", new THREE.BufferAttribute(lineColours, 3));
+    this.edges.setColors(lineColours);
   }
 
   /** Sphere around the current body's bounding box (radius 0 if none). */
