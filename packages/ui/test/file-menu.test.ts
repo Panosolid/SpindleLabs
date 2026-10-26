@@ -86,3 +86,41 @@ test("in a real DOM: each opening reads the entries afresh, an entry runs once, 
   assert.deepEqual([...m.menu.querySelectorAll("[role=menuitem] svg.icon")].map((s) => s.getAttribute("data-icon")), ["new", "open", "save", "export"]);
   window.happyDOM.close();
 });
+
+test("an item runs the entry on screen when it is chosen, not the one there when the menu opened (issue #323)", () => {
+  // The monkey opened File ▾, then a project file (every workspace mounted
+  // afresh), then chose New: the menu still ran the old mount's New, whose
+  // dialog had left the page, and showModal threw.
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const now = { mount: "old", sketching: false, design: true };
+  const { ran, entry, parts: base } = parts(() => null);
+  // Each mount's entries keep Design's ids but run their own mount's code.
+  const mine = (id: string, label: string, off?: string): FileMenuEntry => ({ ...entry(id, label, off), run: () => ran.push(`${now.mount} ${id}`) });
+  const p: FileMenuParts = {
+    ...base,
+    entries: () =>
+      now.design ? { new: mine("start-fresh", "New", now.sketching ? "New: finish or cancel the sketch first." : undefined), exports: [mine("file-export-stl", "Export STL")] } : null,
+  };
+  const m = fileMenu(doc, p);
+  doc.body.append(m.element);
+  const choose = (id: string, meanwhile: () => void) => {
+    m.button.click();
+    meanwhile();
+    doc.getElementById(id)!.click();
+  };
+  choose("start-fresh", () => (now.mount = "new")); // a project opened while the menu was open
+  assert.deepEqual(ran, ["new start-fresh"], "the new mount's New runs");
+  choose("file-export-stl", () => (now.mount = "newer"));
+  assert.deepEqual(ran, ["new start-fresh", "newer file-export-stl"], "and its Export STL");
+  // Off by the time it is chosen (a sketch started meanwhile): nothing runs.
+  choose("start-fresh", () => (now.sketching = true));
+  // Gone by the time it is chosen (a workspace with no entries on screen): nothing runs.
+  now.sketching = false;
+  choose("file-export-stl", () => (now.design = false));
+  assert.deepEqual(ran, ["new start-fresh", "newer file-export-stl"]);
+  // Open and Save are the shell's and run as ever.
+  choose("open", () => (now.mount = "last"));
+  assert.deepEqual(ran.at(-1), "open");
+  window.happyDOM.close();
+});

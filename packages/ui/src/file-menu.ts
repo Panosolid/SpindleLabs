@@ -40,10 +40,27 @@ export const noExport = (where: string) => `Export STL: ${where} has nothing to 
 export function fileSections(parts: FileMenuParts): MenuSection[] {
   const entries = parts.entries();
   const where = parts.where();
-  const item = (e: FileMenuEntry, icon: MenuItem["icon"]): MenuItem => ({ id: e.id, label: e.label, title: e.title, off: e.off, icon, run: () => e.run() });
+  // A workspace's entry runs as it is when chosen, found again by its id: the menu may have stayed open while a project
+  // opened (every workspace mounted afresh) or another came on screen, and the one listed then is gone (issue #323).
+  // Off or gone by then, nothing runs. Open and Save are the shell's own and never change.
+  const now = (id: string) => {
+    const e = parts.entries();
+    return [e?.new, ...(e?.exports ?? [])].find((x) => x?.id === id);
+  };
+  const item = (e: FileMenuEntry, icon: MenuItem["icon"], shell = false): MenuItem => ({
+    id: e.id,
+    label: e.label,
+    title: e.title,
+    off: e.off,
+    icon,
+    run: () => {
+      const chosen = shell ? e : now(e.id);
+      if (chosen && !chosen.off) chosen.run();
+    },
+  });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  return [{ items: [item(newEntry, "new"), item(parts.open, "open"), item(parts.save, "save")] }, { items: exports.map((e) => item(e, "export")) }];
+  return [{ items: [item(newEntry, "new"), item(parts.open, "open", true), item(parts.save, "save", true)] }, { items: exports.map((e) => item(e, "export")) }];
 }
 
 /** File ▾ in `doc`: a menu button with the id `file-menu`. */
