@@ -10,9 +10,13 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.32.10 (2026-10-26)
+## 0.32.11 (2026-10-26)
 
 - Fixed: the nightly Design mutation check still failed after its tests were all run (#336): 9 changes to the code that renames an older project's presets (`withShortNames`) and reads hidden bodies went unnoticed. Eight were real gaps, each a project file the tests never opened: a sketch named in the old preset form (it must keep its name), a preset with no provenance or without its own name (it must open unchanged), and a sketch listing another workspace's entry, an empty entry and a name the user gave beside its copy of the old name (only Design's copy of the old name may follow). Three new tests cover them; each of the eight changes was put in by hand and each failed a new test. The ninth is harmless and explained: a hidden entry that isn't a string is refused anyway, with the same message. Checked with the Design unit tests and typecheck; tonight's nightly reruns the mutation check.
+
+## 0.32.10 (2026-10-26)
+
+- Fixed: the kernel's nightly mutation testing had not finished since 10-23 (0 of 4 shards each night in `mutants/log.csv`), so the survivors list was never replaced and a new surviving mutant went unseen. The kernel has grown to 4,002 mutants and its lib tests take 55 s a run on CI unoptimised (one thin-crescent regression test alone 85 s), about 52 s a mutant with 981 a shard, more than a night. The mutation builds (nightly shards and the pull-request `mutants-in-diff` job) now use opt-level 1: measured on a 101-mutant sample, 45 s a mutant at 0 and 19.5 s at 1 with the same verdicts (92 caught, 1 missed, 5 timed out, 3 unviable), the lib suite 19 s instead of 100 s, a full build no slower. Found by the 10-26 bug hunt; the sample's one survivor (`tessellate.rs` `reaches_into`, a chord sharing an end with an arc's chord and reaching in with its other end) gets its test in its own pull request.
 
 ## 0.32.9 (2026-10-26)
 
