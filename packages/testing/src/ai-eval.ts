@@ -7,7 +7,8 @@
 import { type Command, type CommandSpec } from "@fission/core";
 import { askForCommands, systemPrompt, type AIProvider } from "@fission/ai";
 
-export type TaskType = "create" | "edit-parameter" | "reference-geometry" | "explain";
+/** "cannot": a request no offered command can do; the right answer is no commands and a plain reason (AI5c). */
+export type TaskType = "create" | "edit-parameter" | "reference-geometry" | "explain" | "cannot";
 
 export interface EvalCase {
   id: string;
@@ -15,7 +16,7 @@ export interface EvalCase {
   prompt: string;
   /** The project the prompt is asked about, as the commands that build it (empty: a new project). */
   setup: Command[];
-  /** Parameters the part must have after the answer; others are ignored. Lengths compare to 1e-9 relative. */
+  /** Parameters the part must have after the answer; others are ignored. Lengths compare to 1e-9 relative. Empty: the answer must send no commands. */
   expected: Partial<Command>[];
   /** Cases that need commands not built yet name what they wait for, and are skipped by runEval. */
   waitsFor?: string;
@@ -114,6 +115,15 @@ export const HELD_OUT_CASES: readonly EvalCase[] = [
   { id: "held-across-edit", taskType: "edit-parameter", prompt: "Make it 50 mm across.", setup: [CYLINDER], expected: [{ op: "set_part", shape: "cylinder", width: 50, height: 60 }] },
   // Diameter 30 → width 30; the box's height 20 is kept.
   { id: "held-box-to-cylinder", taskType: "edit-parameter", prompt: "Change it to a cylinder 30 mm in diameter.", setup: [BOX], expected: [{ op: "set_part", shape: "cylinder", width: 30, height: 20 }] },
+  // AI5c: requests no offered command can do. The right answer is no
+  // commands and a plain reason, never a stand-in shape (Ben's circle sketch
+  // came back as a 20 × 0.01 mm cylinder, 2026-10-26). Written after
+  // CANNOT_RULE and never used to word it. When a command for one arrives
+  // (AI7), its case moves to a new held-out case with the real answer.
+  { id: "held-cannot-circle-sketch", taskType: "cannot", prompt: "Draw a circle with radius 10mm as a sketch on the XY plane.", setup: [], expected: [] },
+  { id: "held-cannot-rectangle-sketch", taskType: "cannot", prompt: "Sketch a 30 by 20 mm rectangle on the front plane.", setup: [BOX], expected: [] },
+  { id: "held-cannot-hole", taskType: "cannot", prompt: "Drill an 8 mm hole straight through the middle of it.", setup: [BOX], expected: [] },
+  { id: "held-cannot-fillet", taskType: "cannot", prompt: "Round off every edge with a 2 mm fillet.", setup: [BOX], expected: [] },
 ];
 
 const same = (a: unknown, b: unknown) =>
@@ -140,10 +150,13 @@ export function partAfter(commands: readonly Partial<Command>[]): Record<string,
 /**
  * Whether the part the answer leaves (on top of the setup) has every
  * expected parameter. Judged on the result, so a wrong command after a
- * right one fails, and a size left out to keep it is right (AI4).
+ * right one fails, and a size left out to keep it is right (AI4). When
+ * nothing is expected (a "cannot" case), only no commands is right.
  */
 export function matches(setup: readonly Command[], actual: readonly Command[], expected: readonly Partial<Command>[]): boolean {
-  if (expected.length > 0 && actual.length === 0) return false;
+  // Nothing expected: anything sent stands in for what can't be done.
+  if (expected.length === 0) return actual.length === 0;
+  if (actual.length === 0) return false;
   const part = partAfter([...setup, ...actual]);
   return actual.every((c) => c.op === "set_part") && Object.entries(partAfter(expected)).every(([k, v]) => same(part[k], v));
 }
@@ -155,6 +168,8 @@ export interface EvalResult {
   /** 1 or 2 when the answer was usable (2: only after the retry); 0 when it never was. */
   attempts: 0 | 1 | 2;
   detail: string;
+  /** The model's working out (AI5c), "" when it gave none or the answer was unusable. */
+  explanation: string;
 }
 
 /** Runs every ready case against a provider. */
@@ -165,7 +180,7 @@ export async function runEval(provider: AIProvider, cases: readonly EvalCase[], 
     const system = systemPrompt(c.setup, specs);
     const answer = await askForCommands(provider, { system, messages: [{ role: "user", content: c.prompt }] }, specs);
     const passed = answer.ok && matches(c.setup, answer.commands, c.expected);
-    results.push({ id: c.id, taskType: c.taskType, passed, attempts: answer.ok ? answer.attempts : 0, detail: answer.ok ? JSON.stringify(answer.commands) : answer.error });
+    results.push({ id: c.id, taskType: c.taskType, passed, attempts: answer.ok ? answer.attempts : 0, detail: answer.ok ? JSON.stringify(answer.commands) : answer.error, explanation: answer.ok ? answer.explanation : "" });
   }
   return results;
 }

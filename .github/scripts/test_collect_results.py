@@ -25,8 +25,8 @@ def git(cwd, *args):
 
 
 class CollectGolden(unittest.TestCase):
-    def collect(self, report, failing):
-        """Runs collect-results.sh on one golden night; returns (stdout, the test-results branch's files)."""
+    def collect(self, report, failing, extra=None):
+        """Runs collect-results.sh on one golden night (plus `extra`, {path in the incoming folder: text}); returns (stdout, the test-results branch's files)."""
         with tempfile.TemporaryDirectory() as d:
             origin, work, incoming = (os.path.join(d, x) for x in ("origin.git", "work", "in"))
             git(d, "init", "-q", "--bare", origin)
@@ -40,6 +40,10 @@ class CollectGolden(unittest.TestCase):
                 os.makedirs(os.path.join(golden, "seed-golden-7"))
                 with open(os.path.join(golden, "seed-golden-7", "golden-report.txt"), "w") as f:
                     f.write(failing)
+            for path, text in (extra or {}).items():
+                os.makedirs(os.path.dirname(os.path.join(incoming, path)), exist_ok=True)
+                with open(os.path.join(incoming, path), "w") as f:
+                    f.write(text)
             env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_STEP_SUMMARY")}
             env.update(IN=incoming, RUN_URL="https://example.invalid/runs/1", COMMIT="abcdef1234567", BRANCH="main",
                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
@@ -76,6 +80,26 @@ class CollectGolden(unittest.TestCase):
         self.assertFalse(any(p.startswith("failures/") for p in files))
         self.assertIn("every answer right", files["golden/latest.txt"])
 
+
+
+CLEAN = "seed 8, 20 rounds of 6 models; every answer right and the same every round\n"
+
+
+class CollectTsMutants(unittest.TestCase):
+    collect = CollectGolden.collect
+
+    def test_a_run_with_ts_mutants_reports_every_target(self):
+        _, files = self.collect(CLEAN, None, {"ts-mutants-design/design.txt": "design: 3 survivors, all explained: true\n"})
+        latest = files["ts-mutants/latest.txt"]
+        self.assertIn("design: 3 survivors, all explained: true", latest)
+        self.assertIn("core: no report (the job stopped before the check)", latest)
+        self.assertIn("Latest TypeScript mutation run", files["summary.txt"])
+
+    def test_a_run_by_hand_without_them_leaves_the_last_report_alone(self):
+        # No ts-mutants-* artifacts (a dispatch that didn't ask): no "no report" lines for all seven.
+        _, files = self.collect(CLEAN, None)
+        self.assertNotIn("ts-mutants/latest.txt", files)
+        self.assertNotIn("TypeScript mutation", files["summary.txt"])
 
 if __name__ == "__main__":
     unittest.main()

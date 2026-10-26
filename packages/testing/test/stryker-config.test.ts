@@ -46,6 +46,8 @@ test("design.json mutates from shapeOf's first line to readDesignDocument's last
   assert.ok(files.includes("test/kept.test.ts"));
   // So are a face sketch's pins' checks (26f).
   assert.ok(files.includes("test/face-edges.test.ts"));
+  // So is withShortNames (U0e1), whose tests were left out until the nightly found 22 survivors in it.
+  assert.ok(files.includes("test/short-names.test.ts"));
 });
 
 test("a range one line off at either end is caught, with which end and where it should be", () => {
@@ -140,4 +142,55 @@ test("each killing test file (test/*-survivors.test.ts) runs in the targets for 
       assert.ok(running.length > 0, `${folder}/test/${k} runs in none of ${folder}'s targets`);
     }
   }
+});
+
+/** The test files in `folder`/test that import, by name, something `target`'s config mutates (an `export function`, `const`, `let` or `class` in a mutated file, inside its line range when it has one) but which the target doesn't run, as "<target>.json leaves out test/x.test.ts, which imports a, b". A target that runs test/*.test.ts runs them all. */
+function unrunImporters(dir: string, target: string, folder: string, read: Read): string[] {
+  const c = JSON.parse(read(join(dir, `${target}.json`)) ?? "{}") as { mutate: string[]; commandRunner: { command: string } };
+  const command = c.commandRunner.command;
+  if (command.includes("test/*.test.ts")) return [];
+  const mutated = new Map<string, Set<string>>();
+  for (const m of c.mutate) {
+    const [, file, a, b] = /^(.*?)(?::(\d+)-(\d+))?$/.exec(m)!;
+    let lines = (read(join(root, folder, file)) ?? "").split("\n");
+    if (a) lines = lines.slice(Number(a) - 1, Number(b));
+    mutated.set(file, new Set([...lines.join("\n").matchAll(/^export (?:async )?(?:function\*?|const|let|class) (\w+)/gm)].map((x) => x[1])));
+  }
+  const problems: string[] = [];
+  for (const f of readdirSync(join(root, folder, "test")).filter((f) => f.endsWith(".test.ts")).sort()) {
+    if (command.split(" ").includes(`test/${f}`)) continue;
+    const used = new Set<string>();
+    for (const [, names, from] of (read(join(root, folder, "test", f)) ?? "").matchAll(/import\s*(?:type\s+)?\{([^}]*)\}\s*from\s*"\.\.\/(src\/[^"]+)"/g)) {
+      const exported = mutated.get(from);
+      if (!exported) continue;
+      for (const n of names.split(",").map((n) => n.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0])) if (exported.has(n)) used.add(n);
+    }
+    if (used.size > 0) problems.push(`${target}.json leaves out test/${f}, which imports ${[...used].sort().join(", ")}`);
+  }
+  return problems;
+}
+
+test("every test file that imports something a target mutates runs in that target", () => {
+  // design.json left out short-names.test.ts, so withShortNames's 22 mutants survived though its tests would have killed them.
+  const runSh = readFileSync(join(stryker, "run.sh"), "utf8");
+  const dirs = Object.fromEntries([...(/declare -A dirs=\((.*)\)/.exec(runSh)![1]).matchAll(/\[(\w+)\]=([\w/]+)/g)].map((m) => [m[1], m[2]]));
+  for (const [target, folder] of Object.entries(dirs)) assert.deepEqual(unrunImporters(stryker, target, folder, readReal), [], target);
+});
+
+test("a test file dropped from a target's run is caught, naming what it imports; one importing nothing mutated is not", () => {
+  const dropped = (config: string, file: string): Read => (p) => {
+    const text = readReal(p);
+    if (!p.endsWith(`stryker/${config}`) || text === null) return text;
+    assert.ok(text.includes(` test/${file}`), `${config} no longer runs ${file}`);
+    return text.replace(` test/${file}`, "");
+  };
+  // The bug itself: short-names.test.ts imports oldPresetName, readDesignDocument and withShortNames, all inside document.ts's range.
+  assert.deepEqual(unrunImporters(stryker, "design", "workspaces/design", dropped("design.json", "short-names.test.ts")), [
+    "design.json leaves out test/short-names.test.ts, which imports oldPresetName, readDesignDocument, withShortNames",
+  ]);
+  // ownership.test.ts imports createHistory from history.ts, which core.json mutates whole, and only a type from project.ts.
+  assert.deepEqual(unrunImporters(stryker, "core", "packages/core", dropped("core.json", "ownership.test.ts")), ["core.json leaves out test/ownership.test.ts, which imports createHistory"]);
+  // insert.test.ts imports from document.ts too, but only names outside the range (partDocument, partFeature), so leaving it out is right.
+  assert.match(readReal(join(root, "workspaces/design/test/insert.test.ts")) ?? "", /import \{[^}]*\bpartDocument\b[^}]*\} from "\.\.\/src\/document\.ts"/);
+  assert.ok(!readFileSync(join(stryker, "design.json"), "utf8").includes("test/insert.test.ts"));
 });

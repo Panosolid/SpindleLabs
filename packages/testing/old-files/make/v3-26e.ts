@@ -21,10 +21,8 @@ await a.click(20, 15);
 await a.click(25, 15);
 a.$("#sketch-extrude")!.click();
 await a.settle();
-(a.$("#extrude-distance") as HTMLInputElement).value = "8";
-const flip = a.$("#extrude-flip") as HTMLInputElement;
-flip.checked = true;
-flip.dispatchEvent(new a.window.Event("change"));
+// UX1b: a negative distance is Flip.
+(a.$("#extrude-distance") as HTMLInputElement).value = "-8";
 (a.$("#extrude-ok") as HTMLButtonElement).click();
 await a.settle();
 if (a.sketching()) await a.finish();

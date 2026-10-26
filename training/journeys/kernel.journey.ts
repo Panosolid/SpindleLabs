@@ -30,7 +30,12 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
   assert.ok(refused > 0, JSON.stringify(g.dropped));
   let checked = 0;
   for (const e of g.examples) {
-    const last = [...e.setup, ...e.commands].filter((c) => c.op === "set_part").at(-1)!;
+    const last = [...e.setup, ...e.commands].filter((c) => c.op === "set_part").at(-1);
+    // A request no command can do, about a new project: no part to build (AI5c).
+    if (!last) {
+      assert.equal(e.task, "cannot", e.prompt);
+      continue;
+    }
     const { shape, width, depth, height } = last as { shape: Parameters<typeof specFor>[0]; width: number; depth: number; height: number };
     const view = await buildSpec(kernel, specFor(shape, width, depth, height));
     assert.deepEqual(view.errors, [], `${e.id}: ${e.prompt}`);
@@ -46,7 +51,10 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
 
 test("the real kernel refuses what it can't build, and the draft is dropped", async () => {
   const o = { specs: DESIGN_COMMANDS, rules: RULES, kernel };
-  const d = (width: number, depth: number, shape = "box"): Draft => ({ task: "create", setup: [], prompt: "x", commands: [{ op: "set_part", shape, width, depth, height: 10 }] });
+  const d = (width: number, depth: number, shape = "box"): Draft => {
+    const command = { op: "set_part", shape, width, depth, height: 10 };
+    return { task: "create", setup: [], prompt: "x", explanation: `So the new ${RULES.find((r) => r.op === "set_part")!.says(command)}.`, commands: [command] };
+  };
   // Each passes parseCommand (every size is a positive length), so the kernel alone is what refuses it.
   assert.match((await checkDraft(d(2e6, 10), o, new Set()))!, /^answer refused: command 1 \(set_part\): the kernel refused it/); // past the 1e6 mm modelling range
   assert.match((await checkDraft(d(1e-4, 10), o, new Set()))!, /^answer refused: command 1 \(set_part\): the kernel refused it/); // under the 1e-3 mm smallest feature
@@ -58,7 +66,7 @@ test("the real kernel refuses what it can't build, and the draft is dropped", as
 
 test("an export on the real kernel is a whole binary STL", async () => {
   const box = { op: "set_part", shape: "box", width: 40, depth: 30, height: 20 };
-  assert.equal(await checkDraft({ task: "export", setup: [box], prompt: "x", commands: [{ op: "export_stl" }] }, { specs: DESIGN_COMMANDS, rules: RULES, kernel }, new Set()), null);
+  assert.equal(await checkDraft({ task: "export", setup: [box], prompt: "x", explanation: "The whole part is exported as an STL file.", commands: [{ op: "export_stl" }] }, { specs: DESIGN_COMMANDS, rules: RULES, kernel }, new Set()), null);
   const stl = await kernel.call("export_stl", specFor("box", 40, 30, 20), "part");
   // A box is 6 faces of 2 triangles: 12 triangles, 84 + 12 × 50 = 684 bytes.
   assert.equal(new DataView(stl.bytes.buffer).getUint32(80, true), 12);

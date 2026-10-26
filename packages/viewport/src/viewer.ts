@@ -1,6 +1,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type Framing, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
@@ -9,7 +12,9 @@ import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from ".
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
-import { BASE_COLOUR, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
+import { ARROW_GRAB_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
+import { ExtrudeLayer } from "./extrude-layer.ts";
+import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
 // The kernel is Z-up (like most CAD); Three.js defaults to Y-up.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -47,6 +52,13 @@ interface ViewHost {
   lookAtFraming(plane: Plane): Framing;
   /** Called by each view before it draws a frame (the sketch grid follows the main view's camera). */
   frame(view: ViewportView): void;
+  /** Extrude's outlines, preview and arrow (UX1b). */
+  readonly extrude: ExtrudeLayer;
+  /** Whether Extrude is shown and a workspace hears its pointer: clicks pick outlines and the arrow can be dragged. */
+  extruding(): boolean;
+  extrudePointer(pointer: ExtrudePointer): void;
+  /** The outline under the pointer and whether it is on the arrow, drawn brighter. */
+  setExtrudeHover(profile: string | null, arrow: boolean): void;
 }
 
 /**
@@ -77,6 +89,8 @@ export class ViewportView {
   /** What a left-button drag does (SF3a): picked on the navigation bar. */
   private mode: NavMode = "orbit";
   private bar: ReturnType<typeof navBar>;
+  /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
+  private arrowDrag: { id: number; offset: number; last: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
     this.host = host;
@@ -118,6 +132,7 @@ export class ViewportView {
     this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     this.controls.mouseButtons.RIGHT = null;
     this.controls.zoomToCursor = true;
+    this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
     this.navigate();
     this.setMode("orbit");
 
@@ -131,6 +146,8 @@ export class ViewportView {
       const start = down;
       down = null;
       if (!start || start.id !== e.pointerId || !isClick(start, { x: e.clientX, y: e.clientY })) return;
+      // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
+      if (this.host.extruding()) return this.host.extrudePointer({ kind: "pick", profile: this.profileAt(e.clientX, e.clientY) });
       // Sketching: a click places a point on the sketch's plane, it picks nothing.
       const plane = this.host.sketchPlane();
       if (plane) return this.host.sketchPointer({ kind: "click", ...this.pointerOn(e.clientX, e.clientY, plane), ...this.sketchPick(e.clientX, e.clientY) });
@@ -146,6 +163,12 @@ export class ViewportView {
       if (this.queuedHover) return;
       this.queuedHover = requestAnimationFrame(() => {
         this.queuedHover = 0;
+        if (this.host.extruding()) {
+          if (this.arrowDrag) return; // the arrow stays lit while it is held
+          // Only what a click would pick lights: an outline, and the arrow under the pointer.
+          this.host.setHover(null, null);
+          return this.host.setExtrudeHover(pointer ? this.profileAt(pointer.x, pointer.y) : null, pointer ? this.onArrow(pointer.x, pointer.y, "mouse") : false);
+        }
         const plane = this.host.sketchPlane();
         if (plane) {
           // The Project tool (27d): what a click would project lights as a hover does; any other tool lights nothing.
@@ -171,6 +194,7 @@ export class ViewportView {
     canvas.addEventListener("pointerleave", () => {
       pointer = null;
       this.host.setHover(null, null);
+      this.host.setExtrudeHover(null, false);
       this.host.setPlaneHover(null);
       if (this.host.sketchPlane()) this.host.sketchPointer({ kind: "move", at: null });
     });
@@ -185,6 +209,7 @@ export class ViewportView {
     this.controls.update();
     this.bar.canLookAt(!this.image && this.host.sketchPlane() !== null);
     this.host.frame(this);
+    this.sizeArrow();
     this.renderer.render(this.host.scene, this.camera);
     if (!this.image) this.cube.render(this.renderer, this.camera);
   };
@@ -301,6 +326,106 @@ export class ViewportView {
     };
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);
+  }
+
+  /**
+   * Dragging Extrude's arrow (UX1b): a press within ARROW_GRAB_PX of it
+   * (more room for a finger) grabs it, whatever the navigation mode, and
+   * neither OrbitControls nor the click picker hears it; while held, the
+   * distance follows the point of the arrow's line nearest the pointer's
+   * ray (extrude-pick.ts arrowDistance), kept as far from where it was
+   * grabbed as at the press, so the arrow never jumps under the pointer.
+   */
+  private dragArrow() {
+    const canvas = this.renderer.domElement;
+    this.element.addEventListener("pointerdown", (e) => {
+      if (e.target !== canvas || this.arrowDrag || !e.isPrimary || e.button !== 0 || !this.host.extruding()) return;
+      const arrow = this.host.extrude.state?.arrow;
+      if (!arrow || !this.onArrow(e.clientX, e.clientY, e.pointerType === "touch" ? "touch" : "mouse")) return;
+      const s = this.arrowAt(e.clientX, e.clientY);
+      if (s === null) return;
+      e.preventDefault(); // which also keeps the focus where it was, so it is let go by hand: Enter after a drag is the panel's OK, not a toolbar button's
+      e.stopPropagation();
+      if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
+      canvas.setPointerCapture(e.pointerId);
+      this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
+      this.host.setExtrudeHover(null, true);
+    }, { capture: true });
+    canvas.addEventListener("pointermove", (e) => {
+      const drag = this.arrowDrag;
+      if (!drag || e.pointerId !== drag.id) return;
+      const s = this.arrowAt(e.clientX, e.clientY);
+      if (s === null) return;
+      drag.last = s - drag.offset;
+      this.host.extrudePointer({ kind: "drag", distance: drag.last, done: false });
+    });
+    const end = (e: PointerEvent) => {
+      const drag = this.arrowDrag;
+      if (!drag || drag.id !== e.pointerId) return;
+      this.arrowDrag = null;
+      this.host.extrudePointer({ kind: "drag", distance: drag.last, done: true });
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+  }
+
+  /** How long Extrude's arrow is in this view, in mm: ARROW_PX on screen where its foot is. */
+  private arrowMm(): number | null {
+    const ends = this.host.extrude.arrowEnds(1);
+    if (!ends || this.image) return null;
+    const away = this.camera.position.distanceTo(new THREE.Vector3(...ends[0]));
+    return arrowLength(away, this.camera.fov, this.renderer.domElement.clientHeight);
+  }
+
+  /** The arrow's foot and tip on screen (client pixels), as segmentsNear takes them; null while there is none in view. */
+  private arrowScreen(): Float64Array | null {
+    const length = this.arrowMm();
+    const ends = length === null ? null : this.host.extrude.arrowEnds(length);
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (!ends || rect.width === 0 || rect.height === 0) return null;
+    const screen = new Float64Array(4);
+    ends.forEach((p, i) => {
+      const v = new THREE.Vector3(...p).project(this.camera);
+      const at = ndcToClient(v, rect);
+      const drawable = v.z >= -1 && v.z <= 1;
+      screen[2 * i] = drawable ? at.x : NaN;
+      screen[2 * i + 1] = drawable ? at.y : NaN;
+    });
+    return screen;
+  }
+
+  /** Whether a point on screen is on Extrude's arrow: within ARROW_GRAB_PX of its line on screen. */
+  private onArrow(clientX: number, clientY: number, pointer: "mouse" | "touch"): boolean {
+    const screen = this.arrowScreen();
+    return screen !== null && segmentsNear(screen, { x: clientX, y: clientY }, ARROW_GRAB_PX[pointer]).length > 0;
+  }
+
+  /** The distance along Extrude's arrow's line nearest the ray through a point on screen (extrude-pick.ts arrowDistance), or null. */
+  private arrowAt(clientX: number, clientY: number): number | null {
+    const arrow = this.host.extrude.state?.arrow;
+    if (!arrow || this.image || !this.aim(clientX, clientY)) return null;
+    const { origin, direction } = this.raycaster.ray;
+    return arrowDistance(origin.toArray(), direction.toArray(), arrow.base, arrow.direction);
+  }
+
+  /** Sizes Extrude's arrow for this view as it draws; says where it is on screen on the element (`data-arrow`, foot then tip, read by the e2e test). */
+  private sizeArrow() {
+    const length = this.arrowMm();
+    if (length !== null) this.host.extrude.placeArrow(length);
+    const screen = length === null ? null : this.arrowScreen();
+    const said = screen && [...screen].every(Number.isFinite) ? `${screen[0].toFixed(1)},${screen[1].toFixed(1)} ${screen[2].toFixed(1)},${screen[3].toFixed(1)}` : "";
+    if ((this.element.dataset.arrow ?? "") === said) return;
+    if (said) this.element.dataset.arrow = said;
+    else delete this.element.dataset.arrow;
+  }
+
+  /** The offered outline under a point on screen that the body doesn't hide (ExtrudeLayer.profileAt), or null. */
+  private profileAt(clientX: number, clientY: number): string | null {
+    if (this.image || !this.aim(clientX, clientY)) return null;
+    const faceMesh = this.host.faceMesh();
+    const [hit] = faceMesh ? this.raycaster.intersectObject(faceMesh, false) : [];
+    const { origin, direction } = this.raycaster.ray;
+    return this.host.extrude.profileAt(origin.toArray(), direction.toArray(), hit ? hit.distance : null);
   }
 
   /** The camera's ray through a point on screen (client pixels) in the raycaster; false when the view has no size. */
@@ -669,7 +794,7 @@ export class Viewer implements SharedViewport {
   private mesh: DisplayMesh | null = null;
   private faces: THREE.BufferGeometry | null = null;
   private faceMesh: THREE.Mesh | null = null;
-  private edges: THREE.BufferGeometry | null = null;
+  private edges: LineSegmentsGeometry | null = null;
   private picker: ((pick: ViewportPick) => void) | null = null;
   private highlight: ViewportHighlight = NO_HIGHLIGHT;
   /** The face or edge under the pointer while picking is on (at most one is set). */
@@ -702,6 +827,9 @@ export class Viewer implements SharedViewport {
   /** The body's faces offered with the planes (showPlanes), null while no planes are offered, and the offered plane under the pointer. */
   private pickFaces: ReadonlySet<number> | null = null;
   private planeHover: string | null = null;
+  /** Extrude's outlines, preview and arrow (UX1b), and who hears its pointer. */
+  private extrude = new ExtrudeLayer();
+  private extrudeHandler: ((pointer: ExtrudePointer) => void) | null = null;
   /** The main view first, then any added ones. */
   private views: ViewportView[] = [];
   readonly element: HTMLElement;
@@ -719,7 +847,7 @@ export class Viewer implements SharedViewport {
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes);
+    this.scene.add(grid, this.axes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group);
 
     this.host = {
       scene: this.scene,
@@ -741,6 +869,15 @@ export class Viewer implements SharedViewport {
       setPlaneHover: (plane) => this.setPlaneHover(plane),
       lookAtFraming: (plane) => this.lookAtFraming(plane),
       frame: (view) => this.frame(view),
+      extrude: this.extrude,
+      extruding: () => this.extrudeHandler !== null && this.extrude.state !== null,
+      extrudePointer: (pointer) => this.extrudeHandler?.(pointer),
+      setExtrudeHover: (profile, arrow) => {
+        if (!this.extrude.setHover(profile, arrow)) return;
+        if (profile) this.element.dataset.extrudeHover = profile;
+        else delete this.element.dataset.extrudeHover;
+        this.element.dataset.arrowHot = String(arrow);
+      },
     };
     this.views.push(new ViewportView(this.host, container));
     this.paint();
@@ -777,7 +914,10 @@ export class Viewer implements SharedViewport {
 
   showBody(mesh: DisplayMesh) {
     this.body.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) o.geometry.dispose();
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
     });
     this.body.clear();
 
@@ -795,11 +935,22 @@ export class Viewer implements SharedViewport {
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
     });
-    const edges = new THREE.BufferGeometry();
-    edges.setAttribute("position", new THREE.Float32BufferAttribute(mesh.edge_lines, 3));
+    // Edges as screen-space strips EDGE_WIDTH_PX wide (a WebGL line is one
+    // device pixel, faint and jagged); the width is in CSS pixels, so each
+    // view's own size is the material's resolution, set as it draws. The
+    // strips are triangles, so they take a polygon offset too: pulled the
+    // other way from the faces, so a finished sketch's line lying on an edge
+    // (an extrude's sketch on its bottom edges) never speckles through it.
+    // They write no depth, so a lost sketch's red, drawn after the body
+    // (LOST_SKETCH_ORDER), still shows on the edges it lies on.
+    const edges = new LineSegmentsGeometry();
+    edges.setPositions(mesh.edge_lines);
     this.edges = edges;
+    const edgeMaterial = new LineMaterial({ vertexColors: true, linewidth: EDGE_WIDTH_PX, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthWrite: false });
+    const edgeLines = new LineSegments2(edges, edgeMaterial);
+    edgeLines.onBeforeRender = (renderer) => renderer.getSize(edgeMaterial.resolution);
     this.faceMesh = new THREE.Mesh(geometry, material);
-    this.body.add(this.faceMesh, new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ vertexColors: true })));
+    this.body.add(this.faceMesh, edgeLines);
     this.hover = { face: null, edge: null }; // indices of the old body
     this.fadeBody();
     this.paint();
@@ -817,6 +968,31 @@ export class Viewer implements SharedViewport {
 
   get onSketchPointer() {
     return this.sketchHandler;
+  }
+
+  get onExtrudePointer() {
+    return this.extrudeHandler;
+  }
+
+  set onExtrudePointer(handler: ((pointer: ExtrudePointer) => void) | null) {
+    this.extrudeHandler = handler;
+    if (!handler) this.extrude.setHover(null, false);
+  }
+
+  /**
+   * Extrude in the view (UX1b): the closed outlines to pick as see-through
+   * fills on their planes, the extrude as OK would make it see-through, and
+   * the distance arrow on its end; null takes them away. Says on the
+   * element what is offered, chosen and previewed (read by the e2e test).
+   */
+  showExtrude(show: ExtrudeShow | null) {
+    this.extrude.show(show);
+    const said = { extrudeProfiles: show?.profiles.map((p) => p.id).join(" "), extrudeChosen: show?.chosen ?? undefined, extrudePreview: show ? String(show.preview !== null) : undefined, extrudeDistance: show?.arrow ? String(show.arrow.distance) : undefined };
+    for (const [key, value] of Object.entries(said)) {
+      if (value === undefined) delete this.element.dataset[key];
+      else this.element.dataset[key] = value;
+    }
+    if (!show) delete this.element.dataset.extrudeHover;
   }
 
   set onSketchPointer(handler: ((pointer: SketchPointer) => void) | null) {
@@ -974,12 +1150,12 @@ export class Viewer implements SharedViewport {
   private fadeBody() {
     const faded = this.editedPlane !== null;
     for (const o of this.body.children) {
-      if (!(o instanceof THREE.Mesh || o instanceof THREE.LineSegments)) continue;
+      if (!(o instanceof THREE.Mesh)) continue; // the faces, and the edges (LineSegments2 is a Mesh)
       const m = o.material as THREE.Material;
       if (m.transparent !== faded) m.needsUpdate = true;
       m.transparent = faded;
-      m.depthWrite = !faded;
-      m.opacity = faded ? (o instanceof THREE.Mesh ? BODY_FADE.faces : BODY_FADE.edges) : 1;
+      m.depthWrite = !faded && o === this.faceMesh; // the edges never write depth (showBody)
+      m.opacity = faded ? (o === this.faceMesh ? BODY_FADE.faces : BODY_FADE.edges) : 1;
     }
     this.element.dataset.bodyFaded = String(faded);
   }
@@ -1100,7 +1276,7 @@ export class Viewer implements SharedViewport {
       lineColours.set(colour, 6 * s);
       lineColours.set(colour, 6 * s + 3);
     });
-    this.edges.setAttribute("color", new THREE.BufferAttribute(lineColours, 3));
+    this.edges.setColors(lineColours);
   }
 
   /** Sphere around the current body's bounding box (radius 0 if none). */
