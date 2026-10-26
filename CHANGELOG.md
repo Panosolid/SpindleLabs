@@ -10,6 +10,21 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.17 (2026-10-26)
+
+- Fixed: the facts table decided whether two faces lie in one plane before the merge had settled which points are shared, and used its own idea of "parallel" rather than the crossing finder's. A face the merge puts a point on could then be called apart, and two parallel faces passing through each other were missed. Face facts now run after the merge and read it, with the crossing finder's own parallel test: parallel faces sharing a merged point but not one plane are the rule-1 refusal; parallel faces with no shared point are apart. Hand-worked regression tests (including a ledge at 1.5 and 2.1 times the tolerance) failed first.
+
+- Fixed: two corners of the same part could be joined into one point by distance alone (a tiny box at the size limit was refused though nothing touched it). Only corners of different parts are joined by distance now; a part's own corners stay its own. Regression test failed first; the seeded refusal model's slot cases were corrected to expect the walls to be named.
+
+- Fixed: the facts table's input check never looked at an edge's parameter range or its curve and plane numbers, and the table doesn't run the full validator: an edge written backwards crashed it and one with a parameter that isn't a number quietly dropped out. Both are now refused up front naming the edge, as is a broken line or plane. Regression tests failed first.
+
+- Fixed (validator, stricter): a corner may now sit at most its own tolerance off each face it bounds. Before, a corner within its tolerance of its edges' ends, each edge within its tolerance of the face, could sit the sum of the two off the face and still pass, and the facts table, which reads a corner by its own tolerance, found it off its own face. OpenCascade asks the same of a vertex. Hand-worked test (0.9× and 1.1×) failed first; the validator's seeded break model now expects the new error where a moved corner or plane leaves it.
+- Remove the stale closest_on_segments exclude line (col 21 > in closest_on_segments) from kernel/.cargo/mutants.toml in batch 3
+
+- Fixed (validator, stricter; issue #348): an edge could carry a looser tolerance than one of its own corners, which the facts table (reading a corner by its own tolerance) could not make sense of; frontier testing found such bodies passing the validator. The validator now refuses it, naming the edge, the corner and both tolerances, as the facts table's input check already did. Hand-worked tests (0.9× and 1.1×) failed first.
+
+- Tests: two of 0.32.16's real cases (issue #352's, and the exact model's tie) are now rule 1's refusal under the face rule above, the same from every loop start; a new case from a scan of the generator's moved pairs (seed 30003 case 112, a crossing 5.3e-6 and 8.6e-6 from two face edges) holds the nearest-edge rule and fails on the old first-in-the-loop rule. The exact model follows the face rule, and its shared-vertex search no longer asks a plane whose face an edge already puts on the point (a needless near-tie at 1 km, seed 30042, now a recorded line with its own test).
+
 ## 0.32.16 (2026-10-26)
 
 - Fixed: an edge crossing a face right on one of the face's edges, where that edge met the crossing edge only at a corner of the crossing edge, was placed on the wrong spot (at the corner rather than where the two edges are nearest), and when two face edges were both within reach the one picked depended on where the face's loop started. The holding face edge is now read at the two edges' nearest points within reach, and the nearest face edge wins, ties broken by position, never by loop order. Regression tests failed first, among them issue #352's own case (frontier testing's same-answer check: the generator's side touch at 1 km, B moved 2.2e-5 mm, on the nearer edge from every loop start).
