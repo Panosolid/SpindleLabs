@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { CommandSpec } from "@fission/core";
-import { CUBE_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "../src/index.ts";
+import { CANNOT_RULE, CUBE_RULE, EXPLAIN_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "../src/index.ts";
 
 // A stand-in for Design's set_part, worded the same way.
 const SET_PART: CommandSpec = {
@@ -75,4 +75,21 @@ test("an optional parameter is marked so", () => {
   // Worked by hand: a length that may be left out reads "(millimetres, more than 0; optional)".
   assert.match(systemPrompt([], [withDepth]), /^ {2}depth: depth; leave it out for a sphere \(millimetres, more than 0; optional\)$/m);
   assert.doesNotMatch(systemPrompt([], [SET_PART]), /optional/, "nothing in SET_PART is optional");
+});
+
+test("the working out and the honest refusal come after the size rules, before the request", () => {
+  const p = systemPrompt([{ op: "set_part", shape: "box", width: 40 }], [SET_PART]).split("\n");
+  // Worked from the order the rules build on: sizes first (how to read them), then how to show the reading, then what to do when no command fits.
+  const at = (line: string) => p.indexOf(line);
+  assert.ok(at(CUBE_RULE) >= 0 && at(EXPLAIN_RULE) === at(CUBE_RULE) + 1 && at(CANNOT_RULE) === at(EXPLAIN_RULE) + 1, p.join("\n"));
+  assert.match(p.at(-1)!, /^Answer with the commands/);
+  // The working out names the key the schema asks for, comes after the commands as the schema orders
+  // them, and is one sentence: small models told to reason first talked themselves out of plain
+  // requests (AI5c's prompt variants: llama3.2 5/12 with it first, 11/12 with it after).
+  assert.equal(EXPLAIN_RULE, 'After the commands, write in "explanation" one short sentence saying what they make.');
+  // Sending the commands comes first; an empty list is the exception, and must say it can't be done.
+  assert.match(CANNOT_RULE, /^When the commands can do what the user asks, always send them\. Only when/);
+  assert.match(CANNOT_RULE, /say in the explanation that it can't be done yet and why/);
+  // Ben's circle (2026-10-26): a sketch request must not become a thin cylinder.
+  assert.match(CANNOT_RULE, /Never stand in for it with another shape or a tiny size/);
 });

@@ -16,6 +16,7 @@ Read with the root CLAUDE.md (top rules, general testing rules, git workflow). w
 - Build the app: `cd apps/fission && npm run build` (this also gives the WASM types the type-check needs)
 - Dev server: `cd apps/fission && npm run dev`
 - Unit tests of every package and workspace: `npm test` (repo root)
+- A seeded test that drives a happy-dom page for thousands of redraws yields to the event loop between seeds (`await` a `setImmediate`, as `releaseDom` in workspaces/design/test/timeline-bar-session.ts): happy-dom caches every querySelector result in a WeakRef, and a WeakRef's target lives until the current task ends, so a long synchronous test keeps every old DOM alive (two Design files reached 2 GB and died). Design's `npm test` caps the heap at 2 GB so a repeat fails on every machine.
 - Type-check every package, including ones the app does not import yet: `npm run typecheck` (repo root, after a build)
 - Browser smoke test: `cd apps/fission && npm run build && npm run e2e` (the build needs `wasm-pack` and the `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown && cargo install wasm-pack --locked` in a fresh container)
 - "Zero exports" journeys on the real kernel: `npm run journeys` (repo root, after a build)

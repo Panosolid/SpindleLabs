@@ -71,7 +71,7 @@ test("Ollama end to end: a bad answer, the retry with the problem explained, the
   const answers = ['{"commands":[{"op":"set_part","width":-1}]}', good];
   const { fetch, calls } = fakeServer(() => ({ json: { message: { content: answers.shift() } } }));
   const r = await askForCommands(createProvider({ kind: "ollama", model: "m" }, { fetch }), { system: "S", messages: request.messages }, specs);
-  assert.deepEqual(r, { ok: true, commands: [{ op: "set_part", width: 40 }], attempts: 2 });
+  assert.deepEqual(r, { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: "", attempts: 2 });
   const second = (calls[1].body as { messages: { role: string; content: string }[]; format: unknown }).messages;
   assert.equal(second.length, 4, "system, question, the bad answer, and the retry note");
   assert.match(second[3].content, /can't be used/);
@@ -112,7 +112,7 @@ test("Anthropic: key in its header only; the schema is enforced as the one tool 
   const p = createProvider({ kind: "api-key", vendor: "anthropic", model: "claude-haiku-5-5" }, { fetch, keys });
   assert.deepEqual(await p.check(), { ok: true });
   const r = await askForCommands(p, { system: "S", messages: request.messages }, specs);
-  assert.deepEqual(r, { ok: true, commands: [{ op: "set_part", width: 40 }], attempts: 1 });
+  assert.deepEqual(r, { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: "", attempts: 1 });
   const c = calls[0];
   assert.equal(c.url, "https://api.anthropic.com/v1/messages");
   assert.equal(c.headers["x-api-key"], KEY);
@@ -121,7 +121,7 @@ test("Anthropic: key in its header only; the schema is enforced as the one tool 
   assert.equal(body.model, "claude-haiku-5-5");
   assert.equal(body.system, "S");
   assert.deepEqual(body.tool_choice, { type: "tool", name: "answer" });
-  assert.deepEqual(body.tools[0].input_schema.required, ["commands"], "the generated command-list schema");
+  assert.deepEqual(body.tools[0].input_schema.required, ["commands", "explanation"], "the generated command-list schema");
 });
 
 test("Anthropic: a text answer (no schema asked) is returned as text", async () => {

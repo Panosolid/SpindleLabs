@@ -7,7 +7,7 @@ name: Random testing
 # stateful harness plus the OpenCascade oracle, a fresh random seed per round)
 # in two legs, because a GitHub job may last at most 6 hours, until 22:35 UTC;
 # alongside the first leg, 4 jobs run cargo mutants over the whole kernel
-# (lib tests, one shard each: ~2600 mutants, ~75 minutes a shard). Every job
+# (lib tests, one shard each: ~4000 mutants, about 5 hours a shard). Every job
 # is cut off at 22:35 UTC however late it started (GitHub sometimes starts
 # scheduled runs late), so the last results are on the branch before 23:00
 # UTC.
@@ -254,9 +254,12 @@ jobs:
         env:
           DEADLINE: ${{ needs.plan.outputs.mutants_deadline }}
           SHARDS: ${{ strategy.job-total }}
-          # Unoptimised builds are about five times faster and give the same
-          # result (kernel/CLAUDE.md, Mutation testing).
-          CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+          # Opt-level 1: the lib tests run five times faster than at 0 (19 s
+          # against 100 s, one thin-crescent test alone 85 s unoptimised) and a
+          # mutant's build is no slower, so a shard takes less than half the
+          # time, with the same verdicts (kernel/CLAUDE.md, Mutation testing;
+          # the 10-26 hunt: at 0 no shard had finished for three nights).
+          CARGO_PROFILE_DEV_OPT_LEVEL: "1"
           CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
           out="$RUNNER_TEMP/mutants"

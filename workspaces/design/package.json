@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts"
+    "test": "node --max-old-space-size=2048 --experimental-strip-types --no-warnings --test test/*.test.ts"
   },
   "dependencies": {
     "@fission/core": "*",
