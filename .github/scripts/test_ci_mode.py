@@ -41,7 +41,7 @@ class Mode(unittest.TestCase):
 
     def test_ui_files(self):
         for f in ("apps/fission/src/main.ts", "packages/ui/src/styles/x.css", "workspaces/image/src/a.ts",
-                  "package.json", "package-lock.json", ".github/workflows/ci.yml"):
+                  "package.json", "package-lock.json", ".github/workflows/ci.yml", ".github/scripts/install-browser.sh"):
             self.assertTrue(touches_ui([f]), f)
         for f in ("kernel/src/a.rs", "docs/roadmap.md", "prototypes/x.py", ".github/scripts/automerge.py",
                   "tests/baseline.json", "CLAUDE.md", "apps", "xapps/a.ts", ".github/workflows/nightly.yml"):
