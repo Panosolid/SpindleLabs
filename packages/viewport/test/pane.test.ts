@@ -21,8 +21,10 @@ function fakeScene() {
     clearImage: () => void calls.push("scene.clearImage"),
     showSketches: (d) => void calls.push(`showSketches ${d.length}`),
     showPlanes: (p, faces) => void calls.push(`showPlanes ${p.map((x) => x.id).join(",")}${faces ? ` faces ${faces.join(",")}` : ""}`),
+    showExtrude: (show) => void calls.push(`showExtrude ${show ? show.profiles.map((p) => p.id).join(",") : "none"}`),
     onPick: null,
     onSketchPointer: null,
+    onExtrudePointer: null,
   };
   return { scene, calls };
 }
@@ -142,4 +144,26 @@ test("sketches and planes reach the one viewer; the sketch pointer follows the s
   assert.equal(scene.onPick, null, "the pick handler is separate");
   a.onSketchPointer = null;
   assert.equal(scene.onSketchPointer, null);
+});
+
+test("Extrude's view (UX1b) goes to the scene, and its pointer to the pane that set it most recently and still has one", () => {
+  const { scene, calls } = fakeScene();
+  const make = paneViewports(scene);
+  const a = make(fakeView("a", calls));
+  const b = make(fakeView("b", calls));
+  const plane = { origin: [0, 0, 0] as [number, number, number], xAxis: [1, 0, 0] as [number, number, number], normal: [0, 0, 1] as [number, number, number] };
+  a.showExtrude({ profiles: [{ id: "sketch-2", plane, outline: { outer: { circle: { center: [0, 0], radius: 5 } }, holes: [] } }], chosen: "sketch-2", preview: null, arrow: null });
+  b.showExtrude(null);
+  assert.deepEqual(calls, ["showExtrude sketch-2", "showExtrude none"]);
+  const handlerA = () => {};
+  const handlerB = () => {};
+  a.onExtrudePointer = handlerA;
+  b.onExtrudePointer = handlerB;
+  assert.equal(scene.onExtrudePointer, handlerB, "the newest wins");
+  assert.equal(a.onExtrudePointer, handlerA, "each pane keeps its own");
+  b.onExtrudePointer = null;
+  assert.equal(scene.onExtrudePointer, handlerA, "a keeps it when b hides");
+  assert.equal(scene.onSketchPointer, null, "the sketch pointer is separate");
+  a.onExtrudePointer = null;
+  assert.equal(scene.onExtrudePointer, null);
 });

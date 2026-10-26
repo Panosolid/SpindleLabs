@@ -75,7 +75,8 @@ class Watcher(unittest.TestCase):
         # The fake gh runs the script's real --jq filter over what GitHub
         # would answer: a fork's merged pull request from claude/x and none
         # of ours, so testing goes on; with ours merged too, it stops.
-        jq = 'while [ "$1" != --jq ]; do shift; done; jq -r "$2" <<<\'%s\'\n'
+        # (branch_testing.py's `gh api` lookups fail here, so they never stop it.)
+        jq = '[ "$1" = api ] && exit 1; while [ "$1" != --jq ]; do shift; done; jq -r "$2" <<<\'%s\'\n'
         fork = '{"state":"MERGED","headRepositoryOwner":{"login":"someone"}}'
         ours = '{"state":"MERGED","headRepositoryOwner":{"login":"o"}}'
         stopped, made, _ = self.watch(jq % f"[{fork}]", seconds=0.5)
@@ -83,6 +84,21 @@ class Watcher(unittest.TestCase):
         stopped, made, _ = self.watch(jq % f"[{fork},{ours}]")
         self.assertTrue(stopped and made)
 
+
+    def test_an_open_pull_request_gives_the_runners_up_when_ci_waits(self):
+        # The pull request is open; branch_testing.py's lookups find one CI
+        # run whose "kernel" job has been queued since 2020, far past CI_WAIT:
+        # the rounds stop, saying why. With the job running instead, testing goes on.
+        def gh(job_status):
+            runs = '{"workflow_runs":[{"id":5,"status":"in_progress","event":"pull_request","head_branch":"claude/y","head_repository":{"full_name":"o/r"}}]}'
+            jobs = '{"jobs":[{"name":"kernel","status":"%s","created_at":"2020-01-01T00:00:00Z"}]}' % job_status
+            return (f'case "$*" in pr\\ *) echo OPEN;; *nightly.yml*) echo \'{{"workflow_runs":[]}}\';; '
+                    f'*ci.yml*) echo \'{runs}\';; *runs/5/jobs*) echo \'{jobs}\';; *) exit 1;; esac\n')
+        stopped, made, out = self.watch(gh("queued"), seconds=5)
+        self.assertTrue(stopped and made, out)
+        self.assertIn('stops after the round in progress: CI job "kernel" has waited', out.stdout)
+        stopped, made, _ = self.watch(gh("in_progress"))
+        self.assertFalse(stopped or made)
 
 class EndlessStopFile(unittest.TestCase):
     """endless.sh in a scratch copy of kernel/: a fake `cargo` stands in for

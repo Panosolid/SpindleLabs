@@ -3,7 +3,7 @@
 // overlays) go to the viewer, so every view draws the same thing; camera
 // methods (fit, setView, fitSelection, lookAt) and an image (showImage, clearImage)
 // go to that pane's view only.
-import type { AnalysisOverlay, DisplayMesh, Framing, ImageRep, OriginPlane, Plane, SharedViewport, SketchDrawing, SketchPointer, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
+import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, OriginPlane, Plane, SharedViewport, SketchDrawing, SketchPointer, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
 
 /** What a pane needs of its view: the element it fills and its camera. */
 export interface PaneCamera {
@@ -18,6 +18,7 @@ export interface PaneCamera {
 
 type PickHandler = (pick: ViewportPick) => void;
 type SketchHandler = (pointer: SketchPointer) => void;
+type ExtrudeHandler = (pointer: ExtrudePointer) => void;
 
 /**
  * Returns a maker of panes over `scene` (the Viewer). The viewer has one
@@ -29,9 +30,11 @@ type SketchHandler = (pointer: SketchPointer) => void;
 export function paneViewports(scene: SharedViewport): (view: PaneCamera) => SharedViewport {
   const pickers = new Map<object, PickHandler>(); // in the order they were set
   const sketchers = new Map<object, SketchHandler>(); // the same rule for the sketch pointer
+  const extruders = new Map<object, ExtrudeHandler>(); // and for Extrude's (UX1b)
   const sync = () => {
     scene.onPick = [...pickers.values()].at(-1) ?? null;
     scene.onSketchPointer = [...sketchers.values()].at(-1) ?? null;
+    scene.onExtrudePointer = [...extruders.values()].at(-1) ?? null;
   };
   return (view) => {
     const key = {};
@@ -50,6 +53,15 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       showSelection: (highlight: ViewportHighlight) => scene.showSelection(highlight),
       showSketches: (drawings: readonly SketchDrawing[]) => scene.showSketches(drawings),
       showPlanes: (planes: readonly OriginPlane[], faces?: readonly number[]) => scene.showPlanes(planes, faces),
+      showExtrude: (show: ExtrudeShow | null) => scene.showExtrude(show),
+      get onExtrudePointer() {
+        return extruders.get(key) ?? null;
+      },
+      set onExtrudePointer(handler: ExtrudeHandler | null) {
+        extruders.delete(key);
+        if (handler) extruders.set(key, handler);
+        sync();
+      },
       get onSketchPointer() {
         return sketchers.get(key) ?? null;
       },
