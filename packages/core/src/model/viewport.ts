@@ -3,7 +3,7 @@
 // The one 3D viewport every workspace draws into (@fission/viewport
 // implements it). Switching workspaces keeps it, so the camera stays put.
 
-import type { DisplayMesh } from "../kernel/kernel-types.ts";
+import type { DisplayMesh, Outline } from "../kernel/kernel-types.ts";
 import type { AnalysisOverlay } from "./overlay.ts";
 import type { ImageRep, Plane } from "./representation.ts";
 
@@ -105,6 +105,43 @@ export interface SketchPointer {
   face?: number | null;
 }
 
+/** A closed sketch outline Extrude offers to pick in the view (UX1b), by its sketch's id, in its plane's frame (as sketch_outline gives it). */
+export interface OfferedProfile {
+  id: string;
+  plane: Plane;
+  outline: Outline;
+}
+
+/**
+ * Extrude's distance arrow (UX1b, Fusion's): it lies on the line base +
+ * s·direction (direction a unit vector; s > 0 the way an unflipped extrude
+ * goes), with its foot at s = `distance`, the extrude's end, pointing on
+ * the way the extrude goes (back down the line for a negative distance).
+ */
+export interface ExtrudeArrow {
+  base: [number, number, number];
+  direction: [number, number, number];
+  distance: number;
+}
+
+/** What Extrude shows in the view while its panel is open (UX1b). */
+export interface ExtrudeShow {
+  /** The outlines a click picks, drawn as see-through fills on their planes (brighter under the pointer, brightest when chosen). */
+  profiles: readonly OfferedProfile[];
+  chosen: string | null;
+  /** The extrude as OK would make it, drawn see-through; null while there is none (nothing chosen yet, or the kernel refused it). */
+  preview: DisplayMesh | null;
+  arrow: ExtrudeArrow | null;
+}
+
+/**
+ * The pointer while Extrude is shown: a click on an offered outline, by
+ * id (the nearest one the body doesn't hide), or on none (null); or the
+ * arrow dragged, with the distance where the pointer's ray passes nearest
+ * the arrow's line (not snapped), `done` when the button is let go.
+ */
+export type ExtrudePointer = { kind: "pick"; profile: string | null } | { kind: "drag"; distance: number; done: boolean };
+
 /**
  * What the viewport draws in the selection colour (step 17d): the whole
  * body, and faces and edges by kernel index. Indices the body on screen
@@ -169,6 +206,14 @@ export interface SharedViewport {
    * offered plane or one of these faces, never an edge.
    */
   showPlanes(planes: readonly OriginPlane[], faces?: readonly number[]): void;
+  /**
+   * Draws Extrude's outlines to pick, its preview and its arrow (UX1b);
+   * null takes them away. While shown, clicks and arrow drags in the
+   * viewport go to onExtrudePointer instead of onPick.
+   */
+  showExtrude(show: ExtrudeShow | null): void;
+  /** Hears the pointer while Extrude is shown; the shown workspace sets it and puts back null on hide. */
+  onExtrudePointer: ((pointer: ExtrudePointer) => void) | null;
   /**
    * While set and a sketch is being edited (showSketches), clicks and
    * hovers over the viewport come here instead of onPick, with where they

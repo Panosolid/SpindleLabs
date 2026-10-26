@@ -6,6 +6,8 @@ import type { Selected, ShortcutSpec } from "@fission/core";
 export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   // Also in a size field: Escape there has nothing else to do.
   { id: "clear-selection", keys: "Escape", label: "Clear the selection", inText: true },
+  // UX1b: OK in the Extrude panel when the focus is elsewhere (on the view, after dragging the arrow); in its distance box Enter is the box's own.
+  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude panel" },
   // Copy (the keys or the browser's Edit menu) with one profile selected.
   { id: "copy-svg", keys: "Mod+C", label: "Copy the selected profile as SVG" },
   // While a sketch is edited (steps 22a, 22c, 23b, 23c); outside a sketch the key does what it would.

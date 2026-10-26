@@ -2,11 +2,11 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
-import { needsRefit } from "@fission/viewport";
+import { latestOnly, NO_HIGHLIGHT, type BodySpec, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { insertAt, isHidden, isSketchItem, partFeature, partOf, readDesignDocument, type DesignDocument, type PartKind } from "./document.ts";
-import { DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_USABLE_SKETCH, extrudeStep, featureSpec, setExtrudeDistance } from "./extrude.ts";
+import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
@@ -1189,23 +1189,40 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
   }
 
-  // Extrude (step 21d): pick a sketch, type a distance, OK when the kernel says it closes.
-  /** The sketch the Extrude panel is set to, while it is open. */
-  let extruding: { sketch: string | null } | null = null;
+  // Extrude (step 21d; UX1b, Fusion's feel): click a closed sketch in the view (or its row in the
+  // browser), see the extrude as OK would make it, drag its arrow or type the distance; OK when the
+  // kernel says the outline closes. Nothing is recorded until OK, as one undo step.
+  /**
+   * While the Extrude panel is open: the sketches it can use (before the
+   * marker, not suppressed), the one chosen, the closed outlines offered in
+   * the view, the distance (signed mm; null while the box holds none), the
+   * chosen sketch's extrude going 1 mm (`previewSpec` turns it into any
+   * distance; worked out once per sketch and document, so a drag never asks
+   * for the outline again), the preview built and its arrow.
+   */
+  let extruding: {
+    usable: ReadonlySet<string>;
+    sketch: string | null;
+    offered: OfferedProfile[];
+    distance: number | null;
+    base: { doc: DesignDocument; sketch: string; spec: BodySpec } | null;
+    preview: BodyView | null;
+    arrow: ExtrudeArrow | null;
+  } | null = null;
   const extrudeBox = extrudePanel(ctx.properties, {
-    sketch: (id) => {
-      if (!extruding) return;
-      extruding.sketch = id;
-      extrudeBox.showError("");
-      void checkExtrude(id);
-    },
-    ok: (typed, flip) => void finishExtrude(typed, flip),
+    distance: (typed) => extrudeDistance(signedDistance(typed)),
+    flip: (typed) => extrudeDistance(signedDistance(typed)),
+    clear: () => chooseProfile(null),
+    ok: (typed) => void finishExtrude(typed),
     cancel: () => leaveExtrude(),
   });
+  const sketchLabel = (id: string) => sketchItem(designDoc(), id).provenance.self.label;
 
   /**
    * Extrude: like Finish sketch first when a sketch is being drawn (that
-   * sketch is the one offered); otherwise the newest sketch.
+   * sketch is the one chosen); else a sketch selected in the browser (picked
+   * before the command, as in Fusion); else the newest. Every usable
+   * sketch's closed outline is offered in the view to click.
    */
   function startExtrude() {
     leaveEdit();
@@ -1215,19 +1232,133 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // Only sketches an extrude put in at the marker can use: before it, and not suppressed (hunt 2026-10-21).
     const sketches = doc ? doc.timeline.features.filter(isSketchItem) : [];
     const items = doc ? sketches.filter((f) => !f.suppressed && doc.timeline.features.indexOf(f) < insertAt(doc)) : [];
-    const chosen = items.find((f) => f.id === editing)?.id ?? items.at(-1)?.id ?? null;
-    extruding = { sketch: chosen };
-    extrudeBox.show(items.map((f) => ({ id: f.id, label: f.provenance.self.label })), chosen, String(DEFAULT_DISTANCE));
-    if (items.length === 0 && sketches.length > 0) extrudeBox.showStatus(NO_USABLE_SKETCH, false);
+    const selected = ctx.selection.items.length === 1 ? readProfileReference(ctx.selection.items[0]) : null;
+    const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? items.at(-1)?.id ?? null;
+    extruding = { usable: new Set(items.map((f) => f.id)), sketch: chosen, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
+    if (items.length === 0) extrudeBox.showStatus(sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
+    else if (!chosen) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
+    showExtrudeView();
+    if (doc) void offerProfiles(doc, items.map((f) => f.id));
     if (chosen) void checkExtrude(chosen);
   }
 
   function leaveExtrude() {
     extruding = null;
     extrudeBox.hide();
+    viewport.showExtrude(null);
   }
 
-  /** Says whether the chosen sketch makes a closed outline (OK on) or the kernel's reason it doesn't (OK off). */
+  /** What the view shows while Extrude is open: the outlines offered, the chosen one, the preview and its arrow at the distance now. */
+  function showExtrudeView() {
+    const e = extruding;
+    if (!e) return viewport.showExtrude(null);
+    const arrow = e.arrow && e.distance !== null ? { ...e.arrow, distance: e.distance } : null;
+    viewport.showExtrude({ profiles: e.offered, chosen: e.sketch, preview: e.preview?.mesh ?? null, arrow });
+    // Read by the tests: the sketches it can use, the one chosen, and the volume of the body OK would make, as the kernel worked it out.
+    const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
+    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), chosen: e.sketch ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
+  }
+
+  /** Every usable sketch that makes a closed outline, offered to click (asked of the kernel at once, none waiting on another). */
+  async function offerProfiles(doc: DesignDocument, ids: readonly string[]) {
+    const offered = await Promise.all(ids.map(async (id): Promise<OfferedProfile | null> => {
+      const sketch = doc.sketches.find((s) => s.id === id);
+      if (!sketch || sketch.curves.length === 0 || projectedOpen(sketch) !== null) return null;
+      try {
+        const out = await askOutline(kernel, sketchCurves(sketch));
+        return "closed" in out ? { id, plane: sketchPlane(doc, id, placedNow), outline: out.closed } : null;
+      } catch {
+        return null; // a sketch the kernel refuses is not offered; its status says why when it is chosen
+      }
+    }));
+    if (!extruding || designDoc() !== doc) return;
+    extruding.offered = offered.filter((p) => p !== null);
+    showExtrudeView();
+  }
+
+  /** Another sketch chosen (a click in the view, its row in the browser, or ✕ for none): its preview and arrow start again. */
+  function chooseProfile(id: string | null) {
+    const e = extruding;
+    if (!e || e.sketch === id || (id !== null && !e.usable.has(id))) return;
+    Object.assign(e, { sketch: id, base: null, preview: null, arrow: null });
+    extrudeBox.showProfile(id ? sketchLabel(id) : null);
+    extrudeBox.showError("");
+    if (id) void checkExtrude(id);
+    else extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
+    showExtrudeView();
+  }
+
+  /** The distance typed, flipped or dragged to (signed mm, null for none): the arrow moves at once, the preview follows. */
+  function extrudeDistance(d: number | null) {
+    const e = extruding;
+    if (!e) return;
+    e.distance = d;
+    extrudeBox.showError("");
+    if (d === null) e.preview = null;
+    showExtrudeView();
+    if (d !== null) refreshPreview();
+  }
+
+  // The pointer while Extrude is shown (UX1b): a click on an offered outline chooses it (one on
+  // none keeps the choice, as Fusion does); the arrow dragged sets the distance in whole mm.
+  const onExtrudePointer: SharedViewport["onExtrudePointer"] = (pointer) => {
+    if (!extruding) return;
+    if (pointer.kind === "pick") return void (pointer.profile !== null && chooseProfile(pointer.profile));
+    const d = snapDistance(pointer.distance);
+    if (d === extruding.distance) return;
+    extrudeBox.showDistance(String(d));
+    extrudeDistance(d);
+  };
+
+  /**
+   * Builds the preview for the distance now, at most one at a time: a
+   * change while one builds asks for one more after it, so a fast drag
+   * never queues a build per pointer move. The built body is freed at once;
+   * only its view is kept. A preview the kernel refuses (a distance too
+   * long) shows why, and OK says it again.
+   */
+  let previewing = false;
+  let previewAgain = false;
+  function refreshPreview() {
+    if (previewing) return void (previewAgain = true);
+    previewing = true;
+    void buildPreview().finally(() => {
+      previewing = false;
+      if (previewAgain) {
+        previewAgain = false;
+        refreshPreview();
+      }
+    });
+  }
+  async function buildPreview() {
+    const e = extruding;
+    const id = e?.sketch;
+    const d = e?.distance;
+    if (!e || !id || d === null || d === undefined) return;
+    const doc = designDoc();
+    try {
+      if (e.base?.doc !== doc || e.base.sketch !== id) {
+        const made = extrudeSketch(doc, id, 1);
+        const spec = await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
+        if (extruding !== e || e.sketch !== id) return;
+        e.base = { doc, sketch: id, spec };
+      }
+      const handle = await kernel.call("body_build", previewSpec(e.base.spec, d));
+      const view = await kernel.call("body_view", handle).finally(() => void kernel.call("body_free", handle).catch(() => {}));
+      // Out of date: another sketch chosen or the panel closed. A newer distance only means another build follows.
+      if (extruding !== e || e.sketch !== id) return;
+      e.preview = e.distance === null ? null : view;
+      e.arrow = arrowOf(view, d) ?? e.arrow;
+    } catch (err) {
+      if (extruding !== e || e.sketch !== id || e.distance !== d) return;
+      e.preview = null;
+      extrudeBox.showError(err instanceof Error ? err.message : String(err));
+    }
+    showExtrudeView();
+  }
+
+  /** Says whether the chosen sketch makes a closed outline (OK on, and its preview built) or the kernel's reason it doesn't (OK off). */
   const extrudeOutline = latestOnly((curves: ReturnType<typeof sketchCurves>) => askOutline(kernel, curves));
   async function checkExtrude(id: string) {
     const doc = designDoc();
@@ -1239,8 +1370,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     try {
       const { current, value } = await extrudeOutline(sketchCurves(sketch));
       if (!current || extruding?.sketch !== id) return;
-      if ("closed" in value) extrudeBox.showStatus(`${name} makes a closed outline.`, true);
-      else extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${value.open}).`, false);
+      if ("closed" in value) {
+        extrudeBox.showStatus(`${name} makes a closed outline.`, true);
+        refreshPreview();
+      } else extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${value.open}).`, false);
     } catch (e) {
       if (extruding?.sketch === id) extrudeBox.showStatus(`${name} can't be extruded: ${e instanceof Error ? e.message : String(e)}`, false);
     }
@@ -1248,18 +1381,20 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /**
    * OK: the kernel builds the extrude first; only one that builds is
-   * recorded, as one undo step ("Replace the part with Extrude of Sketch
-   * 1"). A refused distance keeps the panel open and says why.
+   * recorded, as one undo step ("Extrude Sketch 1"). A negative distance
+   * goes the other way (recorded as Flip). A refused distance keeps the
+   * panel open and says why.
    */
-  async function finishExtrude(typed: string, flip: boolean) {
+  async function finishExtrude(typed: string) {
     const id = extruding?.sketch;
     if (!id) return;
     const distance = Number(typed);
     if (typed.trim() === "" || !Number.isFinite(distance)) return extrudeBox.showError("Type the distance in mm.");
+    if (distance === 0) return extrudeBox.showError(ZERO_DISTANCE);
     const before = designDoc();
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(before, id, distance, flip);
+      made = extrudeSketch(before, id, Math.abs(distance), distance < 0);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
       if (extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
@@ -1269,7 +1404,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (extruding?.sketch !== id || designDoc() !== before) return;
     leaveExtrude();
     shape = "sketch-extrude";
-    inputs[SIZE_KEYS.indexOf("height")].value = typed;
+    inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
     await update(extrudeStep(before, id), undefined, made.doc);
   }
 
@@ -1563,11 +1698,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function listen() {
     viewport.onPick = onPick;
     viewport.onSketchPointer = onSketchPointer;
+    viewport.onExtrudePointer = onExtrudePointer;
+    showExtrudeView();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
     if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
     drawSketches();
     stopWatching = ctx.selection.onChange(() => {
+      // Extrude (UX1b): a sketch's row clicked in the browser chooses it, as a click on its outline in the view does.
+      const items = ctx.selection.items;
+      const sketch = extruding && items.length === 1 ? readProfileReference(items[0]) : null;
+      if (sketch !== null) chooseProfile(sketch);
       // The user's next change of selection retires the note about dropped items.
       if (!settling && note) panel.showSelectionNote((note = ""));
       showSelection();
@@ -1578,6 +1719,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shown = false;
     viewport.onPick = null;
     viewport.onSketchPointer = null;
+    viewport.onExtrudePointer = null;
+    viewport.showExtrude(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
     typed.hide();
@@ -1640,6 +1783,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // Escape in the sketch tool: leaves the plane prompt, or ends the line, rectangle, circle, arc or tangent arc being drawn.
       if (id === "clear-selection" && mode.kind === "pick") return leaveSketch(), true;
       if (id === "clear-selection" && extrudeBox.shown) return leaveExtrude(), true;
+      // Enter is the Extrude panel's OK with the focus on the view (after a drag of the arrow) or nowhere; anything else focused (a button, a timeline item) takes its own Enter.
+      if (id === "extrude-ok") {
+        const active = ctx.properties.ownerDocument.activeElement;
+        if (!extrudeBox.shown || (active && active !== active.ownerDocument.body && !viewport.element.contains(active))) return false;
+        if (extrudeBox.ready) void finishExtrude(extrudeBox.typed);
+        return true;
+      }
       if (id === "clear-selection" && editBox.editing !== null) return leaveEdit(), true;
       if (id === "clear-selection" && mode.kind === "edit" && toolBusy(mode.tool)) {
         mode.tool = startTool(mode.tool.kind, mode.tool.sketch);
