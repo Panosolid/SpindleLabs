@@ -26,6 +26,8 @@ export const ICONS = {
   // Creating and changing the part.
   sketch: [tone("M4 20V15L15 4 20 9 9 20Z"), line("M4 20V15L15 4 20 9 9 20ZM12.5 6.5 17.5 11.5M4 20H20")],
   extrude: [tone("M4 15 12 19 20 15 12 11Z"), line("M4 15 12 19 20 15 12 11ZM12 15V3M8.5 6.5 12 3 15.5 6.5")],
+  // A block with one corner rounded: Modify ▾ (fillets, chamfers, Combine; coming soon).
+  modify: [tone("M4 20V4H11A9 9 0 0 1 20 13V20Z"), line("M4 20V4H11A9 9 0 0 1 20 13V20Z")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
   // The presets (Insert ▾), one per shape.
