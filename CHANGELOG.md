@@ -10,6 +10,23 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.17 (2026-10-26)
+
+- Fixed: a corner of the other part touching just one corner of a part 1 µm wide (whose corners are their summed tolerance apart, as validation allows) had the part refused as "two corners at one point": the re-check treated the merged corner as a new point and joined it to the part's other corner. A shared vertex placed by a corner and no looser than it (to rounding) is that corner's own ball, so its relation to its own part is the part's own; only a tolerance grown past the corner's reaches further. Found by this batch's mutation run; hand-worked regression test (0.9× and 1.1× of the touch, at the origin and 30 km out) failed first.
+
+- Fixed: the facts table decided whether two faces lie in one plane before the merge had settled which points are shared, and used its own idea of "parallel" rather than the crossing finder's. A face the merge puts a point on could then be called apart, and two parallel faces passing through each other were missed. Face facts now run after the merge and read it, with the crossing finder's own parallel test: parallel faces sharing a merged point but not one plane are the rule-1 refusal; parallel faces with no shared point are apart. Hand-worked regression tests (including a ledge at 1.5 and 2.1 times the tolerance) failed first.
+
+- Fixed: two corners of the same part could be joined into one point by distance alone (a tiny box at the size limit was refused though nothing touched it). Only corners of different parts are joined by distance now; a part's own corners stay its own. Regression test failed first; the seeded refusal model's slot cases were corrected to expect the walls to be named.
+
+- Fixed: the facts table's input check never looked at an edge's parameter range or its curve and plane numbers, and the table doesn't run the full validator: an edge written backwards crashed it and one with a parameter that isn't a number quietly dropped out. Both are now refused up front naming the edge, as is a broken line or plane. Regression tests failed first.
+
+- Fixed (validator, stricter): a corner may now sit at most its own tolerance off each face it bounds. Before, a corner within its tolerance of its edges' ends, each edge within its tolerance of the face, could sit the sum of the two off the face and still pass, and the facts table, which reads a corner by its own tolerance, found it off its own face. OpenCascade asks the same of a vertex. Hand-worked test (0.9× and 1.1×) failed first; the validator's seeded break model now expects the new error where a moved corner or plane leaves it.
+- Remove the stale closest_on_segments exclude line (col 21 > in closest_on_segments) from kernel/.cargo/mutants.toml in batch 3
+
+- Fixed (validator, stricter; issue #348): an edge could carry a looser tolerance than one of its own corners, which the facts table (reading a corner by its own tolerance) could not make sense of; frontier testing found such bodies passing the validator. The validator now refuses it, naming the edge, the corner and both tolerances, as the facts table's input check already did. Hand-worked tests (0.9× and 1.1×) failed first.
+
+- Tests: two of 0.32.16's real cases (issue #352's, and the exact model's tie) are now rule 1's refusal under the face rule above, the same from every loop start; a new case from a scan of the generator's moved pairs (seed 30003 case 112, a crossing 5.3e-6 and 8.6e-6 from two face edges) holds the nearest-edge rule and fails on the old first-in-the-loop rule. The exact model follows the face rule, and its shared-vertex search no longer asks a plane whose face an edge already puts on the point (a needless near-tie at 1 km, seed 30042, now a recorded line with its own test).
+
 ## 0.32.16 (2026-10-26)
 
 - Docs: the shared rule files say what #336 changed, so a thread starting random testing on its branch knows the rules: root `CLAUDE.md` lists `stop-testing.yml` (cancels a branch's runs when its pull request merges or closes); `kernel/CLAUDE.md` says branches' dispatched runs go one at a time and give way to waiting CI (two minutes, a newer run of the same branch, an hour for another branch's), and that `ts_mutants` is the tick for the TypeScript packages' mutation run. No code changes.
