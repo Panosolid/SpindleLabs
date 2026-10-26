@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from file_issues import MARK, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
+from file_issues import MARK, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
 
 # Lines copied from real reports on the test-results branch.
 ROTATE_A = ("  seed 0x12849982fbf1: step 3 (Rotate { target: 1, pivot: [0.0, 0.0, 0.0], axis: [1.0, 0.0, 0.0], "
@@ -69,6 +69,39 @@ class Kinds(unittest.TestCase):
                 "  OpenCascade's small-feature limit: step validity: BRepCheck: invalid (blown up 1024 times)\n")
         self.assertEqual([k for k, _ in oracle_kinds(text)], ["OpenCascade disagrees, Box: step validity",
                                                              "OpenCascade disagrees, Box: step write refused"])
+
+    def test_devious_kinds(self):
+        # Issue #315: devious_random's failures (devious-output.txt, beside
+        # a harness report that passed) were filed as a harness crash. A
+        # failing case is a kind of its own, numbers and the part's name
+        # taken out, so the same wrong verdict on another seed is one kind.
+        line_a = ("case 882 (FISSION_SEED=249373476819941 FISSION_DEVIOUS_CASE=882), case-882-from-random-16: refused: "
+                  "line 1 must be between 0.001 and 1000000 mm long, got 1007141.2976170945; expected Builds")
+        line_b = ("case 2873 (FISSION_SEED=69405559697056 FISSION_DEVIOUS_CASE=2873), case-2873-from-bens-part-huge-0.999: "
+                  "refused: line 2 must be between 0.001 and 1000000 mm long, got 1000953.2184887282; expected Builds")
+        out = ("running 1 test\nthread 'devious_random' panicked at tests/devious.rs:272:5:\n1 of 3000 devious cases failed:\n"
+               + line_a + "\n  made by: scaled ×2.4e2\n  part: Part { .. }\ndevious_random --- FAILED\n")
+        got = devious_kinds(out)
+        self.assertEqual([k for k, _ in got], ["devious part refused: line # must be between # and # mm long, got #; expected Builds"])
+        self.assertIn("FISSION_DEVIOUS_CASE=882", got[0][1])
+        self.assertEqual(devious_kinds(line_b)[0][0], got[0][0])
+        # Beside a report with no failures, it is the folder's only kind.
+        folder = kinds_of({"report.txt": "Stateful kernel test: 2016 cases\nFailures: 0\n", "harness-output.txt": "ok\n",
+                           "devious-output.txt": out})
+        self.assertEqual(list(folder), [got[0][0]])
+        # A starting part the model and the kernel measure differently is a kind too.
+        dis = "bens-part-x2: the kernel refuses it below a thinnest feature of 1e-3 mm, the model measures 1.2e-3 mm\n"
+        self.assertEqual([k for k, _ in devious_kinds("1 of 300 devious cases failed:\n" + dis)],
+                         ["devious generator: the kernel and the model measure a starting part's thinnest feature differently"])
+        # A devious run that died without naming a case still says so.
+        self.assertEqual([k for k, _ in devious_kinds("thread 'devious_random' panicked at tests/devious.rs:244:5:\nonly 3 bases built\n")],
+                         ["devious generator crashed"])
+        # Its issue says how to replay a devious case, not a stateful chain.
+        title, body = texts("create", got[0][0], [("249373476819941", got[0][1])], "https://run", "abc", "main")
+        self.assertTrue(title.startswith("Devious parts: refused: line #"), title)
+        self.assertIn("--test devious devious_random", body)
+        # A passing run is no kind.
+        self.assertEqual(devious_kinds("devious generator, seed 1, 48 bases: {}\ntest result: ok. 1 passed\n"), [])
 
     def test_a_crash_without_a_report_is_a_kind(self):
         got = kinds_of({"harness-output.txt": "running 1 test\nthread panicked at src/x.rs:1\nerror: test failed\n"})

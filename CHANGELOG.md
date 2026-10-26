@@ -10,13 +10,18 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.32.8 (2026-10-26)
+## 0.32.9 (2026-10-26)
 
 - Fixed: the kernel's nightly mutation testing had not finished since 10-23 (0 of 4 shards each night in `mutants/log.csv`), so the survivors list was never replaced and a new surviving mutant went unseen. The kernel has grown to 4,002 mutants and its lib tests take 55 s a run on CI unoptimised (one thin-crescent regression test alone 85 s), about 52 s a mutant with 981 a shard, more than a night. The mutation builds (nightly shards and the pull-request `mutants-in-diff` job) now use opt-level 1: measured on a 101-mutant sample, 45 s a mutant at 0 and 19.5 s at 1 with the same verdicts (92 caught, 1 missed, 5 timed out, 3 unviable), the lib suite 19 s instead of 100 s, a full build no slower. Found by the 10-26 bug hunt; the sample's one survivor (`tessellate.rs` `reaches_into`, a chord sharing an end with an arc's chord and reaching in with its other end) gets its test in its own pull request.
 
-## 0.32.7 (2026-10-26)
+## 0.32.8 (2026-10-26)
 
 - Fixed: a key pressed while a menu was open (File ▾, Insert ▾, DESIGN ▾, a toolbar group) still ran the app's shortcut: ? opened the shortcut list over the still-open menu, and Ctrl+Z would have undone a step behind it. A menu now keeps every key to itself while it is open, and a letter typed goes to the next item starting with it, as native menus do (s in File ▾ lands on Save, e on Export STL). Found by the 10-26 bug hunt. Checked by a unit test written first and seen failing (s, e and O walk File ▾'s items, ?, z and Ctrl+Z never reach the page while the menu is open, ? does again once it is closed), with the ui unit tests, the typecheck and the browser checks of the menus (app-bar, insert, toolbar, shortcuts).
+
+## 0.32.7 (2026-10-26)
+
+- Fixed: the nightly testing's issue filer called a failing devious-parts round "harness crashed without a report" (issue #315). Each round runs the random chains and then the devious-parts generator; when only the generator failed, the round's report said nothing was wrong and its output file wasn't read, so it fell through to "crashed". Now a failing devious case is filed as its own kind ("Devious parts: refused: line # must be between # and # mm long, got #; expected Builds"), with the replay command for that case; a starting part the kernel and the model measure differently, and a generator run that died without naming a case, are kinds too. The cause behind #315's rounds was fixed in 0.32.3. Checked by unit tests written first and seen failing (the real lines from the nightly folders), by running the filer over three of #315's folders from the test-results branch (each now names the devious case, not a crash), and a planted break (not reading the devious output) that the new test catches.
+
 ## 0.32.6 (2026-10-26)
 
 - Fixed: File ▾ could run New (or Export STL) from a design that had already been replaced (issue #323, found by the nightly monkey). With the menu open, a project file opened (every workspace is set up afresh), then New chosen from the still-open menu ran the old setup's New, whose dialog had left the page, and the browser threw an error instead of asking. Each File ▾ item now runs the entry on screen at the moment it is chosen; if that entry is off or gone by then, nothing runs. Checked by a unit test written first and seen failing (the menu opened, a new design put in place, then New, Export STL, an entry turned off and one gone), the monkey's shrunk case kept as a regression replay (it failed on main with the same error, and passes), and the full 2,000-action session of seed 202610251.
