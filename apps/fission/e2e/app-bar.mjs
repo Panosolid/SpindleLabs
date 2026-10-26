@@ -227,6 +227,10 @@ try {
         await chooseFile(page, "start-fresh", tap);
         await until(page, () => document.getElementById("start-fresh-dialog").open, null, "the dialog");
         assert.match(await page.textContent("#start-fresh-words"), /\(1 feature\)/);
+        // Its own styles (start-fresh.css), not the browser's white box: the dark panel #1c1f24 = rgb(28, 31, 36) and
+        // the warning-red confirm #6b2328 = rgb(107, 35, 40), hex to decimal by hand (Ben's screenshot, 0.32.x: unstyled).
+        const look = await page.evaluate(() => [getComputedStyle(document.getElementById("start-fresh-dialog")).backgroundColor, getComputedStyle(document.getElementById("start-fresh-confirm")).backgroundColor]);
+        assert.deepEqual(look, ["rgb(28, 31, 36)", "rgb(107, 35, 40)"]);
         if (shots) await page.screenshot({ path: `${shots}/file-menu-${width}-new-ask.png` });
         await press(page, "#start-fresh-confirm", tap);
         await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "the empty design's hint");
