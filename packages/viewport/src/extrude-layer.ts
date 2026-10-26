@@ -22,9 +22,9 @@ export const FILL_OPACITY = { offered: 0.16, hover: 0.36, chosen: 0.5 };
 /** How see-through the preview's faces are (its edges are drawn solid). */
 export const PREVIEW_OPACITY = 0.45;
 
-/** The arrow's shape along its length 1: a shaft of radius 0.035 to 0.7, then a head of radius 0.11 to the tip. */
-const SHAFT = { radius: 0.035, length: 0.7 };
-const HEAD_RADIUS = 0.11;
+/** The arrow's shape along its length 1: a shaft of radius 0.05 to 0.68, then a head of radius 0.15 to the tip. */
+const SHAFT = { radius: 0.05, length: 0.68 };
+const HEAD_RADIUS = 0.15;
 
 const FILL_ORDER = 1;
 const PREVIEW_ORDER = 2;

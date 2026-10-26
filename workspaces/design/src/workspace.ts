@@ -1203,6 +1203,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let extruding: {
     usable: ReadonlySet<string>;
     sketch: string | null;
+    /** The kernel said the chosen sketch's outline closes (checkExtrude): only then is a preview built. */
+    closed: boolean;
     offered: OfferedProfile[];
     distance: number | null;
     base: { doc: DesignDocument; sketch: string; spec: BodySpec } | null;
@@ -1234,7 +1236,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const items = doc ? sketches.filter((f) => !f.suppressed && doc.timeline.features.indexOf(f) < insertAt(doc)) : [];
     const selected = ctx.selection.items.length === 1 ? readProfileReference(ctx.selection.items[0]) : null;
     const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? items.at(-1)?.id ?? null;
-    extruding = { usable: new Set(items.map((f) => f.id)), sketch: chosen, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    extruding = { usable: new Set(items.map((f) => f.id)), sketch: chosen, closed: false, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
     if (items.length === 0) extrudeBox.showStatus(sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
     else if (!chosen) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
@@ -1281,7 +1283,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function chooseProfile(id: string | null) {
     const e = extruding;
     if (!e || e.sketch === id || (id !== null && !e.usable.has(id))) return;
-    Object.assign(e, { sketch: id, base: null, preview: null, arrow: null });
+    Object.assign(e, { sketch: id, closed: false, base: null, preview: null, arrow: null });
     extrudeBox.showProfile(id ? sketchLabel(id) : null);
     extrudeBox.showError("");
     if (id) void checkExtrude(id);
@@ -1335,7 +1337,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     const id = e?.sketch;
     const d = e?.distance;
-    if (!e || !id || d === null || d === undefined) return;
+    if (!e || !id || !e.closed || d === null || d === undefined) return;
     const doc = designDoc();
     try {
       if (e.base?.doc !== doc || e.base.sketch !== id) {
@@ -1372,6 +1374,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
         extrudeBox.showStatus(`${name} makes a closed outline.`, true);
+        extruding.closed = true;
         refreshPreview();
       } else extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${value.open}).`, false);
     } catch (e) {

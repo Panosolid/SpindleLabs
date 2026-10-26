@@ -89,6 +89,8 @@ export class ViewportView {
   /** What a left-button drag does (SF3a): picked on the navigation bar. */
   private mode: NavMode = "orbit";
   private bar: ReturnType<typeof navBar>;
+  /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
+  private arrowDrag: { id: number; offset: number; last: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
     this.host = host;
@@ -162,6 +164,7 @@ export class ViewportView {
       this.queuedHover = requestAnimationFrame(() => {
         this.queuedHover = 0;
         if (this.host.extruding()) {
+          if (this.arrowDrag) return; // the arrow stays lit while it is held
           // Only what a click would pick lights: an outline, and the arrow under the pointer.
           this.host.setHover(null, null);
           return this.host.setExtrudeHover(pointer ? this.profileAt(pointer.x, pointer.y) : null, pointer ? this.onArrow(pointer.x, pointer.y, "mouse") : false);
@@ -335,20 +338,21 @@ export class ViewportView {
    */
   private dragArrow() {
     const canvas = this.renderer.domElement;
-    let drag: { id: number; offset: number; last: number } | null = null;
     this.element.addEventListener("pointerdown", (e) => {
-      if (e.target !== canvas || drag || !e.isPrimary || e.button !== 0 || !this.host.extruding()) return;
+      if (e.target !== canvas || this.arrowDrag || !e.isPrimary || e.button !== 0 || !this.host.extruding()) return;
       const arrow = this.host.extrude.state?.arrow;
       if (!arrow || !this.onArrow(e.clientX, e.clientY, e.pointerType === "touch" ? "touch" : "mouse")) return;
       const s = this.arrowAt(e.clientX, e.clientY);
       if (s === null) return;
-      e.preventDefault();
+      e.preventDefault(); // which also keeps the focus where it was, so it is let go by hand: Enter after a drag is the panel's OK, not a toolbar button's
       e.stopPropagation();
+      if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
       canvas.setPointerCapture(e.pointerId);
-      drag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
+      this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
       this.host.setExtrudeHover(null, true);
     }, { capture: true });
     canvas.addEventListener("pointermove", (e) => {
+      const drag = this.arrowDrag;
       if (!drag || e.pointerId !== drag.id) return;
       const s = this.arrowAt(e.clientX, e.clientY);
       if (s === null) return;
@@ -356,10 +360,10 @@ export class ViewportView {
       this.host.extrudePointer({ kind: "drag", distance: drag.last, done: false });
     });
     const end = (e: PointerEvent) => {
+      const drag = this.arrowDrag;
       if (!drag || drag.id !== e.pointerId) return;
-      const { last } = drag;
-      drag = null;
-      this.host.extrudePointer({ kind: "drag", distance: last, done: true });
+      this.arrowDrag = null;
+      this.host.extrudePointer({ kind: "drag", distance: drag.last, done: true });
     };
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);

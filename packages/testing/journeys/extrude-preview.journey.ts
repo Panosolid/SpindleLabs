@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView, KernelCalls } from "@fission/core";
-import { addSketch, drawCircle, drawRectangle, featureSpec, NO_USABLE_SKETCH, partDocument, PICK_PROFILE_STATUS, suppressItem, ZERO_DISTANCE, type DesignDocument } from "@fission/design";
+import { addSketch, drawCircle, drawLine, drawRectangle, featureSpec, NO_USABLE_SKETCH, partDocument, PICK_PROFILE_STATUS, suppressItem, ZERO_DISTANCE, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 import { seeded } from "../src/index.ts";
 import { app } from "./design-app.ts";
@@ -191,6 +191,26 @@ test("a sketch's row in the browser chooses it, as a click on its outline does; 
   assert.deepEqual(shown(c)!.profiles, []);
   assert.equal(c.$("#extrude-status")!.textContent, NO_USABLE_SKETCH);
   assert.ok(await c.close());
+});
+
+test("an open sketch chosen: no preview however the distance is typed, no error over the kernel's reason, and it is not offered in the view", async () => {
+  // Sketch 3: two lines of a rectangle's corner, open.
+  const s3 = addSketch(twoSketches());
+  const doc = drawLine(drawLine(s3.doc, s3.id, [0, 50], [10, 50]).doc, s3.id, [10, 50], [10, 60]).doc;
+  const a = await app(doc);
+  await openExtrude(a);
+  assert.equal(shown(a)!.chosen, s3.id, "the newest is chosen, open or not");
+  assert.deepEqual(shown(a)!.profiles.map((p) => p.id), a.doc().sketches.slice(0, 2).map((s) => s.id), "only the two closed ones are offered");
+  assert.match(a.$("#extrude-status")!.textContent!, /^Sketch 3 can't be extruded: it doesn't make one closed outline/);
+  await type(a, "5");
+  assert.equal(shown(a)!.preview, null);
+  assert.equal(shown(a)!.arrow, null);
+  assert.equal(a.$("#extrude-error")!.hidden, true, "the status already says why");
+  assert.equal((a.$("#extrude-ok") as HTMLButtonElement).disabled, true);
+  // A click on a closed one: its preview at the 5 mm typed, 1200 · 5 = 6,000 mm³.
+  await a.extrudePointer({ kind: "pick", profile: a.doc().sketches[0].id });
+  near(previewVolume(a), 6000, "the rectangle at 5 mm");
+  assert.ok(await a.close());
 });
 
 test("a sketch on the box's bottom face: the arrow points down, out of the box, and the preview is the body OK makes", async () => {
