@@ -40,6 +40,15 @@ export function rng(seed: number) {
   };
 }
 
+/**
+ * Lets the event loop turn, so happy-dom can let go of the DOM a session built. happy-dom keeps every
+ * querySelector, querySelectorAll and matches result in a WeakRef cache, and JavaScript keeps a WeakRef's target
+ * alive until the end of the current task: a test that drives thousands of redraws without yielding keeps every
+ * old bar alive (0.55 MB a redraw of a three-item bar; the marker and reorder files reached 2 GB and died). A
+ * microtask (`await Promise.resolve()`) does not help; a macrotask does. Await it between seeded sessions.
+ */
+export const releaseDom = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 /** The ops' weights: mostly bar actions, enough new items to keep the timeline from emptying. */
 const WEIGHTS: Record<Op, number> = { sketch: 3, extrude: 3, preset: 1, menu: 6, button: 3, marker: 3, tap: 2, item: 5, edit: 2, undo: 2, redo: 1 };
 
