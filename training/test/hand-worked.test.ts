@@ -16,70 +16,83 @@ const so = (shape: string, w: number, d: number, h: number, isNew = false) => `S
 const exported = "No size changes; the whole part is exported as an STL file.";
 
 // [setup, words, working out, commands]. Each working out is checked line by line against the words, by hand.
+// AI7a's sketch recipe changed seed 1's draws, so these ten and the later four were checked by hand again.
+const sketchOn = (on: string) => ({ op: "create_sketch", on });
+const sketched = (on: string) => `So there is a new empty sketch on the ${on} plane, ready to draw in.`;
 const HAND_CHECKED = [
-  // A new shape keeps every size.
-  [[part("slot", 156, 13, 20)], "Change the shape to a cylinder.", `${now("a slot", 156, 13, 20)} Only the shape changes, to a cylinder; every size stays. ${so("a cylinder", 156, 13, 20)}`, [part("cylinder", 156, 13, 20)]],
-  // A plate's thickness is its height: 105 / 2 = 52.5; width 21 and depth 3 kept.
-  [
-    [part("plate", 21, 3, 105)],
-    "Make it half as thick.",
-    `${now("a plate", 21, 3, 105)} The thickness is the height. That multiplies the height by 0.5: 105 × 0.5 = 52.5 mm. Every other size stays. ${so("a plate", 21, 3, 52.5)}`,
-    [part("plate", 21, 3, 52.5)],
-  ],
-  // Three sizes of a box are width, depth, height; the one unit (mm) is written after the last.
-  [[], "Can you make a 59 × 30 × 4mm box?", `Its sizes are the width, depth and height, in that order. ${so("a box", 59, 30, 4, true)}`, [part("box", 59, 30, 4)]],
-  // Wider is the width: 6 + 236.5 = 242.5.
-  [
-    [part("star", 6, 6, 9)],
-    "Can you make the star 236.5mm wider?",
-    `${now("a star", 6, 6, 9)} Wider changes the width: 6 + 236.5 = 242.5 mm. Every other size stays. ${so("a star", 242.5, 6, 9)}`,
-    [part("star", 242.5, 6, 9)],
-  ],
   // Only the export; the part stays.
-  [[part("cylinder", 1, 2, 109.5)], "Give me the STL file.", `${now("a cylinder", 1, 2, 109.5)} ${exported}`, [exportStl]],
-  // A new shape keeps every size.
-  [[part("l-bracket", 135, 2, 4)], "Change the shape to a sphere.", `${now("an L bracket", 135, 2, 4)} Only the shape changes, to a sphere; every size stays. ${so("a sphere", 135, 2, 4)}`, [part("sphere", 135, 2, 4)]],
-  [[part("star", 2, 2, 9)], "Export it as an STL.", `${now("a star", 2, 2, 9)} ${exported}`, [exportStl]],
-  // A sketch: Design has no command that draws one, so no commands, and the reason said plainly (AI5c).
+  [[part("slot", 156, 13, 20)], "Download it as an STL file.", `${now("a slot", 156, 13, 20)} ${exported}`, [exportStl]],
+  // XZ named by its letters: a sketch there, and the cylinder untouched.
+  [[part("cylinder", 105, 105, 1.5)], "I want to sketch on XZ.", `The part stays as it is. ${sketched("XZ")}`, [sketchOn("XZ")]],
+  // Narrower takes from the width: 19 − 4 = 15; a sphere's depth and height are kept as they are.
   [
-    [part("star", 1, 1, 2)],
-    "Draw a 6.5 inches by 29 mm rectangle in a sketch on the XY plane.",
-    "There is no command for drawing a sketch yet, so this can't be done and nothing was made. What can be done now is making or resizing a whole ready-made shape: a box, cylinder, sphere, plate, L bracket, slot or star.",
-    [],
+    [part("sphere", 19, 19, 19)],
+    "4mm narrower, please.",
+    `${now("a sphere", 19, 19, 19)} Narrower changes the width: 19 − 4 = 15 mm. Every other size stays. ${so("a sphere", 15, 19, 19)}`,
+    [part("sphere", 15, 19, 19)],
   ],
-  [[part("plate", 2, 10, 25)], "Give me the STL file.", `${now("a plate", 2, 10, 25)} ${exported}`, [exportStl]],
-  [[part("star", 3, 3, 4)], "Download it as an STL file.", `${now("a star", 3, 3, 4)} ${exported}`, [exportStl]],
+  // The ground is the XY plane (Z up): a new project, so nothing else is said.
+  [[], "Open a new sketch on ground, please.", `The ground plane is the XY plane. ${sketched("XY")}`, [sketchOn("XY")]],
+  // A radius of 148 is a diameter (width) of 2 × 148 = 296.
+  [
+    [part("cylinder", 182, 182, 213)],
+    "I want the radius to be 148 mm.",
+    `${now("a cylinder", 182, 182, 213)} The width is the diameter, twice the radius: 2 × 148 = 296 mm. Every other size stays. ${so("a cylinder", 296, 182, 213)}`,
+    [part("cylinder", 296, 182, 213)],
+  ],
+  // A new shape keeps every size.
+  [[part("slot", 51, 1, 2.5)], "Change the shape to a plate.", `${now("a slot", 51, 1, 2.5)} Only the shape changes, to a plate; every size stays. ${so("a plate", 51, 1, 2.5)}`, [part("plate", 51, 1, 2.5)]],
+  // 7.5 cm = 75 mm, 1 cm = 10 mm, 3 cm = 30 mm; the legs are width and depth, the thickness the height; then the export.
+  [
+    [],
+    "An L bracket 7.5cm×1 cm, 3cm thick and give me the STL file.",
+    `An L bracket's legs are its width and depth, and its thickness is the height. 7.5 cm is 75 mm, 1 cm is 10 mm and 3 cm is 30 mm. ${so("an L bracket", 75, 10, 30, true)} Then it is exported as an STL file.`,
+    [part("l-bracket", 75, 10, 30), exportStl],
+  ],
+  // "The XY": the plane by its letters, over a slot that stays.
+  [[part("slot", 134, 1, 44)], "I want to sketch on the XY.", `The part stays as it is. ${sketched("XY")}`, [sketchOn("XY")]],
+  // A new shape keeps every size.
+  [[part("l-bracket", 39, 126, 9)], "Make it a box instead.", `${now("an L bracket", 39, 126, 9)} Only the shape changes, to a box; every size stays. ${so("a box", 39, 126, 9)}`, [part("box", 39, 126, 9)]],
+  [[part("cylinder", 281, 15, 52)], "Export the STL.", `${now("a cylinder", 281, 15, 52)} ${exported}`, [exportStl]],
 ];
 
 // Later examples of seed 1, chosen for what the first ten lack, each checked by hand.
 const LATER = {
-  // Inches: 0.5 × 25.4 = 12.7, 2.5 × 25.4 = 63.5, 3 × 25.4 = 76.2. Asked over an old part, which it replaces.
-  31: [
-    [part("l-bracket", 15, 2.5, 6)],
-    "An L bracket 0.5×2.5 in, 3 in thick.",
-    `This replaces the part there is now. An L bracket's legs are its width and depth, and its thickness is the height. 0.5 inches is 12.7 mm, 2.5 inches is 63.5 mm and 3 inches is 76.2 mm. ${so("an L bracket", 12.7, 63.5, 76.2, true)}`,
-    [part("l-bracket", 12.7, 63.5, 76.2)],
+  // A radius of 2 is a width of 2 × 2 = 4, and a sphere is 4 every way. Asked over an old part, which it replaces.
+  16: [
+    [part("cylinder", 3, 39, 66)],
+    "I want a sphere with a radius of 2 mm.",
+    `This replaces the part there is now. The radius is 2 mm, and the width is the diameter, twice the radius: 2 × 2 = 4 mm. A sphere is as deep and as tall as it is wide. ${so("a sphere", 4, 4, 4, true)}`,
+    [part("sphere", 4, 4, 4)],
   ],
-  // Shorter takes from the height: 24 − 6.5 = 17.5.
-  42: [
-    [part("box", 2, 70, 24)],
-    "Can you make it 6.5mm shorter?",
-    `${now("a box", 2, 70, 24)} Shorter changes the height: 24 − 6.5 = 17.5 mm. Every other size stays. ${so("a box", 2, 70, 17.5)}`,
-    [part("box", 2, 70, 17.5)],
+  // Halving makes it smaller: 52 × 0.5 = 26, the depth and height kept.
+  23: [
+    [part("sphere", 52, 52, 52)],
+    "Halve the width.",
+    `${now("a sphere", 52, 52, 52)} That multiplies the width by 0.5: 52 × 0.5 = 26 mm. Every other size stays. ${so("a sphere", 26, 52, 52)}`,
+    [part("sphere", 26, 52, 52)],
   ],
-  // Every size three times: 8 × 3 = 24, 16 × 3 = 48, 33 × 3 = 99.
-  54: [
-    [part("cylinder", 8, 16, 33)],
+  // A line drawn in a sketch: a sketch can be started (AI7a) but nothing drawn in it until AI7b, and the answer is all
+  // or nothing, so no commands, the reason said plainly and what can be done instead.
+  33: [
+    [part("star", 39, 39, 13)],
+    "Draw a line 1 cm long on the top face.",
+    "There is no command for drawing in a sketch yet, so this can't be done and nothing was made. What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting an empty sketch on a plane.",
+    [],
+  ],
+  // Every size three times: 3 × 3 = 9, 98 × 3 = 294, 39 × 3 = 117.
+  35: [
+    [part("cylinder", 3, 98, 39)],
     "Make it three times as big.",
-    `${now("a cylinder", 8, 16, 33)} That multiplies every size by 3: 8 × 3 = 24 mm, 16 × 3 = 48 mm, 33 × 3 = 99 mm. ${so("a cylinder", 24, 48, 99)}`,
-    [part("cylinder", 24, 48, 99)],
+    `${now("a cylinder", 3, 98, 39)} That multiplies every size by 3: 3 × 3 = 9 mm, 98 × 3 = 294 mm, 39 × 3 = 117 mm. ${so("a cylinder", 9, 294, 117)}`,
+    [part("cylinder", 9, 294, 117)],
   ],
-  // A radius of 33 is a diameter (width) of 2 × 33 = 66, and a sphere is 66 every way.
-  58: [
-    [part("l-bracket", 8.5, 78, 4.5)],
-    "Make a sphere with a radius of 33 mm.",
-    `This replaces the part there is now. The radius is 33 mm, and the width is the diameter, twice the radius: 2 × 33 = 66 mm. A sphere is as deep and as tall as it is wide. ${so("a sphere", 66, 66, 66, true)}`,
-    [part("sphere", 66, 66, 66)],
+  // Inches: 7.75 × 25.4 = 196.85 (7 × 25.4 = 177.8, 0.75 × 25.4 = 19.05).
+  55: [
+    [part("l-bracket", 4, 8, 1)],
+    "Set the depth to 7.75 inches.",
+    `${now("an L bracket", 4, 8, 1)} 7.75 inches is 196.85 mm. The depth becomes 196.85 mm. Every other size stays. ${so("an L bracket", 4, 196.85, 1)}`,
+    [part("l-bracket", 4, 196.85, 1)],
   ],
 };
 
@@ -92,7 +105,7 @@ test("the first ten examples of seed 1, checked by hand", async () => {
   );
 });
 
-test("later examples of seed 1 with inches, a smaller size, a whole scale and a radius, checked by hand", async () => {
+test("later examples of seed 1 with a radius, a smaller size, a refusal, a whole scale and inches, checked by hand", async () => {
   const g = await generate({ seed: 1n, count: 60, specs: DESIGN_COMMANDS, rules: RULES, recipes: RECIPES, kernel: fakeKernel(), heldOut: [] });
   assert.ok(g.ok);
   for (const [i, want] of Object.entries(LATER)) {

@@ -13,10 +13,13 @@
 // what the part ends up as. It is written from the same lengths as the
 // command, never from the command, so a wrong reading shows in the sums.
 // A request no command can do ("cannot") gets no commands and a plain
-// reason.
+// reason. From AI7a an empty sketch can be started on an origin plane
+// (create_sketch): the plane named by its letters or by its place ("the
+// top plane" is XY, "the front" XZ, "the right" YZ, as the view cube
+// names them); drawing in it still can't be done, until AI7b.
 
 import type { Command, KernelCalls } from "@fission/core";
-import { buildSpec, documentFor, lastFeature, SHAPES, specOf } from "@fission/design";
+import { buildSpec, documentFor, lastFeature, SHAPES, SKETCH_PLANES, specOf } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 import { pick, randomLength, randomSize, randomUnit, unitAfter, type Length } from "./lengths.ts";
 import { CANNOT } from "./working.ts";
@@ -75,7 +78,25 @@ export const DESIGN_RULES: readonly CommandRule[] = [
     },
     says: () => EXPORTED,
   },
+  {
+    op: "create_sketch",
+    async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      // Design's own document for it (a sketch builds no body, so there is nothing for the kernel to check).
+      try {
+        const doc = documentFor(command);
+        const sketch = doc.timeline.features.at(-1)!;
+        if (sketch.intent.type !== "sketch" || sketch.intent.parameters.plane !== command.on) return { ok: false, reason: `the sketch is not on ${String(command.on)}` };
+        return { ok: true, state: { ...state, sketches: [...(state.sketches ?? []), String(command.on)] } };
+      } catch (e) {
+        return { ok: false, reason: `Design refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => `${SKETCHED} ${String(c.on)} plane`,
+  },
 ];
+
+/** What the working out says a create_sketch makes, before the plane's letters. */
+const SKETCHED = "new empty sketch on the";
 
 // ---- Setups: a part that already exists, in mm as the system prompt shows it.
 
@@ -316,21 +337,40 @@ function shapeEdit(r: SeededRandom, from: Part): Draft | null {
 
 const EXPORT_WORDS = ["export it as an STL", "download it as an STL file", "save it as an STL for printing", "give me the STL file", "export the STL"];
 
+// ---- Starting a sketch (AI7a).
+
+type Plane = (typeof SKETCH_PLANES)[number];
+/** The origin planes by their place, as the view cube names the side each faces (Z up, the front looking along −Y). */
+const PLANE_PLACES: Record<string, Plane> = { top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" };
+
+/** "Start a new sketch on the front plane": an empty sketch on the plane meant; the working out says which plane a place word is. */
+function sketchDraft(r: SeededRandom): Draft {
+  const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
+  const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
+  const on = pick(r, [`on the ${word} plane`, `on ${word}`, ...(word === plane ? [`on the ${word}`] : [])]);
+  const prompt = pick(r, [`start a new sketch ${on}.`, `create a sketch ${on}.`, `new sketch ${on}.`, `I want to sketch ${on}.`, `can you start a sketch ${on}?`, `open a new sketch ${on}, please.`]);
+  // A sketch never changes the part, so it is asked about a new project or one with a part alike.
+  const setup = r.next() < 0.5 ? [randomPart(r)] : [];
+  const which = word === plane ? [] : [`The ${word} plane is the ${plane} plane.`];
+  const kept = setup.length > 0 ? ["The part stays as it is."] : [];
+  return { task: "create", setup, prompt: sentence(prompt), explanation: working([...which, ...kept, `So there is a ${SKETCHED} ${plane} plane, ready to draw in.`]), commands: [{ op: "create_sketch", on: plane }] };
+}
+
 // ---- Requests no command can do yet: the answer is no commands and a plain reason (AI5c).
 
 const PLANES = ["top", "front", "right", "XY", "XZ", "YZ"];
 /** What can be done now, said the same way in every refusal. */
-const CAN_DO = "What can be done now is making or resizing a whole ready-made shape: a box, cylinder, sphere, plate, L bracket, slot or star.";
+const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting an empty sketch on a plane.";
 
 /** A request that needs a command Design doesn't offer, and what it would need. Each mentions what it can't do by name, so the words alone say why. */
 function cannotAsk(r: SeededRandom): { prompt: string; needs: string; onPart: boolean } {
   const L = () => randomLength(r, randomUnit(r)).text;
   const plane = pick(r, PLANES);
   return pick(r, [
-    () => ({ prompt: `sketch a circle ${L()} across on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
-    () => ({ prompt: `draw a ${L()} by ${L()} rectangle in a sketch on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
-    () => ({ prompt: `start a new sketch on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
-    () => ({ prompt: `draw a line ${L()} long on the top face.`, needs: "drawing a sketch", onPart: true }),
+    // A sketch can be started (AI7a), but nothing drawn in it yet (AI7b): all or nothing, so no commands.
+    () => ({ prompt: `sketch a circle ${L()} across on the ${plane} plane.`, needs: "drawing in a sketch", onPart: false }),
+    () => ({ prompt: `draw a ${L()} by ${L()} rectangle in a sketch on the ${plane} plane.`, needs: "drawing in a sketch", onPart: false }),
+    () => ({ prompt: `draw a line ${L()} long on the top face.`, needs: "drawing in a sketch", onPart: true }),
     () => ({ prompt: `put a ${L()} hole in the centre of the top face.`, needs: "a hole", onPart: true }),
     () => ({ prompt: `drill a ${L()} hole through it.`, needs: "a hole", onPart: true }),
     () => ({ prompt: `fillet all the edges with a ${L()} radius.`, needs: "rounding edges (a fillet)", onPart: true }),
@@ -383,5 +423,6 @@ export const DESIGN_RECIPES: readonly Recipe[] = [
       return { task: "create", setup: [], prompt: `${ask}${then}`, explanation: working([...lines, becomes(command, true), `Then it is ${EXPORTED}.`]), commands: [command, { op: "export_stl" }] };
     },
   },
+  { id: "design.sketch", ops: ["create_sketch", "set_part"], sample: sketchDraft },
   { id: "design.cannot", ops: ["set_part"], sample: cannotDraft },
 ];
