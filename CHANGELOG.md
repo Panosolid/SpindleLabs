@@ -10,7 +10,7 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.32.12 (2026-10-26)
+## 0.32.13 (2026-10-26)
 
 - Fixed: the boolean's facts table crashed on ordinary parts. When an edge of the tool lay inside a longer edge of the target (a box sitting flush on a longer box, say), the check for "is this tool corner the same place as a target corner already listed" looked the tool corner's number up in the target's list. That read the wrong corner, and when the tool had more corners than the target it ran off the end of the list and the kernel panicked. Found by a cold read of step 32's code. Two regression tests failed with the panic first (one edge inside another, worked by hand; a 3 × 1 × 1 box with a cube sitting flush on its top as part of a 16-corner tool) and pass now.
 
@@ -25,6 +25,10 @@ Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `
 - Fixed: an edge of one part crossing a face of the other within tolerance of two corners of that face at once would have made those two corners one point. Now the rule-1 refusal naming both corners; where several corners could hold a crossing, the nearest is chosen, never the first in memory. Regression tests (including 0.9× and 1.1× of where the two corners' stretches meet) failed first.
 
 - Also: the kernel's WebAssembly build no longer warns about an unused name in the merge's failure report.
+
+## 0.32.12 (2026-10-26)
+
+- Fixed: the "browsers (firefox)" check (not required, so it never blocked a merge) failed on every pull request since the runners moved to Ubuntu 24.04: Playwright's Firefox was never installed, so the smoke test died with "Executable doesn't exist at ~/.cache/ms-playwright/firefox-1555". The system packages came from the Azure apt mirror at about 100 kB/s, each of the first two tries hit its 12 minute limit, the mirror switch never engaged (24.04 runners list their mirrors in `/etc/apt/apt-mirrors.txt`, which the script did not edit) and the third try got the 45 s left of the budget. `install-browser.sh` now gives a try 7 minutes for packages and 4 for the browser, puts archive.ubuntu.com first in the mirror list from the second try on, repairs dpkg between tries and tells the log which try failed. Checked by a new unit test (`test_install_browser.py`) running the real script against a copy of a 24.04 runner's apt files with fake `sudo`, `dpkg` and `npx`: a healthy run leaves the mirrors alone, a failed try rewrites the mirror list and `sources.list` and leaves `ubuntu.sources` as it was, a failed browser download is retried, three failures fail the script, the package limit cuts a try at 1.1× and not at 0.9× of it, and the total budget ends the script. Found by the 10-26 bug hunt on pull request #339's checks.
 
 ## 0.32.11 (2026-10-26)
 
