@@ -5,11 +5,14 @@
 // new body at the marker (`withPart`), which the preview then says. From
 // AI7a, also where create_sketch can put a sketch: the origin planes and
 // the flat faces of the bodies on screen, each by its name with the way it
-// faces and its centre, and the sketch it would add.
+// faces and its centre, and the sketch it would add. From AI7b, which
+// sketch is open for the draw commands, and how a sketch's x and y lie on
+// each plane and face.
 
 import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { DESIGN_COMMANDS } from "./commands.ts";
+import { builtFrom, DESIGN_COMMANDS, DRAW_OPS } from "./commands.ts";
+import { inSketch } from "./face-edges.ts";
 import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
@@ -27,12 +30,12 @@ export type PanelSizes = { width: number; depth: number; height: number };
  * the panel's sizes. Pure: the same document, failures and sizes give the
  * same words.
  */
-export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySet<string>, sizes: PanelSizes, faces: readonly AIFace[] = []): AIView {
+export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySet<string>, sizes: PanelSizes, faces: readonly AIFace[] = [], open: string | null = null): AIView {
   const keeps: Record<string, unknown> = { ...sizes };
   const shownFaces = faces.slice(0, AI_FACES);
   const commands = aiCommands(shownFaces);
   const choiceWords = placeWords(shownFaces);
-  if (!doc) return { setup: [], keeps, notes: sketchNotes(undefined, faces, shownFaces), adds: null, commands, choiceWords };
+  if (!doc) return { setup: [], keeps, notes: [...sketchNotes(undefined, faces, shownFaces), ...drawNotes(undefined, null)], adds: null, commands, choiceWords };
   // The part (the last body that builds) and what makes it; an extruded sketch has no set_part that does.
   const shape = partOf(doc);
   const preset = shape !== null && shape.shape !== "sketch-extrude";
@@ -40,7 +43,7 @@ export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySe
   const { features } = doc.timeline;
   const at = insertAt(doc);
   const adds = preset ? null : `a new body as item ${at + 1}, ${at === 0 ? "at the start of the timeline" : `after ${at}. ${features[at - 1].intent.summary}`}`;
-  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces)], adds, commands, choiceWords };
+  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces), ...drawNotes(doc, open)], adds, commands, choiceWords };
 }
 
 /** The most faces the prompt lists, like `AI_TIMELINE_ITEMS`: the first ones, in the bodies' build order, are kept. */
@@ -54,6 +57,8 @@ export interface AIFace {
   /** Its outward unit normal and its centre, in mm, as the kernel gives them. */
   outward: readonly number[];
   centre: readonly number[];
+  /** Its centre's (x, y) in a sketch started on it (AI7b): the frame create_sketch would give it (`drawnOnFace`). */
+  inSketch: readonly [number, number];
 }
 
 /** What a face facing straight along an axis is called (Z up, the front looking along −Y: the view cube's names). */
@@ -80,17 +85,31 @@ export function aiFaces(scene: Scene | null, label: (feature: string) => string)
     for (let i = 0; i < body.view.faces; i++) {
       const spot = sketchSpot({ face: scene.faceStart[b] + i, shift: false }, scene);
       if (spot?.kind !== "face") continue;
-      out.push({ name: spot.face.plane, body: `Body ${body.place} (${label(body.feature)})`, outward: body.view.face_normals[i]!, centre: body.view.face_centroids[i] });
+      const centre = body.view.face_centroids[i];
+      out.push({ name: spot.face.plane, body: `Body ${body.place} (${label(body.feature)})`, outward: body.view.face_normals[i]!, centre, inSketch: inSketch(centre, spot.drawn.plane) });
     }
   });
   return out;
 }
 
-/** Design's commands as the AI may use them now: set_part, and create_sketch on an origin plane or one of `faces` (export_stl downloads, so it stays the user's). */
+/** Design's commands as the AI may use them now: set_part, create_sketch on an origin plane or one of `faces`, and the draw commands (export_stl downloads, so it stays the user's). */
 export function aiCommands(faces: readonly AIFace[]): CommandSpec[] {
   const setPart = DESIGN_COMMANDS.find((c) => c.op === "set_part")!;
   const sketch = DESIGN_COMMANDS.find((c) => c.op === "create_sketch")!;
-  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }];
+  const draws = DESIGN_COMMANDS.filter((c) => DRAW_OPS.includes(c.op));
+  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }, ...draws];
+}
+
+/** How a sketch's x and y lie on each origin plane (sketch.ts PLANES: y is the normal × x), said once. */
+export const SKETCH_AXES = "In a sketch, x and y are in mm on its plane: on XY, x is X and y is Y; on XZ, x is X and y is Z; on YZ, x is Y and y is Z. A sketch on a face has its own x and y; each face's line says where its centre is in them.";
+
+/** The prompt's lines about drawing (AI7b): the sketch open, if any, and whether the draw commands may draw in it. */
+function drawNotes(doc: DesignDocument | undefined, open: string | null): string[] {
+  const item = open === null || !doc ? undefined : doc.timeline.features.find((f) => f.id === open);
+  if (!doc || !item) return ["No sketch is open: to draw, start one with create_sketch first in the same answer; the draw commands then draw in it.", SKETCH_AXES];
+  const used = builtFrom(doc, item.id);
+  const what = `${item.provenance.self.label} is open (${item.intent.summary})`;
+  return [used === null ? `${what}: the draw commands draw in it, unless create_sketch starts another first.` : `${what}, but ${used} is built from it, so the draw commands can't draw in it: start a new sketch with create_sketch first.`, SKETCH_AXES];
 }
 
 /** Where each place create_sketch can use is, in words for the preview: "the XY plane", "a face of Body 1 (Box 1), facing up (+Z, a top face)". */
@@ -113,7 +132,7 @@ function sketchNotes(doc: DesignDocument | undefined, faces: readonly AIFace[], 
   return [
     adds,
     "The flat faces a sketch can go on, by name (create_sketch's on), with the way each faces and its centre:",
-    ...shown.map((f) => `- ${f.name}: a face of ${f.body}, facing ${facingWords(f.outward)}, centre (${f.centre.map(short).join(", ")}) mm.`),
+    ...shown.map((f) => `- ${f.name}: a face of ${f.body}, facing ${facingWords(f.outward)}, centre (${f.centre.map(short).join(", ")}) mm, which is (${f.inSketch.map(short).join(", ")}) in a sketch on it.`),
     ...(left > 0 ? [`(${left} more face${left === 1 ? "" : "s"} left out)`] : []),
   ];
 }

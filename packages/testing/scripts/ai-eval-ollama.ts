@@ -1,5 +1,5 @@
 // The A10 check (AI3): scores small free models, through Ollama, on the
-// evaluation suite with the commands the assistant offers (set_part and, from AI7a, create_sketch),
+// evaluation suite with the commands the assistant offers (set_part, from AI7a create_sketch, from AI7b the draws),
 // the same prompt and the same constrained output the app uses. It scores
 // the original cases and the held-out ones (AI4) separately, so a prompt
 // change can be judged on cases it was never written against. Writes a
@@ -24,7 +24,7 @@ if (!out || models.length === 0) {
   console.error("usage: ai-eval-ollama.ts <out.json> <model> [model…]");
   process.exit(1);
 }
-// What the assistant offers with no body on screen (AI7a): set_part and create_sketch on an origin plane.
+// What the assistant offers with no body on screen: set_part, create_sketch on an origin plane (AI7a) and the draws (AI7b).
 const specs = aiCommands([]);
 const SETS: { name: string; cases: readonly EvalCase[] }[] = [
   { name: "original", cases: EVAL_CASES },
@@ -101,7 +101,7 @@ const pct = (x: number | undefined) => (x === undefined ? "–" : `${Math.round(
 const lines = SETS.flatMap((set) => {
   const n = set.cases.filter((c) => !c.waitsFor).length;
   return [
-    `### A10 check, ${set.name} cases: ${n}, set_part and create_sketch`,
+    `### A10 check, ${set.name} cases: ${n}, set_part, create_sketch and the draws`,
     "",
     "| Model | Right | Create | Edit | Can't | Usable first try | Time |",
     "|---|---|---|---|---|---|---|",

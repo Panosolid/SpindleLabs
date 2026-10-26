@@ -1,7 +1,7 @@
 // The AI assistant's panel: one panel for every workspace, aware of the
 // active one. Off until the user picks a provider (nothing is sent
 // anywhere, and every feature works without it). In Design it turns a
-// request into Design's own commands (set_part, and from AI7a create_sketch), shows the AI's working
+// request into Design's own commands (set_part; create_sketch and drawing in it, AI7a-b), shows the AI's working
 // out and then what would change, and an accepted change is one "AI: …"
 // undo step; a rejected one changes nothing. A request no command can do
 // gets the AI's plain reason and nothing to accept (AI5c). While the AI
@@ -47,7 +47,7 @@ import {
   type ProviderSettings,
 } from "@fission/ai";
 import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
-import { DESIGN_COMMANDS, partOf, type DesignDocument } from "@fission/design";
+import { DESIGN_COMMANDS, DRAW_OPS, drawWords, partOf, type DesignDocument } from "@fission/design";
 
 export interface AssistantHost {
   history: History;
@@ -158,6 +158,12 @@ export function previewOf(view: AIView, commands: readonly Command[]): { before:
   const rows: PreviewRow[] = parts < 0 ? [] : previewRows(before, after);
   const labels = rows.length > 0 ? [`${view.adds === null ? "" : "new "}${describePart(after)}`] : [];
   for (const c of commands) {
+    // A drawing (AI7b): its own row, in the order sent, after the sketch it goes in.
+    if (DRAW_OPS.includes(c.op)) {
+      rows.push({ parameter: c.op.replace("draw_", ""), before: undefined, after: drawWords(c) });
+      labels.push(drawWords(c));
+      continue;
+    }
     if (c.op !== "create_sketch") continue;
     const on = String(c.on);
     const where = (view.choiceWords && Object.hasOwn(view.choiceWords, on) ? view.choiceWords[on] : undefined) ?? on;
