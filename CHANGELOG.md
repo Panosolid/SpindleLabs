@@ -10,6 +10,12 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.20 (2026-10-26)
+
+- Fixed (L2): a corner of one part within reach of a corner of the other was placed at whichever came first, so the same pair of parts could give different points depending on which was the target, up to the corners' summed tolerance apart. The meeting point now follows one rule whatever the order: first a corner whose own tolerance already reaches everything the point lies on, then the least tolerance needed (needs within rounding of each other are a tie, broken by position), and with no corner, edge-edge crossings before edge-face, then the steepest crossing, then position. Hand-worked tests in both argument orders failed first.
+- Fixed (found with L2): a crossing that reached a corner already merged with another point stayed a separate point beside it. The re-check now also sweeps each shared point against every input corner and joins it when they are within their summed tolerance. The test failed first, and fails again with the sweep disabled.
+- Fixed in the exact model (prototypes/boolean/facts_model.py), not the kernel: ties between corners are broken by the rounded points the kernel was given, and a need exactly equal to a corner's own tolerance is no longer counted as a band's edge. That removes the model's 81 false disagreements. Model run on seeds 40000-40039: only seed 40020 case 243 is left, where the distance needed equals the reach to the last digit (2.19999960914195e-05 mm both), a band's edge the model does not judge.
+
 ## 0.32.19 (2026-10-26)
 
 - Fixed (the 32b4 review's first bug): a turned box beside a cube could have one of its edges and one of the cube's meet at a single shared point and then run side by side 21 nm apart, parallel but past their 20 nm summed tolerance, so neither one edge nor clearly apart; the section met them as two different points and gave an internal error. That is rule 1's refusal for edges, as it already was for faces, so the table now refuses it, naming both edges and how far apart they run. Edges within their summed tolerance of each other along the stretch are one edge there and are taken (the exact model found 51 prism corner touches 9 to 13 nm apart that the first version refused). Hand-worked regression tests at 0.9× and 1.1× of the sum, in both argument orders, failed first.
