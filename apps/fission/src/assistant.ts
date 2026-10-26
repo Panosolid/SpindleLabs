@@ -1,7 +1,7 @@
 // The AI assistant's panel: one panel for every workspace, aware of the
 // active one. Off until the user picks a provider (nothing is sent
 // anywhere, and every feature works without it). In Design it turns a
-// request into Design's own command (set_part), shows the AI's working
+// request into Design's own commands (set_part, and from AI7a create_sketch), shows the AI's working
 // out and then what would change, and an accepted change is one "AI: …"
 // undo step; a rejected one changes nothing. A request no command can do
 // gets the AI's plain reason and nothing to accept (AI5c). While the AI
@@ -61,7 +61,7 @@ const SETTINGS_KEY = "fission.ai.settings";
 /** The model list's "type a name" choice. */
 const TYPED = "";
 const CONSENT_KEY = "fission.ai.consent:";
-/** The AI may only set the part: Design's one modelling command (export_stl downloads, so it stays the user's). */
+/** What the AI may use when Design's view names no list of its own: set_part (export_stl downloads, so it stays the user's). From AI7a Design's view lists its commands, create_sketch with the faces on screen. */
 const AI_COMMANDS = DESIGN_COMMANDS.filter((c) => c.op === "set_part");
 const SHORT: Record<AIProviderKind, string> = { "in-browser": "in browser", ollama: "Ollama", "api-key": "API key", "browser-built-in": "built-in" };
 
@@ -130,7 +130,7 @@ const usedBy = (shape: unknown) => USED[String(shape)] ?? ["shape", "width", "de
 export function partAfter(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown> } {
   const before: Record<string, unknown> = view.adds === null ? { ...(view.setup[0] ?? {}) } : {};
   const after: Record<string, unknown> = { ...view.keeps, ...(view.setup[0] ?? {}) };
-  for (const c of commands) Object.assign(after, c);
+  for (const c of commands) if (c.op === "set_part") Object.assign(after, c);
   delete before.op;
   delete after.op;
   return { before, after };
@@ -139,6 +139,35 @@ export function partAfter(view: AIView, commands: readonly Command[]): { before:
 /** The preview's rows: each size the shape after uses that differs from before ("—" when there was none), in the panel's order. */
 export function previewRows(before: Record<string, unknown>, after: Record<string, unknown>): { parameter: string; before: unknown; after: unknown }[] {
   return usedBy(after.shape).flatMap((parameter) => (before[parameter] === after[parameter] ? [] : [{ parameter, before: before[parameter], after: after[parameter] }]));
+}
+
+/** A row of the preview: a size before and after, or a sketch started ("sketch", nothing before). */
+export type PreviewRow = { parameter: string; before: unknown; after: unknown };
+
+/**
+ * What accepting `commands` does, for the preview and its undo step's name
+ * (AI7a): the part's rows and name when a set_part changes it, then a row
+ * and a name for each sketch started, where it goes in the view's words.
+ * `adds` is the view's "a new body as item 4, …" only when a set_part
+ * comes before any sketch: a sketch put in first moves the marker, so the
+ * item number would be a guess.
+ */
+export function previewOf(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown>; rows: PreviewRow[]; label: string; adds: string | null } {
+  const { before, after } = partAfter(view, commands);
+  const parts = commands.findIndex((c) => c.op === "set_part");
+  const rows: PreviewRow[] = parts < 0 ? [] : previewRows(before, after);
+  const labels = rows.length > 0 ? [`${view.adds === null ? "" : "new "}${describePart(after)}`] : [];
+  for (const c of commands) {
+    if (c.op !== "create_sketch") continue;
+    const on = String(c.on);
+    const where = (view.choiceWords && Object.hasOwn(view.choiceWords, on) ? view.choiceWords[on] : undefined) ?? on;
+    rows.push({ parameter: "sketch", before: undefined, after: `new, on ${where}` });
+    labels.push(`new sketch on ${where}`);
+  }
+  const sketchFirst = commands.findIndex((c) => c.op === "create_sketch");
+  const adds = parts < 0 || view.adds === null ? null : sketchFirst >= 0 && sketchFirst < parts ? "a new body at the timeline marker" : view.adds;
+  // With no change at all, the part's own name, as before AI7a ("No change" is shown and Accept is off).
+  return { before, after, rows, label: labels.length > 0 ? labels.join(", then ") : describePart(after), adds };
 }
 
 /** "box 50 × 30 × 20 mm", "cylinder ⌀25 × 60 mm", "sphere ⌀30 mm": the undo step's name. */
@@ -553,15 +582,17 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       if (s.kind === "in-browser" && !(await confirmDownload(s))) return say("Nothing was downloaded or sent.");
       // What Design says about itself (25c3): its timeline, the sizes a set_part keeps, and whether Accept changes the part or adds a body.
       const view = viewOf(host);
-      const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, AI_COMMANDS, view.notes), messages: [{ role: "user", content: words }] }, AI_COMMANDS, showProgress);
+      const offered = view.commands ?? AI_COMMANDS;
+      const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, offered, view.notes), messages: [{ role: "user", content: words }] }, offered, showProgress);
       if (!answer.ok) return say(answer.error, true);
       // No commands: the AI says it can't do this with the commands it has (AI5c). Shown, never stood in for.
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       const design = host.design();
       if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
-      const { before, after } = partAfter(view, answer.commands);
+      const shown = previewOf(view, answer.commands);
+      const { before } = shown;
       const action = proposeAction(answer.commands, {
-        label: `${view.adds === null ? "" : "new "}${describePart(after)}`,
+        label: shown.label,
         history: host.history,
         run: (c) => void design.run!(c),
         current: () => ({ ...before }),
@@ -569,7 +600,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       });
       pending = action;
       showProgress({ stage: "checking", attempt: answer.attempts, fraction: PREVIEWING, working: answer.explanation, commands: answer.commands.length }, "Making the preview…");
-      showPreview(action, await action.preview(), before, after, view.adds, answer.attempts, answer.explanation);
+      showPreview(action, await action.preview(), shown.rows, shown.adds, answer.attempts, answer.explanation);
     } catch (e) {
       say((e as Error).message, true);
     } finally {
@@ -638,11 +669,10 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     result.replaceChildren(box);
   }
 
-  function showPreview(action: AIAction, preview: Preview, before: Record<string, unknown>, after: Record<string, unknown>, adds: string | null, attempts: 1 | 2, explanation: string) {
+  function showPreview(action: AIAction, preview: Preview, rows: readonly PreviewRow[], adds: string | null, attempts: 1 | 2, explanation: string) {
     const box = document.createElement("div");
     box.id = "ai-preview";
     box.className = "ai-preview";
-    const rows = previewRows(before, after);
     box.innerHTML = `<p class="ai-label"></p>
       <table>${rows.map((c) => `<tr data-param="${escape(c.parameter)}"><th>${escape(c.parameter)}</th><td>${escape(String(c.before ?? "—"))}</td><td>→</td><td>${escape(String(c.after))}</td></tr>`).join("")}</table>
       <p class="ai-note"></p>

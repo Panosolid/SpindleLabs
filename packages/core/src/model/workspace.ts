@@ -52,6 +52,14 @@ export interface AIView {
   notes: string[];
   /** Set when an accepted command adds something rather than changing what `setup` makes: what it adds and where ("a new body as item 4, after 3. Extrude 1"). */
   adds: string | null;
+  /**
+   * The commands the AI may use now, with their choices filled in from
+   * what is open (Design: the flat faces a sketch can go on, AI7a); left
+   * out, the assistant offers its own list.
+   */
+  commands?: CommandSpec[];
+  /** Words for the choice values the preview shows, by value (Design: where each place a sketch can go is, "a face of Body 1 (Box 1), facing up"). */
+  choiceWords?: Record<string, string>;
 }
 
 /** One entry a workspace puts in the top bar's File ▾ (U0f2a). */

@@ -81,7 +81,15 @@ test("seeded: on 300 random timelines the AI is told each item's state, and set_
     if (end === items.length && doc.timeline.marker === undefined) assert.equal(marker, "The timeline marker is at the end: every item is built.", where);
     else if (end === 0) assert.equal(marker, "The timeline marker is at the start: nothing is built.", where);
     else assert.equal(marker, `The timeline marker is after item ${end}: items after it are not built.`, where);
-    assert.equal(view.notes.at(-1), `A size set_part leaves out keeps the value it has now: width ${sizes.width}, depth ${sizes.depth}, height ${sizes.height}.`, where);
+    assert.equal(view.notes[items.length + 3], `A size set_part leaves out keeps the value it has now: width ${sizes.width}, depth ${sizes.depth}, height ${sizes.height}.`, where);
+    // AI7a: create_sketch does what the AI is told: one new sketch item, of that name, at that place; nothing else moves.
+    const sketched = documentFor({ op: "create_sketch", on: "XZ" }, doc);
+    const place = insertPlace(doc);
+    const made = sketched.timeline.features[place];
+    assert.deepEqual(sketched.timeline.features.filter((f) => f !== made).map((f) => f.id), items.map((f) => f.id), where);
+    assert.equal(made.intent.parameters.plane, "XZ", where);
+    const placeWords = place === 0 ? "at the start of the timeline" : `after ${place}. ${items[place - 1].intent.summary}`;
+    assert.equal(view.notes[items.length + 4], `create_sketch adds an empty ${made.provenance.self.label} as item ${place + 1}, ${placeWords}, and opens it; nothing already in the timeline changes.`, where);
 
     // Do it: a set_part of a random shape, its left-out sizes kept from the panel (as Design's run fills them).
     const shape = SHAPES[Math.floor(r.next() * SHAPES.length)];

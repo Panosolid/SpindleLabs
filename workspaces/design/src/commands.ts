@@ -1,12 +1,15 @@
 // Design's commands, as data (the command API in core). The panel and the
 // AI assistant do the same thing through these: the AI gets schemas
 // generated from them and can't do anything a user couldn't. There are
-// two: set the part (change it, or add a body at the marker), and export
-// every body shown.
+// three: set the part (change it, or add a body at the marker), start a
+// sketch on an origin plane or a flat face (AI7a), and export every body
+// shown.
 
 import type { Command, CommandSpec } from "@fission/core";
-import { withPart, type DesignDocument } from "./document.ts";
+import { SKETCH_PLANES, withPart, type DesignDocument } from "./document.ts";
 import type { ShapeKind } from "./profiles.ts";
+import { addSketch } from "./sketch.ts";
+import { freshDesign } from "./start-fresh.ts";
 
 export const SHAPES: readonly ShapeKind[] = ["box", "cylinder", "sphere", "l-bracket", "plate", "slot", "star"];
 
@@ -24,6 +27,15 @@ export const DESIGN_COMMANDS: readonly CommandSpec[] = [
     },
   },
   {
+    op: "create_sketch",
+    // AI7a: what Create sketch does after a plane or face is picked. The app adds the flat faces of the bodies on
+    // screen to `on` (ai-view.ts `sketchCommand`); this list, the origin planes, is what holds with no body.
+    summary: "Start a new empty sketch on an origin plane or a flat face of a body, put in the timeline at the marker and opened for drawing, as Create sketch does. It builds no body.",
+    params: {
+      on: { type: "choice", values: SKETCH_PLANES, description: "where the sketch goes: XY is the ground plane (seen from the top), XZ the front plane, YZ the right side plane; or the name of a flat face from the design's list of faces" },
+    },
+  },
+  {
     op: "export_stl",
     summary: "Download every body shown as one binary STL file, for printing or another program. Warns when a body is too big for STL's single-precision numbers.",
     params: {},
@@ -35,11 +47,17 @@ const NEEDS: Record<ShapeKind, readonly ("depth" | "height")[]> = { box: ["depth
 
 /**
  * The document a parsed Design command makes from `current` (none: a fresh
- * part); set_part keeps its sketches. With no part to keep sizes from (the
+ * part); set_part keeps its sketches, and create_sketch (AI7a) adds one on an
+ * origin plane. With no part to keep sizes from (the
  * panel's own command always names all three), a size the shape needs but
  * the command leaves out is an error; one it ignores is never read.
  */
 export function documentFor(command: Command, current?: DesignDocument | null): DesignDocument {
+  // A sketch on an origin plane, at the marker; one on a face needs the face as built, so only Design's run makes it (workspace.ts).
+  if (command.op === "create_sketch") {
+    if (!(SKETCH_PLANES as readonly unknown[]).includes(command.on)) throw new Error(`create_sketch: a sketch on a face is placed on the body as built, so only Design can start one; ${JSON.stringify(command.on)} is not XY, XZ or YZ`);
+    return addSketch(current ?? freshDesign(), command.on as (typeof SKETCH_PLANES)[number]).doc;
+  }
   // export_stl makes no document: it saves the one there is.
   if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
   const { shape, width, depth, height } = command as unknown as { shape: ShapeKind; width: number; depth?: number; height?: number };
