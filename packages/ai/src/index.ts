@@ -6,7 +6,7 @@ export { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, type Fetch } from "./http.ts";
 export { apiOrigin, DEFAULT_MODELS, listHostedModels, otherEndpoint, vendorFromKey, VENDOR_ORIGINS } from "./hosted.ts";
 export { isThisComputer, OLLAMA_ENDPOINT, ollamaModels } from "./ollama.ts";
 export { gpuCanRun, IN_BROWSER_MODEL, inBrowserDownloadBytes, type BuiltInModelLike, type GpuLike, type WebLLMLike, type WebLLMModel } from "./local.ts";
-export { askForCommands, type AskResult } from "./commands.ts";
+export { askForCommands, saysCannot, type AskResult } from "./commands.ts";
 export { acceptCommands, AI_LABEL, proposeAction, type AIAction, type ParameterChange, type Preview, type ProposeOptions } from "./actions.ts";
 export { CANNOT_RULE, CUBE_RULE, EXPLAIN_RULE, RADIUS_RULE, systemPrompt, UNIT_RULE } from "./prompt.ts";
 export { buildContext, type AIContext, type ContextOptions } from "./context.ts";

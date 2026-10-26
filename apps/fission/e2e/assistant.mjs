@@ -248,7 +248,7 @@ try {
         const format = asked[0].body.format;
         assert.deepEqual(Object.keys(format.properties), ["explanation", "commands"]);
         assert.deepEqual(format.required, ["explanation", "commands"]);
-        assert.match(asked[0].body.messages[0].content, /Write your working out in "explanation" before the commands/);
+        assert.match(asked[0].body.messages[0].content, /First write your working out in "explanation"/);
         assert.equal(await page.textContent("#ai-preview .ai-working-text"), said);
         assert.equal(await page.$("#ai-preview img"), null, "the tag is shown, not made");
         assert.equal(await page.evaluate(() => window.ranMarkup), undefined);

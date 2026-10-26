@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { CommandSpec } from "@fission/core";
-import { askForCommands, type AIProvider, type AIRequest } from "../src/index.ts";
+import { askForCommands, saysCannot, type AIProvider, type AIRequest } from "../src/index.ts";
 
 const specs: CommandSpec[] = [{ op: "set_part", summary: "s", params: { width: { type: "length", description: "w" } } }];
 const good = JSON.stringify({ commands: [{ op: "set_part", width: 40 }] });
@@ -82,4 +82,20 @@ test("no commands with a reason is an honest answer; no commands and no reason i
     ok: false,
     error: "The AI's answer couldn't be used, even after one retry: it has no commands and doesn't say why. Nothing was changed.",
   });
+});
+
+test("no commands with a working out that only describes a part is retried, saying so (AI5c's first evaluation run)", async () => {
+  // llama3.2 wrote this for "Make a box 40 by 30 by 20 mm." and then closed an empty list.
+  const described = "The width, depth and height are 40 mm, 30 mm and 20 mm. The part will be a box with these dimensions.";
+  const { provider, asked } = scripted([JSON.stringify({ explanation: described, commands: [] }), good]);
+  assert.deepEqual(await askForCommands(provider, request, specs), { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: "", attempts: 2 });
+  assert.match(asked[1].messages.at(-1)!.content, /it has no commands, but the explanation doesn't say the request can't be done\. If the commands can do it, send them/);
+});
+
+test("what counts as saying it can't be done (worked by hand)", () => {
+  for (const yes of ["I can't draw sketches yet.", "This cannot be done.", "There is no command for a hole.", "Fillets are not supported yet.", "I CAN NOT do that", "It cant be done", "That isn’t possible with these commands."])
+    assert.equal(saysCannot(yes), true, yes);
+  // Words that only look alike: "canteen", "scant", "cannon"; and a plain description of a part.
+  for (const no of ["", "The part will be a box 40 mm wide.", "A canteen-shaped part, scant 2 mm walls.", "A cannon barrel 30 mm across.", "Commands: set the width to 50 mm."])
+    assert.equal(saysCannot(no), false, no);
 });

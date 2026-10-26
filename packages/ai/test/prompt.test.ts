@@ -83,10 +83,14 @@ test("the working out and the honest refusal come after the size rules, before t
   const at = (line: string) => p.indexOf(line);
   assert.ok(at(CUBE_RULE) >= 0 && at(EXPLAIN_RULE) === at(CUBE_RULE) + 1 && at(CANNOT_RULE) === at(EXPLAIN_RULE) + 1, p.join("\n"));
   assert.match(p.at(-1)!, /^Answer with the commands/);
-  // The working out names the key the schema asks for, and shows a sum worked as the rules say: 1.5 cm = 15 mm, 2 × 15 = 30.
+  // The working out names the key the schema asks for, and is short: no example about a radius, which made
+  // small models talk about the radius of a box (AI5c's first evaluation run).
   assert.match(EXPLAIN_RULE, /"explanation"/);
-  assert.match(EXPLAIN_RULE, /1\.5 cm is 15 mm, so the diameter is 2 × 15 = 30 mm/);
+  assert.match(EXPLAIN_RULE, /one to three short sentences/);
+  assert.doesNotMatch(EXPLAIN_RULE, /radius/);
+  // Sending the commands comes first; an empty list is the exception, and must say it can't be done.
+  assert.match(CANNOT_RULE, /^When the commands can do what the user asks, always send them\. Only when/);
+  assert.match(CANNOT_RULE, /say in the explanation that it can't be done yet and why/);
   // Ben's circle (2026-10-26): a sketch request must not become a thin cylinder.
-  assert.match(CANNOT_RULE, /send no commands/);
   assert.match(CANNOT_RULE, /Never stand in for it with another shape or a tiny size/);
 });

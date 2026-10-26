@@ -13,12 +13,23 @@ import type { AIProvider, AIRequest } from "./providers.ts";
 export type AskResult = { ok: true; commands: Command[]; explanation: string; attempts: 1 | 2 } | { ok: false; error: string };
 
 /**
+ * Whether a working out says the request can't be done: the one reason an
+ * answer may send no commands. Plain words a refusal uses ("can't",
+ * "cannot", "no command", "not supported"); an answer that only describes
+ * a part ("The part will be a box 40 mm wide.") is not one.
+ */
+export function saysCannot(explanation: string): boolean {
+  return /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn['’]t available)\b/i.test(explanation);
+}
+
+/**
  * Asks the provider for commands. With structured output it is held to
  * the generated schema; either way the answer is checked, and a bad one
  * is retried once with the problem explained. A second bad answer fails
  * clearly. Never throws for a bad answer; a provider error is reported too.
- * An answer with no commands must say why (it can't be done with the
- * commands offered); with neither, it is a bad answer.
+ * An answer with no commands must say that the request can't be done
+ * (`saysCannot`); otherwise it is a bad answer: small models write a right
+ * working out and then close an empty list (AI5c's first evaluation run).
  */
 export async function askForCommands(provider: AIProvider, request: Omit<AIRequest, "jsonSchema">, specs: readonly CommandSpec[]): Promise<AskResult> {
   const schema = commandListSchema(specs);
@@ -33,8 +44,12 @@ export async function askForCommands(provider: AIProvider, request: Omit<AIReque
       return { ok: false, error: `the AI provider failed: ${e instanceof Error ? e.message : String(e)}` };
     }
     const parsed = parseCommandList(text, specs);
-    if (parsed.ok && (parsed.commands.length > 0 || parsed.explanation !== "")) return { ok: true, commands: parsed.commands, explanation: parsed.explanation, attempts: attempt };
-    lastError = parsed.ok ? "it has no commands and doesn't say why" : parsed.error;
+    if (parsed.ok && (parsed.commands.length > 0 || saysCannot(parsed.explanation))) return { ok: true, commands: parsed.commands, explanation: parsed.explanation, attempts: attempt };
+    lastError = !parsed.ok
+      ? parsed.error
+      : parsed.explanation === ""
+        ? "it has no commands and doesn't say why"
+        : "it has no commands, but the explanation doesn't say the request can't be done. If the commands can do it, send them; if not, say plainly what can't be done";
     req = {
       ...req,
       messages: [...req.messages, { role: "assistant", content: text }, { role: "user", content: `That answer can't be used: ${lastError}. Answer again with valid JSON only.` }],
