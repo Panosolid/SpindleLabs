@@ -184,10 +184,10 @@ test("a selection that is a single point frames that point", () => {
 });
 
 test("the base and edge colours, from their hex codes by hand", () => {
-  // Kills each `/ 255` => `* 255` and EDGE_COLOUR => []. 0x9aa7b8 is (154, 167, 184) and 0x0b0c0e
-  // is (11, 12, 14), each over 255.
+  // Kills each `/ 255` => `* 255` and EDGE_COLOUR => []. 0x9aa7b8 is (154, 167, 184) and 0x282b31
+  // is (40, 43, 49), each over 255.
   assert.deepEqual(BASE_COLOUR, [154 / 255, 167 / 255, 184 / 255]);
-  assert.deepEqual(EDGE_COLOUR, [11 / 255, 12 / 255, 14 / 255]);
+  assert.deepEqual(EDGE_COLOUR, [40 / 255, 43 / 255, 49 / 255]);
 });
 
 test("a pane reads back the sketch pointer handler it set, and null once it is cleared", () => {
