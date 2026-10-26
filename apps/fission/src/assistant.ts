@@ -4,7 +4,10 @@
 // request into Design's own command (set_part), shows the AI's working
 // out and then what would change, and an accepted change is one "AI: …"
 // undo step; a rejected one changes nothing. A request no command can do
-// gets the AI's plain reason and nothing to accept (AI5c). A remote provider is shown exactly what it will be sent before
+// gets the AI's plain reason and nothing to accept (AI5c). While the AI
+// answers, a bar shows the stage it is at and an estimate of how far along
+// it is, with its working out as it is written (AI5c2); it never shows
+// 100% before the preview is on screen. A remote provider is shown exactly what it will be sent before
 // the first request to it. Opening the panel for the first time picks an
 // AI that runs on this computer if one is found (AI6); options that can't
 // run here are greyed out with the reason. Ollama is looked for only when
@@ -28,6 +31,7 @@ import {
   apiOrigin,
   askBeforeSending,
   proposeAction,
+  PREVIEWING,
   OLLAMA_ENDPOINT,
   PROVIDERS,
   sendsAway,
@@ -39,6 +43,7 @@ import {
   type Detected,
   type Fetch,
   type Preview,
+  type Progress,
   type ProviderSettings,
 } from "@fission/ai";
 import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
@@ -543,12 +548,12 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     discard();
     const button = $<HTMLButtonElement>("ai-ask-button");
     button.disabled = true;
-    say("Asking…");
+    showProgress({ stage: "asking", attempt: 1, fraction: 0, working: "", commands: 0 });
     try {
       if (s.kind === "in-browser" && !(await confirmDownload(s))) return say("Nothing was downloaded or sent.");
       // What Design says about itself (25c3): its timeline, the sizes a set_part keeps, and whether Accept changes the part or adds a body.
       const view = viewOf(host);
-      const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, AI_COMMANDS, view.notes), messages: [{ role: "user", content: words }] }, AI_COMMANDS);
+      const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, AI_COMMANDS, view.notes), messages: [{ role: "user", content: words }] }, AI_COMMANDS, showProgress);
       if (!answer.ok) return say(answer.error, true);
       // No commands: the AI says it can't do this with the commands it has (AI5c). Shown, never stood in for.
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
@@ -563,6 +568,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
         state: () => projectToJson(host.project()),
       });
       pending = action;
+      showProgress({ stage: "checking", attempt: answer.attempts, fraction: PREVIEWING, working: answer.explanation, commands: answer.commands.length }, "Making the preview…");
       showPreview(action, await action.preview(), before, after, view.adds, answer.attempts, answer.explanation);
     } catch (e) {
       say((e as Error).message, true);
@@ -570,6 +576,45 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       button.disabled = !settings || workspace !== "design";
     }
   });
+
+  /**
+   * The bar while the AI answers (AI5c2): the stage, an estimate as a bar
+   * and a number (never 100%: that is the preview itself), and the working
+   * out as it is written. Built once per answer and updated in place, so
+   * it doesn't flicker; anything else shown in the result area (the
+   * in-browser model's loading) replaces it until the next update.
+   */
+  function showProgress(p: Progress, label = stageLabel(p)) {
+    let box = document.getElementById("ai-progress");
+    if (!box || !result.contains(box)) {
+      box = document.createElement("div");
+      box.id = "ai-progress";
+      box.className = "ai-progress";
+      box.setAttribute("role", "progressbar");
+      box.setAttribute("aria-valuemin", "0");
+      box.setAttribute("aria-valuemax", "100");
+      box.innerHTML = `<p class="ai-progress-stage"></p><div class="ai-progress-track"><div class="ai-progress-fill"></div></div><p class="ai-progress-note">An estimate: the AI can't know how long its answer will be.</p>`;
+      result.replaceChildren(box);
+    }
+    const percent = Math.min(99, Math.round(p.fraction * 100));
+    box.setAttribute("aria-valuenow", String(percent));
+    box.setAttribute("aria-valuetext", `${label} About ${percent}%.`);
+    box.querySelector(".ai-progress-stage")!.textContent = `${label} ${percent}%`;
+    (box.querySelector(".ai-progress-fill") as HTMLElement).style.width = `${percent}%`;
+    const shown = box.querySelector(".ai-working");
+    if (p.working === "") shown?.remove();
+    else if (shown) shown.querySelector(".ai-working-text")!.textContent = p.working;
+    else box.append(working(p.working));
+  }
+
+  /** What the AI is doing now, in words. */
+  function stageLabel(p: Progress): string {
+    const again = p.attempt === 2 ? "Second try: " : "";
+    if (p.stage === "asking") return p.attempt === 2 ? "The first answer couldn't be used. Asking again…" : "Asking the AI…";
+    if (p.stage === "commands") return `${again}Writing the commands${p.commands > 0 ? ` (${p.commands} so far)` : ""}…`;
+    if (p.stage === "working") return `${again}Writing its working out…`;
+    return `${again}Checking the answer…`;
+  }
 
   /** The AI's working out, as plain text (it is untrusted), or a note that it gave none. */
   function working(explanation: string): HTMLElement {

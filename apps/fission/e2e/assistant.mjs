@@ -16,7 +16,9 @@
 // unless a check gives the page a fake one.
 // AI5c: the answer's working out shows above the preview as plain text,
 // and a request no command can do shows the AI's reason with nothing to
-// accept.
+// accept. AI5c2: answers are streamed, and a bar shows the stage, an
+// estimate and the working out as it is written, never 100% before the
+// preview (Ollama's stream is held piece by piece in the page, `held`).
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -40,9 +42,12 @@ const OPENAI_KEY = "sk-proj-test-e2e-0123456789";
  * built-in model that answers from `answers` too (`true`: one that is there;
  * an availability word such as "downloadable": one in that state). Model
  * lists asked for are recorded in `listed`, requests to a model in `asked`,
- * sessions made of the built-in model in `builtInCreated`.
+ * sessions made of the built-in model in `builtInCreated`. `held: true`
+ * answers Ollama's chat requests in the page itself, one line at a time
+ * as the check allows (window.heldLines, window.allowLines), so the bar
+ * can be seen part way.
  */
-async function fresh(answers = [], { ollama = true, builtIn = false, open = true } = {}) {
+async function fresh(answers = [], { ollama = true, builtIn = false, open = true, held = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -63,6 +68,25 @@ async function fresh(answers = [], { ollama = true, builtIn = false, open = true
     await page.addInitScript(() => {
       delete globalThis.LanguageModel;
       if ("LanguageModel" in globalThis) Object.defineProperty(globalThis, "LanguageModel", { value: undefined, configurable: true });
+    });
+  }
+  if (held) {
+    await page.addInitScript(() => {
+      const realFetch = globalThis.fetch;
+      Object.assign(globalThis, { heldLines: [], allowLines: 0, heldAsked: [] });
+      globalThis.fetch = async (input, init) => {
+        if (!String(input).endsWith("/api/chat")) return realFetch(input, init);
+        globalThis.heldAsked.push(JSON.parse(init.body));
+        let sent = 0;
+        const body = new ReadableStream({
+          async pull(controller) {
+            while (sent >= globalThis.allowLines && sent < globalThis.heldLines.length) await new Promise((r) => setTimeout(r, 20));
+            if (sent >= globalThis.heldLines.length) return controller.close();
+            controller.enqueue(new TextEncoder().encode(globalThis.heldLines[sent++]));
+          },
+        });
+        return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+      };
     });
   }
   page.on("pageerror", (e) => errors.push(e.message));
@@ -96,8 +120,13 @@ async function fresh(answers = [], { ollama = true, builtIn = false, open = true
       return route.fulfill({ headers: cors, body: JSON.stringify({ data: [{ id: "claude-opus-5-5" }, { id: "claude-haiku-5-5" }], has_more: false }) });
     }
     asked.push({ url: req.url(), headers: req.headers(), body: req.postDataJSON() });
-    const input = JSON.parse(answers.shift() ?? "{}");
-    return route.fulfill({ headers: cors, body: JSON.stringify({ content: [{ type: "tool_use", name: "answer", input }] }) });
+    const input = answers.shift() ?? "{}";
+    if (!req.postDataJSON().stream) return route.fulfill({ headers: cors, body: JSON.stringify({ content: [{ type: "tool_use", name: "answer", input: JSON.parse(input) }] }) });
+    // Streamed (AI5c2), as Anthropic sends it: the tool's input in pieces of JSON.
+    const event = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+    const pieces = input.match(/.{1,9}/gs) ?? [];
+    const sse = [event("content_block_start", { index: 0, content_block: { type: "tool_use", name: "answer", input: {} } }), ...pieces.map((partial_json) => event("content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json } })), event("message_stop", {})];
+    return route.fulfill({ headers: { ...cors, "content-type": "text/event-stream" }, body: sse.join("") });
   });
   await context.route("https://api.openai.com/**", async (route) => {
     const req = route.request();
@@ -261,6 +290,51 @@ try {
         assert.equal(await page.$eval("#ai-preview", (e) => e.scrollWidth <= e.clientWidth), true);
         await page.$eval("#ai-preview", (e) => e.scrollIntoView());
         await page.screenshot({ path: `e2e/assistant-working-${width}.png` });
+        await page.click("#ai-accept");
+        await volume(page, "30,000 mm³"); // 50 · 30 · 20
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("while the AI answers, a bar shows the stage, an estimate and the working out as it is written, never 100% before the preview (AI5c2, 1280 and 375 px)", async () => {
+    // The answer arrives in five pieces. The bar is 0.05 + 0.85 × (1 − e^(−2n/190)) for n characters written:
+    // after the first piece (24 characters) 0.05 + 0.85 × (1 − e^(−0.2526)) = 0.2398, shown as 24%;
+    // after the fourth (116) 0.05 + 0.85 × (1 − e^(−1.2211)) = 0.6493, shown as 65%.
+    const pieces = ['{"commands":[{"op":"set_', 'part","shape":"box","width":50,', '"depth":30,"height":20}],', '"explanation":"The box becomes 50 mm', ' wide; depth 30 mm and height 20 mm stay."}'];
+    const lines = [...pieces.map((content) => JSON.stringify({ message: { role: "assistant", content }, done: false }) + "\n"), '{"message":{"role":"assistant","content":""},"done":true}\n'];
+    const stage = (page) => page.textContent("#ai-progress .ai-progress-stage");
+    const seen = (page, text) => page.waitForFunction((t) => document.querySelector("#ai-progress .ai-progress-stage")?.textContent === t, text, { timeout: 5000 }).catch(async () => assert.fail(`expected "${text}", saw "${await stage(page)}"`));
+    for (const width of [1280, 375]) {
+      const { page } = await fresh([], { open: false, held: true });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await page.evaluate((l) => (globalThis.heldLines = l), lines);
+        await ask(page, "Make it 50 mm wide.");
+        await seen(page, "Asking the AI… 5%");
+        assert.equal(await page.getAttribute("#ai-progress", "aria-valuenow"), "5");
+        assert.equal((await page.evaluate(() => globalThis.heldAsked[0])).stream, true, "Ollama is asked to stream");
+        await page.evaluate(() => (globalThis.allowLines = 1));
+        await seen(page, "Writing the commands (1 so far)… 24%");
+        assert.equal(await page.$("#ai-progress .ai-working"), null, "no working out yet");
+        await page.evaluate(() => (globalThis.allowLines = 4));
+        await seen(page, "Writing its working out… 65%");
+        assert.equal(await page.textContent("#ai-progress .ai-working-text"), "The box becomes 50 mm");
+        const fill = await page.$eval("#ai-progress .ai-progress-fill", (e) => e.style.width);
+        assert.equal(fill, "65%");
+        assert.equal(await page.$eval("#ai-progress", (e) => e.scrollWidth <= e.clientWidth), true, "no sideways scroll");
+        await page.$eval("#ai-progress", (e) => e.scrollIntoView());
+        await page.waitForTimeout(300); // the bar's width eases in over 0.2 s
+        await page.screenshot({ path: `e2e/assistant-progress-${width}.png` });
+        await volume(page, "24,000 mm³"); // nothing changes while the AI answers
+        await page.evaluate(() => (globalThis.allowLines = 6));
+        await page.waitForSelector("#ai-preview");
+        assert.equal(await page.$("#ai-progress"), null, "the bar gives way to the preview");
+        assert.equal(await page.textContent("#ai-preview .ai-working-text"), "The box becomes 50 mm wide; depth 30 mm and height 20 mm stay.");
         await page.click("#ai-accept");
         await volume(page, "30,000 mm³"); // 50 · 30 · 20
       } finally {
@@ -475,6 +549,7 @@ try {
       assert.equal(asked[0].url, "https://api.anthropic.com/v1/messages");
       assert.equal(asked[0].headers["x-api-key"], KEY);
       assert.equal(asked[0].body.model, "claude-haiku-5-5", "the model chosen from the list");
+      assert.equal(asked[0].body.stream, true, "streamed (AI5c2): the fake sends the tool's input in pieces, as Anthropic does");
       assert.equal(JSON.stringify(asked[0].body).includes(KEY), false);
       // A sphere uses only its diameter: 15 mm radius → width 30.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: sphere ⌀30 mm");

@@ -4,7 +4,7 @@
 // the user gives the address of another computer (`isThisComputer`): then
 // it is treated like a hosted provider (providers.ts, `sendsAway`).
 
-import { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, requestJson, type Fetch } from "./http.ts";
+import { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, requestJson, streamLines, type Fetch } from "./http.ts";
 import type { AIProvider, AIRequest } from "./providers.ts";
 
 export const OLLAMA_ENDPOINT = "http://localhost:11434";
@@ -42,12 +42,12 @@ export function isThisComputer(endpoint: string): boolean {
   return /^127\.\d+\.\d+\.\d+$/.test(host); // the parser has already written any IPv4 form as four decimals
 }
 
-/** The body Ollama's /api/chat takes for this request. */
+/** The body Ollama's /api/chat takes for this request: streamed when the request wants the text as it comes. */
 export function ollamaBody(model: string, r: AIRequest): object {
   return {
     model,
     messages: [{ role: "system", content: r.system }, ...r.messages],
-    stream: false,
+    stream: r.onText !== undefined,
     ...(r.jsonSchema ? { format: r.jsonSchema } : {}),
     options: { temperature: 0 },
   };
@@ -88,7 +88,26 @@ export function ollamaProvider(o: { model?: string; endpoint?: string; fetch: Fe
     },
     async complete(request) {
       if (model === "") throw new Error("no Ollama model is chosen");
-      const reply = await requestJson({ fetch: o.fetch, url: `${endpoint}/api/chat`, body: ollamaBody(model, request), timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who });
+      const post = { fetch: o.fetch, url: `${endpoint}/api/chat`, body: ollamaBody(model, request), timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who };
+      const onText = request.onText;
+      if (onText) {
+        // One JSON object per line, each with the next piece of the answer; an error comes as {"error": "…"}.
+        let text = "";
+        await streamLines(post, (line) => {
+          if (line.trim() === "") return;
+          let piece: { message?: { content?: unknown }; error?: unknown };
+          try {
+            piece = JSON.parse(line);
+          } catch {
+            throw new Error(`${who} sent a line that isn't JSON: ${line.slice(0, 80)}`);
+          }
+          if (typeof piece.error === "string") throw new Error(`${who}: ${piece.error}`);
+          const more = piece.message?.content;
+          if (typeof more === "string" && more !== "") onText((text += more));
+        });
+        return text;
+      }
+      const reply = await requestJson(post);
       const content = (reply as { message?: { content?: unknown } }).message?.content;
       if (typeof content !== "string") throw new Error(`${who} sent a reply with no message in it`);
       return content;
