@@ -6,7 +6,9 @@
 // listed as PENDING and never pass.
 // Then each journey is compared with its baseline in tests/baseline.json
 // (X8b, `compareToBaseline`): an extra click always fails; a slowest walk more
-// than 15% over fails only with JOURNEY_NIGHTLY=1 (the nightly run), since
+// than 15% over (in seconds, or as a multiple of the fixed workload timed in
+// the same page once the baseline holds `slowestRelative`, see
+// `fixedWorkloadMs`) fails only with JOURNEY_NIGHTLY=1 (the nightly run), since
 // one PR run's time is too noisy to judge. JOURNEY_REPORT=<file> writes the
 // baseline lines there for the nightly summary.
 // Run with `npm run e2e` (after `npm run build`).
@@ -22,6 +24,8 @@ import { chooseFile, fileItem, startWithBox } from "./start.mjs";
 
 /** Walks per journey; the slowest one is judged, so a limit holds every time. */
 const WALKS = 5;
+/** Runs of the fixed workload; the fastest is the steadiest (interruptions only ever add time). */
+const WORKLOAD_RUNS = 25;
 const NIGHTLY = process.env.JOURNEY_NIGHTLY === "1";
 const baselines = parseBaselines(JSON.parse(readFileSync(new URL("../../../tests/baseline.json", import.meta.url), "utf8")).journeys);
 
@@ -57,6 +61,42 @@ async function fresh({ box = true } = {}) {
 }
 
 const clicks = (page) => page.evaluate(() => window.journeyClicks);
+
+/**
+ * The fixed JavaScript workload, timed in the page after a journey's walks:
+ * the fastest of 25 runs, in ms. The slowest walk divided by it is the
+ * journey's `slowestRelative`, the same idea as `relative_time` in
+ * tests/baseline.json (packages/testing/baseline/calibration.ts), so a slow
+ * or busy runner mostly cancels out: on 2026-10-26 the slowest walk of
+ * "Design: shape to STL" read 1.37–1.61 s on four branches that don't touch
+ * it, against a 1.16 s baseline, because the runners were shared with four
+ * merge-queue runs. The work (100,000 seeded numbers sorted, a fifth of
+ * them through JSON) is the same every run; its seed is fixed, so the sort
+ * sees the same input every time.
+ */
+const fixedWorkloadMs = (page, runs) =>
+  page.evaluate((runs) => {
+    const work = () => {
+      let a = 1; // mulberry32 from seed 1
+      const next = () => {
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const xs = Array.from({ length: 100_000 }, next);
+      xs.sort((p, q) => p - q);
+      return JSON.parse(JSON.stringify(xs.slice(0, 20_000))).length;
+    };
+    for (let i = 0; i < 3; i++) work(); // warm the JIT
+    let best = Infinity;
+    for (let i = 0; i < runs; i++) {
+      const t = performance.now();
+      work();
+      best = Math.min(best, performance.now() - t);
+    }
+    return best;
+  }, runs);
 const volume = (page, text) => page.waitForFunction((t) => document.querySelector("#volume")?.textContent === t, text);
 
 /** Volume enclosed by binary STL triangles (divergence theorem: Σ a·(b×c)/6). */
@@ -193,8 +233,11 @@ try {
         }
         const ms = runs.map((r) => r.ms).sort((a, b) => a - b);
         const worst = { clicks: Math.max(...runs.map((r) => r.clicks)), ms: ms.at(-1) };
-        measured[journey.name] = { clicks: worst.clicks, medianMs: ms[Math.floor(ms.length / 2)], slowestMs: worst.ms };
-        console.log(`  clicks ${runs.map((r) => r.clicks).join(", ")}; times ${runs.map((r) => (r.ms / 1000).toFixed(2)).join(", ")} s`);
+        const workloadMs = await fixedWorkloadMs(page, WORKLOAD_RUNS);
+        assert.ok(workloadMs > 0 && Number.isFinite(workloadMs), `the fixed workload took ${workloadMs} ms`);
+        const slowestRelative = Math.round((worst.ms / workloadMs) * 10000) / 10000; // to 4 decimals, as tests/baseline.json keeps relative times
+        measured[journey.name] = { clicks: worst.clicks, medianMs: ms[Math.floor(ms.length / 2)], slowestMs: worst.ms, workloadMs, slowestRelative };
+        console.log(`  clicks ${runs.map((r) => r.clicks).join(", ")}; times ${runs.map((r) => (r.ms / 1000).toFixed(2)).join(", ")} s; the fixed workload ${workloadMs.toFixed(1)} ms, so the slowest walk is ${slowestRelative.toFixed(2)}× it`);
         const verdict = judge(journey, worst);
         console.log(`  ${reportLine(journey, verdict)}`);
         assert.equal(verdict.kind, "pass", reportLine(journey, verdict));
@@ -234,7 +277,7 @@ try {
     }
   });
 
-  await check("deliberate breaks are flagged against the baseline: one extra click, a slowest walk 16.5% over", async () => {
+  await check("deliberate breaks are flagged against the baseline: one extra click, a slowest walk 16.5% over, in seconds and relative to the fixed workload", async () => {
     const journey = MAGIC_JOURNEYS.find((j) => j.name === "Design: shape to STL");
     const base = baselines.get(journey.name);
     const page = await fresh({ box: false });
@@ -248,6 +291,15 @@ try {
       assert.equal(compareToBaseline(journey, walked, { clicks: 4, slowestMs: run.ms / 1.135 }).kind, "ok");
       const slow = compareToBaseline(journey, walked, { clicks: 4, slowestMs: run.ms / 1.165 });
       assert.deepEqual(slow.kind === "flag" && slow.flags.map((f) => f.kind), ["time"]);
+      // The same walk relative to the fixed workload timed in this page, against relative baselines at 0.9× and 1.1× of the margin;
+      // with a relative baseline the seconds are only shown, so a baseline of 1 ms passes when the relative number is fine.
+      const workloadMs = await fixedWorkloadMs(page, WORKLOAD_RUNS);
+      const relative = { clicks: 4, slowestMs: run.ms, slowestRelative: run.ms / workloadMs };
+      assert.equal(compareToBaseline(journey, relative, { clicks: 4, slowestMs: 1, slowestRelative: relative.slowestRelative / 1.135 }).kind, "ok");
+      const slowRelative = compareToBaseline(journey, relative, { clicks: 4, slowestMs: 1, slowestRelative: relative.slowestRelative / 1.165 });
+      assert.deepEqual(slowRelative.kind === "flag" && slowRelative.flags.map((f) => f.kind), ["time"]);
+      // A relative baseline with no workload timed is never quietly passed.
+      assert.deepEqual(compareToBaseline(journey, walked, { clicks: 4, slowestMs: 1, slowestRelative: 1 }).flags.map((f) => f.kind), ["missing"]);
     } finally {
       await page.close();
     }
@@ -259,7 +311,7 @@ try {
     for (const journey of MAGIC_JOURNEYS) {
       const m = journey.status === "ready" ? (measured[journey.name] ?? null) : null;
       const b = baselines.get(journey.name);
-      const c = compareToBaseline(journey, m && { clicks: m.clicks, slowestMs: m.slowestMs }, b);
+      const c = compareToBaseline(journey, m && { clicks: m.clicks, slowestMs: m.slowestMs, slowestRelative: m.slowestRelative }, b);
       lines.push(baselineLine(journey, m, b, c));
       if (c.kind === "flag" && c.flags.some((f) => f.kind !== "time" || NIGHTLY)) bad.push(lines.at(-1));
     }
