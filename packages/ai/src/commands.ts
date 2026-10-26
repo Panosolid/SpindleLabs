@@ -3,6 +3,7 @@
 // geometry, never coordinates it guessed.
 
 import { commandListSchema, parseCommandList, type Command, type CommandSpec } from "@fission/core";
+import { progressOf, waiting, type Progress } from "./progress.ts";
 import type { AIProvider, AIRequest } from "./providers.ts";
 
 /**
@@ -30,19 +31,29 @@ export function saysCannot(explanation: string): boolean {
  * An answer with no commands must say that the request can't be done
  * (`saysCannot`); otherwise it is a bad answer: small models write a right
  * working out and then close an empty list (AI5c's first evaluation run).
+ * With `onProgress`, the answer is streamed and its progress reported
+ * (AI5c2): asking, then each piece as it is written, then checking, for
+ * each attempt.
  */
-export async function askForCommands(provider: AIProvider, request: Omit<AIRequest, "jsonSchema">, specs: readonly CommandSpec[]): Promise<AskResult> {
+export async function askForCommands(
+  provider: AIProvider,
+  request: Omit<AIRequest, "jsonSchema" | "onText">,
+  specs: readonly CommandSpec[],
+  onProgress?: (p: Progress) => void,
+): Promise<AskResult> {
   const schema = commandListSchema(specs);
   let req: AIRequest = { ...request, jsonSchema: provider.structuredOutput ? schema : undefined };
   if (!provider.structuredOutput) req = { ...req, system: `${req.system}\n\nAnswer only with JSON matching this schema:\n${JSON.stringify(schema)}` };
   let lastError = "";
   for (const attempt of [1, 2] as const) {
     let text: string;
+    onProgress?.(waiting("asking", attempt));
     try {
-      text = await provider.complete(req);
+      text = await provider.complete(onProgress ? { ...req, onText: (soFar) => onProgress(progressOf(soFar, attempt)) } : req);
     } catch (e) {
       return { ok: false, error: `the AI provider failed: ${e instanceof Error ? e.message : String(e)}` };
     }
+    onProgress?.(waiting("checking", attempt));
     const parsed = parseCommandList(text, specs);
     if (parsed.ok && (parsed.commands.length > 0 || saysCannot(parsed.explanation))) return { ok: true, commands: parsed.commands, explanation: parsed.explanation, attempts: attempt };
     lastError = !parsed.ok

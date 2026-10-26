@@ -1,4 +1,5 @@
-/* The AI assistant panel (AI2): the ask box, the AI's working out (AI5c),
+/* The AI assistant panel (AI2): the ask box, the progress bar while the AI
+   answers (AI5c2), the AI's working out (AI5c),
    the preview of a change with Accept and Reject, a "can't do this yet"
    answer, the first-send confirmation for a remote provider, and
    the settings. The panel's place in the layout is in theme.css (#assistant). */
@@ -24,3 +25,9 @@
 .assistant .ai-key button { margin: 6px 6px 0 0; }
 .assistant .ai-settings { margin-top: 16px; border-top: 1px solid #2a2e35; }
 .assistant .ai-cannot .ai-working { border-left-color: #e0b04a; }
+.assistant .ai-progress { margin: 10px 0; }
+.assistant .ai-progress-stage { margin: 0 0 4px; font-variant-numeric: tabular-nums; }
+.assistant .ai-progress-track { height: 6px; border-radius: 3px; background: #2a2e35; overflow: hidden; }
+.assistant .ai-progress-fill { height: 100%; width: 0; background: #4aa8ff; transition: width 0.2s ease-out; }
+.assistant .ai-progress-note { margin: 4px 0 0; color: #8a919c; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .assistant .ai-progress-fill { transition: none; } }

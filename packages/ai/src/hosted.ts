@@ -9,7 +9,7 @@
 //   http on this computer). Not every one supports schemas, so its answers
 //   are validated and retried instead (structuredOutput false).
 
-import { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, requestJson, type Fetch } from "./http.ts";
+import { ANSWER_TIMEOUT_MS, CHECK_TIMEOUT_MS, requestJson, streamLines, type Fetch, type PostOptions } from "./http.ts";
 import type { ApiKeyStore } from "./keys.ts";
 import type { AIProvider, AIRequest, ApiVendor } from "./providers.ts";
 
@@ -107,6 +107,7 @@ export function anthropicBody(model: string, r: AIRequest): object {
     max_tokens: 2048,
     system: r.system,
     messages: r.messages,
+    ...(r.onText ? { stream: true } : {}),
     ...(r.jsonSchema ? { tools: [{ name: TOOL, description: "Give your answer.", input_schema: r.jsonSchema }], tool_choice: { type: "tool", name: TOOL } } : {}),
   };
 }
@@ -115,6 +116,7 @@ export function openaiBody(model: string, r: AIRequest): object {
   return {
     model,
     messages: [{ role: "system", content: r.system }, ...r.messages],
+    ...(r.onText ? { stream: true } : {}),
     ...(r.jsonSchema ? { response_format: { type: "json_schema", json_schema: { name: TOOL, schema: r.jsonSchema } } } : {}),
   };
 }
@@ -134,6 +136,101 @@ export function openaiAnswer(reply: unknown): string {
   const content = (reply as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]?.message?.content;
   if (typeof content !== "string") throw new Error("the reply has no answer in it");
   return content;
+}
+
+/** The JSON of a server-sent event's "data: …" line, or undefined for any other line (event names, comments, blanks, OpenAI's closing [DONE]). */
+function eventData(line: string): Record<string, unknown> | undefined {
+  if (!line.startsWith("data:")) return undefined;
+  const data = line.slice(5).trim();
+  if (data === "" || data === "[DONE]") return undefined;
+  try {
+    return JSON.parse(data);
+  } catch {
+    throw new Error(`the stream has a line that isn't JSON: ${data.slice(0, 80)}`);
+  }
+}
+
+const eventError = (e: Record<string, unknown>) => {
+  const error = e.error as { message?: unknown } | undefined;
+  if (error) throw new Error(typeof error.message === "string" ? error.message : "the stream reported an error");
+};
+
+/**
+ * An Anthropic answer streamed (AI5c2): the tool's input arrives as pieces
+ * of JSON (input_json_delta), plain text as text_delta. `onText` gets the
+ * answer so far: the tool's input when there is one, else the text, as
+ * anthropicAnswer gives it whole. A reply that comes whole instead is
+ * read whole.
+ */
+export async function anthropicStream(post: PostOptions, onText: (soFar: string) => void): Promise<string> {
+  let tool = "";
+  let text = "";
+  let events = 0;
+  const whole: string[] = [];
+  await streamLines(post, (line) => {
+    if (!line.startsWith("data:")) {
+      if (!line.startsWith("event:")) whole.push(line);
+      return;
+    }
+    events++;
+    const e = eventData(line);
+    if (!e) return;
+    eventError(e);
+    const delta = e.type === "content_block_delta" ? (e.delta as { type?: unknown; partial_json?: unknown; text?: unknown }) : undefined;
+    if (delta?.type === "input_json_delta" && typeof delta.partial_json === "string") tool += delta.partial_json;
+    else if (delta?.type === "text_delta" && typeof delta.text === "string") text += delta.text;
+    else return;
+    onText(tool || text);
+  });
+  if (events === 0) {
+    // A server (or a proxy in between) that answered whole: read it as the whole reply.
+    let reply: unknown;
+    try {
+      reply = JSON.parse(whole.join("\n"));
+    } catch {
+      throw new Error("the reply is neither a stream nor JSON");
+    }
+    const answer = anthropicAnswer(reply);
+    onText(answer);
+    return answer;
+  }
+  if (tool === "" && text === "") throw new Error("the reply has no answer in it");
+  return tool || text;
+}
+
+/**
+ * An OpenAI-style answer streamed: each event has the next piece in
+ * choices[0].delta.content. An OpenAI-compatible server that ignores
+ * `stream` and answers whole is read as a whole answer.
+ */
+export async function openaiStream(post: PostOptions, onText: (soFar: string) => void): Promise<string> {
+  let text = "";
+  let events = 0;
+  const whole: string[] = [];
+  await streamLines(post, (line) => {
+    if (!line.startsWith("data:")) {
+      whole.push(line);
+      return;
+    }
+    events++;
+    const e = eventData(line);
+    if (!e) return;
+    eventError(e);
+    const more = (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta?.content;
+    if (typeof more === "string" && more !== "") onText((text += more));
+  });
+  if (events === 0) {
+    let reply: unknown;
+    try {
+      reply = JSON.parse(whole.join("\n"));
+    } catch {
+      throw new Error("the reply is neither a stream nor JSON");
+    }
+    text = openaiAnswer(reply);
+    onText(text);
+  }
+  if (text === "") throw new Error("the reply has no answer in it");
+  return text;
 }
 
 export function hostedProvider(o: { vendor?: ApiVendor; model?: string; endpoint?: string; keys: ApiKeyStore; fetch: Fetch; timeoutMs?: number }): AIProvider {
@@ -157,7 +254,16 @@ export function hostedProvider(o: { vendor?: ApiVendor; model?: string; endpoint
       if (model === "") throw new Error("no model is chosen");
       const headers = keyHeaders(vendor, secret);
       const body = vendor === "anthropic" ? anthropicBody(model, request) : openaiBody(model, vendor === "other" ? { ...request, jsonSchema: undefined } : request);
-      const reply = await requestJson({ fetch: o.fetch, url: target.chatUrl, headers, body, timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who, secret });
+      const post = { fetch: o.fetch, url: target.chatUrl, headers, body, timeoutMs: o.timeoutMs ?? ANSWER_TIMEOUT_MS, who, secret };
+      const onText = request.onText;
+      try {
+        if (onText) return vendor === "anthropic" ? await anthropicStream(post, onText) : await openaiStream(post, onText);
+      } catch (e) {
+        // Errors from the request itself already name who; ones from reading the stream don't.
+        const message = (e as Error).message;
+        throw new Error(message.includes(who) ? message : `${who}: ${message}`);
+      }
+      const reply = await requestJson(post);
       try {
         return vendor === "anthropic" ? anthropicAnswer(reply) : openaiAnswer(reply);
       } catch (e) {
