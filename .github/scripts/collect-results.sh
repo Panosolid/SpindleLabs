@@ -126,13 +126,16 @@ add_run() {
   done
 
   # TypeScript mutation testing: the latest run's survivor lines, one target per job.
-  mkdir -p ts-mutants
-  {
-    echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"
-    for t in core design storage model svg viewport ai; do
-      if [ -s "$IN/ts-mutants-$t/$t.txt" ]; then cat "$IN/ts-mutants-$t/$t.txt"; else echo "$t: no report (the job stopped before the check)"; fi
-    done
-  } >ts-mutants/latest.txt
+  # A run by hand that didn't ask for them has none, and keeps the last ones.
+  if compgen -G "$IN/ts-mutants-*" >/dev/null; then
+    mkdir -p ts-mutants
+    {
+      echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"
+      for t in core design storage model svg viewport ai; do
+        if [ -s "$IN/ts-mutants-$t/$t.txt" ]; then cat "$IN/ts-mutants-$t/$t.txt"; else echo "$t: no report (the job stopped before the check)"; fi
+      done
+    } >ts-mutants/latest.txt
+  fi
 
   awk -F, -v now="$today UTC" 'NR > 1 {
       rounds++; cases += $3; fails += ($4 == "FAIL"); bodies += $5; dis += $6; secs += $7

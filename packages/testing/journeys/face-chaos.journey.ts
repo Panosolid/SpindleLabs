@@ -229,9 +229,9 @@ export async function faceSession(seed: number, steps: number, plugin = designWo
             await a.settle();
             const flip = r() < 0.3;
             const distance = String(1 + Math.floor(r() * 25));
+            // UX1b: Flip turns the distance's sign; a negative distance goes the other way.
             (a.$("#extrude-distance") as HTMLInputElement).value = distance;
-            const box = a.$("#extrude-flip") as HTMLInputElement | null;
-            if (box && box.checked !== flip) box.click();
+            if (flip) (a.$("#extrude-flip") as HTMLButtonElement).click();
             (a.$("#extrude-ok") as HTMLButtonElement).click();
             await a.settle();
             done.push(`  extrude ${distance}${flip ? " flipped" : ""}`);
