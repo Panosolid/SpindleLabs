@@ -13,7 +13,9 @@ This page explains the architecture for contributors. The code is in `packages/a
 ## Rules
 
 - **Optional.** No feature may depend on the assistant.
-- **Commands, not geometry.** The model's only output is a list of commands that must match JSON schemas generated from the real command API. References to geometry are stable ids, never coordinates the model guessed.
+- **Commands, not geometry.** The model's only output is its working out in plain words and then a list of commands that must match JSON schemas generated from the real command API. References to geometry are stable ids, never coordinates the model guessed.
+- **Working out first.** Every answer starts with a short explanation (`explanation`, at most 1,000 characters): how the request was read, each size converted with the sums shown, and what the commands will make. The schema puts it before the commands, so a model held to the schema reasons before it commits. The panel shows it above the preview, always as plain text.
+- **Honest about what it can't do.** When a request needs something no offered command does (a sketch before sketch commands exist, a hole, a fillet), the answer is no commands and a plain reason, and the panel shows that reason with nothing to accept. It never stands in a different shape or a tiny size for what was asked (the first assistant made a requested circle sketch into a 20 × 0.01 mm cylinder). An answer with no commands and no reason is a bad answer and is retried.
 - **Preview, then one undo step.** Every action is shown first: ghosted geometry, highlighted changes, or a diff of parameters. The user accepts or rejects it. An accepted action becomes one labelled step in the normal history ("AI: added 5 mm hole"). A rejected one leaves the project exactly as it was.
 - **Never a machine.** The assistant can prepare a print, laser or CNC job. It can never start a machine, send a job to one or control one. Sending needs a `HumanConfirmation` (`packages/core/src/model/machines.ts`), which only the confirmation screen creates when a person clicks Send.
 - **Private by default.** With a local provider, nothing leaves the user's machine. Before the first request to a remote provider, the user is shown exactly what will be sent. The "AI" button in the top bar always shows which provider is active, or that the assistant is off.
@@ -55,7 +57,7 @@ A workspace lists its commands on its plugin (`WorkspacePlugin.commands`). Each 
 - `text`, with a maximum length.
 - `reference`, to a body, face, edge or feature, by stable id.
 
-Core turns these specs into the JSON schemas the model is held to (`commandSchema`, `commandListSchema`). Every answer then goes through `parseCommand` or `parseCommandList`, which never throw. A bad answer is a clear error message.
+Core turns these specs into the JSON schemas the model is held to (`commandSchema`, `commandListSchema`: `{ "explanation": "…", "commands": [ … ] }`, the explanation first). Every answer then goes through `parseCommand` or `parseCommandList`, which never throw. A bad answer is a clear error message. An answer without an explanation (a model not held to the schema) is still read, and the panel says no working out was given.
 
 ```ts
 // workspaces/design/src/commands.ts

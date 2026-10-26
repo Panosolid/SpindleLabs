@@ -1,6 +1,7 @@
 // Examples as training records: the chat the model will see in the app
 // (the same system prompt, the user's words, the answer as the JSON the
-// panel parses), one per line, split into training and validation.
+// panel parses: the working out, then the commands), one per line, split
+// into training and validation.
 
 import type { CommandSpec } from "@fission/core";
 import { systemPrompt } from "@fission/ai";
@@ -22,7 +23,8 @@ export function toRecord(e: Example, specs: readonly CommandSpec[]): ChatRecord 
     messages: [
       { role: "system", content: systemPrompt(e.setup, specs) },
       { role: "user", content: e.prompt },
-      { role: "assistant", content: JSON.stringify({ commands: e.commands }) },
+      // The working out first, as the schema orders it (commandListSchema).
+      { role: "assistant", content: JSON.stringify({ explanation: e.explanation, commands: e.commands }) },
     ],
   };
 }

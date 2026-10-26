@@ -27,7 +27,7 @@ const request = { system: "You edit a CAD part.", messages: [{ role: "user" as c
 
 test("a good answer is used as is", async () => {
   const { provider } = scripted([good]);
-  assert.deepEqual(await askForCommands(provider, request, specs), { ok: true, commands: [{ op: "set_part", width: 40 }], attempts: 1 });
+  assert.deepEqual(await askForCommands(provider, request, specs), { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: "", attempts: 1 });
 });
 
 test("providers with structured output get the schema; others get it in the instructions", async () => {
@@ -43,7 +43,7 @@ test("providers with structured output get the schema; others get it in the inst
 test("a bad answer is retried once, telling the model what was wrong", async () => {
   const { provider, asked } = scripted(['{"commands":[{"op":"set_part","width":-1}]}', good]);
   const r = await askForCommands(provider, request, specs);
-  assert.deepEqual(r, { ok: true, commands: [{ op: "set_part", width: 40 }], attempts: 2 });
+  assert.deepEqual(r, { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: "", attempts: 2 });
   assert.match(asked[1].messages.at(-1)!.content, /width must be a length in mm greater than 0, got -1/);
 });
 
@@ -59,4 +59,27 @@ test("two bad answers fail clearly and change nothing", async () => {
 test("a provider error is reported, not thrown", async () => {
   const { provider } = scripted([new Error("connection refused")]);
   assert.deepEqual(await askForCommands(provider, request, specs), { ok: false, error: "the AI provider failed: connection refused" });
+});
+
+test("the working out comes back with the commands, as the model wrote it", async () => {
+  const said = "The box is 30 mm wide now; 40 mm wide is 30 + 10 = 40 mm.";
+  const { provider } = scripted([JSON.stringify({ explanation: said, commands: [{ op: "set_part", width: 40 }] })]);
+  assert.deepEqual(await askForCommands(provider, request, specs), { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: said, attempts: 1 });
+});
+
+test("no commands with a reason is an honest answer; no commands and no reason is retried", async () => {
+  const why = "No command can draw a sketch yet, so nothing was made.";
+  const honest = scripted([JSON.stringify({ explanation: why, commands: [] })]);
+  assert.deepEqual(await askForCommands(honest.provider, request, specs), { ok: true, commands: [], explanation: why, attempts: 1 });
+  // Blank, or only spaces, says nothing.
+  for (const blank of ["", "   "]) {
+    const { provider, asked } = scripted([JSON.stringify({ explanation: blank, commands: [] }), good]);
+    assert.deepEqual(await askForCommands(provider, request, specs), { ok: true, commands: [{ op: "set_part", width: 40 }], explanation: "", attempts: 2 });
+    assert.match(asked[1].messages.at(-1)!.content, /That answer can't be used: it has no commands and doesn't say why\./);
+  }
+  const twice = scripted(['{"commands":[]}', '{"explanation":"","commands":[]}']);
+  assert.deepEqual(await askForCommands(twice.provider, request, specs), {
+    ok: false,
+    error: "The AI's answer couldn't be used, even after one retry: it has no commands and doesn't say why. Nothing was changed.",
+  });
 });

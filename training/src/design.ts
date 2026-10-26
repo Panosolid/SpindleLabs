@@ -7,11 +7,19 @@
 // width and a new sphere's depth and height are its width (the box it
 // fits in); a new star is as deep as it is wide; an edit keeps every
 // size it doesn't name, ignored ones included.
+//
+// Each draft also carries its working out (working.ts, AI5c): what the
+// part is now, how each size was read (converted to mm, sums shown), and
+// what the part ends up as. It is written from the same lengths as the
+// command, never from the command, so a wrong reading shows in the sums.
+// A request no command can do ("cannot") gets no commands and a plain
+// reason.
 
 import type { Command, KernelCalls } from "@fission/core";
 import { buildSpec, documentFor, lastFeature, SHAPES, specOf } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 import { pick, randomLength, randomSize, randomUnit, unitAfter, type Length } from "./lengths.ts";
+import { CANNOT } from "./working.ts";
 import type { Applied, CommandRule, Draft, Recipe, ReplayState } from "./recipe.ts";
 
 type Shape = (typeof SHAPES)[number];
@@ -26,6 +34,13 @@ interface Part extends Command {
 
 const part = (shape: Shape, width: number, depth: number, height: number): Part => ({ op: "set_part", shape, width, depth, height });
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+const SHAPE_WORDS: Record<Shape, string> = { box: "a box", cylinder: "a cylinder", sphere: "a sphere", plate: "a plate", "l-bracket": "an L bracket", slot: "a slot", star: "a star" };
+
+/** A part in words, every size in mm: "a box: width 40 mm, depth 30 mm, height 20 mm". */
+const inWords = (c: Command) => `${SHAPE_WORDS[c.shape as Shape] ?? String(c.shape)}: width ${c.width} mm, depth ${c.depth} mm, height ${c.height} mm`;
+/** What the working out says an export does. */
+const EXPORTED = "exported as an STL file";
 
 export const DESIGN_RULES: readonly CommandRule[] = [
   {
@@ -42,6 +57,7 @@ export const DESIGN_RULES: readonly CommandRule[] = [
         return { ok: false, reason: `the kernel refused it: ${reason(e)}` };
       }
     },
+    says: (c) => `part is ${inWords(c)}`,
   },
   {
     op: "export_stl",
@@ -57,6 +73,7 @@ export const DESIGN_RULES: readonly CommandRule[] = [
         return { ok: false, reason: `the kernel refused the export: ${reason(e)}` };
       }
     },
+    says: () => EXPORTED,
   },
 ];
 
@@ -82,6 +99,27 @@ export function randomPart(r: SeededRandom): Part {
   }
 }
 
+// ---- The working out's sentences.
+
+/** "4 cm is 40 mm", or null for a length already in mm (a bare number is mm too). */
+function inMm(l: Length): string | null {
+  if (l.unit === "mm" || l.unit === "none") return null;
+  const unit = l.unit === "in" ? (Number(l.number) === 1 ? "inch" : "inches") : l.unit;
+  return `${l.number} ${unit} is ${l.mm} mm`;
+}
+
+/** The conversions these lengths need, as one sentence; none when all are in mm. */
+function conversions(ls: readonly Length[]): string[] {
+  if (ls.some((l) => l.unit === "none")) return ["A number without a unit is in millimetres."];
+  const said = [...new Set(ls.map(inMm).filter((x): x is string => x !== null))];
+  if (said.length === 0) return [];
+  return [`${sentence(said.length === 1 ? said[0] : `${said.slice(0, -1).join(", ")} and ${said.at(-1)}`)}.`];
+}
+
+const now = (p: Part) => `The part now is ${inWords(p)}.`;
+const becomes = (p: Part, isNew: boolean) => `So the ${isNew ? "new " : ""}part is ${inWords(p)}.`;
+const working = (lines: readonly string[]) => lines.join(" ");
+
 // ---- Creating a part.
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -100,10 +138,12 @@ function radiusWords(r: SeededRandom, l: Length): string {
   return pick(r, [`with a radius of ${l.text}`, `of radius ${l.text}`, ...(l.unit === "none" ? [] : [`${l.text} in radius`])]);
 }
 
-/** A round size given as a diameter or a radius, and the diameter (width) it means. */
-function roundSize(r: SeededRandom, unit: ReturnType<typeof randomUnit>): { words: string; width: number } {
+/** A round size given as a diameter or a radius, the diameter (width) it means, and how that was read. */
+function roundSize(r: SeededRandom, unit: ReturnType<typeof randomUnit>): { words: string; width: number; length: Length; working: string } {
   const l = randomLength(r, unit);
-  return r.next() < 0.5 ? { words: diameterWords(r, l), width: l.mm } : { words: radiusWords(r, l), width: Number((2 * l.mm).toPrecision(12)) };
+  if (r.next() < 0.5) return { words: diameterWords(r, l), width: l.mm, length: l, working: `The size across is the diameter, which is the width: ${l.mm} mm.` };
+  const width = Number((2 * l.mm).toPrecision(12));
+  return { words: radiusWords(r, l), width, length: l, working: `The radius is ${l.mm} mm, and the width is the diameter, twice the radius: 2 × ${l.mm} = ${width} mm.` };
 }
 
 /** Sizes smallest first, so a plate's or star's thickness is its smallest size, as people make them. */
@@ -112,8 +152,8 @@ const thinFirst = (ls: Length[]) => ls.sort((a, b) => a.mm - b.mm);
 /** How a round part's height is said, by what it's called. */
 const HEIGHT_WORDS: Record<string, readonly string[]> = { cylinder: ["tall", "high", "long"], rod: ["long"], dowel: ["long"], peg: ["long", "tall"], puck: ["thick"], disc: ["thick"] };
 
-/** A new part as a prompt and the command it means. */
-export function createPart(r: SeededRandom): { prompt: string; command: Part } {
+/** A new part as a prompt, the command it means, and the working out's sentences before the result. */
+export function createPart(r: SeededRandom): { prompt: string; command: Part; working: string[] } {
   const unit = randomUnit(r);
   const L = () => randomLength(r, unit);
   const kind = pick(r, [...SHAPES, "cube"] as const);
@@ -127,12 +167,13 @@ export function createPart(r: SeededRandom): { prompt: string; command: Part } {
         `create a rectangular block: width ${w.text}, depth ${d.text}, height ${h.text}.`,
         `can you make a ${list(r, [w, d, h])} box?`,
       ]);
-      return { prompt: sentence(prompt), command: part("box", w.mm, d.mm, h.mm) };
+      const block = /block/.test(prompt) ? "A block is a box. " : "";
+      return { prompt: sentence(prompt), command: part("box", w.mm, d.mm, h.mm), working: [`${block}Its sizes are the width, depth and height, in that order.`, ...conversions([w, d, h])] };
     }
     case "cube": {
       const s = L();
       const prompt = pick(r, [`a ${s.text} cube.`, `make a cube with ${s.text} sides.`, `I'd like a cube, ${s.text} on each side.`]);
-      return { prompt: sentence(prompt), command: part("box", s.mm, s.mm, s.mm) };
+      return { prompt: sentence(prompt), command: part("box", s.mm, s.mm, s.mm), working: ["A cube is a box with every side the same.", ...conversions([s])] };
     }
     case "cylinder": {
       const round = roundSize(r, unit);
@@ -140,13 +181,15 @@ export function createPart(r: SeededRandom): { prompt: string; command: Part } {
       const noun = pick(r, ["cylinder", "rod", "dowel", "peg", "puck", "disc"]);
       const tall = pick(r, HEIGHT_WORDS[noun]);
       const prompt = pick(r, [`make a ${noun} ${round.words}, ${h.text} ${tall}.`, `I need a ${noun} ${round.words} and ${h.text} ${tall}.`, `a ${noun}, ${h.text} ${tall}, ${round.words}.`]);
-      return { prompt: sentence(prompt), command: part("cylinder", round.width, round.width, h.mm) };
+      const lines = [...(noun === "cylinder" ? [] : [`A ${noun} is a cylinder.`]), ...conversions([round.length, h]), round.working, "A new cylinder is as deep as it is wide.", `How ${tall} it is, ${h.mm} mm, is the height.`];
+      return { prompt: sentence(prompt), command: part("cylinder", round.width, round.width, h.mm), working: lines };
     }
     case "sphere": {
       const round = roundSize(r, unit);
       const noun = pick(r, ["sphere", "ball"]);
       const prompt = pick(r, [`make a ${noun} ${round.words}.`, `a ${noun} ${round.words}, please.`, `I want a ${noun} ${round.words}.`]);
-      return { prompt: sentence(prompt), command: part("sphere", round.width, round.width, round.width) };
+      const lines = [...(noun === "ball" ? ["A ball is a sphere."] : []), ...conversions([round.length]), round.working, "A sphere is as deep and as tall as it is wide."];
+      return { prompt: sentence(prompt), command: part("sphere", round.width, round.width, round.width), working: lines };
     }
     case "plate": {
       const [h, a, b] = thinFirst([L(), L(), L()]);
@@ -156,23 +199,23 @@ export function createPart(r: SeededRandom): { prompt: string; command: Part } {
         `make a mounting plate ${w.text} long, ${d.text} wide and ${h.text} thick.`,
         `I need a flat plate with two holes, ${list(r, [w, d])} and ${h.text} thick.`,
       ]);
-      return { prompt: sentence(prompt), command: part("plate", w.mm, d.mm, h.mm) };
+      return { prompt: sentence(prompt), command: part("plate", w.mm, d.mm, h.mm), working: ["A plate's two sizes across are its width and depth, and its thickness is the height.", ...conversions([w, d, h])] };
     }
     case "l-bracket": {
       const [w, d, h] = [L(), L(), L()];
       const prompt = pick(r, [`an L bracket ${list(r, [w, d])}, ${h.text} thick.`, `make an L-shaped bracket with legs of ${w.text} and ${d.text}, ${h.text} thick.`]);
-      return { prompt: sentence(prompt), command: part("l-bracket", w.mm, d.mm, h.mm) };
+      return { prompt: sentence(prompt), command: part("l-bracket", w.mm, d.mm, h.mm), working: ["An L bracket's legs are its width and depth, and its thickness is the height.", ...conversions([w, d, h])] };
     }
     case "slot": {
       const [a, b, h] = [L(), L(), L()];
       const [w, d] = a.mm > b.mm ? [a, b] : [b, a]; // a slot is longer than it is wide
       const prompt = pick(r, [`a slot ${w.text} long and ${d.text} wide, ${h.text} thick.`, `make a rounded slot shape ${list(r, [w, d])}, ${h.text} thick.`]);
-      return { prompt: sentence(prompt), command: part("slot", w.mm, d.mm, h.mm) };
+      return { prompt: sentence(prompt), command: part("slot", w.mm, d.mm, h.mm), working: ["A slot's length is its width, its width across is its depth, and its thickness is the height.", ...conversions([w, d, h])] };
     }
     case "star": {
       const [h, w] = thinFirst([L(), L()]);
       const prompt = pick(r, [`a five-pointed star ${w.text} across and ${h.text} thick.`, `make a star ${w.text} wide, ${h.text} thick.`]);
-      return { prompt: sentence(prompt), command: part("star", w.mm, w.mm, h.mm) };
+      return { prompt: sentence(prompt), command: part("star", w.mm, w.mm, h.mm), working: ["A star's size across is its width, it is as deep as it is wide, and its thickness is the height.", ...conversions([w, h])] };
     }
   }
 }
@@ -219,7 +262,9 @@ function relativeEdit(r: SeededRandom, from: Part): Draft | null {
   const word = grow ? more : less;
   const subject = it(r, from.shape);
   const prompt = pick(r, [`make ${subject} ${by.text} ${word}.`, `can you make ${subject} ${by.text} ${word}?`, `${by.text} ${word}, please.`]);
-  return { task: "edit-parameter", setup: [from], prompt: sentence(prompt), commands: [{ ...from, [size]: to }] };
+  const after: Part = { ...from, [size]: to };
+  const sum = `${sentence(word)} changes the ${size}: ${from[size]} ${grow ? "+" : "−"} ${by.mm} = ${to} mm.`;
+  return { task: "edit-parameter", setup: [from], prompt: sentence(prompt), explanation: working([now(from), ...conversions([by]), sum, "Every other size stays.", becomes(after, false)]), commands: [after] };
 }
 
 /** "Set the height to 40 mm": one size given outright. */
@@ -230,14 +275,19 @@ function setEdit(r: SeededRandom, from: Part): Draft | null {
   const to = round12(l.mm * factor);
   if (to === from[size]) return null; // no change asked for
   const prompt = pick(r, [`set the ${name} to ${l.text}.`, `change the ${name} to ${l.text}.`, `make the ${name} ${l.text}.`, `I want the ${name} to be ${l.text}.`]);
-  return { task: "edit-parameter", setup: [from], prompt: sentence(prompt), commands: [{ ...from, [size]: to }] };
+  const after: Part = { ...from, [size]: to };
+  const reading =
+    name === "radius" ? `The width is the diameter, twice the radius: 2 × ${l.mm} = ${to} mm.` : name === "diameter" ? `The diameter is the width: ${to} mm.` : name === "thickness" ? `The thickness is the height: ${to} mm.` : `The ${size} becomes ${to} mm.`;
+  return { task: "edit-parameter", setup: [from], prompt: sentence(prompt), explanation: working([now(from), ...conversions([l]), reading, "Every other size stays.", becomes(after, false)]), commands: [after] };
 }
 
 /** "Make it twice as tall", "halve the width", "make it 50% bigger". */
 function scaleEdit(r: SeededRandom, from: Part): Draft | null {
   if (r.next() < 0.3) {
     const [words, f] = pick(r, [["make it twice as big", 2], ["make it 50% bigger", 1.5], ["scale it up by 50%", 1.5], ["make it half the size", 0.5], ["scale it down to half its size", 0.5], ["make it three times as big", 3]] as const);
-    return { task: "edit-parameter", setup: [from], prompt: sentence(`${words}.`), commands: [part(from.shape, round12(from.width * f), round12(from.depth * f), round12(from.height * f))] };
+    const after = part(from.shape, round12(from.width * f), round12(from.depth * f), round12(from.height * f));
+    const sums = (["width", "depth", "height"] as const).map((k) => `${from[k]} × ${f} = ${after[k]} mm`).join(", ");
+    return { task: "edit-parameter", setup: [from], prompt: sentence(`${words}.`), explanation: working([now(from), `That multiplies every size by ${f}: ${sums}.`, becomes(after, false)]), commands: [after] };
   }
   const size = pick(r, SIZES[from.shape]);
   const adjective = { width: "wide", depth: "deep", height: FLAT.includes(from.shape) ? pick(r, ["thick", "tall"]) : pick(r, ["tall", "high"]) }[size];
@@ -249,28 +299,66 @@ function scaleEdit(r: SeededRandom, from: Part): Draft | null {
     [`double the ${name}`, 2],
     [`halve the ${name}`, 0.5],
   ] as const);
-  return { task: "edit-parameter", setup: [from], prompt: sentence(`${words}.`), commands: [{ ...from, [size]: round12(from[size] * f) }] };
+  const after: Part = { ...from, [size]: round12(from[size] * f) };
+  // What the words call the size, said only when they name it ("double the radius", not "twice as wide").
+  const which = adjective === "thick" ? "The thickness is the height. " : !words.includes(`the ${name}`) ? "" : name === "radius" ? "The radius is half the width, so the width scales the same. " : name === "diameter" ? "The diameter is the width. " : name === "thickness" ? "The thickness is the height. " : "";
+  const sum = `${which}That multiplies the ${size} by ${f}: ${from[size]} × ${f} = ${after[size]} mm.`;
+  return { task: "edit-parameter", setup: [from], prompt: sentence(`${words}.`), explanation: working([now(from), sum, "Every other size stays.", becomes(after, false)]), commands: [after] };
 }
-
-const SHAPE_WORDS: Record<Shape, string> = { box: "a box", cylinder: "a cylinder", sphere: "a sphere", plate: "a plate", "l-bracket": "an L bracket", slot: "a slot", star: "a star" };
 
 /** "Turn it into a cylinder": the shape changes, every size stays. */
 function shapeEdit(r: SeededRandom, from: Part): Draft | null {
   const to = pick(r, SHAPES.filter((s) => s !== from.shape));
   const prompt = pick(r, [`turn it into ${SHAPE_WORDS[to]}.`, `make it ${SHAPE_WORDS[to]} instead.`, `change the shape to ${SHAPE_WORDS[to]}.`]);
-  return { task: "edit-parameter", setup: [from], prompt: sentence(prompt), commands: [{ ...from, shape: to }] };
+  const after: Part = { ...from, shape: to };
+  return { task: "edit-parameter", setup: [from], prompt: sentence(prompt), explanation: working([now(from), `Only the shape changes, to ${SHAPE_WORDS[to]}; every size stays.`, becomes(after, false)]), commands: [after] };
 }
 
 const EXPORT_WORDS = ["export it as an STL", "download it as an STL file", "save it as an STL for printing", "give me the STL file", "export the STL"];
+
+// ---- Requests no command can do yet: the answer is no commands and a plain reason (AI5c).
+
+const PLANES = ["top", "front", "right", "XY", "XZ", "YZ"];
+/** What can be done now, said the same way in every refusal. */
+const CAN_DO = "What can be done now is making or resizing a whole ready-made shape: a box, cylinder, sphere, plate, L bracket, slot or star.";
+
+/** A request that needs a command Design doesn't offer, and what it would need. Each mentions what it can't do by name, so the words alone say why. */
+function cannotAsk(r: SeededRandom): { prompt: string; needs: string; onPart: boolean } {
+  const L = () => randomLength(r, randomUnit(r)).text;
+  const plane = pick(r, PLANES);
+  return pick(r, [
+    () => ({ prompt: `sketch a circle ${L()} across on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
+    () => ({ prompt: `draw a ${L()} by ${L()} rectangle in a sketch on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
+    () => ({ prompt: `start a new sketch on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
+    () => ({ prompt: `draw a line ${L()} long on the top face.`, needs: "drawing a sketch", onPart: true }),
+    () => ({ prompt: `put a ${L()} hole in the centre of the top face.`, needs: "a hole", onPart: true }),
+    () => ({ prompt: `drill a ${L()} hole through it.`, needs: "a hole", onPart: true }),
+    () => ({ prompt: `fillet all the edges with a ${L()} radius.`, needs: "rounding edges (a fillet)", onPart: true }),
+    () => ({ prompt: `chamfer the top edges by ${L()}.`, needs: "a chamfer", onPart: true }),
+    () => ({ prompt: `hollow it out with ${L()} walls.`, needs: "hollowing a part out (a shell)", onPart: true }),
+    () => ({ prompt: `engrave my name on the top face.`, needs: "text", onPart: true }),
+    () => ({ prompt: `make ${pick(r, ["3", "4", "6"])} copies of it in a row.`, needs: "copies or patterns", onPart: true }),
+  ])();
+}
+
+/** "Sketch a circle…": no commands, and the working out says what can't be done and what can. */
+function cannotDraft(r: SeededRandom): Draft {
+  const ask = cannotAsk(r);
+  const setup = ask.onPart || r.next() < 0.5 ? [randomPart(r)] : [];
+  const reason = `There is no command for ${ask.needs} yet, so this ${CANNOT} be done and nothing was made.`;
+  return { task: "cannot", setup, prompt: sentence(ask.prompt), explanation: working([reason, CAN_DO]), commands: [] };
+}
 
 export const DESIGN_RECIPES: readonly Recipe[] = [
   {
     id: "design.create",
     ops: ["set_part"],
     sample(r) {
-      const { prompt, command } = createPart(r);
+      const { prompt, command, working: lines } = createPart(r);
       // Asking for a new part over an old one replaces it: set_part is the whole part.
-      return { task: "create", setup: r.next() < 0.2 ? [randomPart(r)] : [], prompt, commands: [command] };
+      const setup = r.next() < 0.2 ? [randomPart(r)] : [];
+      const replaces = setup.length > 0 ? ["This replaces the part there is now."] : [];
+      return { task: "create", setup, prompt, explanation: working([...replaces, ...lines, becomes(command, true)]), commands: [command] };
     },
   },
   { id: "design.edit-by", ops: ["set_part"], sample: (r) => relativeEdit(r, randomPart(r)) },
@@ -280,16 +368,20 @@ export const DESIGN_RECIPES: readonly Recipe[] = [
   {
     id: "design.export",
     ops: ["set_part", "export_stl"],
-    sample: (r) => ({ task: "export", setup: [randomPart(r)], prompt: sentence(`${pick(r, EXPORT_WORDS)}.`), commands: [{ op: "export_stl" }] }),
+    sample(r) {
+      const from = randomPart(r);
+      return { task: "export", setup: [from], prompt: sentence(`${pick(r, EXPORT_WORDS)}.`), explanation: working([now(from), `No size changes; the whole part is ${EXPORTED}.`]), commands: [{ op: "export_stl" }] };
+    },
   },
   {
     id: "design.create-and-export",
     ops: ["set_part", "export_stl"],
     sample(r) {
-      const { prompt, command } = createPart(r);
+      const { prompt, command, working: lines } = createPart(r);
       const ask = prompt.replace(/[.?]$/, "").replace(/, please$/, "");
       const then = r.next() < 0.5 ? ` and ${pick(r, EXPORT_WORDS)}.` : `. Then ${pick(r, EXPORT_WORDS)}.`;
-      return { task: "create", setup: [], prompt: `${ask}${then}`, commands: [command, { op: "export_stl" }] };
+      return { task: "create", setup: [], prompt: `${ask}${then}`, explanation: working([...lines, becomes(command, true), `Then it is ${EXPORTED}.`]), commands: [command, { op: "export_stl" }] };
     },
   },
+  { id: "design.cannot", ops: ["set_part"], sample: cannotDraft },
 ];

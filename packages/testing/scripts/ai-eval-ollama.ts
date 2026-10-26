@@ -40,7 +40,7 @@ for (const model of models) {
     const results = await runEval(provider, set.cases, specs);
     const seconds = (performance.now() - started) / 1000;
     report[set.name].push({ model, seconds, rates: successRates(results), passed: results.filter((r) => r.passed).length, firstTry: results.filter((r) => r.attempts === 1).length, results });
-    for (const r of results) console.log(`${model}  ${set.name}  ${r.passed ? "PASS" : "FAIL"}  ${r.id}  ${r.detail}`);
+    for (const r of results) console.log(`${model}  ${set.name}  ${r.passed ? "PASS" : "FAIL"}  ${r.id}  ${r.detail}${r.explanation ? `  (${r.explanation})` : ""}`);
   }
 }
 
@@ -55,7 +55,7 @@ const lines = SETS.flatMap((set) => {
     ...report[set.name].map((r) => `| ${r.model} | ${r.passed}/${n} | ${pct(r.rates.create)} | ${pct(r.rates["edit-parameter"])} | ${r.firstTry}/${n} | ${r.seconds.toFixed(0)} s |`),
     "",
     "Wrong answers:",
-    ...report[set.name].flatMap((r) => r.results.filter((x) => !x.passed).map((x) => `- ${r.model}, ${x.id}: ${x.detail}`)),
+    ...report[set.name].flatMap((r) => r.results.filter((x) => !x.passed).map((x) => `- ${r.model}, ${x.id}: ${x.detail}${x.explanation ? ` (its working out: ${x.explanation})` : ""}`)),
     "",
   ];
 });

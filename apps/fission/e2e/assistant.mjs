@@ -14,6 +14,9 @@
 // the in-browser model is never found, whatever the machine running this,
 // and so is the browser's own built-in model (Chrome 156 has one, #238),
 // unless a check gives the page a fake one.
+// AI5c: the answer's working out shows above the preview as plain text,
+// and a request no command can do shows the AI's reason with nothing to
+// accept.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -224,6 +227,89 @@ try {
       assert.match(await page.textContent("#ai-result"), /Rejected: nothing was changed/);
       await volume(page, "24,000 mm³");
       assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)"); // the box's insert (U0c) is the only step
+    } finally {
+      await page.close();
+    }
+  });
+
+  await check("the working out shows above the preview, as plain text: markup in it is never run (AI5c, 1280 and 375 px)", async () => {
+    // 40 + 10 = 50: the model's own sums, shown as it wrote them. The tag is text a model could write; it must stay text.
+    const said = "The part now is a box 40 mm wide. 10 mm wider makes the width 40 + 10 = 50 mm; depth and height stay. <img src=x onerror=\"window.ranMarkup=1\">";
+    for (const width of [1280, 375]) {
+      const { page, asked } = await fresh([JSON.stringify({ explanation: said, commands: [{ op: "set_part", shape: "box", width: 50, depth: 30, height: 20 }] })], { open: false });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await ask(page, "Make it 10 mm wider.");
+        await page.waitForSelector("#ai-preview");
+        // The schema sent asks for the working out first, and requires it.
+        const format = asked[0].body.format;
+        assert.deepEqual(Object.keys(format.properties), ["explanation", "commands"]);
+        assert.deepEqual(format.required, ["explanation", "commands"]);
+        assert.match(asked[0].body.messages[0].content, /Write your working out in "explanation" before the commands/);
+        assert.equal(await page.textContent("#ai-preview .ai-working-text"), said);
+        assert.equal(await page.$("#ai-preview img"), null, "the tag is shown, not made");
+        assert.equal(await page.evaluate(() => window.ranMarkup), undefined);
+        // Above what would change: the label, then the working out, then the table.
+        const order = await page.$$eval("#ai-preview > *", (els) => els.map((e) => e.className || e.tagName.toLowerCase()));
+        assert.deepEqual(order.slice(0, 3), ["ai-label", "ai-working", "table"]);
+        const [w, t] = await Promise.all(["#ai-preview .ai-working", "#ai-preview table"].map((sel) => page.$eval(sel, (e) => e.getBoundingClientRect().toJSON())));
+        assert.ok(w.bottom <= t.top, `working out ${JSON.stringify(w)} above the table ${JSON.stringify(t)}`);
+        // It fits the panel: no sideways scroll at either width.
+        assert.equal(await page.$eval("#ai-preview", (e) => e.scrollWidth <= e.clientWidth), true);
+        await page.$eval("#ai-preview", (e) => e.scrollIntoView());
+        await page.screenshot({ path: `e2e/assistant-working-${width}.png` });
+        await page.click("#ai-accept");
+        await volume(page, "30,000 mm³"); // 50 · 30 · 20
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("a request no command can do: the AI's reason is shown, nothing to accept, nothing changed (AI5c, 1280 and 375 px)", async () => {
+    // Ben's request (2026-10-26) once came back as a 20 × 0.01 mm cylinder; the honest answer is no commands and why.
+    const why = "There is no command for drawing a sketch yet, so this can't be done and nothing was made. What can be done now is making or resizing a whole ready-made shape: a box, cylinder, sphere, plate, L bracket, slot or star.";
+    for (const width of [1280, 375]) {
+      const { page } = await fresh([JSON.stringify({ explanation: why, commands: [] })], { open: false });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await ask(page, "Draw a circle with radius 10mm as a sketch on the XY plane.");
+        await page.waitForSelector("#ai-cannot");
+        assert.equal(await page.textContent("#ai-cannot .ai-label"), "The AI can't do this yet.");
+        assert.equal(await page.textContent("#ai-cannot .ai-working-text"), why);
+        assert.equal(await page.textContent("#ai-cannot .ai-note"), "Nothing was changed.");
+        assert.equal(await page.$("#ai-accept"), null, "nothing to accept");
+        assert.equal(await page.$("#ai-preview"), null);
+        await volume(page, "24,000 mm³");
+        assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)");
+        assert.equal(await page.$eval("#ai-cannot", (e) => e.scrollWidth <= e.clientWidth), true);
+        await page.$eval("#ai-cannot", (e) => e.scrollIntoView());
+        await page.screenshot({ path: `e2e/assistant-cannot-${width}.png` });
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("no working out given: the panel says so; no commands and no reason is asked again", async () => {
+    const { page, asked } = await fresh(['{"explanation":"","commands":[]}', setPart("box", 50, 30, 20)]);
+    try {
+      await useOllama(page);
+      await ask(page, "Make it 10 mm wider.");
+      await page.waitForSelector("#ai-preview");
+      // The empty answer was refused and asked again, saying why.
+      assert.equal(asked.length, 2);
+      assert.match(asked[1].body.messages.at(-1).content, /That answer can't be used: it has no commands and doesn't say why\./);
+      assert.match(await page.textContent("#ai-preview .ai-note"), /The first answer couldn't be used; this is the second\./);
+      // The second answer had no working out: said plainly, not left blank.
+      assert.equal(await page.textContent("#ai-preview .ai-working-text"), "The AI gave no working out for this answer.");
+      assert.equal(await page.$eval("#ai-preview .ai-working-text", (e) => e.classList.contains("ai-working-none")), true);
     } finally {
       await page.close();
     }

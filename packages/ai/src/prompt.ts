@@ -15,6 +15,12 @@ import type { Command, CommandSpec, ParamSpec } from "@fission/core";
 export const UNIT_RULE = "Every length in a command is in millimetres. Convert other units first: 1 cm = 10 mm, 1 m = 1000 mm, 1 inch = 25.4 mm.";
 export const RADIUS_RULE = 'A diameter is twice the radius: when the user gives a radius, use twice it wherever a diameter is asked for. A size "across" is a diameter.';
 export const CUBE_RULE = "A cube is a box whose width, depth and height are all the same.";
+/** The working out comes first (docs/ai.md, "Full working out"); the schema puts it before the commands. */
+export const EXPLAIN_RULE =
+  'Write your working out in "explanation" before the commands, in a few plain sentences: what the part is now, how you read each size (converted to millimetres, with the sum shown, as in "a radius of 1.5 cm is 15 mm, so the diameter is 2 × 15 = 30 mm"), and the sizes the part ends up with.';
+/** An honest "can't do that yet" beats a wrong part: a circle sketch is not a 0.01 mm thick cylinder. */
+export const CANNOT_RULE =
+  "Use a command only for what it really makes. If the request needs something none of the commands can do (drawing a sketch, say, or a hole, a fillet or a feature the list doesn't have), send no commands and say plainly in the explanation what can't be done yet. Never stand in for it with another shape or a tiny size.";
 
 function describe(name: string, p: ParamSpec): string {
   const kind = p.type === "length" ? "millimetres, more than 0" : p.type === "choice" ? `one of: ${p.values.join(", ")}` : "";
@@ -38,6 +44,8 @@ export function systemPrompt(setup: readonly Command[], specs: readonly CommandS
     UNIT_RULE,
     RADIUS_RULE,
     CUBE_RULE,
+    EXPLAIN_RULE,
+    CANNOT_RULE,
     "Answer with the commands that make what the user asks for. Keep every size the user doesn't mention as it is now.",
   ].join("\n");
 }

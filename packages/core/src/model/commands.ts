@@ -56,9 +56,25 @@ export function commandSchema(spec: CommandSpec): object {
   };
 }
 
-/** The schema for a list of commands, any of these specs: what the model must answer with. */
+/** The longest working out an answer may carry, in characters: a few plain sentences, never an essay. */
+export const MAX_EXPLANATION = 1000;
+
+/**
+ * The schema for a whole answer, any of these specs: what the model must
+ * answer with. The working out comes first (docs/ai.md, "Full working
+ * out"): constrained output writes keys in the schema's order, so the
+ * model reasons in words before it commits to any command.
+ */
 export function commandListSchema(specs: readonly CommandSpec[]): object {
-  return { type: "object", properties: { commands: { type: "array", items: { oneOf: specs.map(commandSchema) } } }, required: ["commands"], additionalProperties: false };
+  return {
+    type: "object",
+    properties: {
+      explanation: { type: "string", maxLength: MAX_EXPLANATION, description: "Your working out, in plain words, before the commands: how you read the request, each number you worked out with the sums shown, and what the commands will make." },
+      commands: { type: "array", items: { oneOf: specs.map(commandSchema) } },
+    },
+    required: ["explanation", "commands"],
+    additionalProperties: false,
+  };
 }
 
 const show = (v: unknown) => {
@@ -109,8 +125,14 @@ export function parseCommand(raw: unknown, specs: readonly CommandSpec[]): Parse
   return { ok: true, command: { ...obj, op: spec.op } };
 }
 
-/** Parses a model's whole answer: JSON text holding { "commands": [...] }. Never throws. */
-export function parseCommandList(text: string, specs: readonly CommandSpec[]): { ok: true; commands: Command[] } | { ok: false; error: string } {
+/**
+ * Parses a model's whole answer: JSON text holding { "explanation": "...",
+ * "commands": [...] }. Never throws. The explanation is shown to the user
+ * as plain text; an answer without one (a model not held to the schema)
+ * is still read, with an empty explanation, so the panel can say none was
+ * given rather than refuse a good answer.
+ */
+export function parseCommandList(text: string, specs: readonly CommandSpec[]): { ok: true; commands: Command[]; explanation: string } | { ok: false; error: string } {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -120,11 +142,15 @@ export function parseCommandList(text: string, specs: readonly CommandSpec[]): {
   const list = (data as { commands?: unknown } | null)?.commands;
   if (!Array.isArray(list)) return { ok: false, error: 'the answer must be an object with a "commands" list' };
   if (list.length > 50) return { ok: false, error: "too many commands in one answer (at most 50)" };
+  const said = (data as { explanation?: unknown }).explanation;
+  if (said !== undefined && typeof said !== "string") return { ok: false, error: `the explanation must be text, got ${show(said)}` };
+  const explanation = (said ?? "").trim();
+  if (explanation.length > MAX_EXPLANATION) return { ok: false, error: `the explanation is too long (${explanation.length} characters; at most ${MAX_EXPLANATION})` };
   const commands: Command[] = [];
   for (const [i, raw] of list.entries()) {
     const parsed = parseCommand(raw, specs);
     if (!parsed.ok) return { ok: false, error: `command ${i + 1}: ${parsed.error}` };
     commands.push(parsed.command);
   }
-  return { ok: true, commands };
+  return { ok: true, commands, explanation };
 }
