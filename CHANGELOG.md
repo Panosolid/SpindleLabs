@@ -12,7 +12,11 @@ Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `
 
 ## 0.32.4 (2026-10-26)
 
-- Fixed: the boolean's facts table crashed on ordinary parts. When an edge of the tool lay inside a longer edge of the target (a box sitting flush on a longer box, say), the check for "is this tool corner the same place as a target corner already listed" looked the tool corner's number up in the target's list. That read the wrong corner, and when the tool had more corners than the target it ran off the end of the list and the kernel panicked. Found by a cold read of step 32's code. Two regression tests failed with the panic first (one edge inside another, worked by hand; a 3 × 1 × 1 box with a cube sitting flush on its top as part of a 16-corner tool) and pass now. Also: the kernel's WebAssembly build no longer warns about an unused name in the merge's failure report.
+- Fixed: the boolean's facts table crashed on ordinary parts. When an edge of the tool lay inside a longer edge of the target (a box sitting flush on a longer box, say), the check for "is this tool corner the same place as a target corner already listed" looked the tool corner's number up in the target's list. That read the wrong corner, and when the tool had more corners than the target it ran off the end of the list and the kernel panicked. Found by a cold read of step 32's code. Two regression tests failed with the panic first (one edge inside another, worked by hand; a 3 × 1 × 1 box with a cube sitting flush on its top as part of a 16-corner tool) and pass now.
+
+- Fixed: a valid part with loose (imported-size) tolerances could be refused by the facts table even where the other part touched nothing of it. A corner may sit as far as its own tolerance plus an edge's from its own face's plane and still be valid, but the table measured every corner against its own faces and, past the cap, refused: a cube at 500 nm with one corner 800 nm off its own top was refused with the other part 5 mm away. A corner nothing touches is now kept as it is, with its own tolerance; one the other part does touch is still measured (the same corner with the tool's corner on it is still refused, rightly, because a cut line in that face would end there). Regression test failed first.
+
+- Also: the kernel's WebAssembly build no longer warns about an unused name in the merge's failure report.
 
 ## 0.32.3 (2026-10-26)
 
