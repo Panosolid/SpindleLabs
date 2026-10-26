@@ -10,6 +10,9 @@ on:
       models:
         description: "Ollama models to score, separated by spaces"
         default: "qwen2.5:1.5b llama3.2:3b gemma2:2b"
+      variants:
+        description: "Prompt variants to score (app, no-cannot, commands-first, commands-first-cannot), separated by spaces"
+        default: "app"
   pull_request:
     paths:
       - ".github/workflows/ai-eval.yml"
@@ -26,9 +29,10 @@ permissions:
 jobs:
   ollama:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       MODELS: ${{ inputs.models || 'qwen2.5:1.5b llama3.2:3b gemma2:2b' }}
+      VARIANTS: ${{ inputs.variants || 'app' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
