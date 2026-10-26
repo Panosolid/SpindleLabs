@@ -10,8 +10,9 @@ nothing reaches main without the whole suite. Without the queue rule
 test before main and stays full. Any doubt (the API can't be read) means full.
 
 ui: whether a pull request touches the app (apps/, packages/, workspaces/,
-the npm files or ci.yml itself), so the Firefox and WebKit checks are worth
-running on it. Any doubt means yes.
+the npm files, ci.yml itself or the browser install script the browser jobs
+run), so the Firefox and WebKit checks are worth running on it. Any doubt
+means yes.
 
 docs: whether every changed file is writing no code or test reads (DOCS
 below: docs/, CHANGELOG.md, README.md, VERSION and any CLAUDE.md), in a pull
@@ -35,7 +36,7 @@ import sys
 import urllib.request
 
 UI_PREFIXES = ("apps/", "packages/", "workspaces/")
-UI_FILES = ("package.json", "package-lock.json", ".github/workflows/ci.yml")
+UI_FILES = ("package.json", "package-lock.json", ".github/workflows/ci.yml", ".github/scripts/install-browser.sh")
 
 
 def touches_ui(files):

@@ -16,6 +16,7 @@ Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `
 
 ## 0.32.14 (2026-10-26)
 
+- CI: a pull request that changes the browser install script (`.github/scripts/install-browser.sh`) now runs the Firefox and WebKit checks too, like one that touches the app. #347 fixed that script and its own run skipped the Firefox job, since the change touched no app file, so the fix was only seen working through the Chromium install (the Azure mirror crawled for 7 minutes, archive.ubuntu.com fetched the rest in 3 seconds). `test_ci_mode.py` lists the script among the files that count.
 - Fixed: the nightly Design mutation check still failed after its tests were all run (#336): 9 changes to the code that renames an older project's presets (`withShortNames`) and reads hidden bodies went unnoticed. Eight were real gaps, each a project file the tests never opened: a sketch named in the old preset form (it must keep its name), a preset with no provenance or without its own name (it must open unchanged), and a sketch listing another workspace's entry, an empty entry and a name the user gave beside its copy of the old name (only Design's copy of the old name may follow). Three new tests cover them; each of the eight changes was put in by hand and each failed a new test. The ninth is harmless and explained: a hidden entry that isn't a string is refused anyway, with the same message. Checked with the Design unit tests and typecheck; tonight's nightly reruns the mutation check.
 
 ## 0.32.13 (2026-10-26)
