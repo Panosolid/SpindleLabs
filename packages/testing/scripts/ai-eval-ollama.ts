@@ -1,5 +1,5 @@
 // The A10 check (AI3): scores small free models, through Ollama, on the
-// evaluation suite with the one command the assistant offers (set_part),
+// evaluation suite with the commands the assistant offers (set_part and, from AI7a, create_sketch),
 // the same prompt and the same constrained output the app uses. It scores
 // the original cases and the held-out ones (AI4) separately, so a prompt
 // change can be judged on cases it was never written against. Writes a
@@ -16,7 +16,7 @@
 
 import { writeFileSync } from "node:fs";
 import { CANNOT_RULE, createProvider, EXPLAIN_RULE, systemPrompt, type AIProvider, type AIRequest } from "@fission/ai";
-import { DESIGN_COMMANDS } from "@fission/design";
+import { aiCommands } from "@fission/design";
 import { EVAL_CASES, HELD_OUT_CASES, runEval, successRates, type EvalCase, type EvalResult } from "../src/ai-eval.ts";
 
 const [out, ...models] = process.argv.slice(2);
@@ -24,7 +24,8 @@ if (!out || models.length === 0) {
   console.error("usage: ai-eval-ollama.ts <out.json> <model> [model…]");
   process.exit(1);
 }
-const specs = DESIGN_COMMANDS.filter((c) => c.op === "set_part");
+// What the assistant offers with no body on screen (AI7a): set_part and create_sketch on an origin plane.
+const specs = aiCommands([]);
 const SETS: { name: string; cases: readonly EvalCase[] }[] = [
   { name: "original", cases: EVAL_CASES },
   { name: "held-out", cases: HELD_OUT_CASES },
@@ -100,7 +101,7 @@ const pct = (x: number | undefined) => (x === undefined ? "–" : `${Math.round(
 const lines = SETS.flatMap((set) => {
   const n = set.cases.filter((c) => !c.waitsFor).length;
   return [
-    `### A10 check, ${set.name} cases: ${n}, set_part only`,
+    `### A10 check, ${set.name} cases: ${n}, set_part and create_sketch`,
     "",
     "| Model | Right | Create | Edit | Can't | Usable first try | Time |",
     "|---|---|---|---|---|---|---|",

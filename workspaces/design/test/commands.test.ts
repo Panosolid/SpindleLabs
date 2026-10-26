@@ -33,3 +33,18 @@ test("a size given as 0 is still refused, optional or not", () => {
   assert.deepEqual(parsed, { ok: false, error: "set_part: depth must be a length in mm greater than 0, got 0" });
   assert.equal(parseCommand({ op: "set_part", shape: "sphere" }, DESIGN_COMMANDS).ok, false, "width is still required");
 });
+
+test("hand-worked: create_sketch (AI7a) puts an empty sketch at the marker on the plane named, and refuses anything else", () => {
+  // A new project: Sketch 1 on XZ, the only item, with no points or curves.
+  const fresh = documentFor({ op: "create_sketch", on: "XZ" });
+  assert.deepEqual(fresh.timeline.features.map((f) => [f.id, f.intent.summary, f.provenance.self.label]), [["sketch-1", "Sketch 1 on the XZ plane", "Sketch 1"]]);
+  assert.deepEqual(fresh.sketches, [{ id: "sketch-1", points: [], curves: [], constraints: [] }]);
+  // After a box (feature-1): the box keeps its place and the sketch comes second.
+  const after = documentFor({ op: "create_sketch", on: "YZ" }, documentFor({ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 }));
+  assert.deepEqual(after.timeline.features.map((f) => f.intent.summary), ["Box: 40 × 30 × 20 mm", "Sketch 1 on the YZ plane"]);
+  // Every origin plane passes the command's check; a face name or a made-up plane does not, and documentFor refuses a face too (only Design's run places one).
+  for (const on of ["XY", "XZ", "YZ"]) assert.ok(parseCommand({ op: "create_sketch", on }, DESIGN_COMMANDS).ok, on);
+  assert.equal(parseCommand({ op: "create_sketch", on: "top" }, DESIGN_COMMANDS).ok, false);
+  assert.equal(parseCommand({ op: "create_sketch" }, DESIGN_COMMANDS).ok, false);
+  assert.throws(() => documentFor({ op: "create_sketch", on: "face:feature-1/end" }), /only Design can start one/);
+});

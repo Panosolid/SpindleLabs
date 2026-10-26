@@ -19,6 +19,8 @@
 // accept. AI5c2: answers are streamed, and a bar shows the stage, an
 // estimate and the working out as it is written, never 100% before the
 // preview (Ollama's stream is held piece by piece in the page, `held`).
+// AI7a: the AI starts a sketch on an origin plane or a flat face it was
+// told of, as Create sketch would, in one undo step.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -222,7 +224,7 @@ try {
       assert.equal(asked[0].url, "http://localhost:11434/api/chat");
       assert.match(body.messages[0].content, /"op":"set_part","shape":"box","width":40,"depth":30,"height":20/);
       assert.deepEqual(body.messages[1], { role: "user", content: "Make it 10 mm wider." });
-      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part"], "only set_part: the AI can't download files");
+      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch"], "set_part and create_sketch (AI7a), never export_stl: the AI can't download files");
       // The preview: only width moves, 40 → 50; the part is untouched.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: box 50 × 30 × 20 mm");
       assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["width40→50"]);
@@ -478,6 +480,72 @@ try {
         await page.click("#undo");
         await volume(page, "12,000 mm³");
         assert.equal(await undoTitle(page), steps, "one step, taken back whole");
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI starts a sketch on a plane and on the box's top face: told the faces, previewed, one undo step, opened to draw in; a face it wasn't offered is refused (AI7a, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const sketch = (on) => JSON.stringify({ commands: [{ op: "create_sketch", on }], explanation: "So there is a new empty sketch." });
+      const answers = [sketch("XZ")];
+      const { page, asked } = await fresh(answers, { open: false });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        const steps = await undoTitle(page);
+        await ask(page, "Start a sketch on the front plane.");
+        await page.waitForSelector("#ai-preview");
+        // What the model was told: where the sketch goes in the timeline, and the box's six flat faces by name, each
+        // with the way it faces; the answer's schema lets it name only those or an origin plane.
+        const prompt = asked[0].body.messages[0].content.split("\n");
+        assert.ok(prompt.includes("create_sketch adds an empty Sketch 1 as item 2, after 1. Box: 40 × 30 × 20 mm, and opens it; nothing already in the timeline changes."), prompt.join("\n"));
+        const faces = prompt.filter((l) => l.startsWith("- face:"));
+        assert.equal(faces.length, 6, faces.join("\n"));
+        const facing = faces.map((l) => l.match(/facing (.+?), centre/)[1]).sort();
+        assert.deepEqual(facing, ["down (−Z, a bottom face)", "left (−X)", "right (+X)", "the back (+Y)", "the front (−Y)", "up (+Z, a top face)"].sort());
+        // The box stands on the XY plane, 20 mm tall: its top face's centre is 20 mm up.
+        const top = faces.find((l) => l.includes("facing up"));
+        assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm\.$/, top);
+        const topName = top.match(/^- (face:[^:]+):/)[1];
+        const schema = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "create_sketch");
+        assert.deepEqual(schema.properties.on.enum, ["XY", "XZ", "YZ", ...faces.map((l) => l.match(/^- (face:[^:]+):/)[1])]);
+        // The preview names it; nothing changed yet.
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XZ plane");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XZ plane"]);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
+        assert.equal(await undoTitle(page), steps);
+        await page.click("#ai-accept");
+        // Accepted: Sketch 1 on XZ is item 2, open to draw in, as Create sketch then XZ would leave it, in one AI step.
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2");
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XZ plane (Ctrl+Z)");
+        if (width === 375) await page.screenshot({ path: "e2e/assistant-sketch-375.png" });
+        await page.click("#undo");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 1);
+        assert.equal(await undoTitle(page), steps, "one step, taken back whole");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
+        // On the top face, by the name the model was given.
+        answers.push(sketch(topName));
+        await ask(page, "Sketch on the top of the box.");
+        await page.waitForSelector("#ai-preview");
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on a face of Body 1 (Box 1), facing up (+Z, a top face)");
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2"); // Undo took the counter back too, so the id is reused (never two at once)
+        assert.match(await page.getAttribute('#timeline [data-item="sketch-2"]', "title"), /Sketch 1 on a face of Box 1/);
+        if (width === 1280) await page.screenshot({ path: "e2e/assistant-face-sketch-1280.png" });
+        // A face the model wasn't offered (made up, twice): refused by the answer's check before any preview; nothing changes.
+        answers.push(sketch("face:feature-9/end"), sketch("face:feature-9/end"));
+        const before = await undoTitle(page);
+        await ask(page, "Sketch on the other part's face.");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.match(await page.textContent("#ai-result"), /even after one retry.*Nothing was changed/s);
+        assert.equal(await page.$("#ai-accept"), null);
+        assert.equal(await undoTitle(page), before);
       } finally {
         await page.close();
       }
