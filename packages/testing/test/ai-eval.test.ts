@@ -20,7 +20,7 @@ test("every cannot case asks for something no offered command does, and expects 
   assert.ok(cannot.length >= 4);
   for (const c of cannot) assert.deepEqual(c.expected, [], c.id);
   // None of Design's commands draws arcs or text, drills or rounds: if one is added, these cases must be revisited (AI7).
-  assert.deepEqual(DESIGN_COMMANDS.map((s) => s.op), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "export_stl"]);
+  assert.deepEqual(DESIGN_COMMANDS.map((s) => s.op), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "export_stl"]);
   // Ben's own words were one of them until AI7b drew circles; now they want the circle itself, not a refusal.
   const ben = HELD_OUT_CASES.filter((c) => /circle with radius 10mm as a sketch on the XY plane/.test(c.prompt));
   assert.deepEqual(ben.map((c) => [c.taskType, c.expected]), [["create", [{ op: "create_sketch", on: "XY" }, { op: "draw_circle", diameter: 20 }]]]);
@@ -71,6 +71,17 @@ test("hand-worked: a draw case wants that shape in a new sketch, a centre left o
   assert.equal(matches([], [rect[0], { op: "draw_rectangle", width: 20, height: 30 }], rect), false);
 });
 
+test("hand-worked: an extrude case wants the distance and the way (AI7c)", () => {
+  // A circle of radius 5 → diameter 10, extruded 12 the other way: −12.
+  const [sketch, circle] = [{ op: "create_sketch", on: "YZ" }, { op: "draw_circle", diameter: 10 }];
+  const want = [sketch, circle, { op: "extrude_sketch", distance: -12 }];
+  assert.equal(matches([], want, want), true);
+  assert.equal(matches([], [sketch, circle, { op: "extrude_sketch", distance: 12 }], want), false, "the other way taken as straight on");
+  assert.equal(matches([], [sketch, circle, { op: "extrude_sketch", distance: -12.1 }], want), false, "1% off");
+  assert.equal(matches([], [sketch, circle], want), false, "the extrude forgotten");
+  assert.equal(matches([], [sketch, circle, { op: "extrude_sketch", distance: -12, sketch: "Sketch 1" }], want), false, "a sketch named when none was asked for is another command");
+});
+
 test("a right command followed by a wrong one fails: the part ends up wrong", () => {
   // Worked by hand: set_part replaces the sizes it names, so [width 50, then width 40] leaves width 40.
   const setup = [{ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 }];
@@ -98,10 +109,10 @@ test("the suite scores a provider per task type", async () => {
   };
   const results = await runEval(provider, EVAL_CASES, DESIGN_COMMANDS);
   // Worked by hand: 40 × 30 × 20 is right for "box-by-sizes" and "box-in-cm" (4 cm × 3 cm × 2 cm) only,
-  // so create 2 of 10 (AI7a's sketch case and AI7b's circle and line are the other three) and edit 0 of 5;
+  // so create 2 of 11 (AI7a's sketch case, AI7b's circle and line and AI7c's extrude are the other four) and edit 0 of 5;
   // the hole case is skipped. Every answer was usable first time.
-  assert.deepEqual(successRates(results), { create: 2 / 10, "edit-parameter": 0 });
-  assert.equal(results.length, 15);
+  assert.deepEqual(successRates(results), { create: 2 / 11, "edit-parameter": 0 });
+  assert.equal(results.length, 16);
   assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["box-by-sizes", "box-in-cm"]);
   assert.ok(results.every((r) => r.attempts === 1));
 });
@@ -139,10 +150,10 @@ test("the suite scores a provider on the held-out cases", async () => {
     complete: async () => JSON.stringify({ commands: [{ op: "set_part", shape: "cylinder", width: 18, depth: 30, height: 40 }] }),
   };
   const results = await runEval(provider, HELD_OUT_CASES, DESIGN_COMMANDS);
-  // Worked by hand: only "held-cylinder-radius" expects a cylinder 18 wide and 40 tall, so create 1 of 12
-  // (8 parts, AI7a's 2 sketches, AI7b's circle and rectangle) and edit 0 of 6; it never refuses, so cannot 0 of 4.
-  assert.equal(results.length, 22);
-  assert.deepEqual(successRates(results), { create: 1 / 12, "edit-parameter": 0, cannot: 0 });
+  // Worked by hand: only "held-cylinder-radius" expects a cylinder 18 wide and 40 tall, so create 1 of 14
+  // (8 parts, AI7a's 2 sketches, AI7b's circle and rectangle, AI7c's 2 extrudes) and edit 0 of 6; it never refuses, so cannot 0 of 4.
+  assert.equal(results.length, 24);
+  assert.deepEqual(successRates(results), { create: 1 / 14, "edit-parameter": 0, cannot: 0 });
   assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["held-cylinder-radius"]);
 });
 
@@ -154,7 +165,7 @@ test("a provider that always says it can't passes only the cannot cases", async 
     complete: async () => JSON.stringify({ explanation: "No command can do that yet.", commands: [] }),
   };
   const results = await runEval(provider, HELD_OUT_CASES, DESIGN_COMMANDS);
-  // Worked by hand: the 4 cannot cases expect no commands; the 18 others expect a part or a sketch, and no answer is neither.
+  // Worked by hand: the 4 cannot cases expect no commands; the 20 others expect a part or a sketch, and no answer is neither.
   assert.deepEqual(successRates(results), { create: 0, "edit-parameter": 0, cannot: 1 });
   assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["held-cannot-hole", "held-cannot-fillet", "held-cannot-arc", "held-cannot-text"]);
 });
