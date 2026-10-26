@@ -21,6 +21,9 @@ const browser = await launch();
 const errors = [];
 const shots = process.env.E2E_SHOTS;
 
+/** The box (feature-1, 10 × 10 × 10 from the origin): the middle of its top face, and its six faces' names as Extrude offers them. */
+const BOX = { top: [5, 5, 10] };
+const BOX_FACES = ["bottom", "top", "front", "back", "left", "right"].map((f) => `face:feature-1/${f}`).join(" ");
 const RECT = { id: "sketch-2", corners: [[-60, 0], [-20, 0], [-20, 30], [-60, 30]], centre: [-40, 15, 0], area: 1200 };
 const CIRCLE = { id: "sketch-11", centre: [25, -25, 0], radius: 8 };
 const item = (id, label) => ({ id, intent: { type: "sketch", parameters: { plane: "XY" }, summary: `${label} on the XY plane` }, provenance: { self: { workspace: "design", id, label }, from: [] }, dependsOn: [], suppressed: false });
@@ -192,7 +195,8 @@ try {
       const page = await fresh(width, touch);
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await press("#extrude");
-      await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id}`, "both outlines offered");
+      // Both sketches, then the box's six flat faces (UX1c).
+      await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces");
       // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.
       assert.equal(await page.textContent("#extrude-profile"), "Sketch 2");
       await until(page, () => Math.abs(Number(document.querySelector("#extrude-panel").dataset.previewVolume) - 640 * Math.PI) < 1e-6, null, "the circle's preview");
@@ -246,6 +250,48 @@ try {
       // A preview still being built when Enter came is freed a moment later; one never freed keeps the count up.
       await untilBodies(page, 2, "the box and the extrude; no preview kept", 8000);
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
+      await page.context().close();
+    });
+
+    await check(`A flat face of the box (UX1c): not tinted until the pointer is on it, a click chooses it, the preview and a dragged arrow, OK makes a new body, one undo step (${how})`, async () => {
+      const page = await fresh(width, touch);
+      const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
+      // The top face's own colour before Extrude opens, at its middle.
+      await page.mouse.move(5, 5);
+      const plain = await pixel(page, await screen(page, BOX.top));
+      await press("#extrude");
+      await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles?.endsWith(want), BOX_FACES, "the box's faces offered");
+      // Nothing chosen (✕), so no preview or arrow of the newest sketch stands over the box on a small screen.
+      await press("#extrude-clear");
+      await until(page, () => !document.querySelector("#viewport").dataset.arrow, null, "no arrow");
+      // The top face's middle, (5, 5, 10): its plain colour while only offered, bluer once the pointer is on it.
+      await page.mouse.move(5, 5);
+      const at = await screen(page, BOX.top);
+      const idle = await pixel(page, at);
+      assert.ok(idle.every((c, i) => Math.abs(c - plain[i]) <= 3), `an offered face is drawn as it was (${idle}, before Extrude ${plain})`);
+      const top = await hoverAt(page, BOX.top, "face:feature-1/top");
+      const lit = await pixel(page, top);
+      assert.ok(lit[2] - lit[0] > idle[2] - idle[0] + 10, `the face under the pointer is tinted blue (${lit}) where it was its own colour (${idle})`);
+      if (touch) await page.touchscreen.tap(top.x, top.y);
+      else await page.mouse.click(top.x, top.y);
+      await until(page, () => document.querySelector("#viewport").dataset.extrudeChosen === "face:feature-1/top", null, "the top face chosen");
+      assert.equal(await page.textContent("#extrude-profile"), "Face of Box 1");
+      assert.match(await page.textContent("#extrude-status"), /Joining the new body to the one under the face comes with the Combine tool\.$/);
+      // 10 · 10 · 10 = 1,000 mm³ on top of the box.
+      await until(page, () => document.querySelector("#extrude-panel").dataset.previewVolume === "1000", null, "the face's preview");
+      if (shots) await page.screenshot({ path: `${shots}/face-extrude-${width}.png` });
+      await dragArrow(page, 60, touch);
+      await until(page, () => document.querySelector("#extrude-distance").value !== "10", null, "dragged");
+      const up = Number(await page.inputValue("#extrude-distance"));
+      assert.ok(Number.isInteger(up) && up > 10, `dragged up to ${up} mm`);
+      await until(page, (v) => document.querySelector("#extrude-panel").dataset.previewVolume === v, String(100 * up), `the preview at ${up} mm`);
+      await press("#extrude-ok");
+      await until(page, () => document.querySelector("#extrude-panel").hidden, null, "the panel gone");
+      assert.equal(await undoTitle(page), "Undo Extrude Face of Box 1 (Ctrl+Z)");
+      await untilBodies(page, 2, "the box and the new body", 8000);
+      await press("#undo");
+      await untilBodies(page, 1, "one undo: only the box", 8000);
+      assert.equal(await undoTitle(page), "Nothing to undo", "the face's sketch went with it");
       await page.context().close();
     });
 

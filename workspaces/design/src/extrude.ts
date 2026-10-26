@@ -24,8 +24,8 @@ export const NO_USABLE_SKETCH = "No sketch can be extruded here: each comes afte
 /** What the Extrude panel says when the design has no sketch at all. */
 export const NO_SKETCH = "There is no sketch to extrude yet: draw one with Create sketch.";
 
-/** What it says while no sketch is chosen (UX1b: ✕ cleared it, or none was offered first). */
-export const PICK_PROFILE_STATUS = "Click a closed sketch in the view, or its row in the browser, to extrude it.";
+/** What it says while no sketch or face is chosen (UX1b: ✕ cleared it, or none was offered first; UX1c: flat faces too). */
+export const PICK_PROFILE_STATUS = "Click a closed sketch or a flat face in the view, or a sketch's row in the browser, to extrude it.";
 
 /** Why OK does nothing with a distance of 0 (UX1b: a negative one goes the other way, so only 0 builds nothing). */
 export const ZERO_DISTANCE = "Type a distance other than 0 mm: a negative one goes the other way.";
