@@ -138,6 +138,16 @@ jobs:
         run: |
           FISSION_BOOLEAN_CASES_OUT=target/boolean-cases.jsonl cargo test -q --test boolean_cases lines_for_the_judge
           python3 ../prototypes/boolean/judge.py target/boolean-cases.jsonl --planted $OCC
+      # Step 32a6b: the facts table of every generator pair (and of its
+      # touching pairs moved by each offset) worked out again exactly from
+      # the solids, with every kind of wrong fact planted in each line it
+      # fits: all must agree and every plant be caught (about 30 s).
+      - name: The boolean facts table, checked against the exact solids and with planted wrong facts
+        if: env.CODE == 'true'
+        working-directory: kernel
+        run: |
+          FISSION_BOOLEAN_FACTS_OUT=target/boolean-facts.jsonl cargo test -q --test boolean_facts facts_for_the_model
+          python3 ../prototypes/boolean/facts_model.py target/boolean-facts.jsonl --planted
       # Step 29b2: the nightly oracle reads every body from its STEP file.
       # One round as the nightly runs it, with every file's first face
       # planted flipped (FISSION_STEP_FAULT): every body must be a finding,

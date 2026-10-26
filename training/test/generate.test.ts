@@ -19,7 +19,9 @@ import { checkDraft, commandApiVersion, dataset, DESIGN_RECIPES, DESIGN_RULES, g
 import { fakeKernel } from "./fakes.ts";
 
 const box: Command = { op: "set_part", shape: "box", width: 40, depth: 30, height: 20 };
-const draft = (commands: Command[], setup: Command[] = []): Draft => ({ task: "create", setup, prompt: "Make a box 40 by 30 by 20 mm.", commands });
+/** A draft whose working out says what each command makes (the checks of the working out itself have their own test). */
+const says = (cs: Command[]) => cs.map((c) => DESIGN_RULES.find((r) => r.op === c.op)?.says(c) ?? "").join(". ");
+const draft = (commands: Command[], setup: Command[] = []): Draft => ({ task: "create", setup, prompt: "Make a box 40 by 30 by 20 mm.", explanation: `So the new ${says(commands)}.`, commands });
 const opts = (kernel = fakeKernel()) => ({ specs: DESIGN_COMMANDS, rules: DESIGN_RULES, kernel });
 const one = (d: Draft | null, id = "test.one"): Recipe => ({ id, ops: ["set_part"], sample: () => d });
 
@@ -53,11 +55,53 @@ test("every check refuses a draft broken in its way", async () => {
     ["a command that isn't offered", draft([{ op: "fillet", radius: 2 }]), 'not a valid command: unknown command "fillet"'],
     ["a bad setup", draft([box], [{ ...box, height: -1 }]), "not a valid command: set_part: height must be a length"],
     ["export with no part", draft([{ op: "export_stl" }]), "answer refused: command 1 (export_stl): there is no part to export"],
+    ["a cannot request with commands", { ...draft([box]), task: "cannot" }, "a cannot request with commands"],
+    ["a working out that says the wrong size", { ...draft([box]), explanation: "So the new part is a box: width 41 mm, depth 30 mm, height 20 mm." }, 'working out doesn\'t say what command 1 makes: "part is a box: width 40 mm, depth 30 mm, height 20 mm"'],
   ];
   for (const [name, d, why] of cases) assert.ok((await checkDraft(d, opts(), new Set()))?.startsWith(why), `${name}: ${await checkDraft(d, opts(), new Set())}`);
   // The same draft, mended, passes: so each refusal was for that one break.
   assert.equal(await checkDraft(draft([box]), opts(), new Set()), null);
   assert.equal(await checkDraft(draft([{ op: "export_stl" }], [box]), opts(), new Set()), null);
+});
+
+test("every check of the working out refuses one broken its way (worked by hand)", async () => {
+  const result = "So the new part is a box: width 40 mm, depth 30 mm, height 20 mm.";
+  const with_ = (explanation: string, commands: Command[] = [box], task = "create"): Draft => ({ task, setup: [], prompt: "Make a box 4 by 3 by 2 cm.", explanation, commands });
+  const check = (d: Draft) => checkDraft(d, opts(), new Set());
+  // Right: 4 cm = 4 × 10 = 40 mm; 3 cm = 30 mm; 2 cm = 20 mm.
+  const good = `4 cm is 40 mm, 3 cm is 30 mm and 2 cm is 20 mm. ${result}`;
+  assert.equal(await check(with_(good)), null);
+  const cases: [string, Draft, string][] = [
+    ["none", with_("  "), "no working out"],
+    ["JSON", with_(`${result} {"op":"set_part"}`), "working out not in plain words: it has JSON in it"],
+    ["a command's name", with_(`Use set_part. ${result}`), "working out not in plain words: it names the command set_part"],
+    // 4 cm is 40 mm, not 4: centimetres not converted.
+    ["cm not converted", with_(`4 cm is 4 mm. ${result}`), "working out converts wrongly: 4 cm is 4 mm (it is 40 mm)"],
+    // 1 inch is 25.4 mm exactly, not 25.
+    ["inch as 25 mm", with_(`1 inch is 25 mm. ${result}`), "working out converts wrongly: 1 inch is 25 mm (it is 25.4 mm)"],
+    // A radius of 15 doubled is 30, not 31.
+    ["a wrong product", with_(`2 × 15 = 31 mm. ${result}`), "working out sums wrongly: 2 × 15 = 31 (it is 30)"],
+    // 9 − 6 is 3, not 2.
+    ["a wrong difference", with_(`9 − 6 = 2 mm. ${result}`), "working out sums wrongly: 9 − 6 = 2 (it is 3)"],
+    // The result names a box 41 wide: not what the command makes.
+    ["the wrong result", with_(result.replace("width 40", "width 41")), 'working out doesn\'t say what command 1 makes: "part is a box: width 40 mm, depth 30 mm, height 20 mm"'],
+    // The export is said before the part is: the order is the commands' order.
+    ["out of order", with_(`It is exported as an STL file. ${result}`, [box, { op: "export_stl" }]), 'working out doesn\'t say what command 2 makes: "exported as an STL file"'],
+    // A refusal must say what can't be done.
+    ["a refusal without a reason", with_("Nothing was made.", [], "cannot"), "working out of an answer with no commands doesn't say what can't be done"],
+  ];
+  for (const [name, d, why] of cases) assert.equal(await check(d), why, name);
+  // Each mended passes: the refusal was for that one break.
+  assert.equal(await check(with_(`2 × 15 = 30 mm, and 9 − 6 = 3 mm; 35 × 0.5 = 17.5 and 60 ÷ 4 = 15. ${result}`)), null);
+  assert.equal(await check(with_(`${result} Then it is exported as an STL file.`, [box, { op: "export_stl" }])), null);
+  assert.equal(await check(with_("There is no command for a hole yet, so this can't be done.", [], "cannot")), null);
+});
+
+test("the working out's length: 600 characters kept, 601 refused, and 0.9× and 1.1× of it", async () => {
+  const result = "So the new part is a box: width 40 mm, depth 30 mm, height 20 mm.";
+  const of = (n: number): Draft => ({ ...draft([box]), explanation: `${"a".repeat(n - result.length - 1)} ${result}` });
+  for (const n of [540, 600]) assert.equal(await checkDraft(of(n), opts(), new Set()), null, `${n}`);
+  for (const n of [601, 660]) assert.equal(await checkDraft(of(n), opts(), new Set()), `working out too long (${n} characters; at most 600)`, `${n}`);
 });
 
 test("the kernel decides: a refusal, failed checks or no volume each drop the draft", async () => {
@@ -155,6 +199,9 @@ test("a record is the chat the app has: the same system prompt, and an answer th
     const parsed = parseCommandList(rec.messages[2].content, DESIGN_COMMANDS);
     assert.ok(parsed.ok);
     assert.deepEqual(parsed.commands, e.commands);
+    // The working out comes first, as the schema orders it, and reads back as written.
+    assert.deepEqual(Object.keys(JSON.parse(rec.messages[2].content)), ["commands", "explanation"]);
+    assert.equal(parsed.explanation, e.explanation);
   }
 });
 

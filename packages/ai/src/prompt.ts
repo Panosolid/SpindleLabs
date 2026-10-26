@@ -15,6 +15,21 @@ import type { Command, CommandSpec, ParamSpec } from "@fission/core";
 export const UNIT_RULE = "Every length in a command is in millimetres. Convert other units first: 1 cm = 10 mm, 1 m = 1000 mm, 1 inch = 25.4 mm.";
 export const RADIUS_RULE = 'A diameter is twice the radius: when the user gives a radius, use twice it wherever a diameter is asked for. A size "across" is a diameter.';
 export const CUBE_RULE = "A cube is a box whose width, depth and height are all the same.";
+/**
+ * The working out comes after the commands, as the schema orders them
+ * (docs/ai.md, "Working out after the commands"). One sentence: told to
+ * reason first, small models talked themselves out of plain requests
+ * (AI5c's prompt variants: llama3.2 5/12 with it first, 11/12 after).
+ */
+export const EXPLAIN_RULE = 'After the commands, write in "explanation" one short sentence saying what they make.';
+/**
+ * An honest "can't do that yet" beats a wrong part: a circle sketch is not
+ * a 0.01 mm thick cylinder. Worded as the exception it is: with the first
+ * wording ("send no commands" up front), llama3.2 and gemma2 sent no
+ * commands for plain boxes too (AI5c's first evaluation run).
+ */
+export const CANNOT_RULE =
+  "When the commands can do what the user asks, always send them. Only when it needs something none of them can do (drawing a sketch, a hole, a fillet, or anything else the list doesn't have) send an empty commands list, and say in the explanation that it can't be done yet and why. Never stand in for it with another shape or a tiny size.";
 
 function describe(name: string, p: ParamSpec): string {
   const kind = p.type === "length" ? "millimetres, more than 0" : p.type === "choice" ? `one of: ${p.values.join(", ")}` : "";
@@ -38,6 +53,8 @@ export function systemPrompt(setup: readonly Command[], specs: readonly CommandS
     UNIT_RULE,
     RADIUS_RULE,
     CUBE_RULE,
+    EXPLAIN_RULE,
+    CANNOT_RULE,
     "Answer with the commands that make what the user asks for. Keep every size the user doesn't mention as it is now.",
   ].join("\n");
 }
