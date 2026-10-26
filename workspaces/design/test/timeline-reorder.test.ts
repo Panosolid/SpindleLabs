@@ -24,7 +24,7 @@ import * as bar from "../src/timeline-bar.ts";
 import { DRAG_PIXELS, type BarAction } from "../src/timeline-bar.ts";
 import { dropState, gapX } from "../src/timeline-reorder.ts";
 import { chooseBarAction } from "../src/timeline-menu.ts";
-import { rng } from "./timeline-bar-session.ts";
+import { releaseDom, rng } from "./timeline-bar-session.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -469,12 +469,13 @@ export function dragSession(b: typeof bar, seed: number, count = 40, seen?: Set<
 
 const DRAG_SEEDS = 40;
 
-test(`seeded: ${DRAG_SEEDS} sessions of item drags on random designs and layouts match the plain model, every outcome reached`, () => {
+test(`seeded: ${DRAG_SEEDS} sessions of item drags on random designs and layouts match the plain model, every outcome reached`, async () => {
   const base = Number(process.env.FISSION_SEED ?? 601);
   const seen = new Set<string>();
   for (let seed = base; seed < base + DRAG_SEEDS; seed++) {
     const failure = dragSession(bar, seed, 40, seen);
     assert.equal(failure, null, `FISSION_SEED=${seed} replays it`);
+    await releaseDom();
   }
   // Every outcome is reached while dragged: stays, moves, and each of the three refusals.
   if (process.env.FISSION_SEED === undefined) assert.deepEqual([...seen].sort(), ["after-dependent", "before-dependency", "editing", "moves", "stays"]);
@@ -524,10 +525,11 @@ async function planted(dir: string, p: { name: string; file: string; find: strin
   return import(pathToFileURL(join(sub, "timeline-bar.ts")).href);
 }
 
-function firstFailure(b: typeof bar): string | null {
+async function firstFailure(b: typeof bar): Promise<string | null> {
   for (let seed = 601; seed < 601 + DRAG_SEEDS; seed++) {
     const f = dragSession(b, seed);
     if (f) return f;
+    await releaseDom();
   }
   return null;
 }
@@ -535,9 +537,9 @@ function firstFailure(b: typeof bar): string | null {
 test("each bug planted in the drag's wiring is caught by the drag sessions, by the check recorded for it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "timeline-reorder-planted-"));
   try {
-    assert.equal(firstFailure(await planted(dir, { name: "none", file: "none", find: "", replace: "" })), null, "the unplanted copy passes");
+    assert.equal(await firstFailure(await planted(dir, { name: "none", file: "none", find: "", replace: "" })), null, "the unplanted copy passes");
     for (const p of PLANTS) {
-      const caught = firstFailure(await planted(dir, p));
+      const caught = await firstFailure(await planted(dir, p));
       assert.ok(caught !== null, `${p.name} was not caught`);
       assert.ok(caught.includes(p.caught), `${p.name} was caught by another check than "${p.caught}": ${caught}`);
       if (process.env.FISSION_PLANTED_REPORT) console.log(`${p.name}: ${caught}`);
