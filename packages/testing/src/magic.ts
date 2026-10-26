@@ -120,16 +120,25 @@ export function reportLine(journey: MagicJourney, verdict: JourneyVerdict): stri
 // CLAUDE.md, "Metrics and baselines"). Clicks are deterministic, so PR CI
 // fails on an extra click too; time is only judged nightly.
 
-/** A ready journey's confirmed numbers: clicks, and the slowest of the walks in ms. */
+/**
+ * A ready journey's confirmed numbers: clicks, the slowest of the walks in
+ * ms and, once the owner has set it, `slowestRelative`: that slowest walk as
+ * a multiple of a fixed JavaScript workload's fastest run timed in the same
+ * browser (as `relative_time` in tests/baseline.json), so a slow or busy
+ * runner mostly cancels out. With it set, the time is judged relative and
+ * `slowestMs` is only shown.
+ */
 export interface JourneyBaseline {
   clicks: number;
   slowestMs: number;
+  slowestRelative?: number;
 }
 
-/** What one browser run measured for a journey: the most clicks and the slowest walk. */
+/** What one browser run measured for a journey: the most clicks, the slowest walk, and that walk relative to the fixed workload when it was timed. */
 export interface JourneyMeasured {
   clicks: number;
   slowestMs: number;
+  slowestRelative?: number;
 }
 
 /** How far over the baseline the slowest walk may be, in percent, before it is flagged. */
@@ -144,9 +153,9 @@ export type JourneyCheck =
 
 /**
  * Reads the "journeys" part of tests/baseline.json. Every entry must name a
- * journey in `MAGIC_JOURNEYS` and hold whole clicks ≥ 1 and a slowest time
- * > 0 ms; anything else throws, naming the entry, so a broken baseline can
- * never quietly pass.
+ * journey in `MAGIC_JOURNEYS` and hold whole clicks ≥ 1, a slowest time
+ * > 0 ms and, when given, a relative slowest > 0; anything else throws,
+ * naming the entry, so a broken baseline can never quietly pass.
  */
 export function parseBaselines(json: unknown, journeys: MagicJourney[] = MAGIC_JOURNEYS): Map<string, JourneyBaseline> {
   if (typeof json !== "object" || json === null || Array.isArray(json)) throw new Error("journey baseline: not an object");
@@ -160,7 +169,10 @@ export function parseBaselines(json: unknown, journeys: MagicJourney[] = MAGIC_J
     if (typeof v.slowestMs !== "number" || !Number.isFinite(v.slowestMs) || v.slowestMs <= 0) {
       throw new Error(`journey baseline "${name}": slowestMs must be a number > 0`);
     }
-    out.set(name, { clicks: v.clicks as number, slowestMs: v.slowestMs });
+    if (v.slowestRelative !== undefined && (typeof v.slowestRelative !== "number" || !Number.isFinite(v.slowestRelative) || v.slowestRelative <= 0)) {
+      throw new Error(`journey baseline "${name}": slowestRelative, when given, must be a number > 0`);
+    }
+    out.set(name, { clicks: v.clicks as number, slowestMs: v.slowestMs, ...(v.slowestRelative !== undefined ? { slowestRelative: v.slowestRelative } : {}) });
   }
   return out;
 }
@@ -169,8 +181,11 @@ export function parseBaselines(json: unknown, journeys: MagicJourney[] = MAGIC_J
  * One journey against its baseline. Pending journeys stay pending. A ready
  * journey with no baseline or no measurement is flagged ("missing"); more
  * clicks than the baseline is flagged ("clicks"); a slowest walk more than
- * 15% over is flagged ("time"; exactly 15% over is not). Fewer clicks or a
- * faster walk is fine, with a note when the clicks could tighten the baseline.
+ * 15% over is flagged ("time"; exactly 15% over is not). With a relative
+ * baseline (`slowestRelative`) the walk is judged as a multiple of the fixed
+ * workload instead, and a measurement that did not time the workload is
+ * flagged ("missing"). Fewer clicks or a faster walk is fine, with a note
+ * when the clicks could tighten the baseline.
  */
 export function compareToBaseline(journey: MagicJourney, measured: JourneyMeasured | null, baseline: JourneyBaseline | undefined): JourneyCheck {
   if (journey.status !== "ready") return { kind: "pending", waitsFor: journey.status.waitsFor };
@@ -182,12 +197,26 @@ export function compareToBaseline(journey: MagicJourney, measured: JourneyMeasur
     const extra = measured.clicks - baseline.clicks;
     flags.push({ kind: "clicks", text: `${measured.clicks} clicks, baseline ${baseline.clicks} (${extra} extra)` });
   }
-  // Integer-safe "more than 15% over": ms × 100 > baseline × 115.
-  if (measured.slowestMs * 100 > baseline.slowestMs * (100 + SLOWEST_MARGIN_PERCENT)) {
+  const seconds = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
+  const times = (relative: number) => `${relative.toFixed(2)}× the fixed workload`;
+  if (baseline.slowestRelative !== undefined) {
+    // Relative: the slowest walk as a multiple of the fixed workload timed in the same browser. Integer-safe "more than 15% over": × 100 > baseline × 115.
+    if (measured.slowestRelative === undefined) {
+      flags.push({ kind: "missing", text: "the fixed workload was not timed, so the slowest walk cannot be judged against the relative baseline" });
+    } else if (measured.slowestRelative * 100 > baseline.slowestRelative * (100 + SLOWEST_MARGIN_PERCENT)) {
+      const over = (measured.slowestRelative / baseline.slowestRelative - 1) * 100;
+      flags.push({
+        kind: "time",
+        text: `slowest ${seconds(measured.slowestMs)} = ${times(measured.slowestRelative)}, baseline ${baseline.slowestRelative.toFixed(2)}× (${over.toFixed(0)}% over, flag above ${SLOWEST_MARGIN_PERCENT}%)`,
+      });
+    }
+  } else if (measured.slowestMs * 100 > baseline.slowestMs * (100 + SLOWEST_MARGIN_PERCENT)) {
+    // Absolute, as before the relative baseline is set; the relative number rides along so the nightly summaries collect it.
     const over = (measured.slowestMs / baseline.slowestMs - 1) * 100;
+    const relative = measured.slowestRelative === undefined ? "" : ` = ${times(measured.slowestRelative)}`;
     flags.push({
       kind: "time",
-      text: `slowest ${(measured.slowestMs / 1000).toFixed(2)} s, baseline ${(baseline.slowestMs / 1000).toFixed(2)} s (${over.toFixed(0)}% over, flag above ${SLOWEST_MARGIN_PERCENT}%)`,
+      text: `slowest ${seconds(measured.slowestMs)}${relative}, baseline ${seconds(baseline.slowestMs)} (${over.toFixed(0)}% over, flag above ${SLOWEST_MARGIN_PERCENT}%)`,
     });
   }
   if (flags.length > 0) return { kind: "flag", flags };
@@ -205,7 +234,9 @@ export function baselineLine(journey: MagicJourney, measured: JourneyMeasured | 
     case "ok": {
       const m = measured as JourneyMeasured;
       const b = baseline as JourneyBaseline;
-      const line = `OK ${journey.name}: ${m.clicks} clicks (baseline ${b.clicks}), slowest ${(m.slowestMs / 1000).toFixed(2)} s (baseline ${(b.slowestMs / 1000).toFixed(2)} s)`;
+      const relative =
+        m.slowestRelative === undefined ? "" : ` = ${m.slowestRelative.toFixed(2)}× the fixed workload${b.slowestRelative === undefined ? "" : ` (baseline ${b.slowestRelative.toFixed(2)}×)`}`;
+      const line = `OK ${journey.name}: ${m.clicks} clicks (baseline ${b.clicks}), slowest ${(m.slowestMs / 1000).toFixed(2)} s${relative} (baseline ${(b.slowestMs / 1000).toFixed(2)} s)`;
       return check.note ? `${line}; ${check.note}` : line;
     }
   }
