@@ -33,7 +33,7 @@
 // than about 70 in any channel (measured with E2E_MEASURE=1).
 // At 1280 px (dpr 1, mouse) and 375 px (dpr 2, taps). In `npm run e2e`.
 import assert from "node:assert/strict";
-import { browserName, launch } from "./browser.mjs";
+import { browserName, launch, untilBodies } from "./browser.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4212, strictPort: true }, logLevel: "error" });
@@ -153,7 +153,7 @@ async function fresh(width, touch, dpr) {
   await page.waitForSelector("#start-hint", { state: "visible", timeout: 15000 });
   await page.setInputFiles("#open-file", { name: "Edges.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(project)) });
   await page.waitForFunction(() => document.querySelectorAll('#browser [data-node="timeline"] .tree-row').length === 4, null, { timeout: 15000 });
-  await page.waitForFunction(async () => (await window.fissionTest.bodyCount()) === 2, null, { timeout: 15000 });
+  await untilBodies(page, 2, "the two bodies built");
   return page;
 }
 

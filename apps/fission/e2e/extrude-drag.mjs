@@ -12,7 +12,7 @@
 // viewport's own hover first. Screenshots go to E2E_SHOTS when set. Run
 // with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { launch, untilBodies } from "./browser.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
@@ -66,7 +66,7 @@ async function fresh(width, touch) {
   await page.goto(url);
   await page.waitForSelector("#start-hint", { state: "visible", timeout: 15000 });
   await page.setInputFiles("#open-file", { name: "drag.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(project)) });
-  await page.waitForFunction(async () => (await window.fissionTest.bodyCount()) === 1, null, { timeout: 15000 });
+  await untilBodies(page, 1, "the box built");
   return page;
 }
 
@@ -215,7 +215,8 @@ try {
       assert.equal(await undoTitle(page), "Undo Extrude Sketch 1 (Ctrl+Z)");
       assert.equal(await view(page, "extrudeProfiles"), "", "the outlines are gone");
       assert.equal(await view(page, "arrow"), "", "the arrow is gone");
-      assert.equal(await page.evaluate(() => window.fissionTest.bodyCount()), 2, "the box and the extrude; no preview kept");
+      // A preview still being built when Enter came is freed a moment later; one never freed keeps the count up.
+      await untilBodies(page, 2, "the box and the extrude; no preview kept", 8000);
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
       await page.context().close();
     });
@@ -233,7 +234,7 @@ try {
       assert.equal(await view(page, "extrudeProfiles"), "");
       assert.equal(await view(page, "extrudePreview"), "");
       assert.equal(await undoTitle(page), before, "nothing recorded");
-      assert.equal(await page.evaluate(() => window.fissionTest.bodyCount()), 1, "only the box");
+      await untilBodies(page, 1, "only the box", 8000);
       await page.context().close();
     });
   }
