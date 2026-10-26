@@ -1,0 +1,58 @@
+{
+  "seed": 202610251,
+  "what": "File ▾ opened, then a project file opened while the menu stayed open (every workspace mounted afresh), then New chosen from the menu: it ran the old mount's New, whose dialog had left the page, and showModal threw (seed 202610251 at action 437, issue #323); the menu now runs the entry on screen when an item is chosen",
+  "actions": [
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "canvas",
+      "x": 0.235,
+      "y": 0.448,
+      "double": false
+    },
+    {
+      "do": "click",
+      "sel": "#menu-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "#properties-toggle"
+    },
+    {
+      "do": "click",
+      "sel": "#properties-toggle"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "type",
+      "sel": "#width",
+      "text": "0.0000001",
+      "finish": "Tab"
+    },
+    {
+      "do": "unstick"
+    },
+    {
+      "do": "click",
+      "sel": "#file-menu"
+    },
+    {
+      "do": "round-trip"
+    },
+    {
+      "do": "key",
+      "key": "t"
+    },
+    {
+      "do": "click",
+      "sel": "#start-fresh"
+    }
+  ]
+}
