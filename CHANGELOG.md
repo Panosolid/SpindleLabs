@@ -10,9 +10,13 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.32.12 (2026-10-26)
+## 0.32.13 (2026-10-26)
 
 - AI5c2: a progress bar while the AI answers (Ben's ask). The answer is now streamed from every kind of AI (Ollama, an API key's provider, the in-browser model and the browser's own), and the panel shows what the AI is doing ("Asking the AI…", "Writing the commands (1 so far)…", "Writing its working out…", "Checking the answer…", "Making the preview…"), a bar with a percentage, and the working out as it is written. A model can't know how long its answer will be, so the percentage is an estimate from how much has been written against a typical answer; it only grows, and it never shows 100% before the preview is on screen. The full answer is still checked exactly as before. Checked by 16 unit tests (answers cut into random pieces from a seed, a character split between pieces, a stream that stops part way timing out, errors part way through, the API key never in a message, bar values worked out by hand) with six planted bugs each caught, and browser checks at 1280 and 375 px with the answer held piece by piece (5%, 24% and 65% worked out by hand), which fail when the panel stops showing progress.
+
+## 0.32.12 (2026-10-26)
+
+- Fixed: the "browsers (firefox)" check (not required, so it never blocked a merge) failed on every pull request since the runners moved to Ubuntu 24.04: Playwright's Firefox was never installed, so the smoke test died with "Executable doesn't exist at ~/.cache/ms-playwright/firefox-1555". The system packages came from the Azure apt mirror at about 100 kB/s, each of the first two tries hit its 12 minute limit, the mirror switch never engaged (24.04 runners list their mirrors in `/etc/apt/apt-mirrors.txt`, which the script did not edit) and the third try got the 45 s left of the budget. `install-browser.sh` now gives a try 7 minutes for packages and 4 for the browser, puts archive.ubuntu.com first in the mirror list from the second try on, repairs dpkg between tries and tells the log which try failed. Checked by a new unit test (`test_install_browser.py`) running the real script against a copy of a 24.04 runner's apt files with fake `sudo`, `dpkg` and `npx`: a healthy run leaves the mirrors alone, a failed try rewrites the mirror list and `sources.list` and leaves `ubuntu.sources` as it was, a failed browser download is retried, three failures fail the script, the package limit cuts a try at 1.1× and not at 0.9× of it, and the total budget ends the script. Found by the 10-26 bug hunt on pull request #339's checks.
 
 ## 0.32.11 (2026-10-26)
 
