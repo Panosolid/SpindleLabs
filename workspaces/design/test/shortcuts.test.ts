@@ -6,9 +6,11 @@ import { DESIGN_SHORTCUTS, designShortcut } from "../src/shortcuts.ts";
 const profile: Selected = { kind: "outline", id: "outline:feature-1/profile-1" };
 const face: Selected = { kind: "face", id: "face:feature-1/1" };
 
-test("Design's keys: Escape clears (also in a size field), Copy is Mod+C, L, R, C, A, T and P choose sketch tools, the last seven only in the page", () => {
+test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK, Copy is Mod+C, L, R, C, A, T and P choose sketch tools, all but Escape only in the page", () => {
   assert.deepEqual(DESIGN_SHORTCUTS.map((s) => [s.id, parseChord(s.keys), s.inText ?? false]), [
     ["clear-selection", "Escape", true],
+    // UX1b: in the distance box Enter is the box's own OK; never twice.
+    ["extrude-ok", "Enter", false],
     ["copy-svg", "Mod+C", false],
     ["sketch-line", "L", false],
     ["sketch-rectangle", "R", false],
