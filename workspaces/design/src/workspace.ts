@@ -16,6 +16,7 @@ import { DESIGN_COMMANDS, documentFor } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
 import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
+import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { bodyRows, browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
@@ -119,6 +120,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
             { id: "create-menu-extrude", label: "Extrude", icon: "extrude", title: extrudeTitle, run: onExtrude },
           ],
         },
+        { items: comingItems("Create") },
       ],
     },
   });
@@ -138,11 +140,21 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   facts.disabled = true; // until a body is built (workspace: after each build)
   const inspecting = toolGroup(document, {
     name: "Inspect",
-    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }] },
+    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }] },
   });
   inspecting.add([facts, "inspect"]);
   inspecting.element.dataset.modelling = "";
-  slot.append(creating.element, inserting.element, inspecting.element);
+  // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
+  const coming = (name: string, id: string, icon: IconName, title: string) => {
+    const g = toolGroup(document, { name, solo: icon, menu: { id, title, sections: () => [{ items: comingItems(name as ComingGroup) }] } });
+    g.element.classList.add("coming-soon");
+    g.element.dataset.modelling = "";
+    return g;
+  };
+  const modifying = coming("Modify", "modify-menu", "modify", "Modify: move, copy, combine, fillet and chamfer bodies. Coming soon: open to see what is on the way.");
+  const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
+  // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
+  slot.append(creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
   for (const group of toolbarGroups()) {
     const g = toolGroup(document, { name: group.name });
     g.element.dataset.modelling = "";

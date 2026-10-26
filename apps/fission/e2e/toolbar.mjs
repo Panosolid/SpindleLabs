@@ -5,7 +5,9 @@
 // (beside them, first, at phone width); Create ▾ and Inspect ▾ list their
 // tools with icons and run the same thing as the icons, by mouse, keyboard
 // and taps; Body facts is off with nothing built and opens the folded
-// properties at the numbers once a body is; the sketch's tools are icons
+// properties at the numbers once a body is; the tools still to come (Ben,
+// 2026-10-26) are greyed in Create ▾, Modify ▾, Construct ▾ and Inspect ▾,
+// say what each will do, and do nothing when chosen; the sketch's tools are icons
 // over its Create ▾ with Finish Sketch's tick the finish icon. Each at
 // 1280 px with the mouse and 375 px with taps, with deliberate breaks that
 // fail. Run with `npm run e2e` (after `npm run build`).
@@ -80,6 +82,20 @@ const toolbarProblems = (page) =>
     return out;
   });
 
+/** What is wrong with the coming tools in the open menus, in words: each must be off, say "Coming soon" at its right and in its tooltip what it will do. */
+const comingProblems = (page) =>
+  page.$$eval("[role=menu]:not([hidden]) [id^=coming-]", (els) =>
+    els.flatMap((e) => {
+      const out = [];
+      const name = e.querySelector(".menu-button-name")?.textContent ?? "";
+      if (e.getAttribute("aria-disabled") !== "true") out.push(`${e.id}: not off`);
+      const note = e.querySelector(".menu-button-note")?.textContent ?? "";
+      if (note !== "Coming soon") out.push(`${e.id}: says "${note}" at its right`);
+      if (!e.title.startsWith(`${name} is coming soon: it will `)) out.push(`${e.id}: tooltip "${e.title}"`);
+      return out;
+    }),
+  );
+
 /** The groups on screen, left to right: each one's name as it reads ("Create ▾"). */
 const groupNames = (page) =>
   page.$$eval("#toolbar .toolbar-group", (gs) =>
@@ -107,11 +123,11 @@ try {
   for (const [width, tap] of [[1280, false], [375, true]]) {
     const at = `${width} px${tap ? ", taps" : ""}`;
 
-    await check(`${at}: every toolbar button an icon drawn on the grid, its words its name and tooltip; the groups Create ▾, Insert ▾, Inspect ▾, Export`, async () => {
+    await check(`${at}: every toolbar button an icon drawn on the grid, its words its name and tooltip; the groups in Fusion's order, Create ▾, Modify ▾, Construct ▾, Inspect ▾, Insert ▾, Export`, async () => {
       const page = await fresh(width, tap);
       try {
         assert.deepEqual(await toolbarProblems(page), []);
-        assert.deepEqual(await groupNames(page), ["Create ▾", "Insert ▾", "Inspect ▾", "Export"]);
+        assert.deepEqual(await groupNames(page), ["Create ▾", "Modify ▾", "Construct ▾", "Inspect ▾", "Insert ▾", "Export"]);
         // Hand-worked, from icons.ts: the sketch icon's line runs M4 20 V15 L15 4 20 9 9 20 Z, so x and y both from 4 to 20:
         // a 16 × 16 box at (4, 4); the export icon's (M4 15 V20 H20 V15, M12 14 V3, the arrow head) x 4 to 20, y 3 to 20.
         const box = (sel) => page.$eval(`${sel} > svg.icon path:last-child`, (p) => {
@@ -163,6 +179,8 @@ try {
         assert.deepEqual(rows, [
           ["create-menu-sketch", "Create sketch", "sketch"],
           ["create-menu-extrude", "Extrude", "extrude"],
+          // The tools still to come, greyed (coming-soon.ts; the next check).
+          ...["revolve", "hole", "pattern", "sweep", "loft"].map((id) => [`coming-${id}`, `${id[0].toUpperCase()}${id.slice(1)}Coming soon`, undefined]),
         ]);
         const menu = await rect(page, "#create-menu-menu");
         assert.ok(menu.left >= 0 && menu.right <= width, `the menu on the screen: ${menu.left}-${menu.right}`);
@@ -183,6 +201,51 @@ try {
         await page.keyboard.press("Escape");
         await press(page, "#extrude", tap);
         assert.equal(await page.textContent("#properties"), viaMenu, "the menu's Extrude and the icon do the same");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    await check(`${at}: the tools still to come are greyed with "Coming soon", say what each will do, and choosing one does nothing`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        // Modify ▾ and Construct ▾ hold only tools to come: their buttons greyed (coming-soon.css), still opening to show them.
+        const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, b.disabled]));
+        assert.deepEqual(faded, [["modify-menu", "0.5", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
+        const lists = {};
+        for (const menu of ["create-menu", "modify-menu", "construct-menu", "inspect-menu"]) {
+          await press(page, `#${menu}`, tap);
+          await until(page, (m) => !document.getElementById(`${m}-menu`).hidden, menu, `${menu} opens`);
+          lists[menu] = await page.$$eval(`#${menu}-menu [id^=coming-]`, (els) => els.map((e) => e.id.slice(7)));
+          const box = await rect(page, `#${menu}-menu`);
+          assert.ok(box.left >= 0 && box.right <= width, `${menu}'s list on the screen: ${box.left}-${box.right}`);
+          await page.keyboard.press("Escape");
+        }
+        assert.deepEqual(lists, {
+          "create-menu": ["revolve", "hole", "pattern", "sweep", "loft"],
+          "modify-menu": ["move", "duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
+          "construct-menu": ["plane", "axis", "point"],
+          "inspect-menu": ["measure", "section"],
+        });
+        await press(page, "#modify-menu", tap);
+        await until(page, () => !document.getElementById("modify-menu-menu").hidden, null, "Modify ▾ opens");
+        assert.deepEqual(await comingProblems(page), []);
+        const fillet = await page.$eval("#coming-fillet", (b) => [b.title, b.getAttribute("aria-disabled"), getComputedStyle(b).color, b.querySelector(".menu-button-note")?.textContent]);
+        assert.deepEqual(fillet, ["Fillet is coming soon: it will round the edges you pick.", "true", "rgb(138, 145, 156)", "Coming soon"]);
+        if (shots) await page.screenshot({ path: `${shots}/coming-soon-${width}.png`, clip: { x: 0, y: 0, width, height: width > 640 ? 520 : 667 } });
+        // Choosing one does nothing: the list stays open, nothing opens, no undo step, nothing in the timeline.
+        const before = [await page.textContent("#properties"), await page.getAttribute("#undo", "title"), await page.$$eval("#browser .tree-row", (rs) => rs.length)];
+        // Playwright treats an aria-disabled item as off and waits; a person can still click or tap it, so force it.
+        await (tap ? page.tap("#coming-fillet", { force: true }) : page.click("#coming-fillet", { force: true }));
+        await page.waitForTimeout(200);
+        assert.equal(await page.isVisible("#modify-menu-menu"), true, "the list stays open");
+        assert.deepEqual([await page.textContent("#properties"), await page.getAttribute("#undo", "title"), await page.$$eval("#browser .tree-row", (rs) => rs.length)], before);
+        // The check can fail: one item switched on and one note lost are each caught.
+        await page.evaluate(() => {
+          document.getElementById("coming-shell").removeAttribute("aria-disabled");
+          document.querySelector("#coming-draft .menu-button-note").remove();
+        });
+        assert.deepEqual(await comingProblems(page), ["coming-shell: not off", 'coming-draft: says "" at its right']);
       } finally {
         await page.context().close();
       }
@@ -248,7 +311,7 @@ try {
         await page.keyboard.press("Escape");
         await press(page, "#finish-sketch", tap);
         await until(page, () => document.getElementById("create-sketch").checkVisibility(), null, "back to modelling");
-        assert.deepEqual(await groupNames(page), ["Create ▾", "Insert ▾", "Inspect ▾", "Export"], "the modelling groups back");
+        assert.deepEqual(await groupNames(page), ["Create ▾", "Modify ▾", "Construct ▾", "Inspect ▾", "Insert ▾", "Export"], "the modelling groups back");
       } finally {
         await page.context().close();
       }
