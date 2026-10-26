@@ -807,10 +807,12 @@ export class Viewer implements SharedViewport {
     // strips are triangles, so they take a polygon offset too: pulled the
     // other way from the faces, so a finished sketch's line lying on an edge
     // (an extrude's sketch on its bottom edges) never speckles through it.
+    // They write no depth, so a lost sketch's red, drawn after the body
+    // (LOST_SKETCH_ORDER), still shows on the edges it lies on.
     const edges = new LineSegmentsGeometry();
     edges.setPositions(mesh.edge_lines);
     this.edges = edges;
-    const edgeMaterial = new LineMaterial({ vertexColors: true, linewidth: EDGE_WIDTH_PX, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const edgeMaterial = new LineMaterial({ vertexColors: true, linewidth: EDGE_WIDTH_PX, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, depthWrite: false });
     const edgeLines = new LineSegments2(edges, edgeMaterial);
     edgeLines.onBeforeRender = (renderer) => renderer.getSize(edgeMaterial.resolution);
     this.faceMesh = new THREE.Mesh(geometry, material);
@@ -993,7 +995,7 @@ export class Viewer implements SharedViewport {
       const m = o.material as THREE.Material;
       if (m.transparent !== faded) m.needsUpdate = true;
       m.transparent = faded;
-      m.depthWrite = !faded;
+      m.depthWrite = !faded && o === this.faceMesh; // the edges never write depth (showBody)
       m.opacity = faded ? (o === this.faceMesh ? BODY_FADE.faces : BODY_FADE.edges) : 1;
     }
     this.element.dataset.bodyFaded = String(faded);
