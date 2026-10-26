@@ -6,18 +6,20 @@
 .extrude h2 { margin-top: 0; }
 .extrude p { margin: 6px 0; }
 .extrude .extrude-row { display: block; margin: 6px 0; }
-.extrude .extrude-row select { max-width: 100%; }
 .extrude .extrude-row input { width: 6em; }
+/* UX1b: the label before each control, and the profile picked in the view with its ✕ (Fusion's "1 selected ×"). */
+.extrude .extrude-label { display: inline-block; min-width: 5.5em; color: #b7c0cc; }
+.extrude .extrude-profile-row { display: flex; align-items: center; gap: 6px; }
+.extrude .extrude-profile { font-weight: 600; }
+.extrude .extrude-profile.extrude-unpicked { font-weight: normal; font-style: italic; color: #6cc4ff; }
+.extrude .extrude-clear { padding: 0 8px; }
 .extrude .extrude-status { color: #b7c0cc; }
 .extrude .extrude-note { color: #8b95a3; font-size: 0.9em; }
 .extrude .extrude-buttons { display: flex; gap: 6px; margin-top: 4px; }
 .extrude button:disabled { opacity: 0.45; cursor: default; }
-/* Flip (26c): a tick box before its word, the whole row a target for the pointer. */
-.extrude .extrude-flip { display: flex; align-items: center; gap: 6px; cursor: pointer; width: fit-content; }
-.extrude .extrude-flip input { width: 18px; height: 18px; margin: 0; }
+/* Flip (26c; UX1b a button turning the distance's sign), after the distance. */
+.extrude .extrude-flip { margin-left: 4px; }
 @media (max-width: 700px) {
-  .extrude button, .extrude select, .extrude input { min-height: 44px; }
-  /* The row is the 44 px target; the box itself stays a box. */
-  .extrude .extrude-flip { min-height: 44px; }
-  .extrude .extrude-flip input { min-height: 0; width: 22px; height: 22px; }
+  .extrude button, .extrude input { min-height: 44px; }
+  .extrude .extrude-clear { min-width: 44px; }
 }

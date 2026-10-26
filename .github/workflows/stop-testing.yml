@@ -1,0 +1,35 @@
+name: Stop branch testing
+
+# When a pull request merges or closes, cancels every random-testing run
+# (nightly.yml, started by hand) on its branch that is still running or
+# waiting, so its runners go back to pull requests (Ben, 2026-10-26). Its
+# jobs still upload what they finished and collect still files it; tonight's
+# run on main tests the merged code. The rules are in
+# .github/scripts/branch_testing.py.
+on:
+  # Runs main's copy of this workflow and of the script, never the pull
+  # request's code, so it is safe with a write token.
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cancel:
+    # Only our own branches: a fork's pull request has no runs here to stop.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Cancel the branch's random testing
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/branch_testing.py cancel "$BRANCH"

@@ -7,13 +7,14 @@ name: Random testing
 # stateful harness plus the OpenCascade oracle, a fresh random seed per round)
 # in two legs, because a GitHub job may last at most 6 hours, until 22:35 UTC;
 # alongside the first leg, 4 jobs run cargo mutants over the whole kernel
-# (lib tests, one shard each: ~2600 mutants, ~75 minutes a shard). Every job
+# (lib tests, one shard each: ~4000 mutants, about 5 hours a shard). Every job
 # is cut off at 22:35 UTC however late it started (GitHub sometimes starts
 # scheduled runs late), so the last results are on the branch before 23:00
 # UTC.
 #
 # "Run workflow" on the Actions tab (or workflow_dispatch from a thread) tests
-# any branch: 4 jobs for `minutes`, mutation testing only if asked; the random
+# any branch, one branch at a time (see concurrency below): 4 jobs for
+# `minutes`, cargo mutants and TypeScript mutation testing only if asked; the random
 # rounds stop early, keeping every finished round, once the branch's pull
 # request has merged or closed (.github/scripts/stop-on-merge.sh). Mutation
 # shards are not held to `minutes`: a shard cut off part way says nothing
@@ -47,21 +48,29 @@ on:
         description: "Also run cargo mutants over the whole kernel"
         type: boolean
         default: false
+      ts_mutants:
+        description: "Also run TypeScript mutation testing (every night runs it)"
+        type: boolean
+        default: false
 
 # Read-only token by default; a job that writes says so itself.
 permissions:
   contents: read
 
-# The nightly run has its own group, and every branch its own, so runs started
-# from threads during the day never cancel the night's run. A new run on a
-# thread's branch cancels the one still running or waiting there, which tests
-# older code (Ben, 2026-10-17, after day runs of 4 jobs × 290 minutes filled
-# every runner and CI waited over an hour); runs on main and the nightly run
-# are never cancelled. Runs on different branches do run at once; the
-# collect script copes with that.
+# The nightly run has its own group and main's runs by hand theirs, so runs
+# started from threads during the day never hold them up. Every branch's run
+# shares one group (Ben, 2026-10-26, after merges waited half an hour for
+# runners behind several branches' runs at once): one runs at a time, and a
+# newer one waits for it (GitHub keeps one waiting run per group: a newer
+# dispatch replaces the one already waiting). Nothing is cancelled here; the
+# running branch run's rounds give way instead (stop-on-merge.sh with
+# branch_testing.py): at once to a newer run on its own branch, to CI as soon
+# as a CI job has waited two minutes for a runner, and to another branch's
+# waiting run after an hour. stop-testing.yml cancels a branch's runs when its
+# pull request merges or closes. Tested in .github/scripts/test_ci_concurrency.py.
 concurrency:
-  group: random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' && github.ref != 'refs/heads/main' }}
+  group: random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref == 'refs/heads/main' && 'main' || 'branches' }}
+  cancel-in-progress: false
 
 jobs:
   gate:
@@ -129,6 +138,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
+      # actions: read lets stop-on-merge.sh see waiting runs and CI jobs.
+      actions: read
       contents: read
       pull-requests: read
     strategy:
@@ -178,6 +189,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
+      # actions: read lets stop-on-merge.sh see waiting runs and CI jobs.
+      actions: read
       contents: read
       pull-requests: read
     strategy:
@@ -241,9 +254,12 @@ jobs:
         env:
           DEADLINE: ${{ needs.plan.outputs.mutants_deadline }}
           SHARDS: ${{ strategy.job-total }}
-          # Unoptimised builds are about five times faster and give the same
-          # result (kernel/CLAUDE.md, Mutation testing).
-          CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+          # Opt-level 1: the lib tests run five times faster than at 0 (19 s
+          # against 100 s, one thin-crescent test alone 85 s unoptimised) and a
+          # mutant's build is no slower, so a shard takes less than half the
+          # time, with the same verdicts (kernel/CLAUDE.md, Mutation testing;
+          # the 10-26 hunt: at 0 no shard had finished for three nights).
+          CARGO_PROFILE_DEV_OPT_LEVEL: "1"
           CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
           out="$RUNNER_TEMP/mutants"
@@ -447,13 +463,16 @@ jobs:
   # packages/testing/test/stryker-config.test.ts checks): red on a survivor
   # no test kills and explained.json doesn't explain, or an explanation for
   # one that no longer survives; the lines go into summary.txt either way.
+  # Every night; a run by hand only when asked, and then three targets at a
+  # time, leaving runners for CI.
   ts-mutants:
     needs: gate
-    if: needs.gate.outputs.run == 'true'
+    if: needs.gate.outputs.run == 'true' && (github.event_name == 'schedule' || inputs.ts_mutants)
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      max-parallel: ${{ github.event_name == 'schedule' && 7 || 3 }}
       matrix:
         target: [core, design, storage, model, svg, viewport, ai]
     steps:

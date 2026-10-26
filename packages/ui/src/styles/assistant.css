@@ -1,5 +1,6 @@
-/* The AI assistant panel (AI2): the ask box, the preview of a change with
-   Accept and Reject, the first-send confirmation for a remote provider, and
+/* The AI assistant panel (AI2): the ask box, the AI's working out (AI5c),
+   the preview of a change with Accept and Reject, a "can't do this yet"
+   answer, the first-send confirmation for a remote provider, and
    the settings. The panel's place in the layout is in theme.css (#assistant). */
 .assistant label { display: block; margin: 8px 0 4px; color: #b5bbc4; font-size: 13px; }
 .assistant textarea, .assistant input, .assistant select { box-sizing: border-box; width: 100%; padding: 6px 8px; margin-top: 4px; background: #15171b; color: #e6e8eb; border: 1px solid #353a43; border-radius: 4px; font: inherit; }
@@ -14,6 +15,12 @@
 .assistant .ai-preview th { text-align: left; padding-right: 10px; font-weight: normal; color: #b5bbc4; }
 .assistant .ai-preview td { padding: 2px 4px; font-variant-numeric: tabular-nums; }
 .assistant .ai-label { margin: 0; font-weight: 600; }
+.assistant .ai-working { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #4aa8ff; background: #15171b; }
+.assistant .ai-working-title { margin: 0 0 2px; color: #8a919c; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.assistant .ai-working-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant .ai-working-none { color: #8a919c; font-style: italic; }
+.assistant .ai-cannot { border-color: #e0b04a; }
 .assistant pre { max-height: 200px; overflow: auto; font-size: 12px; background: #15171b; padding: 6px; white-space: pre-wrap; word-break: break-word; }
 .assistant .ai-key button { margin: 6px 6px 0 0; }
 .assistant .ai-settings { margin-top: 16px; border-top: 1px solid #2a2e35; }
+.assistant .ai-cannot .ai-working { border-left-color: #e0b04a; }

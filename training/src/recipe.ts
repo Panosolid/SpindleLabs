@@ -20,17 +20,21 @@ export interface CommandRule {
   op: string;
   /** Builds the command after `state`; the reason when the kernel or the workspace refuses it. Never throws. */
   apply(kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied>;
+  /** The words a working out must contain to say what this command makes ("part is a box: width 40 mm, …"). */
+  says(command: Command): string;
 }
 
 /** A training example before it is checked. */
 export interface Draft {
-  /** What kind of request this is: "create", "edit-parameter", "export". */
+  /** What kind of request this is: "create", "edit-parameter", "export", or "cannot" (no command can do it: no commands). */
   task: string;
   /** The project the request is asked about, as the commands that make it (empty: a new project). */
   setup: Command[];
   /** The user's words. */
   prompt: string;
-  /** The answer: what a correct model sends. */
+  /** The working out a correct model writes first, in plain words (docs/ai.md, "Full working out"). */
+  explanation: string;
+  /** The answer: what a correct model sends. Empty only for a "cannot" request. */
   commands: Command[];
 }
 

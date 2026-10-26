@@ -24,7 +24,7 @@ import { deleteItem, moveMarker } from "../src/timeline-edits.ts";
 import * as bar from "../src/timeline-bar.ts";
 import { barEdit, DRAG_PIXELS, playbackButtons, timelineBarItems, type BarAction } from "../src/timeline-bar.ts";
 import { chooseBarAction } from "../src/timeline-menu.ts";
-import { rng } from "./timeline-bar-session.ts";
+import { releaseDom, rng } from "./timeline-bar-session.ts";
 
 const { Window } = await import("happy-dom");
 
@@ -456,11 +456,12 @@ export function gestureSession(b: typeof bar, seed: number, count = 60): string 
 
 const GESTURE_SEEDS = 40;
 
-test(`seeded: ${GESTURE_SEEDS} sessions of pointer gestures on random layouts match the plain model`, () => {
+test(`seeded: ${GESTURE_SEEDS} sessions of pointer gestures on random layouts match the plain model`, async () => {
   const base = Number(process.env.FISSION_SEED ?? 501);
   for (let seed = base; seed < base + GESTURE_SEEDS; seed++) {
     const failure = gestureSession(bar, seed);
     assert.equal(failure, null, `FISSION_SEED=${seed} replays it`);
+    await releaseDom();
   }
 });
 
@@ -501,10 +502,11 @@ async function plantedBar(find: string, replace: string, dir: string, name: stri
 }
 
 /** The first seed's failure in sessions on `b`, or null. */
-function firstFailure(b: typeof bar): string | null {
+async function firstFailure(b: typeof bar): Promise<string | null> {
   for (let seed = 501; seed < 501 + GESTURE_SEEDS; seed++) {
     const f = gestureSession(b, seed);
     if (f) return f;
+    await releaseDom();
   }
   return null;
 }
@@ -512,9 +514,9 @@ function firstFailure(b: typeof bar): string | null {
 test("each bug planted in the bar's wiring is caught by the gesture sessions, by the check recorded for it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "timeline-marker-planted-"));
   try {
-    assert.equal(firstFailure(await plantedBar("export const DRAG_PIXELS = 5;", "export const DRAG_PIXELS = 5;", dir, "none")), null, "the unplanted copy passes");
+    assert.equal(await firstFailure(await plantedBar("export const DRAG_PIXELS = 5;", "export const DRAG_PIXELS = 5;", dir, "none")), null, "the unplanted copy passes");
     for (const p of WIRING_PLANTS) {
-      const caught = firstFailure(await plantedBar(p.find, p.replace, dir, p.name));
+      const caught = await firstFailure(await plantedBar(p.find, p.replace, dir, p.name));
       assert.ok(caught !== null, `${p.name} was not caught`);
       assert.ok(caught.includes(p.caught), `${p.name} was caught by another check than "${p.caught}": ${caught}`);
       if (process.env.FISSION_PLANTED_REPORT) console.log(`${p.name}: ${caught}`);

@@ -15,11 +15,24 @@ test("every ready case's expected answer is itself a valid command", () => {
   assert.ok(EVAL_CASES.some((c) => c.waitsFor), "the hole case from the spec is listed, waiting for its command");
 });
 
+test("every cannot case asks for something no offered command does, and expects nothing", () => {
+  const cannot = HELD_OUT_CASES.filter((c) => c.taskType === "cannot");
+  assert.ok(cannot.length >= 4);
+  for (const c of cannot) assert.deepEqual(c.expected, [], c.id);
+  // Ben's own words are one of them.
+  assert.ok(cannot.some((c) => /circle with radius 10mm as a sketch on the XY plane/.test(c.prompt)));
+  // None of Design's offered commands draws, drills or rounds: if one is added, these cases must be revisited (AI7).
+  assert.deepEqual(DESIGN_COMMANDS.map((s) => s.op), ["set_part", "export_stl"]);
+});
+
 test("matching judges the part the answer leaves, on the expected parameters only", () => {
   const box = { op: "set_part", shape: "box", width: 40, depth: 30, height: 20 };
   assert.equal(matches([], [box], [{ op: "set_part", width: 40 }]), true);
   assert.equal(matches([], [box], [{ op: "set_part", width: 40.1 }]), false);
   assert.equal(matches([], [], []), true);
+  // A "cannot" case (AI5c): any command at all stands in for what can't be done, even one that changes nothing.
+  assert.equal(matches([], [box], []), false, "Ben's circle sketch answered with a cylinder");
+  assert.equal(matches([box], [box], []), false, "a command that changes nothing is still not a refusal");
   assert.equal(matches([box], [], [{ op: "set_part", width: 40 }]), false, "no answer is not an answer, even when the part already fits");
 });
 
@@ -91,10 +104,23 @@ test("the suite scores a provider on the held-out cases", async () => {
   };
   const results = await runEval(provider, HELD_OUT_CASES, DESIGN_COMMANDS);
   // Worked by hand: only "held-cylinder-radius" expects a cylinder 18 wide and 40 tall, so create 1 of 8
-  // and edit 0 of 6.
-  assert.equal(results.length, 14);
-  assert.deepEqual(successRates(results), { create: 1 / 8, "edit-parameter": 0 });
+  // and edit 0 of 6; it never refuses, so cannot 0 of 4.
+  assert.equal(results.length, 18);
+  assert.deepEqual(successRates(results), { create: 1 / 8, "edit-parameter": 0, cannot: 0 });
   assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["held-cylinder-radius"]);
+});
+
+test("a provider that always says it can't passes only the cannot cases", async () => {
+  const provider: AIProvider = {
+    kind: "ollama",
+    structuredOutput: true,
+    check: async () => ({ ok: true }),
+    complete: async () => JSON.stringify({ explanation: "No command can do that yet.", commands: [] }),
+  };
+  const results = await runEval(provider, HELD_OUT_CASES, DESIGN_COMMANDS);
+  // Worked by hand: the 4 cannot cases expect no commands; the 14 others expect a part, and no answer is not one.
+  assert.deepEqual(successRates(results), { create: 0, "edit-parameter": 0, cannot: 1 });
+  assert.deepEqual(results.filter((r) => r.passed).map((r) => r.id), ["held-cannot-circle-sketch", "held-cannot-rectangle-sketch", "held-cannot-hole", "held-cannot-fillet"]);
 });
 
 test("the evaluation asks with Design's own command wording, as the panel does", async () => {
