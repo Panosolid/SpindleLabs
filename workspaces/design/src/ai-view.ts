@@ -2,11 +2,18 @@
 // set_part that makes it, the sizes a set_part leaves out keeps (the
 // panel's), the timeline in build order with each item's state, and what an
 // accepted set_part does: changes the part when it is a preset, else adds a
-// new body at the marker (`withPart`), which the preview then says.
+// new body at the marker (`withPart`), which the preview then says. From
+// AI7a, also where create_sketch can put a sketch: the origin planes and
+// the flat faces of the bodies on screen, each by its name with the way it
+// faces and its centre, and the sketch it would add.
 
-import type { AIView, Command } from "@fission/core";
+import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, type DesignDocument } from "./document.ts";
+import { DESIGN_COMMANDS } from "./commands.ts";
+import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
+import { sketchSpot } from "./face-pick.ts";
+import type { Scene } from "./scene.ts";
+import { addSketch } from "./sketch.ts";
 import { timelineBarItems } from "./timeline-bar.ts";
 
 /** The most timeline items the prompt lists: a small local model's prompt stays short. The last ones are kept. */
@@ -20,9 +27,12 @@ export type PanelSizes = { width: number; depth: number; height: number };
  * the panel's sizes. Pure: the same document, failures and sizes give the
  * same words.
  */
-export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySet<string>, sizes: PanelSizes): AIView {
+export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySet<string>, sizes: PanelSizes, faces: readonly AIFace[] = []): AIView {
   const keeps: Record<string, unknown> = { ...sizes };
-  if (!doc) return { setup: [], keeps, notes: [], adds: null };
+  const shownFaces = faces.slice(0, AI_FACES);
+  const commands = aiCommands(shownFaces);
+  const choiceWords = placeWords(shownFaces);
+  if (!doc) return { setup: [], keeps, notes: sketchNotes(undefined, faces, shownFaces), adds: null, commands, choiceWords };
   // The part (the last body that builds) and what makes it; an extruded sketch has no set_part that does.
   const shape = partOf(doc);
   const preset = shape !== null && shape.shape !== "sketch-extrude";
@@ -30,7 +40,82 @@ export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySe
   const { features } = doc.timeline;
   const at = insertAt(doc);
   const adds = preset ? null : `a new body as item ${at + 1}, ${at === 0 ? "at the start of the timeline" : `after ${at}. ${features[at - 1].intent.summary}`}`;
-  return { setup, keeps, notes: timelineNotes(doc, failed, sizes, adds), adds };
+  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces)], adds, commands, choiceWords };
+}
+
+/** The most faces the prompt lists, like `AI_TIMELINE_ITEMS`: the first ones, in the bodies' build order, are kept. */
+export const AI_FACES = 30;
+
+/** A flat face a sketch can go on, as the AI is told of it: its name (create_sketch's `on`), its body, which way it faces and its centre. */
+export interface AIFace {
+  name: string;
+  /** "Body 1 (Box 1)": the browser's row and the item that builds it. */
+  body: string;
+  /** Its outward unit normal and its centre, in mm, as the kernel gives them. */
+  outward: readonly number[];
+  centre: readonly number[];
+}
+
+/** What a face facing straight along an axis is called (Z up, the front looking along −Y: the view cube's names). */
+const FACING: Record<string, string> = { "0,0,1": "up (+Z, a top face)", "0,0,-1": "down (−Z, a bottom face)", "0,-1,0": "the front (−Y)", "0,1,0": "the back (+Y)", "1,0,0": "right (+X)", "-1,0,0": "left (−X)" };
+
+/** A number for the prompt: 3 decimals, never "-0". */
+const short = (v: number) => String(Number(v.toFixed(3)) + 0);
+
+/** "up (+Z, a top face)" for a face square to an axis (to 3 decimals, which is all the prompt shows), else its normal: "along (0.707, 0, 0.707)". */
+export function facingWords(outward: readonly number[]): string {
+  const key = outward.map(short).join(",");
+  return FACING[key] ?? `along (${outward.map(short).join(", ")})`;
+}
+
+/**
+ * The flat faces of the bodies on screen a sketch can go on (face-pick.ts
+ * `sketchSpot`: flat, with a name of its own), in the bodies' build order,
+ * as the AI is told of them. `label` names the item that builds a body.
+ */
+export function aiFaces(scene: Scene | null, label: (feature: string) => string): AIFace[] {
+  if (scene === null) return [];
+  const out: AIFace[] = [];
+  scene.bodies.forEach((body, b) => {
+    for (let i = 0; i < body.view.faces; i++) {
+      const spot = sketchSpot({ face: scene.faceStart[b] + i, shift: false }, scene);
+      if (spot?.kind !== "face") continue;
+      out.push({ name: spot.face.plane, body: `Body ${body.place} (${label(body.feature)})`, outward: body.view.face_normals[i]!, centre: body.view.face_centroids[i] });
+    }
+  });
+  return out;
+}
+
+/** Design's commands as the AI may use them now: set_part, and create_sketch on an origin plane or one of `faces` (export_stl downloads, so it stays the user's). */
+export function aiCommands(faces: readonly AIFace[]): CommandSpec[] {
+  const setPart = DESIGN_COMMANDS.find((c) => c.op === "set_part")!;
+  const sketch = DESIGN_COMMANDS.find((c) => c.op === "create_sketch")!;
+  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }];
+}
+
+/** Where each place create_sketch can use is, in words for the preview: "the XY plane", "a face of Body 1 (Box 1), facing up (+Z, a top face)". */
+function placeWords(faces: readonly AIFace[]): Record<string, string> {
+  const words: Record<string, string> = Object.fromEntries(SKETCH_PLANES.map((p) => [p, `the ${p} plane`]));
+  for (const f of faces) words[f.name] = `a face of ${f.body}, facing ${facingWords(f.outward)}`;
+  return words;
+}
+
+/** The prompt's lines about create_sketch: the sketch it adds and where in the timeline, and the faces it can go on. */
+function sketchNotes(doc: DesignDocument | undefined, faces: readonly AIFace[], shown: readonly AIFace[]): string[] {
+  // The name and place addSketch itself gives (the plane changes neither).
+  const made = doc ? addSketch(doc, "XY") : null;
+  const at = doc ? insertAt(doc) : 0;
+  const name = made ? made.doc.timeline.features.find((f) => f.id === made.id)!.provenance.self.label : "Sketch 1";
+  const where = at === 0 ? "at the start of the timeline" : `after ${at}. ${doc!.timeline.features[at - 1].intent.summary}`;
+  const adds = `create_sketch adds an empty ${name} as item ${at + 1}, ${where}, and opens it; nothing already in the timeline changes.`;
+  if (faces.length === 0) return [adds, "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane."];
+  const left = faces.length - shown.length;
+  return [
+    adds,
+    "The flat faces a sketch can go on, by name (create_sketch's on), with the way each faces and its centre:",
+    ...shown.map((f) => `- ${f.name}: a face of ${f.body}, facing ${facingWords(f.outward)}, centre (${f.centre.map(short).join(", ")}) mm.`),
+    ...(left > 0 ? [`(${left} more face${left === 1 ? "" : "s"} left out)`] : []),
+  ];
 }
 
 /** The prompt's lines about the timeline: each item and its state, the marker, and what set_part does now. */

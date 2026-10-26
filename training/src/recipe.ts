@@ -11,6 +11,8 @@ import type { SeededRandom } from "@fission/testing";
 export interface ReplayState {
   /** Design's part, once a set_part has built one. */
   part?: BodySpec;
+  /** The origin planes of the sketches create_sketch started, in order (AI7a). */
+  sketches?: string[];
 }
 
 export type Applied = { ok: true; state: ReplayState } | { ok: false; reason: string };

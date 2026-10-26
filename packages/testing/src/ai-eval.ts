@@ -23,6 +23,8 @@ export interface EvalCase {
 }
 
 export const EVAL_CASES: readonly EvalCase[] = [
+  // AI7a: an empty sketch on an origin plane, named by its letters.
+  { id: "sketch-xy", taskType: "create", prompt: "Start a new sketch on the XY plane.", setup: [], expected: [{ op: "create_sketch", on: "XY" }] },
   { id: "box-by-sizes", taskType: "create", prompt: "Make a box 40 by 30 by 20 mm.", setup: [], expected: [{ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 }] },
   { id: "cylinder-diameter", taskType: "create", prompt: "I need a cylinder 25 mm across and 60 mm tall.", setup: [], expected: [{ op: "set_part", shape: "cylinder", width: 25, height: 60 }] },
   { id: "sphere-radius", taskType: "create", prompt: "A ball with a radius of 15 mm.", setup: [], expected: [{ op: "set_part", shape: "sphere", width: 30 }] },
@@ -115,11 +117,17 @@ export const HELD_OUT_CASES: readonly EvalCase[] = [
   { id: "held-across-edit", taskType: "edit-parameter", prompt: "Make it 50 mm across.", setup: [CYLINDER], expected: [{ op: "set_part", shape: "cylinder", width: 50, height: 60 }] },
   // Diameter 30 → width 30; the box's height 20 is kept.
   { id: "held-box-to-cylinder", taskType: "edit-parameter", prompt: "Change it to a cylinder 30 mm in diameter.", setup: [BOX], expected: [{ op: "set_part", shape: "cylinder", width: 30, height: 20 }] },
+  // AI7a: a sketch started on the plane meant. The front is XZ and the side YZ (Z up, the view cube's names); the part stays.
+  { id: "held-sketch-front", taskType: "create", prompt: "Begin a sketch on the front plane so I can draw an outline.", setup: [BOX], expected: [{ op: "create_sketch", on: "XZ" }] },
+  { id: "held-sketch-yz", taskType: "create", prompt: "I'd like to work in a sketch on the YZ plane.", setup: [], expected: [{ op: "create_sketch", on: "YZ" }] },
   // AI5c: requests no offered command can do. The right answer is no
   // commands and a plain reason, never a stand-in shape (Ben's circle sketch
   // came back as a 20 × 0.01 mm cylinder, 2026-10-26). Written after
   // CANNOT_RULE and never used to word it. When a command for one arrives
-  // (AI7), its case moves to a new held-out case with the real answer.
+  // (AI7), its case moves to a new held-out case with the real answer. The
+  // circle and the rectangle stay "cannot" through AI7a: a sketch can be
+  // started, but nothing drawn in it until AI7b, and an answer is all or
+  // nothing (an empty sketch alone is not what was asked).
   { id: "held-cannot-circle-sketch", taskType: "cannot", prompt: "Draw a circle with radius 10mm as a sketch on the XY plane.", setup: [], expected: [] },
   { id: "held-cannot-rectangle-sketch", taskType: "cannot", prompt: "Sketch a 30 by 20 mm rectangle on the front plane.", setup: [BOX], expected: [] },
   { id: "held-cannot-hole", taskType: "cannot", prompt: "Drill an 8 mm hole straight through the middle of it.", setup: [BOX], expected: [] },
@@ -157,8 +165,16 @@ export function matches(setup: readonly Command[], actual: readonly Command[], e
   // Nothing expected: anything sent stands in for what can't be done.
   if (expected.length === 0) return actual.length === 0;
   if (actual.length === 0) return false;
-  const part = partAfter([...setup, ...actual]);
-  return actual.every((c) => c.op === "set_part") && Object.entries(partAfter(expected)).every(([k, v]) => same(part[k], v));
+  // Every other command (create_sketch, AI7a; an export) exactly as expected, in order: none missing, none extra.
+  const others = (cs: readonly Partial<Command>[]) => cs.filter((c) => c.op !== "set_part");
+  const [got, want] = [others(actual), others(expected)];
+  const alike = (a: Partial<Command>, b: Partial<Command>) => Object.keys(a).length === Object.keys(b).length && Object.entries(b).every(([k, v]) => same(a[k], v));
+  if (got.length !== want.length || !got.every((c, i) => alike(c, want[i]))) return false;
+  const sets = (cs: readonly Partial<Command>[]) => cs.filter((c) => c.op === "set_part");
+  const part = partAfter([...setup, ...sets(actual)]);
+  // No set_part expected: the part must be left exactly as the setup made it (none added, nothing changed).
+  if (sets(expected).length === 0) return alike(part, partAfter(setup));
+  return Object.entries(partAfter(sets(expected))).every(([k, v]) => same(part[k], v));
 }
 
 export interface EvalResult {
