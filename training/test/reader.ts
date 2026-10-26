@@ -100,14 +100,43 @@ function created(kind: string, t: string): Command | null {
   }
 }
 
+const PLANE_OF: Record<string, string> = { xy: "XY", xz: "XZ", yz: "YZ", top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" };
+
+/** A circle, rectangle or line drawn in a sketch on a plane, as two commands; undefined when the words ask for no such drawing, null when they do but can't be read. */
+function readDrawing(t: string): Command[] | null | undefined {
+  if (!/\b(circle|rectangle|line)\b/.test(t) || !/\b(sketch|draw)\b/.test(t) || /\b(arc|face)\b/.test(t)) return undefined;
+  const plane = t.match(/\bon (the )?(xy|xz|yz|top|ground|bottom|front|back|right|left|side)\b( plane)?/);
+  if (!plane) return null;
+  const sketch = { op: "create_sketch", on: PLANE_OF[plane[2]] };
+  const centre = t.match(/centred at \((-?\d+), (-?\d+)\) mm/);
+  const at = centre ? { x: Number(centre[1]), y: Number(centre[2]) } : {};
+  // Lengths, with any centre or line ends taken out first (they are mm in the sketch, not sizes).
+  const sizes = lengths(t.replace(/\([^)]*\)( mm)?/g, " "));
+  if (/\bline\b/.test(t)) {
+    const ends = t.match(/from \((-?\d+), (-?\d+)\) to \((-?\d+), (-?\d+)\) mm/);
+    return ends ? [sketch, { op: "draw_line", x1: Number(ends[1]), y1: Number(ends[2]), x2: Number(ends[3]), y2: Number(ends[4]) }] : null;
+  }
+  if (/\bcircle\b/.test(t)) {
+    if (sizes.length !== 1) return null;
+    const radius = /\bradius\b/.test(t);
+    return [sketch, { op: "draw_circle", diameter: radius ? Number((2 * sizes[0].mm).toPrecision(12)) : sizes[0].mm, ...at }];
+  }
+  // A rectangle: the first size along x (wide, or before "by"), the second along y.
+  return sizes.length === 2 ? [sketch, { op: "draw_rectangle", width: sizes[0].mm, height: sizes[1].mm, ...at }] : null;
+}
+
 /** The commands these words ask for, about the part `setup` makes; null when this reader can't tell. */
 export function read(prompt: string, setup: readonly Command[]): Command[] | null {
   let t = prompt.toLowerCase();
   // Starting an empty sketch (AI7a), on a plane named by its letters or by the side of the view cube it faces.
   const sketch = t.match(/^(start a new sketch|create a sketch|new sketch|i want to sketch|can you start a sketch|open a new sketch) on (the )?(xy|xz|yz|top|ground|bottom|front|back|right|left|side)( plane)?(, please)?[.?]$/);
   if (sketch) return [{ op: "create_sketch", on: { top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" }[sketch[3]] ?? sketch[3].toUpperCase() }];
+  // Drawing in a new sketch (AI7b): the plane as for a sketch, then a circle, a rectangle or a line, at the origin unless a
+  // centre is written "centred at (x, y) mm".
+  const drawing = readDrawing(t);
+  if (drawing !== undefined) return drawing;
   // Asking for what Design has no command for (AI5c): drawing, holes, rounded or cut edges, shells, text, copies. The answer is no commands.
-  if (/\b(sketch|draw|hole|drill|fillet|chamfer|hollow|engrave|copies)\b/.test(t)) return [];
+  if (/\b(sketch|draw|arc|hole|drill|fillet|chamfer|hollow|engrave|copies)\b/.test(t)) return [];
   const out: Command[] = [];
   const exporting = /\bstl\b/.test(t);
   if (exporting) t = t.replace(/(^| and |\. then )(export|download|save|give)\b.*$/, "");

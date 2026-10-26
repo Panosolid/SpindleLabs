@@ -6,8 +6,9 @@
 // seeded timelines against withPart in packages/testing/test/ai-view.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AI_FACES, AI_TIMELINE_ITEMS, aiCommands, designAIView, facingWords, type AIFace } from "../src/ai-view.ts";
-import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
+import { AI_FACES, AI_TIMELINE_ITEMS, aiCommands, designAIView, facingWords, SKETCH_AXES, type AIFace } from "../src/ai-view.ts";
+import { addSketch, drawLine, drawRectangle, planeOf } from "../src/sketch.ts";
+import { inSketch } from "../src/face-edges.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
@@ -38,6 +39,8 @@ const doc = timeline();
 const NONE: ReadonlySet<string> = new Set();
 const sizes = { width: 60, depth: 20, height: 5 };
 const BOX = "1. Box: 40 × 30 × 20 mm.";
+const NO_OPEN = "No sketch is open: to draw, start one with create_sketch first in the same answer; the draw commands then draw in it.";
+const DRAWS = ["draw_circle", "draw_rectangle", "draw_line"];
 const SKETCH1 = "2. Sketch 1 on the XY plane.";
 const EXTRUDE1 = "3. Extrude Sketch 1 by 10 mm.";
 const CYLINDER = "4. Cylinder: ⌀20 × 5 mm.";
@@ -67,6 +70,9 @@ test("hand-worked: the marker on a preset, so set_part changes it in place, and 
     // AI7a: two sketches are there, so the next is Sketch 3, put in at the marker: insertAt = 6, so item 7 after item 6.
     `create_sketch adds an empty Sketch 3 as item 7, after ${SLOT.slice(0, -1)}, and opens it; nothing already in the timeline changes.`,
     "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane.",
+    // AI7b: no sketch open (no `open` given), so drawing needs a sketch started first.
+    NO_OPEN,
+    SKETCH_AXES,
   ]);
 });
 
@@ -111,7 +117,7 @@ test("hand-worked: the marker at the end with the last solid an extruded sketch 
   const d = extrudeSketch(drawRectangle(s.doc, s.id, [0, 0], [40, 30]).doc, s.id, 10).doc;
   const v = designAIView(d, NONE, sizes);
   assert.equal(v.adds, "a new body as item 4, after 3. Extrude Sketch 1 by 10 mm");
-  assert.equal(v.notes.at(-5), "The timeline marker is at the end: every item is built.");
+  assert.equal(v.notes.at(-7), "The timeline marker is at the end: every item is built.");
 });
 
 test("hand-worked: a suppressed sketch greys its extrude from the data (26e), and a lost sketch's extrude builds from its kept shape", () => {
@@ -139,7 +145,7 @@ test("a long timeline lists only its last items, and says how many were left out
   const notes = designAIView(d, NONE, sizes).notes;
   assert.equal(notes[1], "(5 earlier items left out)");
   assert.match(notes[2], /^6\. Box: 14 × 10 × 10 mm\. Builds Body 6\.$/);
-  assert.equal(notes.length, 1 + 1 + AI_TIMELINE_ITEMS + 3 + 2);
+  assert.equal(notes.length, 1 + 1 + AI_TIMELINE_ITEMS + 3 + 2 + 2);
   // The boundary: exactly AI_TIMELINE_ITEMS items is no cut; one more leaves the first out.
   let e = partDocument("box", 40, 30, 20);
   for (let i = 0; i < AI_TIMELINE_ITEMS - 1; i++) e = insertPreset(e, "box", 10, 10, 10).doc;
@@ -155,9 +161,9 @@ test("no design: no part, nothing added, and a sketch can still start on an orig
     setup: [],
     keeps: sizes,
     // A new project: nothing in the timeline, so the first sketch is Sketch 1, item 1.
-    notes: ["create_sketch adds an empty Sketch 1 as item 1, at the start of the timeline, and opens it; nothing already in the timeline changes.", "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane."],
+    notes: ["create_sketch adds an empty Sketch 1 as item 1, at the start of the timeline, and opens it; nothing already in the timeline changes.", "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane.", NO_OPEN, SKETCH_AXES],
     adds: null,
-    commands: ["set_part", "create_sketch"],
+    commands: ["set_part", "create_sketch", ...DRAWS],
     choiceWords: { XY: "the XY plane", XZ: "the XZ plane", YZ: "the YZ plane" },
   });
 });
@@ -165,24 +171,26 @@ test("no design: no part, nothing added, and a sketch can still start on an orig
 // AI7a: the faces a sketch can go on, as aiFaces gives them from the bodies on screen (checked on real bodies in
 // apps/fission/e2e/assistant.mjs). A 40 × 30 × 20 box from the origin: its top's outward normal is +Z and its centre
 // (20, 15, 20); its front faces −Y with centre (20, 0, 10).
-const TOP: AIFace = { name: "face:feature-1/end", body: "Body 1 (Box 1)", outward: [0, 0, 1], centre: [20, 15, 20] };
-const FRONT: AIFace = { name: "face:feature-1/side-1", body: "Body 1 (Box 1)", outward: [0, -1, 0], centre: [20, 0, 10] };
+// AI7b: in a sketch on the top, drawnFrame picks XY's frame lifted to z = 20 (x along X, y along Y), so the centre is
+// (20, 15); on the front, XZ's frame (normal −Y, x along X, y = normal × x = +Z), so (20, 10).
+const TOP: AIFace = { name: "face:feature-1/end", body: "Body 1 (Box 1)", outward: [0, 0, 1], centre: [20, 15, 20], inSketch: [20, 15] };
+const FRONT: AIFace = { name: "face:feature-1/side-1", body: "Body 1 (Box 1)", outward: [0, -1, 0], centre: [20, 0, 10], inSketch: [20, 10] };
 
 test("hand-worked: the faces on screen are offered to create_sketch by name, with the way each faces and its centre", () => {
   const v = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, [TOP, FRONT]);
   const on = v.commands!.find((c) => c.op === "create_sketch")!.params.on;
   assert.ok(on.type === "choice");
   assert.deepEqual(on.values, ["XY", "XZ", "YZ", "face:feature-1/end", "face:feature-1/side-1"]);
-  assert.deepEqual(v.notes.slice(-4), [
+  assert.deepEqual(v.notes.slice(-6, -2), [
     // The box is item 1 and no sketch is there yet: Sketch 1, item 2, after it.
     "create_sketch adds an empty Sketch 1 as item 2, after 1. Box: 40 × 30 × 20 mm, and opens it; nothing already in the timeline changes.",
     "The flat faces a sketch can go on, by name (create_sketch's on), with the way each faces and its centre:",
-    "- face:feature-1/end: a face of Body 1 (Box 1), facing up (+Z, a top face), centre (20, 15, 20) mm.",
-    "- face:feature-1/side-1: a face of Body 1 (Box 1), facing the front (−Y), centre (20, 0, 10) mm.",
+    "- face:feature-1/end: a face of Body 1 (Box 1), facing up (+Z, a top face), centre (20, 15, 20) mm, which is (20, 15) in a sketch on it.",
+    "- face:feature-1/side-1: a face of Body 1 (Box 1), facing the front (−Y), centre (20, 0, 10) mm, which is (20, 10) in a sketch on it.",
   ]);
   assert.equal(v.choiceWords!["face:feature-1/end"], "a face of Body 1 (Box 1), facing up (+Z, a top face)");
   // set_part is offered as Design lists it; export_stl never (it downloads a file, so it stays the user's).
-  assert.deepEqual(v.commands!.map((c) => c.op), ["set_part", "create_sketch"]);
+  assert.deepEqual(v.commands!.map((c) => c.op), ["set_part", "create_sketch", ...DRAWS]);
 });
 
 test("hand-worked: which way a face faces, in words for an axis and as its normal otherwise", () => {
@@ -202,11 +210,36 @@ test("the prompt lists at most AI_FACES faces, and only those can be chosen", ()
   const at = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, many(AI_FACES));
   assert.ok(!at.notes.some((l) => l.includes("left out") && l.includes("face")), "exactly AI_FACES: no cut");
   const over = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, many(AI_FACES + 2));
-  assert.equal(over.notes.at(-1), "(2 more faces left out)");
+  assert.equal(over.notes.at(-3), "(2 more faces left out)");
   const on = over.commands!.find((c) => c.op === "create_sketch")!.params.on;
   assert.ok(on.type === "choice");
   // 3 origin planes and the first 30 faces; the 31st is not a value, so the answer's check refuses it.
   assert.equal(on.values.length, 3 + AI_FACES);
   assert.ok(!on.values.includes(`face:feature-1/f${AI_FACES}`));
   assert.deepEqual(aiCommands([]).find((c) => c.op === "create_sketch")!.params.on, { type: "choice", values: ["XY", "XZ", "YZ"], description: on.description });
+});
+
+test("hand-worked: the sketch open is named for the draw commands, and one an extrude is built from is said to be closed to them (AI7b)", () => {
+  // Box, then Sketch 1 on XZ (sketch-2) with nothing built from it: open, the draw commands draw in it.
+  const s = addSketch(partDocument("box", 40, 30, 20), "XZ");
+  const open = designAIView(s.doc, NONE, sizes, [], s.id).notes.slice(-2);
+  assert.deepEqual(open, ["Sketch 1 is open (Sketch 1 on the XZ plane): the draw commands draw in it, unless create_sketch starts another first.", SKETCH_AXES]);
+  // A rectangle drawn and extruded 10 (Extrude 1): the sketch is closed to the AI, and the prompt says why.
+  const used = extrudeSketch(drawRectangle(s.doc, s.id, [0, 0], [40, 30]).doc, s.id, 10).doc;
+  assert.equal(designAIView(used, NONE, sizes, [], s.id).notes.at(-2), "Sketch 1 is open (Sketch 1 on the XZ plane), but Extrude 1 is built from it, so the draw commands can't draw in it: start a new sketch with create_sketch first.");
+  // An id that names no item (a sketch open in a design since replaced) is as good as none.
+  assert.equal(designAIView(s.doc, NONE, sizes, [], "sketch-99").notes.at(-2), NO_OPEN);
+});
+
+test("the sketch axes the AI is told are the ones a sketch on each origin plane really has (AI7b)", () => {
+  // Hand-worked: the front plane XZ has x along X and y along Z, so the point 2 mm along X and 5 mm up, (2, 0, 5), is (2, 5) in its sketch.
+  assert.deepEqual(inSketch([2, 0, 5], planeOf("XZ")), [2, 5]);
+  // Each "on P, x is A and y is B" in the words: a step of 1 along A is (1, 0) in that sketch, and along B is (0, 1).
+  const unit: Record<string, [number, number, number]> = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+  const told = [...SKETCH_AXES.matchAll(/on (XY|XZ|YZ), x is ([XYZ]) and y is ([XYZ])/g)];
+  assert.deepEqual(told.map((m) => m[1]), ["XY", "XZ", "YZ"]);
+  for (const [, plane, x, y] of told) {
+    assert.deepEqual(inSketch(unit[x], planeOf(plane as "XY")), [1, 0], `${plane}: x`);
+    assert.deepEqual(inSketch(unit[y], planeOf(plane as "XY")), [0, 1], `${plane}: y`);
+  }
 });
