@@ -19,6 +19,13 @@ export const HOVER_MIX = 0.3;
 export const BASE_COLOUR: Rgb = [0x9a / 255, 0xa7 / 255, 0xb8 / 255];
 /** An edge's colour when not selected or hovered. */
 export const EDGE_COLOUR: Rgb = [0x0b / 255, 0x0c / 255, 0x0e / 255];
+/**
+ * How wide every body edge is drawn, in CSS pixels: thin and dark, like
+ * Fusion's shaded-with-edges, but wide enough to read on any screen where
+ * two faces of nearly the same shade meet (a one-device-pixel WebGL line
+ * all but vanished there, and stair-stepped along a slanted edge).
+ */
+export const EDGE_WIDTH_PX = 2;
 
 /** `colour` moved the fraction `mix` of the way towards `towards` (0 keeps it, 1 replaces it). */
 export function tint(colour: Rgb, towards: Rgb, mix: number): Rgb {
