@@ -154,6 +154,20 @@ function shown() {
 }
 
 /** Waits until the page stops changing (two reads 150 ms apart agree, no rebuild running), at most 6 s; a page still changing then is a failure. */
+/**
+ * Leaves full screen (the nav bar's Full screen button, which the monkey
+ * clicks like any other) before the window is resized, as a person must:
+ * Chromium 156 refuses to resize a full-screen window ("To resize
+ * minimized/maximized/fullscreen window, restore it to normal state first",
+ * seed 202610260 on CI), where 153 allowed it. Waits for the page to say it
+ * has left, so the resize that follows finds a normal window.
+ */
+async function leaveFullScreen(page) {
+  if (!(await page.evaluate(() => document.fullscreenElement !== null))) return;
+  await page.evaluate(() => document.exitFullscreen().catch(() => {}));
+  await page.waitForFunction(() => document.fullscreenElement === null, null, { timeout: 5000 });
+}
+
 async function settle(page) {
   let last = "";
   const until = Date.now() + 6000;
@@ -327,6 +341,7 @@ async function act(s, a) {
       await page.keyboard.press(a.key);
       return true;
     case "resize":
+      await leaveFullScreen(page);
       await page.setViewportSize({ width: a.size[0], height: a.size[1] });
       return true;
     case "open": {
