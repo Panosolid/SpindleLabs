@@ -1,11 +1,13 @@
 // The generator: random drafts from the recipes, each kept only if every
 // command passes the same checks as a model's answer (parseCommand), the
 // project it is asked about and the answer both build on the real kernel,
-// and it isn't one of the held-out evaluation prompts.
+// it isn't one of the held-out evaluation prompts, and its working out
+// is right (working.ts).
 
 import { commandListSchema, parseCommand, type Command, type CommandSpec, type KernelCalls } from "@fission/core";
 import { seeded } from "@fission/testing";
 import type { CommandRule, Draft, Recipe, ReplayState } from "./recipe.ts";
+import { checkWorking } from "./working.ts";
 
 export interface Example extends Draft {
   /** Stable id: a hash of the setup and the prompt. */
@@ -68,7 +70,8 @@ export async function replay(kernel: KernelCalls, rules: readonly CommandRule[],
 
 /** Why a draft can't be used, or null. Exported so tests can show each check refusing. */
 export async function checkDraft(d: Draft, o: Pick<GenerateOptions, "specs" | "rules" | "kernel">, heldOut: ReadonlySet<string>): Promise<string | null> {
-  if (d.commands.length === 0) return "no commands";
+  if (d.commands.length === 0 && d.task !== "cannot") return "no commands";
+  if (d.commands.length > 0 && d.task === "cannot") return "a cannot request with commands";
   for (const c of [...d.setup, ...d.commands]) {
     const parsed = parseCommand(c, o.specs);
     if (!parsed.ok) return `not a valid command: ${parsed.error}`;
@@ -80,7 +83,9 @@ export async function checkDraft(d: Draft, o: Pick<GenerateOptions, "specs" | "r
   if ("refused" in before) return `setup refused: ${before.refused}`;
   const after = await replay(o.kernel, o.rules, d.commands, before.state);
   if ("refused" in after) return `answer refused: ${after.refused}`;
-  return null;
+  // Every command has a rule here: replay refused any without one.
+  const says = d.commands.map((c) => o.rules.find((x) => x.op === c.op)!.says(c));
+  return checkWorking(d.explanation, says, o.specs.map((s) => s.op));
 }
 
 /** Counts by the reason's first words ("answer refused: command 1 (set_part)"), so the report stays short. */
@@ -112,7 +117,7 @@ export async function generate(o: GenerateOptions): Promise<Generated> {
       continue;
     }
     const key = `${JSON.stringify(d.setup)}\n${d.prompt}`;
-    const answer = JSON.stringify(d.commands);
+    const answer = JSON.stringify([d.explanation, d.commands]);
     const seen = answers.get(key);
     if (seen !== undefined) {
       // The same words about the same part must always mean the same thing.

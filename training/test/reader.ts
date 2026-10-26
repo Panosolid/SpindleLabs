@@ -103,6 +103,8 @@ function created(kind: string, t: string): Command | null {
 /** The commands these words ask for, about the part `setup` makes; null when this reader can't tell. */
 export function read(prompt: string, setup: readonly Command[]): Command[] | null {
   let t = prompt.toLowerCase();
+  // Asking for what Design has no command for (AI5c): drawing, holes, rounded or cut edges, shells, text, copies. The answer is no commands.
+  if (/\b(sketch|draw|hole|drill|fillet|chamfer|hollow|engrave|copies)\b/.test(t)) return [];
   const out: Command[] = [];
   const exporting = /\bstl\b/.test(t);
   if (exporting) t = t.replace(/(^| and |\. then )(export|download|save|give)\b.*$/, "");
