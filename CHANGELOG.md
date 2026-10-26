@@ -10,6 +10,11 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.21 (2026-10-26)
+
+- Fixed: an edge ending on a face, or held by one of the face's corners or edges, whose line only crosses the face's plane more than 1 µm further on, inside the face, runs that far within tolerance of the face without lying in it. The table put the meeting at the end or the holder, so accepted sections were missing exact crossings (the 32b4 probe, 20,000 random part pairs in each of five families: 34, 38 and 92 such cases in the first three before, 4, 28 and 59 now). Both are now rule 1's refusal, naming the edge and how far on it crosses. The distance has to clear 1 µm by more than the rounding of where the crossing is, so an edge leaning about the angular tolerance says nothing it cannot know. Tests at 9 mm (refused) and 11 mm (taken as before) failed first.
+- Changed: nearly parallel plates (1.1e-9 to 1e-6 rad) whose near corners touch the other's plane are now refused by the table itself, naming the edge. Before, the table accepted them and the section refused them later as meeting in a sliver. The tests for those plates were re-derived by hand for the new rule.
+
 ## 0.32.20 (2026-10-26)
 
 - Fixed (L2): a corner of one part within reach of a corner of the other was placed at whichever came first, so the same pair of parts could give different points depending on which was the target, up to the corners' summed tolerance apart. The meeting point now follows one rule whatever the order: first a corner whose own tolerance already reaches everything the point lies on, then the least tolerance needed (needs within rounding of each other are a tie, broken by position), and with no corner, edge-edge crossings before edge-face, then the steepest crossing, then position. Hand-worked tests in both argument orders failed first.
