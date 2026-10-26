@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { commandSchema, parseCommand, parseCommandList, type CommandSpec } from "../src/model/commands.ts";
+import { commandListSchema, commandSchema, parseCommand, parseCommandList, type CommandSpec } from "../src/model/commands.ts";
 
 const hole: CommandSpec = {
   op: "hole",
@@ -80,4 +80,33 @@ test("a whole answer: JSON with a commands list, each checked", () => {
   assert.match((parseCommandList("[]", [hole]) as { error: string }).error, /"commands" list/);
   assert.match((parseCommandList('{"commands":[{"op":"hole"}]}', [hole]) as { error: string }).error, /^command 1: hole needs face/);
   assert.match((parseCommandList(JSON.stringify({ commands: Array(51).fill({}) }), [hole]) as { error: string }).error, /at most 50/);
+});
+
+test("the working out comes after the commands in the answer, is required by the schema, and is read as plain text", () => {
+  const schema = commandListSchema([hole]) as { properties: Record<string, unknown>; required: string[] };
+  // Constrained output writes keys in the schema's order: commands first, so small models
+  // don't talk themselves out of a plain request before they send it (AI5c's prompt variants).
+  assert.deepEqual(Object.keys(schema.properties), ["commands", "explanation"]);
+  assert.deepEqual(schema.required, ["commands", "explanation"]);
+  const cmd = { op: "hole", face: "f", diameter: 3, depth: "blind" };
+  const said = "The top face is f, so the 3 mm hole goes there.";
+  assert.deepEqual(parseCommandList(JSON.stringify({ explanation: said, commands: [cmd] }), [hole]), { ok: true, commands: [cmd], explanation: said });
+  // Spaces around it are not part of it.
+  assert.deepEqual(parseCommandList(JSON.stringify({ explanation: `  ${said}\n`, commands: [cmd] }), [hole]), { ok: true, commands: [cmd], explanation: said });
+  // A model not held to the schema may leave it out: the commands are still read, with nothing to show.
+  assert.deepEqual(parseCommandList(JSON.stringify({ commands: [cmd] }), [hole]), { ok: true, commands: [cmd], explanation: "" });
+  // Anything but text is refused, naming what came.
+  for (const [bad, shown] of [[42, "42"], [null, "null"], [["a"], '["a"]'], [{ a: 1 }, '{"a":1}']] as const) {
+    assert.deepEqual(parseCommandList(JSON.stringify({ explanation: bad, commands: [cmd] }), [hole]), { ok: false, error: `the explanation must be text, got ${shown}` });
+  }
+});
+
+test("the working out's length limit: 1000 characters read, 1001 refused, and 0.9× and 1.1× of it", () => {
+  const cmd = { op: "hole", face: "f", diameter: 3, depth: "blind" };
+  const answer = (n: number) => JSON.stringify({ explanation: "x".repeat(n), commands: [cmd] });
+  for (const n of [900, 1000]) assert.equal(parseCommandList(answer(n), [hole]).ok, true, `${n}`);
+  assert.deepEqual(parseCommandList(answer(1001), [hole]), { ok: false, error: "the explanation is too long (1001 characters; at most 1000)" });
+  assert.deepEqual(parseCommandList(answer(1100), [hole]), { ok: false, error: "the explanation is too long (1100 characters; at most 1000)" });
+  // The commands are still checked when the working out is fine.
+  assert.match((parseCommandList(JSON.stringify({ explanation: "ok", commands: [{ op: "hole" }] }), [hole]) as { error: string }).error, /^command 1: hole needs face/);
 });

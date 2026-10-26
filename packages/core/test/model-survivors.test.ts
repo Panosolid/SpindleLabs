@@ -225,7 +225,7 @@ test("an answer of exactly 50 commands is read, 51 are refused; null and a list 
   const fifty = parseCommandList(many(50), [spec]);
   assert.equal(fifty.ok && fifty.commands.length, 50);
   assert.deepEqual(parseCommandList(many(51), [spec]), { ok: false, error: "too many commands in one answer (at most 50)" });
-  assert.deepEqual(parseCommandList(many(0), [spec]), { ok: true, commands: [] });
+  assert.deepEqual(parseCommandList(many(0), [spec]), { ok: true, commands: [], explanation: "" });
   assert.deepEqual(parseCommandList("null", [spec]), { ok: false, error: 'the answer must be an object with a "commands" list' });
 });
 
@@ -255,8 +255,9 @@ test("the schemas the model is given, worked by hand from the descriptions", () 
           ],
         },
       },
+      explanation: { type: "string", maxLength: 1000, description: "After the commands, in plain words: what they make, with each size in millimetres. If no command can do what is asked, say that it can't be done yet and why." },
     },
-    required: ["commands"],
+    required: ["commands", "explanation"],
     additionalProperties: false,
   });
 });
