@@ -153,3 +153,53 @@ test("an older project's file opens with short names, and saves and reopens byte
   // readDesignDocument is where it happens, so every way in (open, paste, a command's check) gets it.
   assert.deepEqual(names(readDesignDocument(JSON.parse(JSON.stringify(oldDoc())))), names(doc));
 });
+
+// The nightly's mutation run found these left unchecked (10-26): each case below is one a project file can hold,
+// since readDesignDocument hands withShortNames the file's data before anything checks provenance.
+
+test("a sketch whose name has the old preset form keeps it: only presets are renamed", () => {
+  // The sketch (sketch-2) named "Feature 2 (sketch)", exactly what oldPresetName gives it; it is no preset, so it stays,
+  // and the presets are still Box 1, Cylinder 1, Box 2, Slot 1, Box 3.
+  const doc = oldDoc();
+  const sketch = doc.timeline.features[1];
+  assert.equal(oldPresetName(sketch), "Feature 2 (sketch)");
+  const now = withShortNames(named(doc, sketch.id, "Feature 2 (sketch)"));
+  assert.deepEqual(names(now), ["Box 1", "Feature 2 (sketch)", "Cylinder 1", "Box 2", "Slot 1", "Box 3"]);
+});
+
+test("a preset with no provenance, or one without its own name, opens unchanged beside renamed ones", () => {
+  // The cylinder (feature-3) with its provenance left out, then with only `from`: nothing to rename on it and nothing
+  // of it to follow, so it comes back as the very same object, and the boxes are still renamed around it.
+  const doc = oldDoc();
+  const cylinder = doc.timeline.features[2];
+  const { provenance: _, ...bare } = cylinder;
+  for (const odd of [bare, { ...cylinder, provenance: { from: [] } }] as unknown as Feature[]) {
+    const features = doc.timeline.features.map((f) => (f.id === cylinder.id ? odd : f));
+    const now = withShortNames({ ...doc, timeline: { ...doc.timeline, features } });
+    assert.equal(now.timeline.features[2], odd);
+    assert.deepEqual(now.timeline.features.filter((f) => f !== odd).map((f) => f.provenance.self.label), ["Box 1", "Sketch 1", "Box 2", "Slot 1", "Box 3"]);
+  }
+});
+
+test("only Design's copies of a renamed preset's old name follow; another workspace's entry, an empty one and a name the user gave stay", () => {
+  // The sketch made from Box 1 also lists an Image entry with the same id and old label, an empty (null) entry, and
+  // Design's own entry for the box under a label the user gave it ("My base"): only the first entry is Design's copy of
+  // the old name, so only it becomes "Box 1".
+  const doc = oldDoc();
+  const sketch = doc.timeline.features[1];
+  const from = [
+    { workspace: "design", id: "feature-1", label: "Feature 1 (box)" },
+    { workspace: "image", id: "feature-1", label: "Feature 1 (box)" },
+    null,
+    { workspace: "design", id: "feature-1", label: "My base" },
+  ] as unknown as Feature["provenance"]["from"];
+  const features = doc.timeline.features.map((f) => (f.id === sketch.id ? { ...sketch, provenance: { ...sketch.provenance, from } } : f));
+  const now = withShortNames({ ...doc, timeline: { ...doc.timeline, features } });
+  assert.deepEqual(now.timeline.features[1].provenance.from, [
+    { workspace: "design", id: "feature-1", label: "Box 1" },
+    { workspace: "image", id: "feature-1", label: "Feature 1 (box)" },
+    null,
+    { workspace: "design", id: "feature-1", label: "My base" },
+  ]);
+  assert.equal(now.timeline.features[1].intent.summary, "Sketch 1 on a face of Box 1");
+});
