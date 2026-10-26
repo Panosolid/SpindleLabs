@@ -6,7 +6,7 @@
 // seeded timelines against withPart in packages/testing/test/ai-view.test.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AI_TIMELINE_ITEMS, designAIView } from "../src/ai-view.ts";
+import { AI_FACES, AI_TIMELINE_ITEMS, aiCommands, designAIView, facingWords, type AIFace } from "../src/ai-view.ts";
 import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
@@ -64,6 +64,9 @@ test("hand-worked: the marker on a preset, so set_part changes it in place, and 
     "The timeline marker is after item 6: items after it are not built.",
     "set_part changes the part in place.",
     "A size set_part leaves out keeps the value it has now: width 60, depth 20, height 5.",
+    // AI7a: two sketches are there, so the next is Sketch 3, put in at the marker: insertAt = 6, so item 7 after item 6.
+    `create_sketch adds an empty Sketch 3 as item 7, after ${SLOT.slice(0, -1)}, and opens it; nothing already in the timeline changes.`,
+    "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane.",
   ]);
 });
 
@@ -108,7 +111,7 @@ test("hand-worked: the marker at the end with the last solid an extruded sketch 
   const d = extrudeSketch(drawRectangle(s.doc, s.id, [0, 0], [40, 30]).doc, s.id, 10).doc;
   const v = designAIView(d, NONE, sizes);
   assert.equal(v.adds, "a new body as item 4, after 3. Extrude Sketch 1 by 10 mm");
-  assert.equal(v.notes.at(-3), "The timeline marker is at the end: every item is built.");
+  assert.equal(v.notes.at(-5), "The timeline marker is at the end: every item is built.");
 });
 
 test("hand-worked: a suppressed sketch greys its extrude from the data (26e), and a lost sketch's extrude builds from its kept shape", () => {
@@ -136,7 +139,7 @@ test("a long timeline lists only its last items, and says how many were left out
   const notes = designAIView(d, NONE, sizes).notes;
   assert.equal(notes[1], "(5 earlier items left out)");
   assert.match(notes[2], /^6\. Box: 14 × 10 × 10 mm\. Builds Body 6\.$/);
-  assert.equal(notes.length, 1 + 1 + AI_TIMELINE_ITEMS + 3);
+  assert.equal(notes.length, 1 + 1 + AI_TIMELINE_ITEMS + 3 + 2);
   // The boundary: exactly AI_TIMELINE_ITEMS items is no cut; one more leaves the first out.
   let e = partDocument("box", 40, 30, 20);
   for (let i = 0; i < AI_TIMELINE_ITEMS - 1; i++) e = insertPreset(e, "box", 10, 10, 10).doc;
@@ -146,6 +149,64 @@ test("a long timeline lists only its last items, and says how many were left out
   assert.match(one[2], /^2\. Box: 10 × 10 × 10 mm\. Builds Body 2\.$/);
 });
 
-test("no design: no part, no notes, nothing added", () => {
-  assert.deepEqual(designAIView(undefined, NONE, sizes), { setup: [], keeps: sizes, notes: [], adds: null });
+test("no design: no part, nothing added, and a sketch can still start on an origin plane (AI7a)", () => {
+  const v = designAIView(undefined, NONE, sizes);
+  assert.deepEqual({ ...v, commands: v.commands?.map((c) => c.op) }, {
+    setup: [],
+    keeps: sizes,
+    // A new project: nothing in the timeline, so the first sketch is Sketch 1, item 1.
+    notes: ["create_sketch adds an empty Sketch 1 as item 1, at the start of the timeline, and opens it; nothing already in the timeline changes.", "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane."],
+    adds: null,
+    commands: ["set_part", "create_sketch"],
+    choiceWords: { XY: "the XY plane", XZ: "the XZ plane", YZ: "the YZ plane" },
+  });
+});
+
+// AI7a: the faces a sketch can go on, as aiFaces gives them from the bodies on screen (checked on real bodies in
+// apps/fission/e2e/assistant.mjs). A 40 × 30 × 20 box from the origin: its top's outward normal is +Z and its centre
+// (20, 15, 20); its front faces −Y with centre (20, 0, 10).
+const TOP: AIFace = { name: "face:feature-1/end", body: "Body 1 (Box 1)", outward: [0, 0, 1], centre: [20, 15, 20] };
+const FRONT: AIFace = { name: "face:feature-1/side-1", body: "Body 1 (Box 1)", outward: [0, -1, 0], centre: [20, 0, 10] };
+
+test("hand-worked: the faces on screen are offered to create_sketch by name, with the way each faces and its centre", () => {
+  const v = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, [TOP, FRONT]);
+  const on = v.commands!.find((c) => c.op === "create_sketch")!.params.on;
+  assert.ok(on.type === "choice");
+  assert.deepEqual(on.values, ["XY", "XZ", "YZ", "face:feature-1/end", "face:feature-1/side-1"]);
+  assert.deepEqual(v.notes.slice(-4), [
+    // The box is item 1 and no sketch is there yet: Sketch 1, item 2, after it.
+    "create_sketch adds an empty Sketch 1 as item 2, after 1. Box: 40 × 30 × 20 mm, and opens it; nothing already in the timeline changes.",
+    "The flat faces a sketch can go on, by name (create_sketch's on), with the way each faces and its centre:",
+    "- face:feature-1/end: a face of Body 1 (Box 1), facing up (+Z, a top face), centre (20, 15, 20) mm.",
+    "- face:feature-1/side-1: a face of Body 1 (Box 1), facing the front (−Y), centre (20, 0, 10) mm.",
+  ]);
+  assert.equal(v.choiceWords!["face:feature-1/end"], "a face of Body 1 (Box 1), facing up (+Z, a top face)");
+  // set_part is offered as Design lists it; export_stl never (it downloads a file, so it stays the user's).
+  assert.deepEqual(v.commands!.map((c) => c.op), ["set_part", "create_sketch"]);
+});
+
+test("hand-worked: which way a face faces, in words for an axis and as its normal otherwise", () => {
+  assert.equal(facingWords([0, 0, -1]), "down (−Z, a bottom face)");
+  assert.equal(facingWords([1, 0, 0]), "right (+X)");
+  assert.equal(facingWords([-1, 0, 0]), "left (−X)");
+  assert.equal(facingWords([0, 1, 0]), "the back (+Y)");
+  // A 45° face: 1/√2 = 0.70710678… is 0.707 to 3 decimals, and −0 is written 0.
+  assert.equal(facingWords([Math.SQRT1_2, -0, Math.SQRT1_2]), "along (0.707, 0, 0.707)");
+  // To 3 decimals, which is all the prompt shows: 0.9996 rounds to 1 and 0.0004 to 0, so it is "up"; 0.9994 is 0.999 and is not.
+  assert.equal(facingWords([0.0004, 0, 0.9996]), "up (+Z, a top face)");
+  assert.equal(facingWords([0.0346, 0, 0.9994]), "along (0.035, 0, 0.999)");
+});
+
+test("the prompt lists at most AI_FACES faces, and only those can be chosen", () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i): AIFace => ({ ...TOP, name: `face:feature-1/f${i}` }));
+  const at = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, many(AI_FACES));
+  assert.ok(!at.notes.some((l) => l.includes("left out") && l.includes("face")), "exactly AI_FACES: no cut");
+  const over = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, many(AI_FACES + 2));
+  assert.equal(over.notes.at(-1), "(2 more faces left out)");
+  const on = over.commands!.find((c) => c.op === "create_sketch")!.params.on;
+  assert.ok(on.type === "choice");
+  // 3 origin planes and the first 30 faces; the 31st is not a value, so the answer's check refuses it.
+  assert.equal(on.values.length, 3 + AI_FACES);
+  assert.ok(!on.values.includes(`face:feature-1/f${AI_FACES}`));
+  assert.deepEqual(aiCommands([]).find((c) => c.op === "create_sketch")!.params.on, { type: "choice", values: ["XY", "XZ", "YZ"], description: on.description });
 });

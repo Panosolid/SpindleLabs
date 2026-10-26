@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, type BodySpec, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isHidden, isSketchItem, partFeature, partOf, readDesignDocument, type DesignDocument, type PartKind } from "./document.ts";
+import { insertAt, isHidden, isSketchItem, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -46,7 +46,7 @@ import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawSt
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import { designAIView } from "./ai-view.ts";
+import { aiFaces, designAIView } from "./ai-view.ts";
 import { COPY_SVG, DOWNLOAD_STL, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -546,6 +546,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
       return runAction(DOWNLOAD_STL, bodies);
     }
+    if (command.op === "create_sketch") return aiSketch(String(command.on));
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
     const kind = command.shape as ShapeKind;
     shape = kind;
@@ -1040,6 +1041,23 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return sketchBox.showError(e instanceof Error ? e.message : String(e));
     }
     startNewSketch(made);
+  }
+
+  /**
+   * create_sketch (AI7a): what Create sketch then a click on the plane or
+   * face does, out of any tool open first. A face is found by its name on
+   * the bodies on screen, as the AI was told of them (ai-view.ts
+   * `aiFaces`); a name no flat face there has is refused, so the
+   * assistant puts the project back.
+   */
+  function aiSketch(on: string) {
+    leaveExtrude();
+    leaveEdit();
+    if (mode.kind !== "none") leaveSketch();
+    if ((SKETCH_PLANES as readonly string[]).includes(on)) return startNewSketch(addSketch(designDoc(), on as SketchPlane));
+    const spot = lastScene === null ? null : sketchableFaces(lastScene).map((face) => sketchSpot({ face, shift: false }, lastScene)).find((x) => x?.kind === "face" && x.face.plane === on);
+    if (spot?.kind !== "face") throw new Error(`There is no flat face ${on} on the bodies shown to start a sketch on.`);
+    startNewSketch(addFaceSketch(designDoc(), spot.face, spot.drawn));
   }
 
   /** A new sketch made on a plane or a face: recorded (one undo step), opened with the line tool, looked at square on. */
@@ -1774,7 +1792,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // What the AI assistant is told before a request (25c3): the timeline as last built, and the panel's sizes, which a set_part keeps for each it leaves out.
     aiView: () => {
       const [width, depth, height] = inputs.map((i) => Number(i.value));
-      return designAIView(ctx.project.workspaces.design as DesignDocument | undefined, failedNow, { width, depth, height });
+      const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+      const label = (id: string) => doc?.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? id;
+      return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label));
     },
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
     shortcut(id) {
