@@ -10,6 +10,10 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
+## 0.32.6 (2026-10-26)
+
+- Fixed: File ▾ could run New (or Export STL) from a design that had already been replaced (issue #323, found by the nightly monkey). With the menu open, a project file opened (every workspace is set up afresh), then New chosen from the still-open menu ran the old setup's New, whose dialog had left the page, and the browser threw an error instead of asking. Each File ▾ item now runs the entry on screen at the moment it is chosen; if that entry is off or gone by then, nothing runs. Checked by a unit test written first and seen failing (the menu opened, a new design put in place, then New, Export STL, an entry turned off and one gone), the monkey's shrunk case kept as a regression replay (it failed on main with the same error, and passes), and the full 2,000-action session of seed 202610251.
+
 ## 0.32.5 (2026-10-26)
 
 - Fixed: the Start fresh dialog (File ▾ > New) showed as a plain white box with the browser's own buttons (Ben's screenshot). Its styles were written for the old toolbar button's group, which the new toolbar (U0) no longer has, so none of them applied. The dialog now carries the start-fresh class itself and its dark panel and red Start fresh button are back. Checked in a real browser at 1280 and 375 px: the File ▾ check now reads the dialog's colours (the panel #1c1f24 and the button #6b2328), which failed before the fix with a white panel, and screenshots at both widths.
