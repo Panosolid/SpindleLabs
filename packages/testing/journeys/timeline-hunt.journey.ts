@@ -84,8 +84,8 @@ test("regression (hunt 2026-10-21): with a body shown, a marker move and a quick
 async function openExtrude(a: App) {
   a.$("#extrude")!.click();
   await a.settle();
-  const select = a.$("#extrude-sketch") as HTMLSelectElement;
-  return { offered: [...select.options].map((o) => o.value), status: a.$("#extrude-status")!.textContent, ok: !(a.$("#extrude-ok") as HTMLButtonElement).disabled };
+  const usable = a.$("#extrude-panel")!.dataset.usable ?? "";
+  return { offered: usable === "" ? [] : usable.split(" "), status: a.$("#extrude-status")!.textContent, ok: !(a.$("#extrude-ok") as HTMLButtonElement).disabled };
 }
 
 /** A box, then Sketch 1 holding a 40 × 30 rectangle (sketch-2), nothing extruded yet. */
