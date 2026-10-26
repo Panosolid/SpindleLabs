@@ -20,7 +20,9 @@
 // estimate and the working out as it is written, never 100% before the
 // preview (Ollama's stream is held piece by piece in the page, `held`).
 // AI7a: the AI starts a sketch on an origin plane or a flat face it was
-// told of, as Create sketch would, in one undo step.
+// told of, as Create sketch would, in one undo step. AI7b: it draws
+// circles, rectangles and lines in the sketch it just started or the one
+// open, in sketch mm, and is refused when no sketch is open.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -224,7 +226,7 @@ try {
       assert.equal(asked[0].url, "http://localhost:11434/api/chat");
       assert.match(body.messages[0].content, /"op":"set_part","shape":"box","width":40,"depth":30,"height":20/);
       assert.deepEqual(body.messages[1], { role: "user", content: "Make it 10 mm wider." });
-      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch"], "set_part and create_sketch (AI7a), never export_stl: the AI can't download files");
+      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line"], "set_part, create_sketch (AI7a) and the draws (AI7b), never export_stl: the AI can't download files");
       // The preview: only width moves, 40 → 50; the part is untouched.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: box 50 × 30 × 20 mm");
       assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["width40→50"]);
@@ -509,7 +511,7 @@ try {
         assert.deepEqual(facing, ["down (−Z, a bottom face)", "left (−X)", "right (+X)", "the back (+Y)", "the front (−Y)", "up (+Z, a top face)"].sort());
         // The box stands on the XY plane, 20 mm tall: its top face's centre is 20 mm up.
         const top = faces.find((l) => l.includes("facing up"));
-        assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm\.$/, top);
+        assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm, which is \(-?[\d.]+, -?[\d.]+\) in a sketch on it\.$/, top);
         const topName = top.match(/^- (face:[^:]+):/)[1];
         const schema = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "create_sketch");
         assert.deepEqual(schema.properties.on.enum, ["XY", "XZ", "YZ", ...faces.map((l) => l.match(/^- (face:[^:]+):/)[1])]);
@@ -546,6 +548,75 @@ try {
         assert.match(await page.textContent("#ai-result"), /even after one retry.*Nothing was changed/s);
         assert.equal(await page.$("#ai-accept"), null);
         assert.equal(await undoTitle(page), before);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI draws Ben's circle in a new sketch, then a rectangle in the open one: told the sketch axes, previewed, one undo step each; with no sketch open it is refused (AI7b, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const answer = (commands, explanation) => JSON.stringify({ commands, explanation });
+      // Ben's words (2026-10-26): radius 10 → diameter 2 × 10 = 20, centred on the origin as nothing else is said.
+      const answers = [answer([{ op: "create_sketch", on: "XY" }, { op: "draw_circle", diameter: 20 }], "The diameter is twice the radius: 2 × 10 = 20 mm. So there is a new sketch on the XY plane, and in it a circle ⌀20 mm at (0, 0).")];
+      const { page, asked } = await fresh(answers, { open: false });
+      const points = (want) => page.waitForFunction((w) => document.querySelector("#viewport").dataset.sketchPoints === w, want, { timeout: 5000 }).catch(async () => assert.fail(`points ${want}, shown ${await page.getAttribute("#viewport", "data-sketch-points")}`));
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        const steps = await undoTitle(page);
+        await ask(page, "Draw a circle with radius 10mm as a sketch on the XY plane.");
+        await page.waitForSelector("#ai-preview");
+        // What the model was told: no sketch is open, where a sketch's x and y are, and where each face's centre is in them.
+        const prompt = asked[0].body.messages[0].content.split("\n");
+        assert.ok(prompt.includes("No sketch is open: to draw, start one with create_sketch first in the same answer; the draw commands then draw in it."), prompt.join("\n"));
+        assert.ok(prompt.some((l) => l.startsWith("In a sketch, x and y are in mm on its plane: on XY, x is X and y is Y; on XZ, x is X and y is Z;")), prompt.join("\n"));
+        // The box's top face is 20 mm up; its own sketch's x and y are listed after its 3D centre.
+        const top = prompt.find((l) => l.startsWith("- face:") && l.includes("facing up"));
+        assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm, which is \(-?[\d.]+, -?[\d.]+\) in a sketch on it\.$/, top);
+        const ops = asked[0].body.format.properties.commands.items.oneOf.map((c) => c.properties.op.const);
+        assert.deepEqual(ops, ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line"]);
+        // The preview: a row per command; nothing changed yet.
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0)");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "circle—→circle ⌀20 mm at (0, 0)"]);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
+        assert.equal(await undoTitle(page), steps);
+        await page.click("#ai-accept");
+        // Accepted: Sketch 1 on XY, open, with the circle's centre at its origin, in one AI step.
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2");
+        await points("0,0");
+        await page.waitForFunction(() => document.querySelector("#sketch-status")?.textContent === "1 circle, a closed outline.");
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0) (Ctrl+Z)");
+        await page.screenshot({ path: `e2e/assistant-circle-${width}.png` });
+        // In the open sketch: a 30 × 20 rectangle centred at (5, 5), so corners (5 ∓ 15, 5 ∓ 10) = (−10, −5) to (20, 15).
+        answers.push(answer([{ op: "draw_rectangle", width: 30, height: 20, x: 5, y: 5 }], "So in it a rectangle 30 × 20 mm centred at (5, 5)."));
+        await ask(page, "Add a 30 by 20 mm rectangle centred at (5, 5).");
+        await page.waitForSelector("#ai-preview");
+        const open = asked[1].body.messages[0].content.split("\n");
+        assert.ok(open.some((l) => /^Sketch 1 is open \(.+\): the draw commands draw in it, unless create_sketch starts another first\.$/.test(l)), open.join("\n"));
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["rectangle—→rectangle 30 × 20 mm centred at (5, 5)"]);
+        await page.click("#ai-accept");
+        await points("0,0 -10,-5 20,-5 20,15 -10,15");
+        assert.equal(await undoTitle(page), "Undo AI: rectangle 30 × 20 mm centred at (5, 5) (Ctrl+Z)");
+        await page.click("#undo");
+        await points("0,0");
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0) (Ctrl+Z)", "the rectangle alone was taken back");
+        await page.click("#undo");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 1);
+        assert.equal(await undoTitle(page), steps, "the sketch and its circle, taken back whole");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
+        // No sketch open: a line alone has nowhere to go. Refused with the reason; nothing changes.
+        answers.push(answer([{ op: "draw_line", x1: 0, y1: 0, x2: 10, y2: 5 }], "So a line from (0, 0) to (10, 5)."));
+        await ask(page, "Draw a line from (0, 0) to (10, 5).");
+        await page.waitForSelector("#ai-preview, #ai-result .ai-error");
+        if (await page.$("#ai-accept")) await page.click("#ai-accept");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.match(await page.textContent("#ai-result"), /No sketch is open to draw in/);
+        assert.equal(await undoTitle(page), steps);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
       } finally {
         await page.close();
       }

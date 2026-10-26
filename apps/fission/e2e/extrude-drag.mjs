@@ -70,7 +70,25 @@ async function fresh(width, touch) {
   return page;
 }
 
-const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 8000 }).catch(() => assert.fail(`${what}: timed out`));
+const until = (page, fn, arg, what, state) =>
+  page.waitForFunction(fn, arg, { timeout: 8000 }).catch(async () => assert.fail(`${what}: timed out${state ? `; ${await state(page).catch((e) => `(state unreadable: ${e.message})`)}` : ""}`));
+/** What the panel and the view show, for a timed-out wait's message: so a flake on CI says what it saw. */
+const panelState = (page) =>
+  page.evaluate(async () => {
+    const q = (s) => document.querySelector(s);
+    const panel = q("#extrude-panel");
+    return JSON.stringify({
+      volume: q("#volume")?.textContent,
+      panel: panel?.hidden ? "hidden" : "shown",
+      distance: q("#extrude-distance")?.value,
+      ok: q("#extrude-ok") ? (q("#extrude-ok").disabled ? "off" : "on") : "gone",
+      status: q("#extrude-status")?.textContent,
+      error: q("#extrude-error")?.textContent,
+      undo: q("#undo")?.title,
+      bodies: await window.fissionTest?.bodyCount(),
+      rebuilding: q("#viewport")?.dataset.rebuilding,
+    });
+  });
 const view = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
 const undoTitle = (page) => page.evaluate(() => document.getElementById("undo").title);
 
@@ -127,6 +145,14 @@ async function pixel(page, { x, y }) {
 
 /** A drag of the arrow from 0.6 of the way up it, `along` px further along its line on screen (negative back down), by mouse or by finger. */
 async function dragArrow(page, along, touch) {
+  const ended = Number(await view(page, "arrowDrags")) + 1;
+  await sendDrag(page, along, touch);
+  // The browser may still be handing the page the moves sent (a finger's moves come once a frame):
+  // only once the drag's end is heard is the distance the drag's last one (merge-queue flake, 2026-10-26).
+  await until(page, (n) => Number(document.querySelector("#viewport").dataset.arrowDrags ?? 0) >= n, ended, "the drag's end heard by the view");
+}
+
+async function sendDrag(page, along, touch) {
   const { foot, tip } = await arrow(page);
   const len = Math.hypot(tip[0] - foot[0], tip[1] - foot[1]);
   const u = [(tip[0] - foot[0]) / len, (tip[1] - foot[1]) / len];
@@ -209,9 +235,11 @@ try {
       assert.ok(after.tip[1] > after.foot[1], "the arrow points down the screen");
       if (shots) await page.screenshot({ path: `${shots}/extrude-below-${width}.png` });
       // Enter (focus left on the view by the drag) or OK: the body made, one undo step.
+      assert.equal(await page.inputValue("#extrude-distance"), String(down), "the distance is still the one dragged to");
+      await until(page, () => !document.querySelector("#extrude-ok").disabled, null, "OK on");
       if (touch) await page.tap("#extrude-ok");
       else await page.keyboard.press("Enter");
-      await until(page, (v) => document.querySelector("#volume")?.textContent === v, `${(RECT.area * -down).toLocaleString("en")} mm³`, "the body made");
+      await until(page, (v) => document.querySelector("#volume")?.textContent === v, `${(RECT.area * -down).toLocaleString("en")} mm³`, "the body made", panelState);
       assert.equal(await undoTitle(page), "Undo Extrude Sketch 1 (Ctrl+Z)");
       assert.equal(await view(page, "extrudeProfiles"), "", "the outlines are gone");
       assert.equal(await view(page, "arrow"), "", "the arrow is gone");
