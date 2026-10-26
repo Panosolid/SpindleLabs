@@ -84,6 +84,8 @@ test("deliberate breaks: each mislabelling is caught", async () => {
     ["wrong shape", (e) => (/\bball\b/.test(e.prompt) ? setPart(e.commands, (c) => ({ ...c, shape: "cylinder" })) : null)],
     // The export forgotten.
     ["export dropped", (e) => (/\bstl\b/i.test(e.prompt) && e.commands.length === 2 ? e.commands.slice(0, 1) : null)],
+    // A sketch started on the wrong plane: the front (XZ) taken as the top (AI7a).
+    ["front as top", (e) => (/\bfront\b/.test(e.prompt) && e.commands[0]?.op === "create_sketch" ? [{ op: "create_sketch", on: "XY" }] : null)],
     // A sketch request answered with a thin stand-in part (Ben's circle, 2026-10-26).
     ["a stand-in for a sketch", (e) => (e.commands.length === 0 && /sketch/i.test(e.prompt) ? [{ op: "set_part", shape: "cylinder", width: 20, depth: 20, height: 0.01 }] : null)],
   ];
@@ -105,7 +107,7 @@ test("a cannot example has no commands, about every kind of request Design can't
     assert.doesNotMatch(e.explanation, /\d/, e.explanation);
   }
   const needs = new Set(cannot.map((e) => e.explanation.match(/There is no command for (.+?) yet/)?.[1]));
-  assert.deepEqual([...needs].sort(), ["a chamfer", "a hole", "copies or patterns", "drawing a sketch", "hollowing a part out (a shell)", "rounding edges (a fillet)", "text"]);
+  assert.deepEqual([...needs].sort(), ["a chamfer", "a hole", "copies or patterns", "drawing in a sketch", "hollowing a part out (a shell)", "rounding edges (a fillet)", "text"]);
   // And no other example asks for any of these: the words decide which kind a request is.
   for (const e of g.examples.filter((x) => x.task !== "cannot")) assert.deepEqual(read(e.prompt, e.setup)?.length === 0, false, e.prompt);
 });

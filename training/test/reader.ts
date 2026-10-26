@@ -103,6 +103,9 @@ function created(kind: string, t: string): Command | null {
 /** The commands these words ask for, about the part `setup` makes; null when this reader can't tell. */
 export function read(prompt: string, setup: readonly Command[]): Command[] | null {
   let t = prompt.toLowerCase();
+  // Starting an empty sketch (AI7a), on a plane named by its letters or by the side of the view cube it faces.
+  const sketch = t.match(/^(start a new sketch|create a sketch|new sketch|i want to sketch|can you start a sketch|open a new sketch) on (the )?(xy|xz|yz|top|ground|bottom|front|back|right|left|side)( plane)?(, please)?[.?]$/);
+  if (sketch) return [{ op: "create_sketch", on: { top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" }[sketch[3]] ?? sketch[3].toUpperCase() }];
   // Asking for what Design has no command for (AI5c): drawing, holes, rounded or cut edges, shells, text, copies. The answer is no commands.
   if (/\b(sketch|draw|hole|drill|fillet|chamfer|hollow|engrave|copies)\b/.test(t)) return [];
   const out: Command[] = [];

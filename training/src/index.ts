@@ -2,7 +2,7 @@
 // model"; roadmap A11). Kept in its own folder, ready to move to a
 // repository of its own: nothing in the app imports it.
 
-import { DESIGN_COMMANDS } from "@fission/design";
+import { aiCommands } from "@fission/design";
 import { DESIGN_RECIPES, DESIGN_RULES } from "./design.ts";
 
 export { DESIGN_RECIPES, DESIGN_RULES, createPart, randomPart } from "./design.ts";
@@ -15,5 +15,5 @@ export { dataset, isValidation, toRecord, type ChatRecord, type Dataset, type Ma
 export const RULES = [...DESIGN_RULES];
 export const RECIPES = [...DESIGN_RECIPES];
 
-/** What the assistant panel offers the model today (apps/fission/src/assistant.ts, AI_COMMANDS): set_part only. */
-export const OFFERED = DESIGN_COMMANDS.filter((c) => c.op === "set_part");
+/** What the assistant panel offers the model today (Design's aiView, ai-view.ts `aiCommands`): set_part and create_sketch, on an origin plane (no body's faces: the training prompts list none). */
+export const OFFERED = aiCommands([]);
