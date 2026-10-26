@@ -1,0 +1,34 @@
+{
+  "seed": 202610260,
+  "what": "Full screen (the nav bar's button) and then a window resize: Chromium 156 refused the resize (\"To resize minimized/maximized/fullscreen window, restore it to normal state first\") and the tester died at action 148 of the 10-26 random-testing run on #329; fixed by leaving full screen before a resize, as a person must. Chromium 153 (this sandbox) allows the resize either way, so the fault only shows on the browser CI installs",
+  "actions": [
+    {
+      "do": "click",
+      "sel": "button[data-view=\"full-screen\"]"
+    },
+    {
+      "do": "resize",
+      "size": [375, 740]
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"full-screen\"]"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "resize",
+      "size": [1280, 800]
+    },
+    {
+      "do": "click",
+      "sel": "button[data-view=\"full-screen\"]"
+    },
+    {
+      "do": "resize",
+      "size": [820, 600]
+    }
+  ]
+}
