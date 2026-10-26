@@ -236,7 +236,6 @@ test("the schemas the model is given, worked by hand from the descriptions", () 
   assert.deepEqual(commandListSchema([one]), {
     type: "object",
     properties: {
-      explanation: { type: "string", maxLength: 1000, description: "Your working out, in plain words, before the commands: how you read the request, each number you worked out with the sums shown, and what the commands will make." },
       commands: {
         type: "array",
         items: {
@@ -256,8 +255,9 @@ test("the schemas the model is given, worked by hand from the descriptions", () 
           ],
         },
       },
+      explanation: { type: "string", maxLength: 1000, description: "After the commands, in plain words: what they make, with each size in millimetres. If no command can do what is asked, say that it can't be done yet and why." },
     },
-    required: ["explanation", "commands"],
+    required: ["commands", "explanation"],
     additionalProperties: false,
   });
 });

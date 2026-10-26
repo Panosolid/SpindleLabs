@@ -15,9 +15,13 @@ import type { Command, CommandSpec, ParamSpec } from "@fission/core";
 export const UNIT_RULE = "Every length in a command is in millimetres. Convert other units first: 1 cm = 10 mm, 1 m = 1000 mm, 1 inch = 25.4 mm.";
 export const RADIUS_RULE = 'A diameter is twice the radius: when the user gives a radius, use twice it wherever a diameter is asked for. A size "across" is a diameter.';
 export const CUBE_RULE = "A cube is a box whose width, depth and height are all the same.";
-/** The working out comes first (docs/ai.md, "Full working out"); the schema puts it before the commands. Short, so small models don't ramble into sizes nobody asked about. */
-export const EXPLAIN_RULE =
-  'First write your working out in "explanation", in one to three short sentences: each size the user gives, in millimetres (with the sum when you convert or work one out), and the sizes the part ends up with. Then give the commands that make exactly that.';
+/**
+ * The working out comes after the commands, as the schema orders them
+ * (docs/ai.md, "Working out after the commands"). One sentence: told to
+ * reason first, small models talked themselves out of plain requests
+ * (AI5c's prompt variants: llama3.2 5/12 with it first, 11/12 after).
+ */
+export const EXPLAIN_RULE = 'After the commands, write in "explanation" one short sentence saying what they make.';
 /**
  * An honest "can't do that yet" beats a wrong part: a circle sketch is not
  * a 0.01 mm thick cylinder. Worded as the exception it is: with the first

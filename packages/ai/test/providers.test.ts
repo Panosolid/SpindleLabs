@@ -121,7 +121,7 @@ test("Anthropic: key in its header only; the schema is enforced as the one tool 
   assert.equal(body.model, "claude-haiku-5-5");
   assert.equal(body.system, "S");
   assert.deepEqual(body.tool_choice, { type: "tool", name: "answer" });
-  assert.deepEqual(body.tools[0].input_schema.required, ["explanation", "commands"], "the generated command-list schema");
+  assert.deepEqual(body.tools[0].input_schema.required, ["commands", "explanation"], "the generated command-list schema");
 });
 
 test("Anthropic: a text answer (no schema asked) is returned as text", async () => {

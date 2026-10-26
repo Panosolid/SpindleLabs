@@ -11,7 +11,7 @@ on:
         description: "Ollama models to score, separated by spaces"
         default: "qwen2.5:1.5b llama3.2:3b gemma2:2b"
       variants:
-        description: "Prompt variants to score (app, no-cannot, commands-first, commands-first-cannot), separated by spaces"
+        description: "Prompt variants to score (app, no-cannot, explanation-first, explanation-first-no-cannot), separated by spaces"
         default: "app"
   pull_request:
     paths:

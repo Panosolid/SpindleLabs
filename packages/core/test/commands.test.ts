@@ -82,11 +82,12 @@ test("a whole answer: JSON with a commands list, each checked", () => {
   assert.match((parseCommandList(JSON.stringify({ commands: Array(51).fill({}) }), [hole]) as { error: string }).error, /at most 50/);
 });
 
-test("the working out comes first in the answer, is required by the schema, and is read as plain text", () => {
+test("the working out comes after the commands in the answer, is required by the schema, and is read as plain text", () => {
   const schema = commandListSchema([hole]) as { properties: Record<string, unknown>; required: string[] };
-  // Constrained output writes keys in the schema's order, so the words must come before the commands.
-  assert.deepEqual(Object.keys(schema.properties), ["explanation", "commands"]);
-  assert.deepEqual(schema.required, ["explanation", "commands"]);
+  // Constrained output writes keys in the schema's order: commands first, so small models
+  // don't talk themselves out of a plain request before they send it (AI5c's prompt variants).
+  assert.deepEqual(Object.keys(schema.properties), ["commands", "explanation"]);
+  assert.deepEqual(schema.required, ["commands", "explanation"]);
   const cmd = { op: "hole", face: "f", diameter: 3, depth: "blind" };
   const said = "The top face is f, so the 3 mm hole goes there.";
   assert.deepEqual(parseCommandList(JSON.stringify({ explanation: said, commands: [cmd] }), [hole]), { ok: true, commands: [cmd], explanation: said });

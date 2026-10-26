@@ -1,5 +1,5 @@
-// The working out every example carries (docs/ai.md, "Full working out";
-// AI5c): a few plain sentences before the commands. Each is checked
+// The working out every example carries (docs/ai.md, "Working out after
+// the commands"; AI5c): a few plain sentences after the commands. Each is checked
 // before it is kept, by rules that hold for any workspace:
 // - every conversion it writes ("4 cm is 40 mm") is right, by lengths.ts;
 // - every sum it writes ("2 × 15 = 30") is right;

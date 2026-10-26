@@ -23,8 +23,8 @@ export function toRecord(e: Example, specs: readonly CommandSpec[]): ChatRecord 
     messages: [
       { role: "system", content: systemPrompt(e.setup, specs) },
       { role: "user", content: e.prompt },
-      // The working out first, as the schema orders it (commandListSchema).
-      { role: "assistant", content: JSON.stringify({ explanation: e.explanation, commands: e.commands }) },
+      // The commands, then the working out, as the schema orders them (commandListSchema).
+      { role: "assistant", content: JSON.stringify({ commands: e.commands, explanation: e.explanation }) },
     ],
   };
 }

@@ -200,7 +200,7 @@ test("a record is the chat the app has: the same system prompt, and an answer th
     assert.ok(parsed.ok);
     assert.deepEqual(parsed.commands, e.commands);
     // The working out comes first, as the schema orders it, and reads back as written.
-    assert.deepEqual(Object.keys(JSON.parse(rec.messages[2].content)), ["explanation", "commands"]);
+    assert.deepEqual(Object.keys(JSON.parse(rec.messages[2].content)), ["commands", "explanation"]);
     assert.equal(parsed.explanation, e.explanation);
   }
 });

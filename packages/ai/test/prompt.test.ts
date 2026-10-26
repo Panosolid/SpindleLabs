@@ -83,11 +83,10 @@ test("the working out and the honest refusal come after the size rules, before t
   const at = (line: string) => p.indexOf(line);
   assert.ok(at(CUBE_RULE) >= 0 && at(EXPLAIN_RULE) === at(CUBE_RULE) + 1 && at(CANNOT_RULE) === at(EXPLAIN_RULE) + 1, p.join("\n"));
   assert.match(p.at(-1)!, /^Answer with the commands/);
-  // The working out names the key the schema asks for, and is short: no example about a radius, which made
-  // small models talk about the radius of a box (AI5c's first evaluation run).
-  assert.match(EXPLAIN_RULE, /"explanation"/);
-  assert.match(EXPLAIN_RULE, /one to three short sentences/);
-  assert.doesNotMatch(EXPLAIN_RULE, /radius/);
+  // The working out names the key the schema asks for, comes after the commands as the schema orders
+  // them, and is one sentence: small models told to reason first talked themselves out of plain
+  // requests (AI5c's prompt variants: llama3.2 5/12 with it first, 11/12 with it after).
+  assert.equal(EXPLAIN_RULE, 'After the commands, write in "explanation" one short sentence saying what they make.');
   // Sending the commands comes first; an empty list is the exception, and must say it can't be done.
   assert.match(CANNOT_RULE, /^When the commands can do what the user asks, always send them\. Only when/);
   assert.match(CANNOT_RULE, /say in the explanation that it can't be done yet and why/);

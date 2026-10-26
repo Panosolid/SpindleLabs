@@ -29,15 +29,20 @@ const SETS: { name: string; cases: readonly EvalCase[] }[] = [
   { name: "original", cases: EVAL_CASES },
   { name: "held-out", cases: HELD_OUT_CASES },
 ];
-/** The working out after the commands: the line that takes EXPLAIN_RULE's place when the schema puts commands first. */
-const EXPLAIN_AFTER = 'After the commands, write in "explanation" one short sentence saying what they make.';
+/**
+ * The working out before the commands: AI5c's first rule, which the
+ * explanation-first variant puts back in EXPLAIN_RULE's place (it scored
+ * llama3.2 5/12 against 11/12 with the working out after).
+ */
+const EXPLAIN_FIRST =
+  'First write your working out in "explanation", in one to three short sentences: each size the user gives, in millimetres (with the sum when you convert or work one out), and the sizes the part ends up with. Then give the commands that make exactly that.';
 /** `drops` are the rules the variant takes out of the prompt (checked below: a rule that isn't there stops the run rather than score the app's prompt under another name). */
-type Variant = { drops: string[]; commandsFirst: boolean };
+type Variant = { drops: string[]; explanationFirst: boolean };
 const VARIANTS: Record<string, Variant> = {
-  app: { drops: [], commandsFirst: false },
-  "no-cannot": { drops: [CANNOT_RULE], commandsFirst: false },
-  "commands-first": { drops: [EXPLAIN_RULE, CANNOT_RULE], commandsFirst: true },
-  "commands-first-cannot": { drops: [EXPLAIN_RULE], commandsFirst: true },
+  app: { drops: [], explanationFirst: false },
+  "no-cannot": { drops: [CANNOT_RULE], explanationFirst: false },
+  "explanation-first": { drops: [EXPLAIN_RULE], explanationFirst: true },
+  "explanation-first-no-cannot": { drops: [EXPLAIN_RULE, CANNOT_RULE], explanationFirst: true },
 };
 const variants = (process.env.VARIANTS ?? "app").split(/\s+/).filter(Boolean);
 const sample = systemPrompt([], specs);
@@ -58,13 +63,11 @@ function withVariant(provider: AIProvider, v: Variant): AIProvider {
   const change = (r: AIRequest): AIRequest => {
     const schema = r.jsonSchema as { properties?: Record<string, unknown>; required?: string[] } | undefined;
     const reordered =
-      v.commandsFirst && schema?.properties
-        ? { ...schema, properties: { commands: schema.properties.commands, explanation: schema.properties.explanation }, required: ["commands", "explanation"] }
+      v.explanationFirst && schema?.properties
+        ? { ...schema, properties: { explanation: schema.properties.explanation, commands: schema.properties.commands }, required: ["explanation", "commands"] }
         : schema;
     let system = r.system;
-    for (const rule of v.drops) {
-      system = system.replace(`${rule}\n`, rule === EXPLAIN_RULE ? `${EXPLAIN_AFTER}\n` : "");
-    }
+    for (const rule of v.drops) system = system.replace(`${rule}\n`, rule === EXPLAIN_RULE ? `${EXPLAIN_FIRST}\n` : "");
     return { ...r, system, jsonSchema: reordered };
   };
   return { kind: provider.kind, structuredOutput: provider.structuredOutput, check: () => provider.check(), complete: (r) => provider.complete(change(r)) };

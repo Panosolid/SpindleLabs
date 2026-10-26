@@ -244,11 +244,11 @@ try {
         await useOllama(page);
         await ask(page, "Make it 10 mm wider.");
         await page.waitForSelector("#ai-preview");
-        // The schema sent asks for the working out first, and requires it.
+        // The schema sent asks for the commands, then the working out, and requires both.
         const format = asked[0].body.format;
-        assert.deepEqual(Object.keys(format.properties), ["explanation", "commands"]);
-        assert.deepEqual(format.required, ["explanation", "commands"]);
-        assert.match(asked[0].body.messages[0].content, /First write your working out in "explanation"/);
+        assert.deepEqual(Object.keys(format.properties), ["commands", "explanation"]);
+        assert.deepEqual(format.required, ["commands", "explanation"]);
+        assert.match(asked[0].body.messages[0].content, /After the commands, write in "explanation"/);
         assert.equal(await page.textContent("#ai-preview .ai-working-text"), said);
         assert.equal(await page.$("#ai-preview img"), null, "the tag is shown, not made");
         assert.equal(await page.evaluate(() => window.ranMarkup), undefined);

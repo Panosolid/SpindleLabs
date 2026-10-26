@@ -61,18 +61,20 @@ export const MAX_EXPLANATION = 1000;
 
 /**
  * The schema for a whole answer, any of these specs: what the model must
- * answer with. The working out comes first (docs/ai.md, "Full working
- * out"): constrained output writes keys in the schema's order, so the
- * model reasons in words before it commits to any command.
+ * answer with. The commands come first and the working out after them
+ * (docs/ai.md, "Working out after the commands"): constrained output
+ * writes keys in the schema's order, and small models told to reason
+ * first talked themselves out of plain requests (AI5c's prompt variants:
+ * llama3.2 5/12 with the working out first, 11/12 after).
  */
 export function commandListSchema(specs: readonly CommandSpec[]): object {
   return {
     type: "object",
     properties: {
-      explanation: { type: "string", maxLength: MAX_EXPLANATION, description: "Your working out, in plain words, before the commands: how you read the request, each number you worked out with the sums shown, and what the commands will make." },
       commands: { type: "array", items: { oneOf: specs.map(commandSchema) } },
+      explanation: { type: "string", maxLength: MAX_EXPLANATION, description: "After the commands, in plain words: what they make, with each size in millimetres. If no command can do what is asked, say that it can't be done yet and why." },
     },
-    required: ["explanation", "commands"],
+    required: ["commands", "explanation"],
     additionalProperties: false,
   };
 }
