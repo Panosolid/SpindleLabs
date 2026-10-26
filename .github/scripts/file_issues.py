@@ -5,7 +5,8 @@ test-results branch (with the golden models' golden/seed-golden-<seed>/
 golden-report.txt: one kind per failing model, step 28b; and the monkey's
 monkey/seed-monkey-<seed>/monkey-report.txt: one kind per failing seed, hunt 3f), and by collect-fuzz.sh after a "Fuzzing" run (its
 fuzz-<target>/seed-<seed>/fuzz-report.txt: one kind per failure line). Every failure folder the run produced (endless.sh's
-seed-<seed>/: the harness report and the OpenCascade disagreements) is
+seed-<seed>/: the harness report, the OpenCascade disagreements and
+the devious parts' output) is
 reduced to its kinds: a harness failure's kind is the operation and the
 message with every number replaced by #, an oracle disagreement's kind is
 the shape, whether its profile has arcs, and which check failed. So a
@@ -161,6 +162,27 @@ def monkey_kinds(report):
     return kinds
 
 
+def devious_kinds(output):
+    """Kinds in devious-output.txt (endless.sh's run of kernel/tests/
+    devious.rs devious_random, issue #315): one per failing case, from
+    lines like 'case 882 (FISSION_SEED=.. FISSION_DEVIOUS_CASE=882),
+    case-882-from-random-16: refused: <message>; expected Builds', the
+    part's name and every number taken out; one for a starting part the
+    kernel and the clearance model measure differently; and one for a run
+    that panicked without naming a case."""
+    kinds = []
+    for line in output.splitlines():
+        m = re.match(r"case \d+ \(FISSION_SEED=\d+ FISSION_DEVIOUS_CASE=\d+\), [^:]+: (.*)$", line)
+        if m:
+            kinds.append((f"devious part {numbers_out(m.group(1)).strip()[:150]}", line))
+        elif "the kernel refuses it below a thinnest feature of" in line:
+            kinds.append(("devious generator: the kernel and the model measure a starting part's thinnest feature differently", line))
+    if not kinds and "panicked" in output:
+        tail = [l for l in output.splitlines() if l.strip()][-3:]
+        kinds.append(("devious generator crashed", "\n".join(tail)))
+    return kinds
+
+
 def kinds_of(folder_files):
     """{kind: example} for one failure folder, given {file name: text}."""
     found = []
@@ -174,6 +196,8 @@ def kinds_of(folder_files):
         found += harness_kinds(folder_files["report.txt"])
     if "oracle-disagreements.txt" in folder_files:
         found += oracle_kinds(folder_files["oracle-disagreements.txt"])
+    if "devious-output.txt" in folder_files:
+        found += devious_kinds(folder_files["devious-output.txt"])
     if not found and "harness-output.txt" in folder_files:
         # The harness died before writing a report (a crash outside a case).
         tail = [l for l in folder_files["harness-output.txt"].splitlines() if l.strip()][-3:]
@@ -298,6 +322,24 @@ def texts(action, kind, hits, run_url, commit, branch):
             "one closed as not planned is not reported again."
         )
         return f"Monkey: {kind[len('monkey '):]}"[:250], body
+    if action == "create" and kind.startswith("devious "):
+        body = (
+            f"{MARK.format(key(kind))}\n"
+            f"Random testing's devious parts (kernel/tests/devious.rs, devious_random: awkward sketches moved, turned "
+            f"and scaled, each judged by an exact model) found a new kind of problem ({where}).\n\n"
+            f"**Kind:** {kind}\n\n"
+            f"Example (seed `{seed}`):\n{fenced(example)}\n\n"
+            f"Seen in {len(seeds)} round(s):\n{seed_list(seeds)}\n\n"
+            "Each folder is on the test-results branch: devious-output.txt names the failing case, how it was made "
+            "and the part. Replay it in kernel/ with the FISSION_SEED and FISSION_DEVIOUS_CASE it names: "
+            "`FISSION_SEED=<seed> FISSION_DEVIOUS_CASES=3000 FISSION_DEVIOUS_CASE=<n> cargo test --release --test devious "
+            "devious_random -- --nocapture`. Work out by hand whether the kernel or the generator's verdict is wrong, "
+            "and keep the case as a test first.\n\n"
+            "Close this issue as completed once it is fixed (with a regression test), or as not planned "
+            "if it is not a SpindleLabs bug (say why in a comment): a kind closed as fixed that comes back on "
+            "main reopens it; one closed as not planned is not reported again."
+        )
+        return f"Devious parts: {kind.removeprefix('devious part ').removeprefix('devious ')}"[:250], body
     if action == "create":
         body = (
             f"{MARK.format(key(kind))}\n"
@@ -332,7 +374,7 @@ def read_folders(incoming):
             if not (name.startswith("seed-") and os.path.isdir(path)):
                 continue
             files = {}
-            for f in ("report.txt", "oracle-disagreements.txt", "harness-output.txt", "fuzz-report.txt", "golden-report.txt", "monkey-report.txt"):
+            for f in ("report.txt", "oracle-disagreements.txt", "harness-output.txt", "devious-output.txt", "fuzz-report.txt", "golden-report.txt", "monkey-report.txt"):
                 p = os.path.join(path, f)
                 if os.path.isfile(p):
                     with open(p, errors="replace") as fh:
