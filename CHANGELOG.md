@@ -10,9 +10,13 @@ How the numbers work, big.step.bugfix:
 
 Versions 0.0.0 to 0.14.2 come from the first chat's own commits, which reached `main` in four big early pull requests (#1, #2, #7, #8). From 0.15.0 on, numbers like #154 are the pull requests.
 
-## 0.32.14 (2026-10-26)
+## 0.32.15 (2026-10-26)
 
 - AI5c2: a progress bar while the AI answers (Ben's ask). The answer is now streamed from every kind of AI (Ollama, an API key's provider, the in-browser model and the browser's own), and the panel shows what the AI is doing ("Asking the AI…", "Writing the commands (1 so far)…", "Writing its working out…", "Checking the answer…", "Making the preview…"), a bar with a percentage, and the working out as it is written. A model can't know how long its answer will be, so the percentage is an estimate from how much has been written against a typical answer; it only grows, and it never shows 100% before the preview is on screen. The full answer is still checked exactly as before. Checked by 16 unit tests (answers cut into random pieces from a seed, a character split between pieces, a stream that stops part way timing out, errors part way through, the API key never in a message, bar values worked out by hand) with six planted bugs each caught, and browser checks at 1280 and 375 px with the answer held piece by piece (5%, 24% and 65% worked out by hand), which fail when the panel stops showing progress.
+
+## 0.32.14 (2026-10-26)
+
+- Fixed: the nightly Design mutation check still failed after its tests were all run (#336): 9 changes to the code that renames an older project's presets (`withShortNames`) and reads hidden bodies went unnoticed. Eight were real gaps, each a project file the tests never opened: a sketch named in the old preset form (it must keep its name), a preset with no provenance or without its own name (it must open unchanged), and a sketch listing another workspace's entry, an empty entry and a name the user gave beside its copy of the old name (only Design's copy of the old name may follow). Three new tests cover them; each of the eight changes was put in by hand and each failed a new test. The ninth is harmless and explained: a hidden entry that isn't a string is refused anyway, with the same message. Checked with the Design unit tests and typecheck; tonight's nightly reruns the mutation check.
 
 ## 0.32.13 (2026-10-26)
 
