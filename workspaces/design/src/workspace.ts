@@ -755,6 +755,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   const menuHost: MenuHost = {
     kernel,
+    bodies,
     current: () => designDoc(),
     record(step, next) {
       leaveExtrude();
@@ -1347,7 +1348,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         e.base = { doc, sketch: id, spec };
       }
       const handle = await kernel.call("body_build", previewSpec(e.base.spec, d));
-      const view = await kernel.call("body_view", handle).finally(() => void kernel.call("body_free", handle).catch(() => {}));
+      const view = await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       // Out of date: another sketch chosen or the panel closed. A newer distance only means another build follows.
       if (extruding !== e || e.sketch !== id) return;
       e.preview = e.distance === null ? null : view;

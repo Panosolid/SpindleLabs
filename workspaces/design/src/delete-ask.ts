@@ -16,7 +16,7 @@
 import type { KernelCalls } from "@fission/core";
 import { isSketchExtrude, isSketchItem, type DesignDocument } from "./document.ts";
 import { faceFeature, isFaceSketch } from "./face-sketch.ts";
-import { settleKept } from "./rebuild.ts";
+import { settleKept, type BodyCache } from "./rebuild.ts";
 import { deleteItem, itemName } from "./timeline-edits.ts";
 
 /** What the box asks before a used item is deleted. */
@@ -93,9 +93,14 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   return { heading: `Delete ${name}?`, words: `${usedBy} If you delete it, ${what}. Undo brings ${name} back.` };
 }
 
-/** What deleting item `id` would record, and what to ask first (the kernel says which outlines close, for the kept shapes). */
-export async function planDelete(kernel: KernelCalls, doc: DesignDocument, id: string): Promise<DeletePlan> {
-  const next = await settleKept(kernel, doc, deleteItem(doc, id));
+/**
+ * What deleting item `id` would record, and what to ask first (the kernel
+ * says which outlines close, for the kept shapes). Settled on `cache` when
+ * given (the app's: it reuses the bodies drawn, and a body the kernel
+ * fails to free is freed later, T6b), else on one of its own.
+ */
+export async function planDelete(kernel: KernelCalls, doc: DesignDocument, id: string, cache?: BodyCache): Promise<DeletePlan> {
+  const next = await settleKept(kernel, doc, deleteItem(doc, id), cache);
   return { next, ask: deleteWords(doc, next, id) };
 }
 
