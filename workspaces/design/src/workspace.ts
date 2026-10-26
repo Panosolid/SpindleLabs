@@ -12,10 +12,11 @@ import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyp
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
-import { DESIGN_COMMANDS, documentFor } from "./commands.ts";
+import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
 import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
+import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { bodyRows, browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
@@ -119,6 +120,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
             { id: "create-menu-extrude", label: "Extrude", icon: "extrude", title: extrudeTitle, run: onExtrude },
           ],
         },
+        { items: comingItems("Create") },
       ],
     },
   });
@@ -138,11 +140,21 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   facts.disabled = true; // until a body is built (workspace: after each build)
   const inspecting = toolGroup(document, {
     name: "Inspect",
-    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }] },
+    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }] },
   });
   inspecting.add([facts, "inspect"]);
   inspecting.element.dataset.modelling = "";
-  slot.append(creating.element, inserting.element, inspecting.element);
+  // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
+  const coming = (name: string, id: string, icon: IconName, title: string) => {
+    const g = toolGroup(document, { name, solo: icon, menu: { id, title, sections: () => [{ items: comingItems(name as ComingGroup) }] } });
+    g.element.classList.add("coming-soon");
+    g.element.dataset.modelling = "";
+    return g;
+  };
+  const modifying = coming("Modify", "modify-menu", "modify", "Modify: move, copy, combine, fillet and chamfer bodies. Coming soon: open to see what is on the way.");
+  const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
+  // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
+  slot.append(creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
   for (const group of toolbarGroups()) {
     const g = toolGroup(document, { name: group.name });
     g.element.dataset.modelling = "";
@@ -547,6 +559,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return runAction(DOWNLOAD_STL, bodies);
     }
     if (command.op === "create_sketch") return aiSketch(String(command.on));
+    if (DRAW_OPS.includes(command.op)) return aiDraw(command);
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
     const kind = command.shape as ShapeKind;
     shape = kind;
@@ -1058,6 +1071,32 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const spot = lastScene === null ? null : sketchableFaces(lastScene).map((face) => sketchSpot({ face, shift: false }, lastScene)).find((x) => x?.kind === "face" && x.face.plane === on);
     if (spot?.kind !== "face") throw new Error(`There is no flat face ${on} on the bodies shown to start a sketch on.`);
     startNewSketch(addFaceSketch(designDoc(), spot.face, spot.drawn));
+  }
+
+  /**
+   * A draw command (AI7b): drawn in the sketch open, as its tool would
+   * draw it with typed sizes, the tool's step in the undo list ("Draw
+   * circle", inside the AI's one step). Refused, so the assistant puts the
+   * project back, with no sketch open or one an extrude is built from (its
+   * edits are settled on the kernel first, which an AI step can't wait
+   * for: `drawRefused`). Anything part drawn with the tool is dropped first,
+   * as Escape would.
+   */
+  function aiDraw(command: Command) {
+    if (mode.kind !== "edit") throw new Error("No sketch is open to draw in: ask for a new sketch first, or open one with Edit Sketch.");
+    const id = mode.tool.sketch;
+    const refused = drawRefused(designDoc(), id);
+    if (refused) throw new Error(refused);
+    const next = drawingFor(designDoc(), id, command);
+    if (toolBusy(mode.tool)) {
+      mode.tool = startTool(mode.tool.kind, id);
+      mode.snap = null;
+      toolChanges++;
+      unlock();
+    }
+    applySketchEdit(next, DRAW_STEPS[command.op], id);
+    drawSketches();
+    void showOutline();
   }
 
   /** A new sketch made on a plane or a face: recorded (one undo step), opened with the line tool, looked at square on. */
@@ -1794,7 +1833,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const [width, depth, height] = inputs.map((i) => Number(i.value));
       const doc = ctx.project.workspaces.design as DesignDocument | undefined;
       const label = (id: string) => doc?.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? id;
-      return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label));
+      return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label), mode.kind === "edit" ? mode.tool.sketch : null);
     },
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
     shortcut(id) {

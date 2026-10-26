@@ -1,0 +1,10 @@
+/* Toolbar groups whose tools are all still to come (coming-soon.ts): greyed,
+   but their menus still open to show what is on the way. */
+.coming-soon .menu-button-toggle {
+  opacity: 0.5;
+}
+.coming-soon .menu-button-toggle:hover,
+.coming-soon .menu-button-toggle:focus-visible,
+.coming-soon .menu-button-toggle[aria-expanded="true"] {
+  opacity: 0.8;
+}
