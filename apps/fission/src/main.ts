@@ -885,12 +885,27 @@ for (const slot of ["browser", "properties"] as const) {
       toggle.click();
       opened = true;
       // The panel's first box took the keys while the sheet was still closed (nothing hidden is focused): give them again.
-      props.querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
+      const give = () => $("properties").querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
+      give();
+      requestAnimationFrame(() => {
+        if (!document.activeElement || document.activeElement === document.body) give(); // WebKit and Firefox lay the sheet out a frame later
+      });
     } else if (!now && opened && open) {
       toggle.click();
       opened = false;
     } else if (!now) opened = false;
   }).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+}
+// A press in the view outside a sheet puts the sheet away (a tap on the part beside it is the way out; the toggles still work).
+{
+  const phone = window.matchMedia("(max-width: 640px)");
+  $("workspace").addEventListener("pointerdown", (e) => {
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport")) return;
+    for (const slot of ["browser", "properties"]) {
+      const toggle = $(`${slot}-toggle`);
+      if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
+    }
+  });
 }
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
 const fromHash = (): Page => {
