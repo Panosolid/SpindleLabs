@@ -12,7 +12,7 @@ import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyp
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
-import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget } from "./commands.ts";
+import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
 import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
@@ -26,7 +26,7 @@ import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type Prope
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
-import { hideBody, itemName, TIMELINE_STEPS } from "./timeline-edits.ts";
+import { hideBody, itemName, renameItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
@@ -562,6 +562,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (command.op === "create_sketch") return aiSketch(String(command.on));
     if (DRAW_OPS.includes(command.op)) return aiDraw(command);
     if (command.op === EXTRUDE_OP) return aiExtrude(command);
+    if (command.op === RENAME_OP) return aiRename(command);
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
     const kind = command.shape as ShapeKind;
     shape = kind;
@@ -1105,6 +1106,25 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /**
+   * rename_item (AI7d): what Rename in an item's menu does with the name
+   * typed, for the item named, else the one just made. An open sketch stays
+   * open (a draw may follow in the same answer); anything else is recorded as one
+   * step, the part the panel shows left as it is.
+   */
+  function aiRename(command: Command) {
+    const doc = designDoc();
+    const id = renameTarget(doc, command);
+    const renamed = renameItem(doc, id, String(command.name));
+    if ("refused" in renamed) throw new Error(renamed.message);
+    if (renamed.doc === doc) return;
+    const step = TIMELINE_STEPS.rename(itemName(doc.timeline.features.find((f) => f.id === id)!));
+    if (mode.kind === "edit") return applySketchEdit(renamed.doc, step, mode.tool.sketch);
+    leaveExtrude();
+    leaveEdit();
+    return update(step, undefined, renamed.doc);
+  }
+
+  /**
    * Whether the kernel can build what `commands` would do, played out on a
    * copy of the design (null: yes; else the reason, in words): the same
    * steps `run` takes, sketches started and drawn in, and each extrude
@@ -1126,6 +1146,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
           const refused = drawRefused(doc, open);
           if (refused) throw new Error(refused);
           doc = drawingFor(doc, open, c);
+        } else if (c.op === RENAME_OP) {
+          const renamed = renameItem(doc, renameTarget(doc, c), String(c.name));
+          if ("refused" in renamed) throw new Error(renamed.message);
+          doc = renamed.doc;
         } else if (c.op === EXTRUDE_OP) {
           const id = extrudeTarget(doc, c, open);
           const d = commandDistance(c);

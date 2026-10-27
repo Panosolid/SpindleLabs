@@ -25,7 +25,9 @@
 // open, in sketch mm, and is refused when no sketch is open. AI7c: it
 // extrudes a sketch by a distance (the other way when negative) as the
 // Extrude tool's OK does; the kernel is asked first, so a sketch that is
-// not one closed outline is refused before any preview.
+// not one closed outline is refused before any preview. AI7d: it renames
+// an item (the sketch just started, or one by its name) as the timeline's
+// Rename does, and a name another item has is refused before any preview.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -229,7 +231,7 @@ try {
       assert.equal(asked[0].url, "http://localhost:11434/api/chat");
       assert.match(body.messages[0].content, /"op":"set_part","shape":"box","width":40,"depth":30,"height":20/);
       assert.deepEqual(body.messages[1], { role: "user", content: "Make it 10 mm wider." });
-      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"], "set_part, create_sketch (AI7a), the draws (AI7b) and extrude_sketch (AI7c), never export_stl: the AI can't download files");
+      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"], "set_part, create_sketch (AI7a), the draws (AI7b) and extrude_sketch (AI7c), never export_stl: the AI can't download files");
       // The preview: only width moves, 40 → 50; the part is untouched.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: box 50 × 30 × 20 mm");
       assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["width40→50"]);
@@ -580,7 +582,7 @@ try {
         const top = prompt.find((l) => l.startsWith("- face:") && l.includes("facing up"));
         assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm, which is \(-?[\d.]+, -?[\d.]+\) in a sketch on it\.$/, top);
         const ops = asked[0].body.format.properties.commands.items.oneOf.map((c) => c.properties.op.const);
-        assert.deepEqual(ops, ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"]);
+        assert.deepEqual(ops, ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]);
         // The preview: a row per command; nothing changed yet.
         assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0)");
         assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "circle—→circle ⌀20 mm at (0, 0)"]);
@@ -680,6 +682,58 @@ try {
         assert.match(await page.textContent("#ai-result"), /That can't be done: .*closed outline.*Nothing was changed/s);
         assert.equal(await undoTitle(page), before);
         assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 3);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI names the sketch it just started, renames it by name, and a name another item has is refused before the preview (AI7d, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const answer = (commands, explanation) => JSON.stringify({ commands, explanation });
+      const answers = [answer([{ op: "create_sketch", on: "XY" }, { op: "rename_item", name: "Base plate" }], "So a sketch on the XY plane, named Base plate.")];
+      const { page, asked } = await fresh(answers, { open: false });
+      const titles = () => page.$$eval("#timeline [data-item]", (els) => els.map((e) => e.title.split("\n")[0]));
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await ask(page, "Start a sketch on the XY plane and call it Base plate.");
+        await page.waitForSelector("#ai-preview");
+        // The starting box is the one item there is to name; the prompt says the one rule on names.
+        const first = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "rename_item");
+        assert.deepEqual(Object.keys(first.properties), ["op", "item", "name"]);
+        assert.deepEqual(first.properties.item.enum, ["Box 1"]);
+        assert.deepEqual(first.required, ["op", "name"], "the item is optional: left out it is the one just made");
+        assert.ok(asked[0].body.messages[0].content.split("\n").some((l) => l.startsWith("rename_item changes only an item's name")));
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then rename the newest item to Base plate");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "rename—→Base plate"]);
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 2, null, { timeout: 8000 });
+        assert.deepEqual(await titles(), ["1. Box 1", "2. Base plate"]);
+        await page.screenshot({ path: `e2e/assistant-rename-${width}.png` });
+        // By name now: the choice lists both items; Base plate becomes Lid, one undo step.
+        answers.push(answer([{ op: "rename_item", item: "Base plate", name: "Lid" }], "So rename Base plate to Lid."));
+        await ask(page, "Rename the first sketch to Lid.");
+        await page.waitForSelector("#ai-preview");
+        const second = asked[1].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "rename_item");
+        assert.deepEqual(second.properties.item.enum, ["Box 1", "Base plate"]);
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["renameBase plate→Lid"]);
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelector('#timeline [data-item="sketch-2"]').title.startsWith("2. Lid\n"));
+        assert.equal(await undoTitle(page), "Undo AI: rename Base plate to Lid (Ctrl+Z)");
+        await page.click("#undo");
+        await page.waitForFunction(() => document.querySelector('#timeline [data-item="sketch-2"]').title.startsWith("2. Base plate\n"));
+        // Another item's name, in other capitals: refused with the timeline's own words before any preview; nothing changed.
+        answers.push(answer([{ op: "rename_item", item: "Base plate", name: "box 1" }], "So rename Base plate to box 1."));
+        const before = await undoTitle(page);
+        await ask(page, "Rename the first sketch to box 1.");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.equal(await page.$("#ai-preview"), null, "no preview of a change that cannot be made");
+        assert.match(await page.textContent("#ai-result"), /That can't be done: Box 1 is already the name of another item.*Nothing was changed/s);
+        assert.equal(await undoTitle(page), before);
+        assert.deepEqual(await titles(), ["1. Box 1", "2. Base plate"]);
       } finally {
         await page.close();
       }

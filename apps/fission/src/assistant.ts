@@ -47,7 +47,7 @@ import {
   type ProviderSettings,
 } from "@fission/ai";
 import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
-import { DESIGN_COMMANDS, DRAW_OPS, drawWords, EXTRUDE_OP, extrudeWords, partOf, type DesignDocument } from "@fission/design";
+import { DESIGN_COMMANDS, DRAW_OPS, drawWords, EXTRUDE_OP, extrudeWords, partOf, RENAME_OP, renameWords, type DesignDocument } from "@fission/design";
 
 export interface AssistantHost {
   history: History;
@@ -168,6 +168,12 @@ export function previewOf(view: AIView, commands: readonly Command[]): { before:
     if (c.op === EXTRUDE_OP) {
       rows.push({ parameter: "extrude", before: undefined, after: extrudeWords(c).replace(/^extrude /, "") });
       labels.push(extrudeWords(c));
+      continue;
+    }
+    // A rename (AI7d): a row for the name it gives.
+    if (c.op === RENAME_OP) {
+      rows.push({ parameter: "rename", before: c.item === undefined ? undefined : String(c.item), after: String(c.name) });
+      labels.push(renameWords(c));
       continue;
     }
     if (c.op !== "create_sketch") continue;
