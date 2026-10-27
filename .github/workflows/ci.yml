@@ -66,17 +66,16 @@ jobs:
           GROUP_HEAD: ${{ github.event.merge_group.head_sha }}
         run: python3 .github/scripts/ci_mode.py
 
-  # Required. Quick: clippy, the tests and the CI scripts' tests (about 2.5
-  # minutes); full adds the same-answer and oracle checks (about 7). Docs
-  # only: just the CI scripts' tests (CHANGELOG.md and changelog.d/ among
-  # them) and a pull request's changelog entry.
+  # Required (main's ruleset and automerge.py name it). The kernel's own
+  # checks moved with it to its private repo (2026-10-27; they run here as
+  # kernel-ci.yml); this job keeps the CI scripts' tests (CHANGELOG.md and
+  # changelog.d/ among them), a pull request's changelog entry, and that the
+  # committed kernel build is the released one (check_kernel_build.py).
   kernel:
     needs: mode
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CODE: ${{ needs.mode.outputs.docs != 'true' }}
+    timeout-minutes: 15
     steps:
       # Two commits: a pull request's run tests GitHub's merge of it into
       # main, whose first parent is main, for the changelog entry check.
@@ -89,276 +88,23 @@ jobs:
       - name: The pull request's changelog entry
         if: github.event_name == 'pull_request'
         run: python3 .github/scripts/changelog.py pr HEAD^1 HEAD
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        if: env.CODE == 'true'
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: env.CODE == 'true'
-        with:
-          workspaces: kernel
-      - run: cargo clippy --all-targets -- -D warnings
-        if: env.CODE == 'true'
-        working-directory: kernel
-      - run: cargo test
-        if: env.CODE == 'true'
-        working-directory: kernel
-      # Same answer everywhere: every saved fuzz input gives the same bits
-      # natively and in the browser's WebAssembly (kernel/fuzz/same-answer/);
-      # then the same check with a planted one-bit change must fail.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-        with:
-          node-version: 24
-      - run: fuzz/same-answer/check.sh
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-        working-directory: kernel
-      - if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-        run: |
-          out=$(SAME_ANSWER_BREAK=1 fuzz/same-answer/check.sh) && { echo "the planted break was not caught"; exit 1; }
-          echo "$out" | grep "differ in: volume"
-        working-directory: kernel
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install mpmath
-        if: env.CODE == 'true'
-      - run: python3 prototypes/vectors.py
-        if: env.CODE == 'true'
       - run: python3 -m unittest discover -s .github/scripts
-      - name: Install OpenCascade, so the oracle's own tests run rather than skip (test_step_check.py, step 29)
-        run: pip install cadquery-ocp
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-      - run: python3 -m unittest discover -s prototypes/oracle -p 'test_*.py'
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-      # Step 30a: the exact box model the boolean fuzzing judges by. Its own
-      # tests run in every mode (a few seconds); the OpenCascade cross-check
-      # in it skips where cadquery-ocp isn't installed (quick mode).
-      - run: python3 -m unittest discover -s prototypes/boolean -p 'test_*.py'
-        if: env.CODE == 'true'
-      # Step 30c: the boolean nasty-case generator's lines (every family,
-      # place and op), answered from the exact models with each family's
-      # intent checked, and with every kind of wrong answer planted in each
-      # line it fits: all must agree and every plant be caught (about 1 min).
-      # Full mode adds OpenCascade's own boolean of each snapped pair.
-      - name: The boolean nasty cases, judged from the models and with planted wrong answers
-        if: env.CODE == 'true'
-        working-directory: kernel
-        env:
-          OCC: ${{ needs.mode.outputs.full != 'false' && '--occ' || '' }}
-        run: |
-          FISSION_BOOLEAN_CASES_OUT=target/boolean-cases.jsonl cargo test -q --test boolean_cases lines_for_the_judge
-          python3 ../prototypes/boolean/judge.py target/boolean-cases.jsonl --planted $OCC
-      # Step 32a6b: the facts table of every generator pair (and of its
-      # touching pairs moved by each offset) worked out again exactly from
-      # the solids, with every kind of wrong fact planted in each line it
-      # fits: all must agree and every plant be caught (about 30 s).
-      - name: The boolean facts table, checked against the exact solids and with planted wrong facts
-        if: env.CODE == 'true'
-        working-directory: kernel
-        run: |
-          FISSION_BOOLEAN_FACTS_OUT=target/boolean-facts.jsonl cargo test -q --test boolean_facts facts_for_the_model
-          python3 ../prototypes/boolean/facts_model.py target/boolean-facts.jsonl --planted
-      # Step 32b3 (hunt C1): the section of prisms with gaps (L, U, T and
-      # comb outlines), whose faces the exact model doesn't take, by length
-      # against OpenCascade's own section of the same prisms (about 10 s).
-      - name: Sections of faces with gaps, against OpenCascade
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-        working-directory: kernel
-        run: |
-          FISSION_SECTION_GAPS_OUT=target/section-gaps.jsonl cargo test -q --test boolean_facts sections_of_faces_with_gaps
-          python3 ../prototypes/boolean/section_occ.py target/section-gaps.jsonl
-      # Step 29b2: the nightly oracle reads every body from its STEP file.
-      # One round as the nightly runs it, with every file's first face
-      # planted flipped (FISSION_STEP_FAULT): every body must be a finding,
-      # whatever its size (orientation.py judges each face from the file
-      # alone, so OpenCascade's small-feature limit excuses none, #290).
-      - name: The oracle catches a planted flipped face in every STEP file
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-        working-directory: kernel
-        run: |
-          FISSION_STEP_FAULT=1 scripts/endless.sh 40 1 python3
-          head -4 target/endless-oracle.log
-          bodies=$(sed -n 's/^Oracle: \([0-9]*\) bodies.*/\1/p' target/endless-oracle.log)
-          found=$(sed -n 's/.* \([0-9]*\) disagreement(s)$/\1/p' target/endless-oracle.log)
-          small=$(sed -n 's/^  \([0-9]*\) more with a radius under.*/\1/p' target/endless-oracle.log)
-          [ -n "$bodies" ] && [ "$found" -gt 0 ] && [ "$found" = "$bodies" ] || { echo "the planted fault was not caught in every body ($small only under the small-feature limit)"; exit 1; }
-      # Step 29b3: the fuzzers' saved seeds build ~2,000 bodies; read from
-      # their STEP files they must all agree, and with a face planted
-      # flipped in every file, every one must be caught.
-      - name: The fuzz seeds' bodies read from their STEP files, clean and with a planted flipped face
-        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
-        working-directory: kernel
-        run: |
-          FISSION_ORACLE_OUT=target/fuzz-oracle.jsonl cargo test -q --test fuzz_corpus oracle_cases
-          python3 ../prototypes/oracle/fuzz_shapes.py target/fuzz-oracle.jsonl >target/fuzz-oracle.log || { cat target/fuzz-oracle.log; exit 1; }
-          head -4 target/fuzz-oracle.log
-          FISSION_STEP_FAULT=1 FISSION_ORACLE_OUT=target/fuzz-planted.jsonl cargo test -q --test fuzz_corpus oracle_cases
-          python3 ../prototypes/oracle/fuzz_shapes.py target/fuzz-planted.jsonl --planted >target/fuzz-planted.log || { cat target/fuzz-planted.log; exit 1; }
-          tail -1 target/fuzz-planted.log
+      - name: The committed kernel build is the released one
+        run: python3 .github/scripts/check_kernel_build.py
 
-  # Mutation testing of the kernel code this change touches: every mutant
-  # cargo mutants makes in the changed lines must be caught by a lib test
-  # (kernel/CLAUDE.md, Mutation testing). Equivalent mutants, which no test
-  # can catch, are excluded in kernel/.cargo/mutants.toml with the reason.
-  # A run started by hand (workflow_dispatch) runs it too.
-  #
-  # Three jobs: mutants-plan lists the mutants (no build) and picks how many
-  # shards to split them across (one per 30 mutants, at most 8, none when no
-  # kernel source changed); mutants-shard runs one share each, in parallel;
-  # mutants-in-diff, the check auto-merge requires, fails if any shard failed
-  # and lists every survivor in its summary.
-  mutants-plan:
-    needs: mode
-    if: ${{ !cancelled() && github.event_name != 'push' && needs.mode.outputs.docs != 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      shards: ${{ steps.plan.outputs.shards }}
-      count: ${{ steps.plan.outputs.count }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: cargo-mutants@27.1.0
-      - name: Count the mutants in the changed kernel code
-        id: plan
-        working-directory: kernel
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          # Each pull request's own run already checked its changed lines; a
-          # merge queue group adds none of its own, so it reports and passes.
-          if [ "$EVENT" = merge_group ]; then
-            echo "Merge queue: each pull request's own run checked the mutants in its changed kernel lines." | tee -a "$GITHUB_STEP_SUMMARY"
-            echo "count=0" >>"$GITHUB_OUTPUT"; echo "shards=[]" >>"$GITHUB_OUTPUT"; exit 0
-          fi
-          base=${BASE:-$(git merge-base origin/main HEAD)}
-          git diff --relative "$base" HEAD -- src >"$RUNNER_TEMP/kernel.diff"
-          count=0
-          if [ -s "$RUNNER_TEMP/kernel.diff" ]; then
-            cargo mutants --in-diff "$RUNNER_TEMP/kernel.diff" --list >"$RUNNER_TEMP/mutants.list"
-            count=$(grep -c . "$RUNNER_TEMP/mutants.list" || true)
-          fi
-          shards=$(( (count + 29) / 30 )); [ $shards -gt 8 ] && shards=8
-          echo "$count mutants in the kernel code changed since $base; $shards shards." | tee -a "$GITHUB_STEP_SUMMARY"
-          echo "count=$count" >>"$GITHUB_OUTPUT"
-          echo "shards=$(python3 -c "import json; print(json.dumps(list(range($shards))))")" >>"$GITHUB_OUTPUT"
-          cp "$RUNNER_TEMP/kernel.diff" kernel.diff
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: steps.plan.outputs.count != '0'
-        with:
-          name: mutants-diff
-          path: kernel/kernel.diff
-
-  mutants-shard:
-    needs: mutants-plan
-    if: needs.mutants-plan.outputs.count != '0'
-    runs-on: ubuntu-latest
-    timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.mutants-plan.outputs.shards) }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-          # One cache for every shard, written by shard 0 only.
-          shared-key: mutants
-          save-if: ${{ matrix.shard == 0 }}
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.149
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: mutants-diff
-          path: ${{ runner.temp }}
-      - name: Mutants in the changed kernel code, one shard
-        working-directory: kernel
-        env:
-          SHARDS: ${{ strategy.job-total }}
-          # Opt-level 1: the lib tests run five times faster than at 0 and a
-          # mutant's build is no slower, same verdicts (kernel/CLAUDE.md,
-          # Mutation testing; nightly.yml's shards the same).
-          CARGO_PROFILE_DEV_OPT_LEVEL: "1"
-          CARGO_PROFILE_DEV_DEBUG: "0"
-        # One mutant at a time, in the checkout itself: each mutant then
-        # rebuilds only the kernel crate (~2 s), where four copies each began
-        # with a full build of every dependency (3-6 minutes). nextest runs
-        # the lib tests on every core and stops at the first failure, so a
-        # caught mutant takes seconds instead of waiting ~50 s for the
-        # slowest test; a survivor still runs every test. The regressions
-        # folder is read-only so proptest can't save a seed found against one
-        # mutant and replay it against the next (it only warns).
-        run: |
-          chmod -R a-w tests/regressions
-          code=0
-          cargo mutants --in-diff "$RUNNER_TEMP/kernel.diff" --shard ${{ matrix.shard }}/$SHARDS --sharding round-robin \
-            --in-place --test-tool nextest --output "$RUNNER_TEMP" -- --lib || code=$?
-          out="$RUNNER_TEMP/mutants.out"
-          mkdir -p "$RUNNER_TEMP/result"
-          for f in caught missed timeout unviable; do cp "$out/$f.txt" "$RUNNER_TEMP/result/" 2>/dev/null || touch "$RUNNER_TEMP/result/$f.txt"; done
-          echo "$code" >"$RUNNER_TEMP/result/exit-code"
-          if [ -s "$out/missed.txt" ]; then cat "$out/missed.txt"; exit 1; fi
-          # 0: all caught; 3: some timed out (a mutant that loops forever is
-          # caught). Anything else (4: the unmutated tests failed) fails.
-          case $code in 0 | 3) ;; *) echo "cargo mutants exit code $code"; exit 1 ;; esac
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: mutants-shard-${{ matrix.shard }}
-          path: ${{ runner.temp }}/result/
-
+  # Required (main's ruleset and automerge.py name it). Mutation testing of
+  # the kernel's changed lines moved with the kernel to its private repo
+  # (kernel-ci.yml, status kernel-ci/mutants); nothing here has Rust in it.
   mutants-in-diff:
-    needs: [mode, mutants-plan, mutants-shard]
+    needs: mode
     if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: needs.mutants-plan.outputs.count != '0' && needs.mutants-plan.outputs.count != ''
-        with:
-          pattern: mutants-shard-*
-          path: ${{ runner.temp }}/shards
-      - name: Combine the shards
-        env:
-          PLAN: ${{ needs.mutants-plan.result }}
-          SHARD: ${{ needs.mutants-shard.result }}
-          COUNT: ${{ needs.mutants-plan.outputs.count }}
-          SHARDS: ${{ needs.mutants-plan.outputs.shards }}
-          DOCS: ${{ needs.mode.outputs.docs }}
-        run: |
-          echo "### Mutation testing of the changed kernel code" >>"$GITHUB_STEP_SUMMARY"
-          if [ "$DOCS" = true ] && [ "$PLAN" = skipped ]; then echo "Docs only: no kernel code changed." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
-          if [ "$PLAN" != success ]; then echo "mutants-plan: $PLAN" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; fi
-          if [ "$COUNT" = 0 ]; then echo "No mutants in the changed kernel code." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; fi
-          dir="$RUNNER_TEMP/shards"
-          expected=$(python3 -c "import json,sys; print(len(json.loads(sys.argv[1])))" "$SHARDS")
-          # download-artifact (v5 on) unpacks a lone matching artifact straight
-          # into path, not into a folder named after it: with one shard, put
-          # its files back into the folder the lines below read.
-          if [ "$expected" = 1 ] && ! ls -d "$dir"/mutants-shard-* >/dev/null 2>&1 && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
-            mkdir "$dir/mutants-shard-0" && find "$dir" -maxdepth 1 -type f -exec mv -t "$dir/mutants-shard-0" {} +
-          fi
-          got=$(ls -d "$dir"/mutants-shard-* 2>/dev/null | wc -l)
-          {
-            echo "$COUNT mutants across $expected shards ($got reported)."
-            for f in caught missed timeout unviable; do echo "- $f: $(cat "$dir"/mutants-shard-*/$f.txt 2>/dev/null | grep -c .)"; done
-            if cat "$dir"/mutants-shard-*/missed.txt 2>/dev/null | grep -q .; then
-              echo; echo "Survivors (each needs a test, or an entry in kernel/.cargo/mutants.toml saying why it is equivalent):"
-              cat "$dir"/mutants-shard-*/missed.txt | sed 's/^/    /'
-            fi
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-          # Any shard that failed, was cancelled or never reported fails the
-          # check, so a survivor can't slip through a lost shard.
-          if [ "$SHARD" != success ] || [ "$got" != "$expected" ]; then echo "mutants-shard: $SHARD"; exit 1; fi
+      - run: echo "The kernel's mutation testing runs in its own repository (kernel-ci/mutants)." | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Speed and memory against tests/baseline.json (.github/scripts/baseline.py):
   # the app's heap, memory and counts fail past their margin; time only
@@ -372,23 +118,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: wasm-pack
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm run kernel
-        working-directory: apps/fission
       - run: python3 .github/scripts/baseline.py --save "$RUNNER_TEMP/measured.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -404,20 +139,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-          # One cache of the WebAssembly build for every job that builds the app.
-          shared-key: wasm
-          # Saved by main's runs only: a branch's cache is visible to that branch
-          # alone, main's to every branch.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: wasm-pack
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -446,17 +167,6 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-          shared-key: wasm
-          save-if: false
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: wasm-pack
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -491,17 +201,6 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-          shared-key: wasm
-          save-if: false
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: wasm-pack
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -566,17 +265,6 @@ jobs:
         browser: [firefox, webkit]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-          shared-key: wasm
-          save-if: false
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: wasm-pack
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24

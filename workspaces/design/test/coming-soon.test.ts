@@ -10,14 +10,14 @@ import { COMING_NOTE, COMING_SOON, comingItems, type ComingTool } from "../src/c
 
 const repo = new URL("../../../", import.meta.url);
 const roadmap = readFileSync(new URL("docs/roadmap.md", repo), "utf8");
-const booleans = readFileSync(new URL("docs/progress/booleans.md", repo), "utf8");
+const cad = readFileSync(new URL("docs/progress/cad.md", repo), "utf8");
 
 /** Why `tool` should no longer be a placeholder: its step ticked done, or no such step; null while it is still to do. */
 function stale(tool: ComingTool): string | null {
   // "- [ ] 45. Fillet…", or a substep "- [x] 30d (4/4). …".
   const line = new RegExp(`^\\s*- \\[( |x)\\] ${tool.step}(?:\\.| \\()`, "m");
-  const found = (/^\d+$/.test(tool.step) ? roadmap : booleans).match(line);
-  if (!found) return `${tool.label}: step ${tool.step} is in neither docs/roadmap.md nor docs/progress/booleans.md`;
+  const found = (/^\d+$/.test(tool.step) ? roadmap : cad).match(line);
+  if (!found) return `${tool.label}: step ${tool.step} is in neither docs/roadmap.md nor docs/progress/cad.md`;
   if (found[1] === "x") return `${tool.label}: step ${tool.step} is done, so switch the tool on and take its line out of COMING_SOON`;
   return null;
 }
@@ -57,8 +57,8 @@ test("the step check can fail: a step done, an unknown step, a done substep", ()
   const tool = (step: string): ComingTool => ({ id: "x", label: "Box", group: "Create", step, does: "make a box" });
   // Step 7 (box primitive in the viewer) is ticked in docs/roadmap.md.
   assert.equal(stale(tool("7")), "Box: step 7 is done, so switch the tool on and take its line out of COMING_SOON");
-  assert.equal(stale(tool("999")), "Box: step 999 is in neither docs/roadmap.md nor docs/progress/booleans.md");
-  // 30d is ticked in docs/progress/booleans.md.
-  assert.match(stale(tool("30d")) ?? "", /step 30d is done/);
+  assert.equal(stale(tool("999")), "Box: step 999 is in neither docs/roadmap.md nor docs/progress/cad.md");
+  // 25a1 is ticked in docs/progress/cad.md.
+  assert.match(stale(tool("25a1")) ?? "", /step 25a1 is done/);
   assert.equal(stale(tool("35f")), null, "Combine's step is still to do");
 });

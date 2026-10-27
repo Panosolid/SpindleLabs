@@ -1,11 +1,11 @@
 // The planted STEP fault (src/step-fault.ts) on the hand-checked unit cube
-// file (kernel/tests/step/unit_cube.step).
+// file (test/fixtures/unit_cube.step, a copy of the kernel's own tests/step/unit_cube.step).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { flipFirstFace } from "../src/step-fault.ts";
 
-const cube = readFileSync(new URL("../../../kernel/tests/step/unit_cube.step", import.meta.url), "utf8");
+const cube = readFileSync(new URL("./fixtures/unit_cube.step", import.meta.url), "utf8");
 
 test("the planted fault flips the first face's same_sense and changes nothing else", () => {
   // By hand: the cube's first face in the file is #101, on plane

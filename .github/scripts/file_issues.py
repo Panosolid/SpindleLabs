@@ -295,7 +295,7 @@ def texts(action, kind, hits, run_url, commit, branch):
             f"Example (seed `{seed}`):\n{fenced(example)}\n\n"
             f"Seen in {len(seeds)} run(s):\n{seed_list(seeds)}\n\n"
             "The model is tests/golden/<model>.panosolid.json and its answers, with the working, are in "
-            "<model>.expect.json. `npm run journeys -w @fission/testing` (after `npm run kernel -w @fission/app`) "
+            "<model>.expect.json. `npm run journeys -w @fission/testing` "
             "rebuilds every model once; the replay command in the example runs the night again, in the same order. "
             "\"rebuilt differently\" means the same model gave two answers on one night (the kernel or Design depends on "
             "what ran before). Work out by hand whether the answer or the code is wrong: an expectation changes only with "

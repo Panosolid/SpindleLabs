@@ -91,7 +91,7 @@ test("the report file_issues.py reads: a first line naming the night, then one l
     `failure: gear: rebuilt differently in round 2 than in round 1: bodies[0].volume: 1 then 2 | first in round 2 (order: l-bracket, gear); replay: ${replay(night)}`,
     "",
   ]);
-  assert.equal(replay(night), "FISSION_SEED=7 FISSION_GOLDEN_ROUNDS=20 npm run golden -w @fission/testing (after npm run kernel -w @fission/app)");
+  assert.equal(replay(night), "FISSION_SEED=7 FISSION_GOLDEN_ROUNDS=20 npm run golden -w @fission/testing");
   // Nothing failed: no report, so no folder and no issue.
   assert.equal(goldenReport({ ...night, failures: [] }), "");
 });

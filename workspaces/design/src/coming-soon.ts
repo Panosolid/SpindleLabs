@@ -5,7 +5,7 @@
 // tooltip saying what it will do; choosing it does nothing. Never a tool
 // that pretends to work. When a tool lands, its line here goes and a real
 // item takes its place: test/coming-soon.test.ts fails once its step is
-// ticked in docs/roadmap.md (or docs/progress/booleans.md for 35e2 and
+// ticked in docs/roadmap.md (or docs/progress/cad.md for 35e2 and
 // 35f) while its line is still here. Modify ▾ and Construct ▾ hold only
 // these for now. Styles: src/styles/coming-soon.css.
 
@@ -19,7 +19,7 @@ export interface ComingTool {
   id: string;
   label: string;
   group: ComingGroup;
-  /** The roadmap step that brings it (docs/roadmap.md, or docs/progress/booleans.md for 35e2 and 35f). */
+  /** The roadmap step that brings it (docs/roadmap.md, or docs/progress/cad.md for 35e2 and 35f). */
   step: string;
   /** What it will do, in plain words, for the tooltip. */
   does: string;
