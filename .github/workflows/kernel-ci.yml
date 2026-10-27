@@ -1,0 +1,214 @@
+name: Kernel CI
+
+# The private kernel's checks (Panosolid/kernel), run here because public
+# repositories' runners are free and a private repo's minutes would last a
+# few days (Ben's decision, 2026-10-27). The kernel repo's own ci.yml starts
+# this for each pull request push and each push to its main, through
+# workflow_dispatch; it never runs on anything in this repo.
+#
+# This log is public. So: the kernel's scripts print only RESULT lines
+# (its ci/quiet.sh), every line also passes .github/scripts/kernel_ci.sh
+# filter here, the full logs go only to the private kernel-results repo,
+# nothing is cached (a pull request from a fork can read main's caches) and
+# nothing is uploaded as an artifact (public too). The verdicts go back to the
+# kernel commit as statuses kernel-ci/checks and kernel-ci/mutants, which the
+# kernel repo's auto-merge waits for.
+#
+# Secrets (Ben adds them; only workflows on this repo's own branches see
+# them, never a fork's pull request): KERNEL_READ, a fine-grained key with
+# read-only contents and read-write commit statuses on Panosolid/kernel;
+# RESULTS_WRITE, contents and issues read-write on Panosolid/kernel-results.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Kernel commit to test (a pull request's merge commit, or main)"
+        required: true
+      head:
+        description: "Kernel commit the statuses go on (the pull request's head; main: same as sha)"
+        required: true
+      base:
+        description: "Kernel commit to count mutants from (empty: no mutation testing)"
+        required: false
+        default: ""
+      label:
+        description: "pr-<number> or main"
+        required: true
+
+# A newer push to the same pull request cancels the older run; main's finish.
+concurrency:
+  group: kernel-ci-${{ inputs.label }}
+  cancel-in-progress: ${{ inputs.label != 'main' }}
+
+# The jobs need no rights on this repo: they use the two keys above.
+permissions: {}
+
+env:
+  SHA: ${{ inputs.sha }}
+  HEAD_SHA: ${{ inputs.head }}
+  BASE: ${{ inputs.base }}
+  LABEL: ${{ inputs.label }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Inputs are commit ids and a label, nothing else
+        run: |
+          [[ $SHA =~ ^[0-9a-f]{40}$ && $HEAD_SHA =~ ^[0-9a-f]{40}$ && ( -z $BASE || $BASE =~ ^[0-9a-f]{40}$ ) && $LABEL =~ ^(pr-[0-9]+|main)$ ]] || { echo "bad inputs"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Mark the kernel commit pending
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+        run: .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Panosolid/kernel
+          ref: ${{ inputs.sha }}
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -q mpmath cadquery-ocp >/dev/null 2>&1
+      - name: The kernel's checks (one line each; logs in kernel-results)
+        id: run
+        run: |
+          k/ci/checks.sh full "$RUNNER_TEMP/logs" 2>/dev/null | .github/scripts/kernel_ci.sh filter | tee "$RUNNER_TEMP/results.txt"
+          grep -qx "RESULT all PASS [0-9]*" "$RUNNER_TEMP/results.txt"
+      - name: Save the logs to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/logs"
+          cp "$RUNNER_TEMP/results.txt" "$RUNNER_TEMP/logs/" 2>/dev/null || true
+          .github/scripts/kernel_ci.sh save checks "$RUNNER_TEMP/logs"
+      - name: Report to the kernel commit
+        if: always()
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          if [ "$OUTCOME" = success ]; then state=success; else state=failure; fi
+          failing=$(sed -n 's/^RESULT \([a-z0-9-]*\) FAIL .*/\1/p' "$RUNNER_TEMP/results.txt" 2>/dev/null | grep -v '^all$' | head -5 | paste -sd, -)
+          .github/scripts/kernel_ci.sh status kernel-ci/checks $state "${failing:+Failed: $failing}${failing:-$OUTCOME}"
+
+  mutants-plan:
+    if: inputs.base != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      count: ${{ steps.plan.outputs.count }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Mark the kernel commit pending
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+        run: .github/scripts/kernel_ci.sh status kernel-ci/mutants pending "Counting the mutants in the changed lines"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Panosolid/kernel
+          ref: ${{ inputs.sha }}
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: Count the mutants in the changed kernel code
+        id: plan
+        run: |
+          k/ci/mutants.sh plan "$BASE" "$RUNNER_TEMP/logs" 2>/dev/null | .github/scripts/kernel_ci.sh filter | tee "$RUNNER_TEMP/plan.txt"
+          count=$(sed -n 's/^count \([0-9]*\)$/\1/p' "$RUNNER_TEMP/plan.txt")
+          shards=$(sed -n 's/^shards \(.*\)$/\1/p' "$RUNNER_TEMP/plan.txt")
+          [ -n "$count" ] && [ -n "$shards" ] || { echo "the plan failed"; exit 1; }
+          echo "count=$count" >>"$GITHUB_OUTPUT"
+          echo "shards=$shards" >>"$GITHUB_OUTPUT"
+      - name: Save the logs to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save mutants-plan "$RUNNER_TEMP/logs"
+
+  mutants-shard:
+    needs: mutants-plan
+    if: needs.mutants-plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.mutants-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Panosolid/kernel
+          ref: ${{ inputs.sha }}
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.149
+      - name: Mutants in the changed kernel code, one shard
+        id: run
+        env:
+          SHARDS: ${{ strategy.job-total }}
+        run: |
+          k/ci/mutants.sh shard ${{ matrix.shard }} "$SHARDS" "$BASE" "$RUNNER_TEMP/logs" 2>/dev/null | .github/scripts/kernel_ci.sh filter | tee "$RUNNER_TEMP/shard.txt"
+          grep -qx "RESULT mutants-shard-${{ matrix.shard }} PASS [0-9]*" "$RUNNER_TEMP/shard.txt"
+      - name: Save the logs to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save mutants-shard-${{ matrix.shard }} "$RUNNER_TEMP/logs"
+
+  mutants:
+    needs: [mutants-plan, mutants-shard]
+    if: always() && inputs.base != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Report to the kernel commit
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          PLAN: ${{ needs.mutants-plan.result }}
+          SHARD: ${{ needs.mutants-shard.result }}
+          COUNT: ${{ needs.mutants-plan.outputs.count }}
+        run: |
+          if [ "$PLAN" = success ] && { [ "$COUNT" = 0 ] || [ "$SHARD" = success ]; }; then
+            .github/scripts/kernel_ci.sh status kernel-ci/mutants success "$COUNT mutants in the changed lines, all caught"
+          else
+            .github/scripts/kernel_ci.sh status kernel-ci/mutants failure "plan $PLAN, shards $SHARD ($COUNT mutants)"
+            exit 1
+          fi
