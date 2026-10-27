@@ -385,8 +385,8 @@ try {
         await rebuilt(page); // its element is drawn again when a rebuild lands
         const item = page.locator(`#timeline [data-item="${id}"]`);
         await item.scrollIntoViewIfNeeded();
+        await closePanels(page, tap); // phone width: an open sheet (U5) would cover the timeline, whether it is tapped or clicked
         if (tap) {
-          await closePanels(page, true); // phone: an open sheet (U5) would cover the timeline
           await item.tap();
           await page.tap(`#timeline [data-more="${id}"]`);
         } else await item.click({ button: "right" });
