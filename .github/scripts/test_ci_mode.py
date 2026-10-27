@@ -54,7 +54,7 @@ class Docs(unittest.TestCase):
     def test_worked_by_hand(self):
         # A roadmap edit with its changelog and version: every file is writing
         # no code reads, so docs only, in the pull request's run and the queue's.
-        roadmap = ["docs/roadmap.md", "docs/progress/booleans.md", "CHANGELOG.md", "VERSION"]
+        roadmap = ["docs/roadmap.md", "docs/progress/booleans.md", "changelog.d/x1-roadmap.md"]
         self.assertEqual(decide("pull_request", QUEUE, roadmap), (False, False, True))
         self.assertEqual(decide("merge_group", None, roadmap), (True, True, True))
         # A package's CLAUDE.md starts with packages/ (so `ui` says yes) but is
@@ -69,7 +69,8 @@ class Docs(unittest.TestCase):
 
     def test_docs_files(self):
         for f in ("docs/roadmap.md", "docs/progress/cad.md", "docs/a/b/picture.png", "CHANGELOG.md", "README.md",
-                  "VERSION", "CLAUDE.md", "kernel/CLAUDE.md", "workspaces/image/CLAUDE.md", "training/CLAUDE.md"):
+                  "VERSION", "changelog.d/ev4faw-version-bot.md", "changelog.d/README.txt", "CLAUDE.md",
+                  "kernel/CLAUDE.md", "workspaces/image/CLAUDE.md", "training/CLAUDE.md"):
             self.assertTrue(is_docs(f), f)
         # Near misses: the wrong case, no slash after docs, a lookalike name or
         # folder, a README or changelog that isn't the root one, anything a
@@ -77,7 +78,8 @@ class Docs(unittest.TestCase):
         # an e2e helper), and paths that climb out of docs/.
         for f in ("Docs/roadmap.md", "docs", "docs.md", "xdocs/a.md", "kernel/docs/a.rs", "apps/docs/x.ts",
                   "NOTCLAUDE.md", "CLAUDE.md.bak", "claude.md", "kernel/fuzz/README.md", "packages/CHANGELOG.md",
-                  "VERSION.txt", "kernel/VERSION", "tests/baseline.json", "package.json", "package-lock.json",
+                  "VERSION.txt", "kernel/VERSION", "changelog.d", "kernel/changelog.d/a.md",
+                  "changelog.d/../kernel/a.rs", "tests/baseline.json", "package.json", "package-lock.json",
                   ".github/workflows/ci.yml", ".github/scripts/ci_mode.py", "apps/fission/e2e/helpers.mjs",
                   "kernel/src/boolean.rs", "docs/../kernel/src/a.rs", "../docs/a.md", "/docs/a.md", ""):
             self.assertFalse(is_docs(f), f)

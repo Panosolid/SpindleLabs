@@ -180,9 +180,21 @@ async function settle(page) {
   fail("settles", "the page was still changing 6 s after the action");
 }
 
-/** Save: the file's text, which also becomes the file `open` reopens. */
-async function save(s) {
-  const [download] = await Promise.all([s.page.waitForEvent("download", { timeout: 8000 }).catch(() => null), s.page.evaluate(() => document.getElementById("save").click())]);
+/**
+ * Save: the file's text, which also becomes the file `open` reopens. Only a
+ * project file counts: a Download STL clicked earlier finishes when the
+ * kernel has made the mesh, which on a slow runner can be after the next
+ * action began, and its file then arrived first (issue #362: "not JSON",
+ * the STL's "SpindleLabs STL: …" header). `stray` (the self-test) starts
+ * such a download in the same moment as Save.
+ */
+async function save(s, stray = false) {
+  const project = (d) => d.suggestedFilename().endsWith(".spindlelabs.json");
+  const click = (stray) => {
+    if (stray) Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["SpindleLabs STL: stray"])), download: "fission-box.stl" }).click();
+    document.getElementById("save").click();
+  };
+  const [download] = await Promise.all([s.page.waitForEvent("download", { predicate: project, timeout: 8000 }).catch(() => null), s.page.evaluate(click, stray)]);
   if (!download) fail("save", "Save gave no file");
   const text = readFileSync(await download.path(), "utf8");
   try {
@@ -543,6 +555,20 @@ async function main() {
     console.log(`  saved to ${file.pathname}`);
   };
   try {
+    // The tester's own check: Save takes the project file, not another
+    // download that lands first (issue #362).
+    {
+      const s = await open(browser);
+      try {
+        JSON.parse(await save(s, true));
+        console.log("self-test save beside a stray download: pass");
+      } catch (e) {
+        failed++;
+        console.log(`self-test save beside a stray download: FAIL: ${e.detail ?? e.message}`);
+      } finally {
+        await s.context.close();
+      }
+    }
     if (process.env.MONKEY_REPLAY) {
       const saved = JSON.parse(readFileSync(process.env.MONKEY_REPLAY, "utf8"));
       await report(`replay ${process.env.MONKEY_REPLAY.split("/").at(-1)}`, saved.seed, await run(browser, { actions: saved.actions }));

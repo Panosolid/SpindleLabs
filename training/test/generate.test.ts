@@ -171,12 +171,12 @@ test("every command of every workspace has a rule and a recipe", () => {
   }
 });
 
-test("only offered commands are taught: today's panel offers set_part, create_sketch (AI7a) the draw commands (AI7b) and extrude_sketch (AI7c), not export_stl", async () => {
-  assert.deepEqual(OFFERED.map((c) => c.op), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"]);
+test("only offered commands are taught: today's panel offers set_part, create_sketch (AI7a) the draw commands (AI7b), extrude_sketch (AI7c) and rename_item (AI7d), not export_stl", async () => {
+  assert.deepEqual(OFFERED.map((c) => c.op), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]);
   const g = await generate({ seed: 5n, count: 1_000, specs: OFFERED, rules: RULES, recipes: RECIPES, kernel: fakeKernel(), heldOut: [] });
   assert.ok(g.ok);
   assert.ok(g.examples.every((e) => e.commands.every((c) => c.op !== "export_stl")));
-  for (const op of ["create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"]) assert.ok(g.examples.some((e) => e.commands.some((c) => c.op === op)), `${op} is reached`);
+  for (const op of ["create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]) assert.ok(g.examples.some((e) => e.commands.some((c) => c.op === op)), `${op} is reached`);
   assert.ok(!g.examples.some((e) => /\bstl\b/i.test(e.prompt)));
 });
 

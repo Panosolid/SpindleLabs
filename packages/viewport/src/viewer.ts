@@ -147,7 +147,10 @@ export class ViewportView {
       down = null;
       if (!start || start.id !== e.pointerId || !isClick(start, { x: e.clientX, y: e.clientY })) return;
       // Extrude (UX1b): a click picks the closed outline under the pointer, or none.
-      if (this.host.extruding()) return this.host.extrudePointer({ kind: "pick", profile: this.profileAt(e.clientX, e.clientY) });
+      if (this.host.extruding()) {
+        const profile = this.profileAt(e.clientX, e.clientY);
+        return this.host.extrudePointer({ kind: "pick", profile, face: profile === null ? this.faceAt(e.clientX, e.clientY) : null });
+      }
       // Sketching: a click places a point on the sketch's plane, it picks nothing.
       const plane = this.host.sketchPlane();
       if (plane) return this.host.sketchPointer({ kind: "click", ...this.pointerOn(e.clientX, e.clientY, plane), ...this.sketchPick(e.clientX, e.clientY) });

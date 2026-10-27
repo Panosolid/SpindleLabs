@@ -4,9 +4,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseCommand } from "@fission/core";
-import { commandDistance, DESIGN_COMMANDS, documentFor, drawRefused, extrudable, EXTRUDE_OP, extrudeTarget, extrudeWords, SKETCH_REACH } from "../src/index.ts";
+import { commandDistance, DESIGN_COMMANDS, documentFor, drawRefused, extrudable, EXTRUDE_OP, extrudeTarget, extrudeWords, RENAME_OP, renameTarget, renameWords, SKETCH_REACH } from "../src/index.ts";
 import { addSketch } from "../src/sketch.ts";
-import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
+import { moveMarker, NAME_LIMIT, suppressItem } from "../src/timeline-edits.ts";
 
 const params = (c: unknown) => {
   const parsed = parseCommand(c, DESIGN_COMMANDS);
@@ -135,4 +135,61 @@ test("the extrude distance: 0 and non-numbers are refused, 1e6 mm is the reach (
 test("an extrude in words, for the preview and its undo step", () => {
   assert.equal(extrudeWords({ op: EXTRUDE_OP, distance: 15 }), "extrude the sketch by 15 mm");
   assert.equal(extrudeWords({ op: EXTRUDE_OP, distance: -8, sketch: "Sketch 2" }), "extrude Sketch 2 by 8 mm the other way");
+});
+
+// ---- rename_item (AI7d).
+
+const extruded = () => documentFor({ op: EXTRUDE_OP, distance: 10 }, rectangleSketch());
+
+test("hand-worked: rename_item changes a name and the copies of it in the items built from it, and nothing else (AI7d)", () => {
+  // Sketch 1 (sketch-1) and the extrude built from it (feature-10, "Extrude 1", its `from` naming Sketch 1).
+  const before = extruded();
+  const after = documentFor({ op: RENAME_OP, item: "Sketch 1", name: "base" }, before);
+  const [sketch, extrude] = after.timeline.features;
+  assert.deepEqual([sketch.provenance.self.label, extrude.provenance.self.label, extrude.provenance.from.map((p) => p.label)], ["base", "Extrude 1", ["base"]]);
+  // Nothing else moves: the same ids and order, the same drawing, the same extrude parameters and description.
+  assert.deepEqual(after.timeline.features.map((f) => f.id), ["sketch-1", "feature-10"]);
+  assert.deepEqual(after.sketches, before.sketches);
+  assert.deepEqual([extrude.intent.parameters, extrude.intent.summary], [before.timeline.features[1].intent.parameters, before.timeline.features[1].intent.summary]);
+  // Parsed first, as the assistant gets it: the same result.
+  const parsed = parseCommand({ op: RENAME_OP, item: "Sketch 1", name: "base" }, DESIGN_COMMANDS);
+  assert.ok(parsed.ok);
+  assert.deepEqual(documentFor(parsed.command, before), after);
+});
+
+test("which item a rename means: the one named, else the one just before the marker (the one the answer just made)", () => {
+  const doc = extruded();
+  const target = (command: object, d = doc) => renameTarget(d, { op: RENAME_OP, name: "x", ...command });
+  assert.equal(target({ item: "Sketch 1" }), "sketch-1", "named");
+  assert.equal(target({}), "feature-10", "the newest item before the marker: Extrude 1");
+  assert.equal(target({}, rectangleSketch()), "sketch-1", "…which is the sketch when nothing is built from it yet");
+  // The marker back on the sketch: the item just before it is the sketch, though the extrude still exists after it.
+  assert.equal(target({}, moveMarker(doc, "sketch-1")), "sketch-1");
+  assert.throws(() => target({ item: "Sketch 2" }), /no item "Sketch 2" in the timeline/);
+  assert.throws(() => target({}, { ...doc, timeline: { ...doc.timeline, features: [] } }), /timeline is empty/);
+  assert.throws(() => documentFor({ op: RENAME_OP, name: "x" }), /no item to rename/);
+});
+
+test("a name is refused the way the timeline's own Rename refuses it: empty, over the limit, a control character, another item's (ignoring case)", () => {
+  const doc = extruded();
+  const named = (name: string) => () => documentFor({ op: RENAME_OP, item: "Sketch 1", name }, doc);
+  assert.throws(named("   "), /can't be empty/);
+  assert.throws(named("two\nlines"), /line break/);
+  // "Extrude 1" is another item's name, in any case.
+  assert.throws(named("extrude 1"), /already the name of another item/);
+  // Its own name again, even in other capitals, is allowed: the same name changes nothing, "SKETCH 1" is a rename.
+  assert.equal(documentFor({ op: RENAME_OP, item: "Sketch 1", name: "Sketch 1" }, doc), doc);
+  assert.equal(named("SKETCH 1")().timeline.features[0].provenance.self.label, "SKETCH 1");
+  // The limit is 40: 36 (0.9×) and 40 are taken, 44 (1.1×) is refused, by the schema the model's answer meets and by the rename itself.
+  const ok = (n: number) => parseCommand({ op: RENAME_OP, name: "a".repeat(n) }, DESIGN_COMMANDS).ok;
+  assert.equal(NAME_LIMIT, 40);
+  assert.deepEqual([ok(Math.round(0.9 * NAME_LIMIT)), ok(NAME_LIMIT), ok(Math.round(1.1 * NAME_LIMIT)), ok(0)], [true, true, false, true]);
+  assert.throws(named("a".repeat(44)), /at most 40 characters: this one has 44/);
+  assert.equal(named("a".repeat(40))().timeline.features[0].provenance.self.label.length, 40);
+  assert.equal(parseCommand({ op: RENAME_OP }, DESIGN_COMMANDS).ok, false, "the name is required");
+});
+
+test("a rename in words, for the preview and its undo step", () => {
+  assert.equal(renameWords({ op: RENAME_OP, name: "base" }), "rename the newest item to base");
+  assert.equal(renameWords({ op: RENAME_OP, item: "Sketch 2", name: "lid" }), "rename Sketch 2 to lid");
 });

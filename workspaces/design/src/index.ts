@@ -1,7 +1,7 @@
 // @fission/design: the CAD workspace, the source of truth for all geometry.
 export { outline, type ProfileKind, type ShapeKind, type Loop, type Outline } from "./profiles.ts";
 export { designWorkspace } from "./workspace.ts";
-export { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, drawWords, extrudable, EXTRUDE_OP, commandDistance, extrudeTarget, extrudeWords, SHAPES, SKETCH_REACH } from "./commands.ts";
+export { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, drawWords, extrudable, EXTRUDE_OP, commandDistance, extrudeTarget, extrudeWords, RENAME_OP, renameTarget, renameWords, SHAPES, SKETCH_REACH } from "./commands.ts";
 export { AI_FACES, AI_SKETCHES, AI_TIMELINE_ITEMS, aiCommands, aiFaces, designAIView, facingWords, type AIFace, type PanelSizes } from "./ai-view.ts";
 export { bodyFeatures, bodyRows, browserTree, rowReference, rowReferences, type BrowserNode } from "./browser.ts";
 export { parameterRows, propertiesPanel, SIZE_KEYS, type ParameterRow, type Verb, type PropertiesPanel, type SizeKey } from "./properties.ts";
@@ -14,6 +14,7 @@ export { edgeName, edgeNamed, edgeShape, madeKind, madePoints, MIN_LENGTH, profi
 export { faceEdgeTargets, inSketch, pinNow, pointWords, sketchEdgeTargets, vertexNames, type EdgeKind, type EdgeTarget, type PinNow, type PointWarning, type SketchPin } from "./face-edges.ts";
 export { CURVED_FACE, sketchableFaces, sketchSpot, UNNAMED_FACE, type SketchSpot } from "./face-pick.ts";
 export { clickAt, hoverTool, SAME_LINE, SKETCH_TOOLS, startTool, switchTool, toolBusy, type LineTool, type RectangleTool, type SketchTool, type ToolKind } from "./sketch-tool.ts";
+export { CURVED_EXTRUDE, FACE_NEW_BODY, FACE_WITH_HOLES, faceLabel, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
 export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, featureBuild, featureSpec, isFlipped, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, previewSpec, setExtrudeDistance, setExtrudeFlip, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
 export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
