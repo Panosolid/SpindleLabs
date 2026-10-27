@@ -887,9 +887,9 @@ for (const slot of ["browser", "properties"] as const) {
       // The panel's first box took the keys while the sheet was still closed (nothing hidden is focused): give them again.
       const give = () => $("properties").querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
       give();
-      requestAnimationFrame(() => {
-        if (!document.activeElement || document.activeElement === document.body) give(); // WebKit and Firefox lay the sheet out a frame later
-      });
+      // WebKit and Firefox lay the sheet out a frame later, and the row menu that chose Edit feature gives the focus back to
+      // its opener (in the sheet just put away) as it closes: try again while nothing has the focus.
+      for (const ms of [0, 100, 300]) setTimeout(() => (!document.activeElement || document.activeElement === document.body) && give(), ms);
     } else if (!now && opened && open) {
       toggle.click();
       opened = false;
