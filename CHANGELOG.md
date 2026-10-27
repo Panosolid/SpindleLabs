@@ -1,6 +1,6 @@
 # Changelog
 
-Every change that reached `main`, newest first, in plain words. The version in `VERSION` is the newest heading here; `.github/scripts/check_version.py` checks the two agree on every pull request.
+Every change that reached `main`, newest first, in plain words. A pull request never writes a version here: it adds its entry as a file of its own in `changelog.d/` (its first line `fix`, `step N` or `none`), and the number is given by the order the pull requests reached `main`, so two of them can never clash over one. `python3 .github/scripts/changelog.py show` prints this file with every entry not folded in yet, numbered, and `changelog.py version` the current version; `changelog.py fold` (a pull request of its own, now and then) writes them in here. The newest heading here can therefore be older than `main`.
 
 How the numbers work, big.step.bugfix:
 - big: 0 until the CAD is good enough for real parts; 1.0.0 is that release.
