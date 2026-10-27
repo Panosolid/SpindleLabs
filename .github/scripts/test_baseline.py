@@ -121,7 +121,10 @@ class TheRealBaseline(unittest.TestCase):
             b = json.load(f)
         kinds = {baseline.kind_of(m) for m in b["metrics"]}
         self.assertEqual(kinds - set(b["margins"]), set())
-        self.assertGreaterEqual(len(b["metrics"]), 40)
+        # 33 app metrics; the kernel's 39 moved with it to its private repo (2026-10-27), whose own
+        # test holds them, so none may be left here, where nothing measures them any more.
+        self.assertGreaterEqual(len(b["metrics"]), 33)
+        self.assertEqual([m for m in b["metrics"] if not m.startswith("app.")], [])
         self.assertTrue(all(isinstance(v, (int, float)) for v in b["metrics"].values()))
         for rule in b["margins"].values():
             self.assertTrue(set(rule) <= {"fail", "flag", "floor", "why"} and ("fail" in rule or "flag" in rule))

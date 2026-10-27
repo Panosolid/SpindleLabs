@@ -100,6 +100,45 @@ class Watcher(unittest.TestCase):
         stopped, made, _ = self.watch(gh("in_progress"))
         self.assertFalse(stopped or made)
 
+class KernelWatcher(unittest.TestCase):
+    """stop-on-merge.sh for the private kernel's branches (KERNEL_REPO set): GitHub's compare of main with the branch."""
+
+    def watch(self, gh_body, seconds=1.0):
+        with tempfile.TemporaryDirectory() as d:
+            fake(d, "gh", gh_body)
+            stop = os.path.join(d, "stop")
+            env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], STOP_POLL_SECONDS="0.05", GITHUB_REPOSITORY="o/r",
+                       KERNEL_REPO="o/k", KERNEL_READ="key")
+            try:
+                out = subprocess.run(["bash", WATCHER, "claude/k", stop], env=env, capture_output=True, text=True, timeout=seconds)
+                stopped = True
+            except subprocess.TimeoutExpired as e:
+                out, stopped = e, False
+            return stopped, os.path.exists(stop), out
+
+    def test_merged_or_deleted_stops(self):
+        # "behind": main has every commit of the branch and more (merged); "identical": nothing of its own
+        # left; a 404: the branch is gone. branch_testing.py's lookups (`gh api repos/o/r/...`) fail here.
+        for answer in ("echo behind", "echo identical", "echo 'gh: Not Found (HTTP 404)' >&2; exit 1"):
+            stopped, made, out = self.watch(f'case "$2" in repos/o/k/*) {answer};; *) exit 1;; esac\n')
+            self.assertTrue(stopped and made, answer)
+            self.assertIn("has merged into main or is gone", out.stdout)
+
+    def test_unmerged_or_a_failed_lookup_keeps_testing(self):
+        # "ahead"/"diverged": the branch has commits main lacks; a 500 or no answer: ask again later.
+        for answer in ("echo ahead", "echo diverged", "echo 'HTTP 500' >&2; exit 1", "true"):
+            stopped, made, _ = self.watch(f'case "$2" in repos/o/k/*) {answer};; *) exit 1;; esac\n')
+            self.assertFalse(stopped or made, answer)
+
+    def test_it_asks_with_the_kernel_key_about_this_branch(self):
+        with tempfile.TemporaryDirectory() as log:
+            args = os.path.join(log, "args")
+            stopped, _, _ = self.watch(f'[ "$1" = api ] && [ "$2" != "${{2#repos/o/k}}" ] && {{ echo "$GH_TOKEN $*" >{args}; echo behind; exit 0; }}; exit 1\n')
+            self.assertTrue(stopped)
+            with open(args) as f:
+                self.assertEqual(f.read().strip(), "key api repos/o/k/compare/main...claude/k --jq .status")
+
+
 class EndlessStopFile(unittest.TestCase):
     """endless.sh in a scratch copy of kernel/: a fake `cargo` stands in for
     the build and the harness (each round takes 0.3 s and passes)."""

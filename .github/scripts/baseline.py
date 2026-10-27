@@ -1,8 +1,6 @@
 """Speed and memory against tests/baseline.json (test audit item 3).
 
-Measures the kernel's key operations (kernel/examples/baseline.rs: peak
-heap and allocations from a counting allocator, instructions from
-callgrind) and the app's (packages/testing/baseline/app.ts: JavaScript heap
+Measures the app's key operations (packages/testing/baseline/app.ts: JavaScript heap
 kept, the kernel's WebAssembly memory, time relative to a fixed workload, and
 the kernel calls and bodies built by one edit of a 20-feature part),
 compares each with the baseline and prints a table. Margins live in the
@@ -28,12 +26,13 @@ Usage: baseline.py [--update] [--measured FILE] [--only PREFIX] [--save FILE]
   --save FILE      also write what was measured to FILE
   --update         write what was measured into tests/baseline.json (only
                    when the owner has confirmed the change is intended)
-Needs a release build of the example, valgrind, and the WASM build.
+Needs the WASM build. The kernel's own metrics (peak heap, allocations and
+callgrind's instructions per operation) moved with it to its private repo,
+which checks them in its CI (2026-10-27).
 """
 
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -105,19 +104,7 @@ def run(cmd, **kw):
 
 
 def measure():
-    kernel = os.path.join(ROOT, "kernel")
-    run(["cargo", "build", "--release", "--example", "baseline"], cwd=kernel)
-    exe = os.path.join(kernel, "target", "release", "examples", "baseline")
     metrics = {}
-    for op, m in json.loads(run([exe]).stdout).items():
-        for name, value in m.items():
-            metrics[f"kernel.{op}.{name}"] = value
-    for op in run([exe, "--list"]).stdout.split():
-        err = run(["valgrind", "--tool=callgrind", "--callgrind-out-file=/dev/null", "--toggle-collect=*measured*", exe, "--one", op]).stderr
-        collected = re.search(r"Collected : (\d+)", err)
-        if not collected:
-            raise RuntimeError(f"no instruction count from callgrind for {op}:\n{err[-2000:]}")
-        metrics[f"kernel.{op}.instructions"] = int(collected.group(1))
     app = run(["node", "--expose-gc", "--experimental-strip-types", "--no-warnings", "packages/testing/baseline/app.ts"], cwd=ROOT).stdout
     for op, m in json.loads(app).items():
         for name, value in m.items():

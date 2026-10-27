@@ -63,8 +63,7 @@ MAIN = "main"
 PREFIX = "claude/"
 HOLD = "hold"
 # The jobs of ci.yml that gate a merge; a head without all of them has not
-# been tested. (ci.yml's coverage job only reports; e2e is the gate over
-# its e2e (k/3) shares.)
+# been tested. (e2e is the gate over its e2e (k/3) shares.)
 REQUIRED_CHECKS = ("kernel", "app", "e2e", "mutants-in-diff", "baseline")
 # ci.yml's matrix jobs whose shares ("e2e (2/3)", "mutants-shard (0)") a
 # required job gathers (e2e, mutants-in-diff).

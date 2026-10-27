@@ -1,38 +1,33 @@
 name: Fuzzing
 
-# Fuzzing on GitHub's computers (free for public repos): the file readers,
-# the STL reader (kernel/tests/fuzz_stl.rs) and the project loader
-# (packages/testing/src/project-fuzz.ts), each broken files by the thousand
+# Fuzzing on GitHub's computers (free for public repos): the project loader
+# (packages/testing/src/project-fuzz.ts), broken files by the thousand
 # checked against a simple model, a fresh seed every round of 2,000 inputs.
-# Alongside them, simulated users sketching and extruding on the real kernel
+# Alongside it, simulated users sketching and extruding on the real kernel
 # (packages/testing/fuzz/sketch-extrude.ts, rounds of 50 sessions × 40
 # steps against the sessions' own model), then up to 20,000 of the extrudes
-# they built compared with exact values and OpenCascade
-# (prototypes/oracle/sketch_extrude.py; a disagreement is a failure folder
-# with oracle-disagreements.txt). Design's timeline on the real kernel in
-# long sessions (packages/testing/fuzz/timeline.ts, step 25b3: rounds of 5
-# sessions × 500 steps against the timeline model, failures shrunk to the
-# fewest steps; each round's simulated-user numbers, Tier 3 item 4, go to
-# numbers.jsonl and the summary, step 30d). Stacked face sketches
-# (packages/testing/fuzz/face-stack.ts: rounds of 25 seeded chains, each 5 to
-# 8 prisms sketched on random faces of the ones before and extruded, then
-# edited, every step checked against an exact model, saved and reopened,
-# undone and redone; failures shrunk to the fewest prisms and edits), with a
-# self-test that a bug planted in it is caught. And the kernel's entry points (extrude,
-# sketch outline, moves and turns) with coverage-guided fuzzing
-# (kernel/fuzz/, cargo-fuzz on nightly Rust), every body their corpus builds
-# then compared with exact values and OpenCascade
-# (prototypes/oracle/fuzz_shapes.py). Both oracles also have OpenCascade
-# read every body from its STEP file as the kernel wrote it (step 29b3,
-# compare.py's step_issues), and each job then plants a flipped face in
-# every file of a short run (FISSION_STEP_FAULT), which must be caught in
-# every body (`--planted`), so a check that stopped working fails the job.
+# they built compared with exact values and OpenCascade (the private kernel
+# repo's prototypes/oracle/sketch_extrude.py; a disagreement is a failure
+# folder with oracle-disagreements.txt), which also has OpenCascade read
+# every body from its STEP file as the kernel wrote it (step 29b3), and then
+# plants a flipped face in every file of a short run (FISSION_STEP_FAULT),
+# which must be caught in every body (`--planted`). Design's timeline on the
+# real kernel in long sessions (packages/testing/fuzz/timeline.ts, step 25b3:
+# rounds of 5 sessions × 500 steps against the timeline model, failures
+# shrunk to the fewest steps; each round's simulated-user numbers, Tier 3
+# item 4, go to numbers.jsonl and the summary, step 30d). Stacked face
+# sketches (packages/testing/fuzz/face-stack.ts: rounds of 25 seeded chains,
+# each 5 to 8 prisms sketched on random faces of the ones before and
+# extruded, then edited, every step checked against an exact model, saved
+# and reopened, undone and redone; failures shrunk to the fewest prisms and
+# edits), with a self-test that a bug planted in it is caught. The kernel's
+# own fuzzing (the STL reader, the coverage-guided targets) moved with the
+# kernel to its private repo and runs in kernel-fuzz.yml (2026-10-27).
 #
 # Nightly at 23:10 UTC (7:10am Perth), after the random testing run
-# (nightly.yml, 15:00 to 22:35 UTC, collected by about 22:50) so the two
-# never compete for runners or push to test-results at once; 45 minutes a
-# reader or kernel target, so results are in by about 8am Perth. "Run workflow" on the
-# Actions tab tests any branch for `minutes`.
+# (nightly.yml) so the two never push to test-results at once; 45 minutes a
+# job, so results are in by about 8am Perth. "Run workflow" on the Actions
+# tab tests any branch for `minutes`.
 #
 # A final job adds the rounds to the test-results branch
 # (.github/scripts/collect-fuzz.sh: fuzz/log.csv, fuzz/summary.txt, and
@@ -58,33 +53,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  stl:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel
-      - name: Fuzz the STL reader until the time is up
-        working-directory: kernel
-        env:
-          MINUTES: ${{ inputs.minutes || '45' }}
-          FISSION_FUZZ_OUT: ${{ runner.temp }}/fuzz
-        # A debug build (the tests' own profile), so overflow checks are on.
-        # The job fails when a round found something; collect still runs.
-        run: |
-          case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
-          cargo test --test fuzz_stl --no-run
-          FISSION_FUZZ_SECONDS=$(( MINUTES * 60 )) cargo test --test fuzz_stl fuzz_stl_random -- --nocapture
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: fuzz-stl
-          path: ${{ runner.temp }}/fuzz/
-          if-no-files-found: ignore
-
   project:
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -142,11 +110,20 @@ jobs:
         if: always()
         with:
           python-version: "3.12"
+      # The oracle scripts are the private kernel repo's (prototypes/oracle).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: always()
+        with:
+          repository: Panosolid/kernel
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          sparse-checkout: prototypes/oracle
+          persist-credentials: false
       - name: Compare the extrudes with exact values and OpenCascade
         if: always()
         env:
           OUT: ${{ runner.temp }}/fuzz
-        working-directory: prototypes/oracle
+        working-directory: k/prototypes/oracle
         run: |
           [ -f "$OUT/oracle.jsonl" ] || exit 0
           pip install -q cadquery-ocp mpmath
@@ -163,7 +140,7 @@ jobs:
           PLANTED: ${{ runner.temp }}/planted
         run: |
           FISSION_STEP_FAULT=1 FISSION_FUZZ_SECONDS=60 FISSION_FUZZ_OUT="$PLANTED" npm run sessions -w @fission/testing
-          cd prototypes/oracle && python3 sketch_extrude.py "$PLANTED/oracle.jsonl" "$PLANTED/disagreements.txt" --planted
+          cd k/prototypes/oracle && python3 sketch_extrude.py "$PLANTED/oracle.jsonl" "$PLANTED/disagreements.txt" --planted
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -171,78 +148,6 @@ jobs:
           path: |
             ${{ runner.temp }}/fuzz/log.csv
             ${{ runner.temp }}/fuzz/seed-*/
-          if-no-files-found: ignore
-
-  kernel:
-    # Coverage-guided fuzzing (libFuzzer via cargo-fuzz) of the kernel's
-    # entry points: kernel/fuzz/checks.rs, one job per target. Starts from
-    # the committed seeds (kernel/fuzz/seeds/), so each night continues
-    # from code the fuzzer already reaches instead of from nothing.
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [extrude, sketch, placed]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@2c76c034f9e32a5d6e2c104dc4df23a22476db04 # nightly
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: kernel/fuzz
-      - run: cargo install cargo-fuzz --locked
-      - name: Fuzz until the time is up
-        working-directory: kernel
-        env:
-          MINUTES: ${{ inputs.minutes || '45' }}
-        run: |
-          case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
-          fuzz/run.sh ${{ matrix.target }} $(( MINUTES * 60 )) "$RUNNER_TEMP/fuzz"
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: always()
-        with:
-          python-version: "3.12"
-      # Every body the corpus builds (the seeds, the saved crashes and
-      # tonight's finds) and random inputs build, rebuilt in OpenCascade and checked against exact
-      # volume, area and crossings (prototypes/oracle/fuzz_shapes.py); a
-      # disagreement is a failure folder with oracle-disagreements.txt.
-      - name: Compare the fuzzed bodies with exact values and OpenCascade
-        if: always()
-        working-directory: kernel
-        env:
-          FISSION_ORACLE_TARGET: ${{ matrix.target }}
-          FISSION_ORACLE_CORPUS: fuzz/corpus
-          FISSION_ORACLE_OUT: ${{ runner.temp }}/oracle.jsonl
-          # Plus 20,000 random inputs, seeded by the run (replay with the same
-          # FISSION_SEED and FISSION_ORACLE_RANDOM).
-          FISSION_ORACLE_RANDOM: "20000"
-          FISSION_SEED: ${{ github.run_id }}
-        run: |
-          cargo test --test fuzz_corpus oracle_cases
-          pip install -q cadquery-ocp mpmath
-          if ! python3 ../prototypes/oracle/fuzz_shapes.py "$FISSION_ORACLE_OUT" "$RUNNER_TEMP/disagreements.txt"; then
-            dir="$RUNNER_TEMP/fuzz/seed-oracle-${{ matrix.target }}-${{ github.run_id }}"
-            mkdir -p "$dir"
-            mv "$RUNNER_TEMP/disagreements.txt" "$dir/oracle-disagreements.txt"
-            exit 1
-          fi
-      # The STEP check's self-test: the saved seeds' bodies with a face
-      # flipped in every file, each of which the oracle must report.
-      - name: The oracle catches a planted flipped face in every fuzz body's STEP file
-        if: always()
-        working-directory: kernel
-        env:
-          FISSION_ORACLE_TARGET: ${{ matrix.target }}
-          FISSION_ORACLE_OUT: ${{ runner.temp }}/planted.jsonl
-          FISSION_STEP_FAULT: "1"
-        run: |
-          cargo test --test fuzz_corpus oracle_cases
-          python3 ../prototypes/oracle/fuzz_shapes.py "$FISSION_ORACLE_OUT" "$RUNNER_TEMP/planted.txt" --planted
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: fuzz-kernel-${{ matrix.target }}
-          path: ${{ runner.temp }}/fuzz/
           if-no-files-found: ignore
 
   timeline:
@@ -329,7 +234,7 @@ jobs:
           if-no-files-found: ignore
 
   collect:
-    needs: [stl, project, sessions, timeline, stack, kernel]
+    needs: [project, sessions, timeline, stack]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
