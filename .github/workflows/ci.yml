@@ -148,6 +148,15 @@ jobs:
         run: |
           FISSION_BOOLEAN_FACTS_OUT=target/boolean-facts.jsonl cargo test -q --test boolean_facts facts_for_the_model
           python3 ../prototypes/boolean/facts_model.py target/boolean-facts.jsonl --planted
+      # Step 32b3 (hunt C1): the section of prisms with gaps (L, U, T and
+      # comb outlines), whose faces the exact model doesn't take, by length
+      # against OpenCascade's own section of the same prisms (about 10 s).
+      - name: Sections of faces with gaps, against OpenCascade
+        if: env.CODE == 'true' && needs.mode.outputs.full != 'false'
+        working-directory: kernel
+        run: |
+          FISSION_SECTION_GAPS_OUT=target/section-gaps.jsonl cargo test -q --test boolean_facts sections_of_faces_with_gaps
+          python3 ../prototypes/boolean/section_occ.py target/section-gaps.jsonl
       # Step 29b2: the nightly oracle reads every body from its STEP file.
       # One round as the nightly runs it, with every file's first face
       # planted flipped (FISSION_STEP_FAULT): every body must be a finding,

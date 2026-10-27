@@ -102,7 +102,7 @@ function created(kind: string, t: string): Command | null {
 
 const PLANE_OF: Record<string, string> = { xy: "XY", xz: "XZ", yz: "YZ", top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" };
 
-/** A circle, rectangle or line drawn in a sketch on a plane, as two commands; undefined when the words ask for no such drawing, null when they do but can't be read. */
+/** A circle, rectangle or line drawn in a sketch on a plane, as two commands (then an extrude_sketch when the words go on "then extrude it …", AI7c); undefined when the words ask for no such drawing, null when they do but can't be read. */
 function readDrawing(t: string): Command[] | null | undefined {
   if (!/\b(circle|rectangle|line)\b/.test(t) || !/\b(sketch|draw)\b/.test(t) || /\b(arc|face)\b/.test(t)) return undefined;
   const plane = t.match(/\bon (the )?(xy|xz|yz|top|ground|bottom|front|back|right|left|side)\b( plane)?/);
@@ -112,6 +112,11 @@ function readDrawing(t: string): Command[] | null | undefined {
   const at = centre ? { x: Number(centre[1]), y: Number(centre[2]) } : {};
   // Lengths, with any centre or line ends taken out first (they are mm in the sketch, not sizes).
   const sizes = lengths(t.replace(/\([^)]*\)( mm)?/g, " "));
+  // "…, then extrude it 5 mm": the last length is how far, and "the other way" makes it negative; one outline must close, so not a line.
+  const extruding = /, (then|and) extrude it\b/.test(t);
+  const far = extruding ? sizes.pop() : undefined;
+  if (extruding && (!far || Number.isNaN(far.mm) || /\bline\b/.test(t))) return null;
+  const extrude: Command[] = far ? [{ op: "extrude_sketch", distance: /the other way/.test(t) ? -far.mm : far.mm }] : [];
   if (/\bline\b/.test(t)) {
     const ends = t.match(/from \((-?\d+), (-?\d+)\) to \((-?\d+), (-?\d+)\) mm/);
     return ends ? [sketch, { op: "draw_line", x1: Number(ends[1]), y1: Number(ends[2]), x2: Number(ends[3]), y2: Number(ends[4]) }] : null;
@@ -119,10 +124,10 @@ function readDrawing(t: string): Command[] | null | undefined {
   if (/\bcircle\b/.test(t)) {
     if (sizes.length !== 1) return null;
     const radius = /\bradius\b/.test(t);
-    return [sketch, { op: "draw_circle", diameter: radius ? Number((2 * sizes[0].mm).toPrecision(12)) : sizes[0].mm, ...at }];
+    return [sketch, { op: "draw_circle", diameter: radius ? Number((2 * sizes[0].mm).toPrecision(12)) : sizes[0].mm, ...at }, ...extrude];
   }
   // A rectangle: the first size along x (wide, or before "by"), the second along y.
-  return sizes.length === 2 ? [sketch, { op: "draw_rectangle", width: sizes[0].mm, height: sizes[1].mm, ...at }] : null;
+  return sizes.length === 2 ? [sketch, { op: "draw_rectangle", width: sizes[0].mm, height: sizes[1].mm, ...at }, ...extrude] : null;
 }
 
 /** The commands these words ask for, about the part `setup` makes; null when this reader can't tell. */

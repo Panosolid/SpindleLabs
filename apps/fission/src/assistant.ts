@@ -47,7 +47,7 @@ import {
   type ProviderSettings,
 } from "@fission/ai";
 import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
-import { DESIGN_COMMANDS, DRAW_OPS, drawWords, partOf, type DesignDocument } from "@fission/design";
+import { DESIGN_COMMANDS, DRAW_OPS, drawWords, EXTRUDE_OP, extrudeWords, partOf, type DesignDocument } from "@fission/design";
 
 export interface AssistantHost {
   history: History;
@@ -162,6 +162,12 @@ export function previewOf(view: AIView, commands: readonly Command[]): { before:
     if (DRAW_OPS.includes(c.op)) {
       rows.push({ parameter: c.op.replace("draw_", ""), before: undefined, after: drawWords(c) });
       labels.push(drawWords(c));
+      continue;
+    }
+    // An extrude (AI7c): a row for the body it adds.
+    if (c.op === EXTRUDE_OP) {
+      rows.push({ parameter: "extrude", before: undefined, after: extrudeWords(c).replace(/^extrude /, "") });
+      labels.push(extrudeWords(c));
       continue;
     }
     if (c.op !== "create_sketch") continue;
@@ -595,6 +601,9 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       const design = host.design();
       if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
+      // What only the kernel can judge (an extrude's outline) is asked before the preview, so a change that can't be made is never offered (AI7c).
+      const problem = await design.check?.(answer.commands);
+      if (problem) return say(`That can't be done: ${problem} Nothing was changed.`, true);
       const shown = previewOf(view, answer.commands);
       const { before } = shown;
       const action = proposeAction(answer.commands, {

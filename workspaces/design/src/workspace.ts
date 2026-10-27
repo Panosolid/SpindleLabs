@@ -12,7 +12,7 @@ import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyp
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
-import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused } from "./commands.ts";
+import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
 import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
@@ -560,6 +560,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     if (command.op === "create_sketch") return aiSketch(String(command.on));
     if (DRAW_OPS.includes(command.op)) return aiDraw(command);
+    if (command.op === EXTRUDE_OP) return aiExtrude(command);
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
     const kind = command.shape as ShapeKind;
     shape = kind;
@@ -1067,10 +1068,74 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     leaveEdit();
     if (mode.kind !== "none") leaveSketch();
-    if ((SKETCH_PLANES as readonly string[]).includes(on)) return startNewSketch(addSketch(designDoc(), on as SketchPlane));
+    startNewSketch(sketchOn(designDoc(), on));
+  }
+
+  /** The sketch create_sketch makes on a plane or a named face of the bodies on screen, added to `doc` (a name no flat face there has is refused). */
+  function sketchOn(doc: DesignDocument, on: string): { doc: DesignDocument; id: string } {
+    if ((SKETCH_PLANES as readonly string[]).includes(on)) return addSketch(doc, on as SketchPlane);
     const spot = lastScene === null ? null : sketchableFaces(lastScene).map((face) => sketchSpot({ face, shift: false }, lastScene)).find((x) => x?.kind === "face" && x.face.plane === on);
     if (spot?.kind !== "face") throw new Error(`There is no flat face ${on} on the bodies shown to start a sketch on.`);
-    startNewSketch(addFaceSketch(designDoc(), spot.face, spot.drawn));
+    return addFaceSketch(doc, spot.face, spot.drawn);
+  }
+
+  /**
+   * extrude_sketch (AI7c): what the Extrude tool's OK does with a typed
+   * distance, for the sketch named, else the one open, else the newest.
+   * Out of the sketch first without a rebuild (the extrude's own shows the
+   * new design). `check` has already had the kernel build it, so only a
+   * design that changed meanwhile can fail here, and the assistant puts
+   * the project back.
+   */
+  function aiExtrude(command: Command) {
+    leaveExtrude();
+    leaveEdit();
+    const doc = designDoc();
+    const id = extrudeTarget(doc, command, mode.kind === "edit" ? mode.tool.sketch : null);
+    const d = commandDistance(command);
+    const made = extrudeSketch(doc, id, Math.abs(d), d < 0);
+    if (mode.kind !== "none") leaveSketch(false);
+    shape = "sketch-extrude";
+    inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(d));
+    return update(extrudeStep(doc, id), undefined, made.doc);
+  }
+
+  /**
+   * Whether the kernel can build what `commands` would do, played out on a
+   * copy of the design (null: yes; else the reason, in words): the same
+   * steps `run` takes, sketches started and drawn in, and each extrude
+   * built by the kernel (an open or empty outline, or a size it refuses).
+   * Asked before the preview, so the user is never shown a change that
+   * cannot be made. Changes nothing.
+   */
+  async function aiCheck(commands: readonly Command[]): Promise<string | null> {
+    let doc = designDoc();
+    let open: string | null = mode.kind === "edit" ? mode.tool.sketch : null;
+    try {
+      for (const c of commands) {
+        if (c.op === "create_sketch") {
+          const made = sketchOn(doc, String(c.on));
+          doc = made.doc;
+          open = made.id;
+        } else if (DRAW_OPS.includes(c.op)) {
+          if (open === null) throw new Error("No sketch is open to draw in: ask for a new sketch first, or open one with Edit Sketch.");
+          const refused = drawRefused(doc, open);
+          if (refused) throw new Error(refused);
+          doc = drawingFor(doc, open, c);
+        } else if (c.op === EXTRUDE_OP) {
+          const id = extrudeTarget(doc, c, open);
+          const d = commandDistance(c);
+          const made = extrudeSketch(doc, id, Math.abs(d), d < 0);
+          const built = await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
+          if (built.errors.length > 0) throw new Error(`the kernel's checks failed: ${built.errors.join("; ")}`);
+          doc = made.doc;
+          open = null;
+        }
+      }
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    return null;
   }
 
   /**
@@ -1818,6 +1883,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ),
     sleep,
     run,
+    check: aiCheck,
     // File ▾ (U0f2a): New clears the design after asking (start-fresh.ts); Export STL downloads every body shown, as the toolbar's STL does.
     fileEntries: () => {
       const doc = designDoc();
