@@ -1,0 +1,55 @@
+tested commit 1a31760 on main, 2026-10-27 01:21 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40394590397)
+core: 8 survivors, all explained: true
+design: no report (the job stopped before the check)
+storage: 26 survivors, all explained: true
+model: 37 survivors, all explained: true
+svg: 4 survivors, all explained: true
+viewport: no report (the job stopped before the check)
+UNEXPLAINED survivor at packages/ai/src/commands.ts:23: packages/ai/src/commands.ts | Regex | /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn['’]t available)\b/i => /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn[^'’]t supported|not available|isn['’]t available)\b/i
+UNEXPLAINED survivor at packages/ai/src/commands.ts:23: packages/ai/src/commands.ts | Regex | /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn['’]t available)\b/i => /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn[^'’]t available)\b/i
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:143: packages/ai/src/hosted.ts | ConditionalExpression | !line.startsWith("data:") => false
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:143: packages/ai/src/hosted.ts | StringLiteral | "data:" => ""
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:145: packages/ai/src/hosted.ts | ConditionalExpression | data === "" => false
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:148: packages/ai/src/hosted.ts | BlockStatement | { throw new Error(`the stream has a line that isn't JSON: ${data.slice(0, 80)}`); } => {}
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:149: packages/ai/src/hosted.ts | StringLiteral | `the stream has a line that isn't JSON: ${data.slice(0, 80)}` => ``
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:149: packages/ai/src/hosted.ts | MethodExpression | data.slice(0, 80) => data
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:155: packages/ai/src/hosted.ts | ConditionalExpression | typeof error.message === "string" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:155: packages/ai/src/hosted.ts | StringLiteral | "the stream reported an error" => ""
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:172: packages/ai/src/hosted.ts | ConditionalExpression | !line.startsWith("event:") => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:172: packages/ai/src/hosted.ts | MethodExpression | line.startsWith("event:") => line.endsWith("event:")
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:215: packages/ai/src/hosted.ts | UpdateOperator | events++ => events--
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:179: packages/ai/src/hosted.ts | ConditionalExpression | e.type === "content_block_delta" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:177: packages/ai/src/hosted.ts | ConditionalExpression | !e => false
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:180: packages/ai/src/hosted.ts | ConditionalExpression | typeof delta.partial_json === "string" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:181: packages/ai/src/hosted.ts | ConditionalExpression | typeof delta.text === "string" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:225: packages/ai/src/hosted.ts | StringLiteral | "\n" => ""
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:191: packages/ai/src/hosted.ts | StringLiteral | "the reply is neither a stream nor JSON" => ""
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:190: packages/ai/src/hosted.ts | BlockStatement | { throw new Error("the reply is neither a stream nor JSON"); } => {}
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:197: packages/ai/src/hosted.ts | ConditionalExpression | text === "" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta?.content => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)?.[0]?.delta.content
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)?.[0].delta
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0] => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)[0]
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:220: packages/ai/src/hosted.ts | ConditionalExpression | more !== "" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | ConditionalExpression | text === "" => false
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | StringLiteral | "the reply has no answer in it" => ""
+UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | Regex | /\r$/ => /\r/
+UNEXPLAINED survivor at packages/ai/src/http.ts:101: packages/ai/src/http.ts | ConditionalExpression | !response.body => false
+UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | ConditionalExpression | rest !== "" => true
+UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/local.ts:126: packages/ai/src/local.ts | LogicalOperator | onText && Symbol.asyncIterator in reply => onText || Symbol.asyncIterator in reply
+UNEXPLAINED survivor at packages/ai/src/local.ts:129: packages/ai/src/local.ts | OptionalChaining | chunk.choices[0]?.delta?.content => chunk.choices[0]?.delta.content
+UNEXPLAINED survivor at packages/ai/src/local.ts:185: packages/ai/src/local.ts | ConditionalExpression | more !== "" => true
+UNEXPLAINED survivor at packages/ai/src/local.ts:185: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/local.ts:132: packages/ai/src/local.ts | ConditionalExpression | text === "" => false
+UNEXPLAINED survivor at packages/ai/src/local.ts:132: packages/ai/src/local.ts | StringLiteral | "the in-browser model gave no answer" => ""
+UNEXPLAINED survivor at packages/ai/src/local.ts:135: packages/ai/src/local.ts | ConditionalExpression | Symbol.asyncIterator in reply => false
+UNEXPLAINED survivor at packages/ai/src/local.ts:135: packages/ai/src/local.ts | StringLiteral | "the in-browser model streamed an answer nobody asked to stream" => ""
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | ConditionalExpression | line.trim() === "" => false
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | MethodExpression | line.trim() => line
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:102: packages/ai/src/ollama.ts | MethodExpression | line.slice(0, 80) => line
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:105: packages/ai/src/ollama.ts | OptionalChaining | piece.message?.content => piece.message.content
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:106: packages/ai/src/ollama.ts | ConditionalExpression | typeof more === "string" => true
+ai: 58 survivors, all explained: false
+46 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell

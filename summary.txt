@@ -1,0 +1,4 @@
+SpindleLabs random testing: this branch started afresh on 2026-10-27 when the repository
+moved to a new home (the kernel's results now live in the kernel's own private repository).
+The app's golden models, journeys, monkey, TypeScript mutants and fuzzing history were kept;
+the next nightly run rewrites this file.
