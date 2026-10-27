@@ -1034,7 +1034,9 @@ try {
     assert.equal(await page.isVisible("#properties"), true);
     // Tab from the top of the page and note which region each stop is in;
     // the regions must come in reading order, each once.
-    const regions = [];
+    // Start on the page's first control (the top bar's), whatever the last check clicked: WebKit starts Tab from there.
+    await page.evaluate(() => document.querySelector("#topbar :is(a[href], button, input, select)").focus());
+    const regions = ["topbar"];
     for (let i = 0; i < 120 && regions.at(-1) !== "properties"; i++) {
       await page.keyboard.press("Tab");
       const region = await page.evaluate(() => document.activeElement?.closest("#topbar, #toolbar, #browser, #view-controls, #split-toggle, #timeline, #properties")?.id ?? "other");
