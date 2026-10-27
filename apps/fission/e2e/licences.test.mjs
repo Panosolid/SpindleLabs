@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { ALLOWED, ALLOWED_DEV_ONLY, ALLOWED_FOR_TOOLS, chooseLicences, cratesAll, cratesShipped, EMBEDDED, licencesPlugin, noticesFile, noticeTexts, npmAll, npmShipped, packageDir, parseLicence, refused, unlistedHolders } from "../licences.mjs";
+import { ALLOWED, ALLOWED_DEV_ONLY, ALLOWED_FOR_TOOLS, chooseLicences, cratesAll, cratesInBuild, cratesShipped, EMBEDDED, licencesPlugin, noticesFile, noticeTexts, npmAll, npmShipped, packageDir, parseLicence, refused, unlistedHolders } from "../licences.mjs";
 import { rng } from "./monkey-core.mjs";
 
 const scratch = mkdtempSync(join(tmpdir(), "licences-"));
@@ -197,13 +197,13 @@ test("the crates walk takes normal dependencies for wasm, not proc-macros, build
 });
 
 test("this repository: everything shipped is under an allowed licence, and every tool under an allowed or dev-only one", () => {
+  // The kernel's crates come from the release's crates.json (its release checked the kernel's tools).
   assert.deepEqual(refused(npmShipped()), []);
-  assert.deepEqual(refused(cratesShipped()), []);
+  assert.deepEqual(refused(cratesInBuild()), []);
   assert.deepEqual(refused(npmAll(), ALLOWED_FOR_TOOLS), []);
-  assert.deepEqual(refused(cratesAll(), ALLOWED_FOR_TOOLS), []);
   // Whatever the dev-only list lets through must be a tool: none of it is in the shipped trees.
-  const shipped = new Set([...npmShipped(), ...cratesShipped()].map((p) => `${p.name} ${p.version}`));
-  const devOnly = [...refused(npmAll()), ...refused(cratesAll())];
+  const shipped = new Set([...npmShipped(), ...cratesInBuild()].map((p) => `${p.name} ${p.version}`));
+  const devOnly = [...refused(npmAll())];
   for (const entry of devOnly) assert.ok(!shipped.has(entry.replace(/: .*$/, "")), entry);
   // Today that is lightningcss, Vite 8's CSS tool, under MPL-2.0 (so the list is exercised, not idle).
   assert.ok(devOnly.length > 0 && devOnly.every((e) => /^lightningcss.* MPL-2\.0$/.test(e)), devOnly.join(", "));
@@ -211,7 +211,7 @@ test("this repository: everything shipped is under an allowed licence, and every
 
 test("this repository: the notices name what ships and leave out the tools", () => {
   const npm = npmShipped();
-  const crates = cratesShipped();
+  const crates = cratesInBuild();
   const names = (list) => list.map((p) => p.name);
   for (const name of ["three", "@mlc-ai/web-llm", "loglevel"]) assert.ok(names(npm).includes(name), name);
   for (const name of ["vite", "typescript", "playwright", "happy-dom"]) assert.ok(!names(npm).includes(name), name);

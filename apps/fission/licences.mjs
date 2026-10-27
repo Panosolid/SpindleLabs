@@ -6,13 +6,16 @@
 // `third-party-licences.txt` beside the app from what this finds:
 // - npm packages the app depends on at run time (the lockfile's tree from
 //   @fission/app's dependencies, through the workspace packages);
-// - Rust crates compiled into the kernel's .wasm (`cargo metadata` for
-//   wasm32, normal dependencies, not proc-macros and their dependencies,
-//   which run only while compiling);
+// - Rust crates compiled into the kernel's .wasm: the kernel is private now
+//   (2026-10-27), so its Release workflow walks them with `cratesShipped`
+//   below (`cargo metadata` for wasm32, normal dependencies, not proc-macros
+//   and their dependencies, which run only while compiling), checks them and
+//   every crate it uses against these lists, and ships their notices as
+//   crates.json beside the build (`cratesInBuild`);
 // - code that a package has copied inside itself (EMBEDDED, kept by hand;
 //   the build fails if a shipped file names a copyright holder that the
 //   notices don't, so a new one can't slip in unlisted).
-// `check` holds every npm package and crate in the repository to ALLOWED,
+// `check` holds every npm package and shipped crate to ALLOWED,
 // so no copyleft licence arrives unnoticed and every licence choice stays
 // open (audit L4); a development-only tool (never shipped) may also be
 // under ALLOWED_DEV_ONLY.
@@ -211,7 +214,16 @@ export function cratesShipped(root = ROOT, metadata = cargoMetadata(join(root, "
   return [...found.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }
 
-/** Every crate the kernel's workspace uses on any platform, test-only ones too, but not the kernel itself. */
+/**
+ * The crates compiled into the committed kernel build, with their notice
+ * texts: crates.json, written by the kernel repo's Release workflow with
+ * `cratesShipped` and `noticeTexts` from this file.
+ */
+export function cratesInBuild(root = ROOT) {
+  return JSON.parse(readFileSync(join(root, "packages/core/src/kernel/wasm/crates.json"), "utf8"));
+}
+
+/** Every crate the kernel's workspace uses on any platform, test-only ones too, but not the kernel itself (the kernel repo's release checks these). */
 export function cratesAll(root = ROOT, metadata = cargoMetadata(join(root, "kernel"))) {
   const own = new Set(metadata.workspace_members);
   return metadata.packages.filter((p) => !own.has(p.id)).map(crate);
@@ -373,7 +385,7 @@ let cached = null;
 function notices() {
   if (cached === null) {
     const npm = npmShipped();
-    cached = { npm, text: noticesFile({ npm, crates: cratesShipped() }) };
+    cached = { npm, text: noticesFile({ npm, crates: cratesInBuild() }) };
   }
   return cached;
 }
@@ -409,14 +421,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [command, file] = process.argv.slice(2);
   if (command === "check") {
     // What ships is held to ALLOWED; every dependency, the tools too, to ALLOWED_FOR_TOOLS.
-    const bad = [...new Set([...refused(npmShipped()), ...refused(cratesShipped()), ...refused(npmAll(), ALLOWED_FOR_TOOLS), ...refused(cratesAll(), ALLOWED_FOR_TOOLS)])];
+    // (The kernel's own crates, tools too, are checked by its release.)
+    const bad = [...new Set([...refused(npmShipped()), ...refused(cratesInBuild()), ...refused(npmAll(), ALLOWED_FOR_TOOLS)])];
     if (bad.length > 0) {
       console.error(`Licences not on the allowed list (apps/fission/licences.mjs, ALLOWED; ALLOWED_DEV_ONLY for tools that never ship):\n  ${bad.join("\n  ")}`);
       process.exit(1);
     }
     console.log(`every shipped npm package and crate is under an allowed licence, and every tool under an allowed or dev-only one`);
   } else if (command === "write" && file) {
-    writeFileSync(file, noticesFile({ npm: npmShipped(), crates: cratesShipped() }));
+    writeFileSync(file, noticesFile({ npm: npmShipped(), crates: cratesInBuild() }));
     console.log(`wrote ${file}`);
   } else {
     console.error("usage: node licences.mjs check | write <file>");

@@ -1,19 +1,15 @@
-"""Tests for stop-on-merge.sh and endless.sh's stop file:
+"""Tests for stop-on-merge.sh (endless.sh's side, the stop file, is tested in the kernel repo):
 python3 -m unittest discover -s .github/scripts
 
-Both run for real, with fake `gh` and `cargo` programs first on PATH."""
+It runs for real, with a fake `gh` first on PATH."""
 
 import os
-import shutil
 import subprocess
 import tempfile
-import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(os.path.dirname(HERE))
 WATCHER = os.path.join(HERE, "stop-on-merge.sh")
-ENDLESS = os.path.join(REPO, "kernel", "scripts", "endless.sh")
 
 
 def fake(bin_dir, name, body):
@@ -137,53 +133,6 @@ class KernelWatcher(unittest.TestCase):
             self.assertTrue(stopped)
             with open(args) as f:
                 self.assertEqual(f.read().strip(), "key api repos/o/k/compare/main...claude/k --jq .status")
-
-
-class EndlessStopFile(unittest.TestCase):
-    """endless.sh in a scratch copy of kernel/: a fake `cargo` stands in for
-    the build and the harness (each round takes 0.3 s and passes)."""
-
-    def run_endless(self, rounds, touch_in_round=None, stop_file=True):
-        with tempfile.TemporaryDirectory() as d:
-            os.makedirs(os.path.join(d, "kernel", "scripts"))
-            shutil.copy(ENDLESS, os.path.join(d, "kernel", "scripts"))
-            bin_dir = os.path.join(d, "bin")
-            os.mkdir(bin_dir)
-            stop = os.path.join(d, "stop")
-            calls = os.path.join(d, "calls")
-            # Round k is the k-th harness call (the build has --no-run; each
-            # round's devious generator, `--test devious`, is not counted).
-            touch = f'[ $(grep -c . {calls}) = {touch_in_round} ] && touch {stop}\n' if touch_in_round else ""
-            fake(bin_dir, "cargo", f'case "$*" in *--no-run*) exit 0;; *devious*) exit 0;; esac\necho r >>{calls}\n{touch}sleep 0.3\n')
-            env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
-            env.pop("FISSION_ENDLESS_STOP_FILE", None)
-            if stop_file:
-                env["FISSION_ENDLESS_STOP_FILE"] = stop
-            out = subprocess.run(["bash", os.path.join(d, "kernel", "scripts", "endless.sh"), "10", str(rounds), "false"],
-                                 env=env, capture_output=True, text=True, timeout=60)
-            with open(os.path.join(d, "kernel", "endless-results", "log.csv")) as f:
-                logged = f.read().splitlines()[1:]
-            return out, logged
-
-    def test_the_round_in_progress_is_kept_and_no_new_one_starts(self):
-        # The stop file appears during round 2 of up to 5: rounds 1 and 2 are
-        # logged as passes (round 2 is not thrown away), round 3 never starts.
-        out, logged = self.run_endless(5, touch_in_round=2)
-        self.assertEqual([line.split(",")[3] for line in logged], ["pass", "pass"])
-        self.assertIn("Stopped after 2 rounds", out.stdout)
-        self.assertNotIn("discarded", out.stdout)
-
-    def test_without_the_file_every_round_runs(self):
-        # Same script, nothing appears: all 3 rounds run (so the test above
-        # can tell a stop from a normal end).
-        _, logged = self.run_endless(3)
-        self.assertEqual(len(logged), 3)
-
-    def test_the_file_is_ignored_unless_named(self):
-        # The file appears in round 1 but FISSION_ENDLESS_STOP_FILE is unset
-        # (a run on the owner's computer): all 3 rounds run.
-        _, logged = self.run_endless(3, touch_in_round=1, stop_file=False)
-        self.assertEqual(len(logged), 3)
 
 
 if __name__ == "__main__":

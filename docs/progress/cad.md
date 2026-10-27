@@ -189,6 +189,13 @@ Kernel crash hunt (2026-10-17, owner's ask: "make the kernel crash as hard as yo
 Notes from the many-holes speed fix (2026-10-17):
 - The worst legal extrude (100 m plate, 1,996 holes at the 256-chord cap, ~2,000,000 triangles) took 45 s natively, now ~8 s: one validation and one tessellation per make_* call (`ops::*_meshed`), bulk-loaded triangulation, and no per-face scans of every triangle. `tests/worst_case.rs` holds it to a 25 s budget. Most of what is left is triangulating the two caps; fewer points would need a coarser display chord for big parts, the owner's call (tolerance).
 
+## The app's boolean steps
+
+The kernel's boolean substeps and their design notes are in the private kernel repo (`docs/progress/booleans.md` there). The steps people see in the app are listed here too, in plain words, so the app's own checks can read them (`workspaces/design/test/coming-soon.test.ts`); tick each here when its app part lands.
+
+- [ ] 35e2. Basic tools, so there is something to test Combine on and to demo (Ben, 2026-10-25): Move/Rotate (drag arrows on the body plus typed distances and angles), Duplicate body, Measure (distance between two points, edges or faces, in words) and Mirror body across a plane; each a timeline feature like any other, with a panel, typed values and browser checks at 1280 and 375 px.
+- [ ] 35f. The Combine tool: a panel (target body, tool bodies, Join, Cut or Intersect, Keep tools off by default as in Fusion), a timeline feature like any other, its refusals in words on its row; browser checks at 1280 and 375 px.
+
 ## Testing catch-up after step 22 (TC1–TC5)
 
 Ben (2026-10-17): accuracy and good tests come before progress, and big new areas have started without their tests. These close the four gaps found after step 22, in test and harness files only (the 23b arc and snapping threads own the tool code). Branch: claude/project-thread-gzrxch.

@@ -1,20 +1,28 @@
 // The WASM kernel in Node, for the journey tests: the same module the app
 // runs in its Web Worker, answering the same KernelCalls interface, loaded
-// directly instead of through a worker. Needs the WASM build first
-// (`npm run build` in apps/fission).
+// directly instead of through a worker, from the committed kernel build
+// (packages/core/src/kernel/wasm/).
 // Node-only, like the tests, so the type check (browser types) skips it.
 
 import { readFileSync } from "node:fs";
 import { KernelError, kernelFailure, type KernelCalls, type KernelOps } from "@fission/core";
+import { startKernel } from "../../core/src/kernel/handshake.ts";
 import * as wasm from "../../core/src/kernel/wasm/fission_kernel.js";
 
-let loaded = false;
+let loaded: ReturnType<typeof wasm.initSync> | null = null;
+
+/** Loads and starts the kernel once (with the key in its kernel.json); its WebAssembly exports, for memory readings. */
+export function loadKernel(): ReturnType<typeof wasm.initSync> {
+  if (!loaded) {
+    const exports = wasm.initSync({ module: readFileSync(new URL("../../core/src/kernel/wasm/fission_kernel_bg.wasm", import.meta.url)) });
+    startKernel(wasm.begin, JSON.parse(readFileSync(new URL("../../core/src/kernel/wasm/kernel.json", import.meta.url), "utf8")));
+    loaded = exports;
+  }
+  return loaded;
+}
 
 export function nodeKernel(): KernelCalls {
-  if (!loaded) {
-    wasm.initSync({ module: readFileSync(new URL("../../core/src/kernel/wasm/fission_kernel_bg.wasm", import.meta.url)) });
-    loaded = true;
-  }
+  loadKernel();
   const ops: { [K in keyof KernelOps]: (...a: KernelOps[K]["args"]) => KernelOps[K]["result"] } = {
     kernel_version: () => wasm.kernel_version(),
     make_box: (w, d, h) => wasm.make_box(w, d, h),

@@ -3,10 +3,12 @@
 // the error as plain data (kind, inputs, message), since a thrown Error's own
 // fields don't survive the trip between threads.
 import init, * as kernel from "./wasm/fission_kernel.js";
+import release from "./wasm/kernel.json";
+import { startKernel } from "./handshake.ts";
 import { kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
-const ready = init();
+const ready = init().then(() => startKernel(kernel.begin, release));
 
 const ops = {
   kernel_version: () => kernel.kernel_version(),

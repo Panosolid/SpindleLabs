@@ -19,21 +19,19 @@ End goal, a world-class free CAD suite anyone can use instead of a paid subscrip
 
 ## Repository layout
 
-Each folder with its own CLAUDE.md (kernel/, packages/, workspaces/, apps/) has the details; it loads when you work there.
-- `kernel/`: Rust geometry kernel → WebAssembly. `src/tolerance.rs` is the only place epsilons live; every operation's result goes through `validate::checked()`; when a kernel operation lands, add it to the stateful harness (`tests/stateful.rs`: `Op`, `Scene::transitions`, `apply_op`, `replay_op`) the same day.
+Each folder with its own CLAUDE.md (packages/, workspaces/, apps/) has the details; it loads when you work there.
+- The geometry kernel (Rust → WebAssembly) and `prototypes/` (Python sketches of the maths, the OpenCascade oracle) live in the private repo Panosolid/kernel, with its own CLAUDE.md and rules; kernel work happens there. This repo ships its release build, committed in `packages/core/src/kernel/wasm/` (`kernel.json` names the version, build and handshake; never edit these files by hand: the kernel's Release workflow opens the pull request that updates them, and CI's `check_kernel_build.py` checks they match).
 - `packages/`: shared TypeScript (core document model and kernel bridge, viewport, ui, testing, ai; storage and community are placeholders). `packages/core/src/kernel/kernel-client.ts` is the only way the app talks to the kernel.
 - `workspaces/`: the ten workspaces (Design real, the rest placeholders). `apps/fission`: the app shell and browser tests.
 - `docs/`: `progress/` (one progress file per workstream, see below), `roadmap.md` (the full roadmap), `integration.md`, `integration-map.md` (every link between workspaces), `ai.md`, `project-format.md`, `community.md`.
-- `prototypes/`: Python sketches of the maths, used to try algorithms before writing Rust (and `oracle/compare.py`, the OpenCascade oracle).
-- `.github/workflows/`: `ci.yml` (kernel tests, app build), `pages.yml` (deploys `main` to GitHub Pages), `nightly.yml` ("Random testing" of the app: journeys, golden models, monkey, TypeScript mutants; results on the `test-results` branch), `fuzz.yml` ("Fuzzing" the project loader and the app's sessions nightly at 23:10 UTC; results in `fuzz/` on `test-results`, issues like random testing), `kernel-ci.yml`, `kernel-nightly.yml` and `kernel-fuzz.yml` (the private kernel's CI, random testing and fuzzing on these free public runners: logs show only `RESULT` lines, results and issues go to the private `kernel-results` repo; started by the kernel repo), `auto-merge.yml` (merges `claude/` pull requests into `main` once green and up to date with it; rules in `.github/scripts/automerge.py`), `stop-testing.yml` (cancels a branch's random-testing runs, running or waiting, when its pull request merges or closes; rules in `.github/scripts/branch_testing.py`).
-- Generated, never committed: `kernel/target/`, `kernel/fuzz/{target,corpus,artifacts}/`, `kernel/endless-results/`, `kernel/mutants.out*/`, `packages/core/src/kernel/wasm/`, `apps/fission/dist/`, `node_modules/`.
+- `.github/workflows/`: `ci.yml` (app tests and build, the kernel build's check), `pages.yml` (deploys `main` to GitHub Pages), `nightly.yml` ("Random testing" of the app: journeys, golden models, monkey, TypeScript mutants; results on the `test-results` branch), `fuzz.yml` ("Fuzzing" the project loader and the app's sessions nightly at 23:10 UTC; results in `fuzz/` on `test-results`, issues like random testing), `kernel-ci.yml`, `kernel-nightly.yml` and `kernel-fuzz.yml` (the private kernel's CI, random testing and fuzzing on these free public runners: logs show only `RESULT` lines, results and issues go to the private `kernel-results` repo; started by the kernel repo), `auto-merge.yml` (merges `claude/` pull requests into `main` once green and up to date with it; rules in `.github/scripts/automerge.py`), `stop-testing.yml` (cancels a branch's random-testing runs, running or waiting, when its pull request merges or closes; rules in `.github/scripts/branch_testing.py`).
+- Generated, never committed: `apps/fission/dist/`, `node_modules/`.
 
 ## Workstreams and where progress lives
 
 Several threads run at once, one per workstream. So they never edit the same lines, each workstream keeps its own progress file in `docs/progress/` (what is done, the next step and its substeps, the branch the next thread starts from):
 - `cad.md`: the numbered CAD steps (1, 2, … 20 undo/redo onward) and the kernel.
 - `integration.md`: the integration experience steps (X…) and the I, A and other cross-workspace items.
-- `booleans.md`: the boolean design review B0 and the boolean steps.
 - `image.md`: the Image workspace (G…).
 - `ai.md`: the AI assistant (AI1…, and the A items in `docs/roadmap.md`).
 - `video.md`: the Video workspace (F0–F14: design decisions and every substep's test plan).
@@ -44,20 +42,20 @@ Several threads run at once, one per workstream. So they never edit the same lin
 Rules:
 - A thread updates only its own workstream's file, and in `docs/roadmap.md` only its own section. Never edit another workstream's file, even to tick something; if another workstream needs to know something, say so in the thread.
 - Package and workspace details (which file does what) live in that folder's own CLAUDE.md (for example `packages/core/CLAUDE.md`, `workspaces/image/CLAUDE.md`), so each thread edits the folder it works in. Add a line there when you add a file.
-- Shared rule files (this file, `packages/CLAUDE.md`, `kernel/CLAUDE.md`, `docs/integration*.md`) change only when a rule changes, in a small edit, never to record progress.
+- Shared rule files (this file, `packages/CLAUDE.md`, `docs/integration*.md`) change only when a rule changes, in a small edit, never to record progress.
 - Order (owner's decision): integration X1–X8 one per thread, then step 20 (undo/redo); step 20 never runs alongside an X step, since both touch the action and ownership code. Image and booleans run in parallel.
 
 ## Definition of done for a roadmap item
 
-1. Tier 1 is clean (kernel: kernel/CLAUDE.md; TypeScript: `npm test` and `npm run typecheck`, packages/CLAUDE.md): no lint warnings, and the tests for the changed modules pass.
-2. Tier 2 property tests for the feature exist and pass, with nasty cases included (the kernel's Tier 2 list is in kernel/CLAUDE.md).
+1. Tier 1 is clean (kernel: the kernel repo's rules; TypeScript: `npm test` and `npm run typecheck`, packages/CLAUDE.md): no lint warnings, and the tests for the changed modules pass.
+2. Tier 2 property tests for the feature exist and pass, with nasty cases included (the kernel's Tier 2 list is in the kernel repo).
 3. The test quality rules below are met (hand-worked test with the working shown, 0.9×/1.1× boundary tests).
 4. If the feature is visible, it has been checked in a real browser (the e2e smoke test, or a Playwright screenshot).
 5. The roadmap item is ticked (in your workstream's `docs/progress/` file, or in `docs/roadmap.md`), then committed and pushed with a message saying what was done and how it was verified.
 
 ## Testing rules (all code)
 
-Nothing is "done" until it is checked automatically. The kernel's own rules (validation, tolerance, the three tiers, the oracle, mutation testing, visual debugging) are in kernel/CLAUDE.md.
+Nothing is "done" until it is checked automatically. The kernel's own rules (validation, tolerance, the three tiers, the oracle, mutation testing, visual debugging) are in the kernel repo.
 
 ### Deterministic and reproducible
 - Every random test and simulated session uses a seed. Same seed + same code = same result.
@@ -84,7 +82,7 @@ After a run, report briefly: PASS/FAIL per tier; any metric that moved from base
 ## Git workflow
 
 - Develop on the branch named by the session. Commit after every completed step (each roadmap item separately) and after every bug fix together with its regression test; never leave more than one step uncommitted.
-- Push after each commit, without asking first (owner's decision): pushes only touch the session's branch, never `main`, and random testing only runs on pushed work. After every kernel push, start a random-testing run (kernel/CLAUDE.md).
+- Push after each commit, without asking first (owner's decision): pushes only touch the session's branch, never `main`, and random testing only runs on pushed work.
 - Commit messages: a first line naming the step and feature (e.g. "Step 7: box primitive in the viewer"), then what changed and how it was verified.
 - Commit as the owner's GitHub account (each new container: `git config user.name benpy28` and `git config user.email 333175357+benpy28@users.noreply.github.com`), and keep the Co-Authored-By: Claude line in every commit message.
 - Never commit generated files (listed under Repository layout).

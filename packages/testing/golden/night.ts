@@ -143,7 +143,7 @@ export async function goldenNight(kernel: KernelCalls, models: readonly GoldenEx
 }
 
 /** The command that runs this night again. */
-export const replay = (night: Pick<GoldenNight, "seed" | "rounds">) => `FISSION_SEED=${night.seed} FISSION_GOLDEN_ROUNDS=${night.rounds} npm run golden -w @fission/testing (after npm run kernel -w @fission/app)`;
+export const replay = (night: Pick<GoldenNight, "seed" | "rounds">) => `FISSION_SEED=${night.seed} FISSION_GOLDEN_ROUNDS=${night.rounds} npm run golden -w @fission/testing`;
 
 /** The report file_issues.py reads (golden-report.txt): empty when nothing failed. */
 export function goldenReport(night: GoldenNight): string {

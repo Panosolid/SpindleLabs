@@ -28,14 +28,13 @@
 //   exactly, and `failed_percent`, the models whose answers are wrong
 //   (0 = 100% success); FISSION_BASELINE_FAULT=golden-volume plants a
 //   kernel bug there (every volume a millionth out).
-// Needs the WASM build (`npm run kernel` in apps/fission).
+// Uses the committed kernel build (packages/core/src/kernel/wasm/).
 // Run: node --expose-gc --experimental-strip-types --no-warnings packages/testing/baseline/app.ts
-import { readFileSync } from "node:fs";
 import { createHistory, emptyProject, projectFromJson, projectToJson, type Project } from "@fission/core";
 import { designWorkspace, partDocument } from "@fission/design";
 import * as wasm from "../../core/src/kernel/wasm/fission_kernel.js";
 import { READERS } from "../src/project-fuzz.ts";
-import { nodeKernel } from "../src/node-kernel.ts";
+import { loadKernel, nodeKernel } from "../src/node-kernel.ts";
 import { SESSION_FAULTS, sessionMetrics, type SessionFault } from "./naming.ts";
 import { goldenMetrics, volumeOff } from "./golden.ts";
 import { buildable } from "../golden/rebuild.ts";
@@ -45,7 +44,7 @@ import { calibration, fastest } from "./calibration.ts";
 
 const gc = (globalThis as { gc?: () => void }).gc;
 if (!gc) throw new Error("run with --expose-gc");
-const exports = wasm.initSync({ module: readFileSync(new URL("../../core/src/kernel/wasm/fission_kernel_bg.wasm", import.meta.url)) });
+const exports = loadKernel();
 
 /** A project as big as a busy real one: a part, and 2,000 objects of another workspace's data. */
 function bigProject(): Project {

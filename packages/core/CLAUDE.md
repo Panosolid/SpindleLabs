@@ -7,7 +7,8 @@ Contents of `packages/core`; the rules are in packages/CLAUDE.md and the root CL
   - `kernel-client.ts` is the only way the app talks to the kernel (`kernel.call(op, ...args)` returns a promise; add new ops to `KernelOps` and the worker's `ops` table). A failed call rejects with a `KernelError`: the kernel's `message`, plus `kind` and `inputs` (which input is at fault) to decide by; `kernelFailure` turns anything thrown into that plain data for the trip from the worker. The body store ops (`body_build`, `body_view`, `body_stl`, `body_free`, `body_count`) keep bodies in the worker's kernel by handle (24c+).
   - `kernel.worker.ts` runs the WASM kernel in a Web Worker.
   - `kernel-types.ts` holds the shapes of kernel results and inputs (`BodyHandle`, `KernelFailure` with `KernelErrorKind` and `KernelInput`; `Outline`, the kernel's `ProfileIn`; `SketchLine` and `SketchOutline` for the sketch ops `snap_to_grid` and `sketch_outline`, step 21a).
-  - `npm run kernel` (in `apps/fission`) builds the WASM package into `src/kernel/wasm/` (generated, gitignored).
+  - `wasm/`: the private kernel's release build, committed (`fission_kernel.js`, its `.wasm`, types, `kernel.json`, `crates.json`, `LICENSE-KERNEL.txt`); only the kernel's Release pull requests change it. To try an unreleased kernel locally, build it over these files from a kernel checkout (the kernel repo's CLAUDE.md) and never commit that.
+  - `handshake.ts`: `startKernel` calls the build's `begin` with `kernel.json`'s handshake before any other call and refuses a build that doesn't match it; the worker and `node-kernel.ts`'s `loadKernel` both use it. `test/handshake.test.ts`.
 - `src/model/` (see docs/integration.md), built:
   - `project.ts`: format version and migrations, `projectToJson`/`projectFromJson`: the .spindlelabs.json file.
   - `representation.ts`: the representation registry (producers, converters, and the file importers: `registerImporter`/`importerFor`, one per format).

@@ -1,0 +1,32 @@
+SpindleLabs Kernel Licence (draft of 2026-10-27, to be checked by a lawyer)
+
+Copyright (c) 2026 Ben (GitHub: benpy28) and Panosolid. All rights reserved.
+
+"The Kernel" means the SpindleLabs geometry kernel: its source code, and any
+compiled form of it, including the WebAssembly file fission_kernel_bg.wasm
+and the JavaScript and TypeScript files shipped with it.
+
+1. You may run the Kernel only as part of the SpindleLabs application, as
+   published by Panosolid (for example at https://panosolid.github.io/SpindleLabs
+   or built from the SpindleLabs repository with the Kernel files exactly as
+   they are there).
+
+2. You may not, without written permission:
+   a. copy, extract or use the Kernel, or any part of it, in any other
+      program, website, service or product;
+   b. modify, translate, decompile, disassemble or reverse engineer the
+      Kernel, except where the law allows this despite this restriction;
+   c. remove or change any notice, fingerprint or other mark in the Kernel;
+   d. sell, sublicense, rent or otherwise distribute the Kernel on its own.
+
+3. The source code of the Kernel is not published. Any copy of it that you
+   may have obtained, including from the public history of the SpindleLabs
+   repository, remains under copyright and may not be used except as this
+   licence allows.
+
+4. The Kernel is provided "as is", without warranty of any kind. In no event
+   shall the authors be liable for any claim, damages or other liability
+   arising from its use.
+
+For permission beyond this licence, open an issue at
+https://github.com/Panosolid/SpindleLabs.
