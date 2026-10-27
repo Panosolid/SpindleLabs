@@ -13,6 +13,7 @@
 // with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch, untilBodies } from "./browser.mjs";
+import { sheetsClearFor } from "./start.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
@@ -76,7 +77,7 @@ async function fresh(width, touch) {
     const v = document.querySelector("#viewport");
     return Number(v.dataset.fits ?? 0) >= 1 && v.dataset.rebuilding !== "true";
   }, null, { timeout: 15000 }).catch(() => assert.fail("the box drawn: timed out"));
-  return page;
+  return sheetsClearFor(page); // phone: sheets (U5b) open for what is inside them and close before the view's, Undo's or the timeline's buttons are pressed
 }
 
 const until = (page, fn, arg, what, state) =>

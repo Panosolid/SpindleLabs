@@ -9,8 +9,8 @@
 // Full screen button goes in and out of full screen. Each layout check is
 // also run on the page with the old layout forced back by a style, and must
 // fail there. Split view keeps its browser columns; a workspace with no
-// timeline (Image) gives the row back; at 375 px the column layout keeps the
-// timeline under the view with nothing wider than the screen. Screenshots
+// timeline (Image) gives the row back; at 375 px the timeline stays under the view,
+// and the opened browser is a bottom sheet over the view (U5) with nothing wider than the screen. Screenshots
 // at 1280 and 375 px go to E2E_SHOTS when set. From U0a the rows are slim
 // single lines like Fusion's (a long label ends in "…" with the whole of it
 // in the tooltip), the Timeline and Origin groups start folded, a row's ⋯
@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { reloadEmpty, startWithBox, switchTo } from "./start.mjs";
+import { closePanels, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4198, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4198/";
@@ -658,8 +658,13 @@ try {
     if (shots) await phone.screenshot({ path: `${shots}/layout-375.png`, fullPage: true });
     await phone.tap("#browser-toggle");
     const open = await measure(phone);
-    assert.ok(open.browser.bottom <= open.viewport.y + 1, "opened, the browser sits above the view in the column, not over it");
-    assert.equal(rgba(await phone.$eval("#browser", (el) => getComputedStyle(el).backgroundColor))[3], 1, "in the column the browser keeps its solid backdrop");
+    const ws = await phone.$eval("#workspace", (el) => { const r = el.getBoundingClientRect(); return { bottom: r.bottom, height: r.height }; });
+    const view0 = m.viewport;
+    assert.ok(Math.abs(open.browser.bottom - ws.bottom) <= 1, `opened, the browser is a sheet on the workspace's bottom edge (${open.browser.bottom} vs ${ws.bottom})`);
+    assert.ok(open.browser.h <= ws.height * 0.6 + 1, `and at most 60% of the workspace (${open.browser.h} of ${ws.height})`);
+    assert.ok(Math.abs(open.viewport.h - view0.h) <= 1 && Math.abs(open.viewport.y - view0.y) <= 1, "over the view, which is not resized");
+    assert.equal(rgba(await phone.$eval("#browser", (el) => getComputedStyle(el).backgroundColor))[3], 1, "as a sheet the browser keeps its solid backdrop");
+    await closePanels(phone); // the sheet covers the view's buttons: a person closes it first
     await phone.tap("[data-view=full-screen]");
     await phone.waitForFunction(() => document.fullscreenElement === document.documentElement);
     await phone.evaluate(() => document.exitFullscreen());

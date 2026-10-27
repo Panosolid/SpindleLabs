@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 import { launch, untilBodies } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4219, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4219/";
@@ -89,7 +89,7 @@ async function freshValved(width) {
   await page.goto(url + "?test-hooks#design");
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   await pinProperties(page);
-  return { context, page };
+  return { context, page: sheetsClearFor(page) }; // phone: Properties' sheet opens for the size boxes (U5b)
 }
 
 /** The ids of the projects kept in this browser. */

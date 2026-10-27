@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { insertPreset, switchTo } from "./start.mjs";
+import { closePanels, insertPreset, openPanel, switchTo } from "./start.mjs";
 import { pinProperties } from "./properties.mjs";
 
 const server = await preview({ preview: { port: 4236, strictPort: true }, logLevel: "error" });
@@ -78,6 +78,7 @@ try {
         // Create sketch from the hint starts a sketch, and the hint gets out of the way; Escape out of it brings it back.
         await press(page, "#start-hint-sketch", tap);
         await until(page, () => document.getElementById("start-hint").hidden, null, "the hint hidden while a sketch is started");
+        await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
         assert.equal(await page.isVisible("#sketch-plane-XY"), true, "the plane choice is showing");
         await page.keyboard.press("Escape");
         await until(page, () => !document.getElementById("start-hint").hidden, null, "the hint back once the sketch is left");
@@ -113,7 +114,8 @@ try {
         assert.equal(await page.isVisible("#insert-menu"), false, "a choice closes the menu");
         assert.equal(await page.isVisible("#start-hint"), false, "no hint once there is a body");
         assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)");
-        // The panel shows the new body's sizes (opened for them on a wide screen).
+        // The panel shows the new body's sizes (opened for them on a wide screen; on a phone its sheet opens with its toggle, U5).
+        await openPanel(page, "properties", tap);
         assert.equal(await page.isVisible("#width"), true);
         assert.deepEqual([await page.inputValue("#width"), await page.inputValue("#depth"), await page.inputValue("#height")], ["40", "30", "20"]);
         assert.equal(await page.inputValue("#shape"), "box");
@@ -127,10 +129,12 @@ try {
         assert.deepEqual(await named("feature-2"), ["Cylinder 1", "Cylinder 1\nCylinder: ⌀40 × 20 mm"]);
         assert.equal(await undoTitle(page), "Undo Insert Cylinder (Ctrl+Z)");
         assert.equal(await page.inputValue("#shape"), "cylinder", "the panel edits the new body");
-        // One Undo takes only the cylinder away.
+        // One Undo takes only the cylinder away (a phone's Properties sheet is closed first: it would cover Undo, docked in the view).
+        await closePanels(page, tap);
         await press(page, "#undo", tap);
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 1, null, "the cylinder undone");
         assert.equal(await undoTitle(page), "Undo Insert Box (Ctrl+Z)");
+        await closePanels(page, tap);
         await press(page, "#undo", tap);
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 0, null, "empty again");
         await until(page, () => !document.getElementById("start-hint").hidden, null, "the hint back for the empty design");
@@ -145,6 +149,7 @@ try {
         await insertPreset(page, "box", tap);
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box");
         await pinProperties(page);
+        await openPanel(page, "properties", tap); // phone: the sheet opens with its toggle (U5)
         await page.selectOption("#shape", "sphere");
         // A sphere of diameter 40: 4/3 · π · 20³ ≈ 33,510 mm³; still one item, feature-1.
         await until(page, () => document.querySelector("#viewport").dataset.shape === "sphere", null, "a sphere");
@@ -199,7 +204,8 @@ try {
       assert.equal(await page.isVisible("#start-hint"), true, "a hint on a design with a body is caught");
       // The menu moved 300 px right on a 375 px screen: the fit check fails on it.
       await page.tap("#insert");
-      await page.evaluate(() => (document.getElementById("insert-menu").style.left = "300px"));
+      // (The phone's sheet rules pin left and right with !important, U5: the break overrides them the same way, and keeps the sheet's width.)
+      await page.evaluate(() => { const m = document.getElementById("insert-menu"); m.style.setProperty("left", "300px", "important"); m.style.setProperty("width", "375px", "important"); });
       assert.equal(fits(await page.locator("#insert-menu").boundingBox(), 375), false, "a menu off the screen is caught");
     } finally {
       await page.context().close();

@@ -1,0 +1,16 @@
+/* Phone width (640 px and under), U5b: the page never scrolls. The 3D view
+   takes all the height the toolbar, the panel toggles and the timeline
+   leave, and everything else opens as a sheet over it from the bottom edge,
+   scrolling inside itself: the Browser, Properties and the assistant (one of
+   them at a time, main.ts) and every menu's list (File ▾, DESIGN ▾, Create ▾…).
+   The class sits on <body> and every rule is inside the media query;
+   ":not(#none)" and !important lift a rule over the base layout and the
+   inline position menu-button.ts sets for a dropdown. */
+@media (max-width: 640px) {
+  .phone-sheet { height: 100vh; height: 100dvh; overflow: hidden; }
+  .phone-sheet #workspace { position: relative; overflow: hidden; }
+  .phone-sheet #viewport { height: auto; flex: 1 1 0; min-height: 0; }
+  .phone-sheet #browser:not(#none), .phone-sheet #properties:not(#none), .phone-sheet #assistant:not(#none) { position: absolute; left: 0; right: 0; bottom: 0; z-index: 15; width: auto; max-height: 60%; overflow-y: auto; overscroll-behavior: contain; border-radius: 12px 12px 0 0; border: 1px solid #353a43; border-bottom: none; background: #1c1f24; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.55); }
+  .phone-sheet #assistant[hidden] { display: none !important; }
+  .phone-sheet .menu-button > .menu-button-menu:not(#none) { left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; width: auto; min-width: 0; max-width: none; max-height: 70dvh; border-radius: 12px 12px 0 0; border-bottom: none; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.55); z-index: 40; }
+}

@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { chooseFile, fileItem, insertPreset, switchTo } from "./start.mjs";
+import { chooseFile, closePanels, fileItem, insertPreset, openPanel, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4241, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4241/";
@@ -236,6 +236,7 @@ try {
         await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "the empty design's hint");
         assert.deepEqual(await fileItem(page, "start-fresh"), [true, ALREADY]);
         assert.equal(await page.getAttribute("#undo", "title"), "Undo Start fresh (Ctrl+Z)");
+        await closePanels(page, tap); // Undo is docked in the view; a sheet (Properties, shown by the insert) would cover it
         await press(page, "#undo", tap);
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "undone");
         // Escape from the keyboard closes the menu, and from a press outside it.
@@ -254,6 +255,7 @@ try {
         await until(page, () => document.querySelector("#volume")?.textContent === "24,000 mm³", null, "the box");
         await press(page, "#create-sketch", tap);
         assert.deepEqual(await fileItem(page, "start-fresh"), [true, SKETCHING], "the plane prompt");
+        await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
         await press(page, "#sketch-plane-XY", tap);
         await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
         assert.deepEqual(await fileItem(page, "start-fresh"), [true, SKETCHING], "in the sketch");
@@ -281,7 +283,8 @@ try {
         const label = () => page.textContent("#workspace-menu");
         assert.equal(await label(), "Design ▾");
         await press(page, "#workspace-menu", tap);
-        const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()));
+        // At phone width the list is a bottom sheet that scrolls inside itself (U5): a person scrolls an item into view before reading or tapping it.
+        const items = await page.$$eval("#workspace-menu-menu [role=menuitem]", (bs) => bs.map((b) => { b.scrollIntoView({ block: "center" }); return b.getBoundingClientRect().toJSON(); }));
         assert.equal(items.length, 10);
         for (const r of items) {
           assert.ok(r.left >= 0 && r.right <= width && r.bottom <= (width > 640 ? 800 : 667), `on screen: ${JSON.stringify(r)}`);

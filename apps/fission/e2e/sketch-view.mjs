@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4188, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4188/";
@@ -192,7 +192,7 @@ try {
     await settle(page);
     assert.deepEqual(await gridShown(page), start);
     // Snap to grid 10 mm: the lines drawn are the snap grid's, 10 apart (1 mm lines would be closer than the clicks can land).
-    await page.check("#sketch-grid-snap");
+    await gridSnapOn(page);
     await shown(page, "sketchGrid", /^minor 10 major 100 /, "the snap grid");
     await page.fill("#sketch-grid", "2.5");
     await page.press("#sketch-grid", "Enter");
@@ -224,12 +224,16 @@ try {
     const page = await fresh(375, true);
     await startSketch(page, true);
     assert.equal(await data(page, "bodyFaded"), "true");
+    await page.tap('[data-view="top"]'); // the sketch toolbar grew the row above the view after the framing: frame it again for this canvas (U5b)
+    await settle(page);
     await probeSketchView(page, "375");
     const box = await page.locator("#viewport canvas").boundingBox();
     assert.equal((await gridShown(page)).minor, expectedMinor(mmPerPixel(box)));
+    await openPanel(page, "properties"); // Look at is in the Properties sheet
     const look = await page.locator("#sketch-look-at").boundingBox();
     assert.ok(look.height >= 44, `Look at is ${look.height} px tall`);
     await page.tap("#sketch-look-at");
+    await closePanels(page);
     await settle(page);
     await probeSketchView(page, "375 after Look at");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");

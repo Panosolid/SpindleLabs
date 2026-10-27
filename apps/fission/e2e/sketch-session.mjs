@@ -22,7 +22,7 @@ import { preview } from "vite";
 import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { isClosed, modelOutline, openWords, shoelace } from "../../../packages/testing/src/outline-model.ts";
-import { startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/";
@@ -231,7 +231,7 @@ async function startSketch(page) {
   // Grid snap is off by default since sketch feel SF1; this session models a
   // sketch on the grid (clicks up to 2 mm off a node land on it), so it ticks
   // Snap to grid, as a person drawing on the grid does (it stays on until a reload).
-  if (!(await page.isChecked("#sketch-grid-snap"))) await page.check("#sketch-grid-snap");
+  if (!(await page.isChecked("#sketch-grid-snap"))) await gridSnapOn(page);
   await page.mouse.move(0, 0);
 }
 

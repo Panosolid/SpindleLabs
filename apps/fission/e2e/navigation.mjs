@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { closePanels, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4191, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4191/?test-hooks";
@@ -320,6 +320,7 @@ await check("phone width 375 px: the bar is whole on screen, clear of Undo and R
     for (const b of await page.$$eval("#view-controls button", (els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
       assert.ok(b.left >= 0 && b.right <= 375 && b.height >= 24 && b.width >= 24, JSON.stringify(b));
     }
+    await closePanels(page, true); // the inserted box opened the Properties sheet (U5); it covers the view bar, so a person closes it
     await page.tap("#view-controls [data-nav=pan]");
     assert.equal(await page.getAttribute("#viewport", "data-nav"), "pan");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);

@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane } from "./sketch-screen.mjs";
-import { startWithBox } from "./start.mjs";
+import { gridSnapOn, openPanel, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4193, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4193/?test-hooks";
@@ -168,7 +168,7 @@ await check("the Create menu: every tool with its key, the tool in use ticked an
     assert.equal(await visible(page, "#sketch-create-menu"), false);
     // Rectangle by its button; the first corner at (0, 0) on the grid.
     await page.click("#sketch-tool-rectangle");
-    await page.check("#sketch-grid-snap");
+    await gridSnapOn(page);
     await clickPlane(page, [1, -1], TOP);
     await points(page, "0,0");
     await page.click("#sketch-create");
@@ -260,7 +260,7 @@ await check("Undo inside a sketch keeps the sketch's toolbar and its tool; Extru
     await sketching(page, true);
     await settle(page);
     await page.click("#sketch-tool-circle");
-    await page.check("#sketch-grid-snap");
+    await gridSnapOn(page);
     await clickPlane(page, [10, 10], TOP);
     await clickPlane(page, [10, 20], TOP);
     await page.waitForFunction(() => document.querySelector("#sketch-status")?.textContent === "1 circle, a closed outline.");
@@ -285,6 +285,7 @@ await check("at 375 px with taps: all six tools on screen and 44 px tall, the me
   const page = await fresh(375, true);
   try {
     await page.tap("#create-sketch");
+    await openPanel(page, "properties", true); // the plane choice is in the Properties sheet, closed until its toggle (U5)
     await page.tap("#sketch-plane-XY");
     await sketching(page, true);
     for (const sel of ["#sketch-create", ...TOOLS.map((t) => `#sketch-tool-${t}`)]) {

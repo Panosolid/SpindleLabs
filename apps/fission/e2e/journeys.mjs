@@ -20,7 +20,7 @@ import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { MAGIC_JOURNEYS, baselineLine, compareToBaseline, judge, parseBaselines, reportLine } from "../../../packages/testing/src/magic.ts";
 import { pinProperties } from "./properties.mjs";
-import { chooseFile, fileItem, startWithBox } from "./start.mjs";
+import { chooseFile, fileItem, gridSnapOn, startWithBox } from "./start.mjs";
 
 /** Walks per journey; the slowest one is judged, so a limit holds every time. */
 const WALKS = 5;
@@ -158,7 +158,7 @@ async function designSketchToStl() {
     // Snap to grid lives in the sketch panel and lasts for the page: tick it in a sketch, then Undo that sketch.
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
-    await page.check("#sketch-grid-snap");
+    await gridSnapOn(page);
     await page.keyboard.press("ControlOrMeta+z");
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true" && document.getElementById("undo").title === "Nothing to undo");
     await page.evaluate(() => (window.journeyClicks = 0));

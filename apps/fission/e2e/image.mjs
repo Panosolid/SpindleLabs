@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { crc32, deflateSync } from "node:zlib";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox, switchTo } from "./start.mjs";
+import { closePanels, openPanel, startWithBox, switchTo } from "./start.mjs";
 
 /** A PNG: 8-bit RGBA, `pixel(x, y)` gives [r, g, b, a]; `ppm` pixels per metre in a pHYs chunk (none if null). */
 function makePng(width, height, pixel, ppm) {
@@ -426,6 +426,8 @@ try {
     try {
       assert.deepEqual(await overflow(p), []);
       const rect = (sel) => p.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
+      // Properties is a sheet over the view at phone width (U5b), opened for its controls.
+      await openPanel(p, "properties");
       // Every properties control lies inside the 375 px screen.
       for (const sel of ["#image-dpi", "#image-mmpp", "#image-brightness", "#image-brightness-number", "#image-not-saved"]) {
         const r = await rect(sel);
@@ -436,6 +438,7 @@ try {
       // The sheet is framed in the narrow viewport: 2:1, width-limited, 1 / 1.1 of it.
       const vp = await rect("#viewport");
       assert.equal(vp.width, 375);
+      await closePanels(p);
       // The four quarters land the right way up in the phone's viewport too.
       const at = (fx, fy) =>
         p.evaluate(
@@ -476,10 +479,11 @@ try {
       await p.tap("#layer-list .layer-visibility");
       assert.equal(await p.textContent("#layer-list .layer-visibility"), "Show");
       await p.tap("#layer-list .layer-visibility");
-      // Focus from the top follows the column as drawn.
+      // Focus from the top follows the page as drawn: the Browser sheet is closed (one sheet at a time), Properties open.
+      await openPanel(p, "properties");
       await p.$eval("#workspace", (el) => el.scrollTo(0, 0));
       const { regions } = await focusOrder(p, "image-brightness");
-      assert.deepEqual(regions, ["topbar", "toolbar", "panel-toggles", "browser", "view-controls", "properties"]);
+      assert.deepEqual(regions, ["topbar", "toolbar", "panel-toggles", "view-controls", "properties"]);
     } finally {
       await p.close();
     }

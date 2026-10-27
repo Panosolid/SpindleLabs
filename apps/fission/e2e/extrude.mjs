@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4184, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4184/";
@@ -104,11 +104,14 @@ async function extrudeEnter(page) {
 async function drawn(page, pts, tap = false) {
   if (tap) await page.tap("#create-sketch");
   else await page.click("#create-sketch");
+  await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
   if (tap) await page.tap("#sketch-plane-XY");
   else await page.click("#sketch-plane-XY");
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   // On the grid: grid snap is off by default since SF1, and Firefox's clicks land on whole pixels, 0.1 mm off.
-  await page.check("#sketch-grid-snap");
+  await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5)
+  await gridSnapOn(page);
+  await closePanels(page, tap); // and it covers the view's lower part, so closed again to draw
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
   for (const p of pts) await at(page, p, TOP, tap);
 }
@@ -238,6 +241,7 @@ try {
     await drawn(page, [[0, 0], [30, 0], [30, 20], [0, 0]], true);
     await status(page, "3 lines, a closed outline.");
     await page.tap("#extrude");
+    await openPanel(page, "properties", true); // the Extrude panel is in the Properties sheet on a phone (U5)
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-flip", "#extrude-clear"]) {
       const box = await page.locator(id).boundingBox();
@@ -250,6 +254,7 @@ try {
     await volume(page, "3,000 mm³");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling after");
     if (shots) await page.screenshot({ path: `${shots}/extrude-done-375.png`, fullPage: true });
+    await closePanels(page, true); // a sheet would cover Undo, docked in the view
     await page.tap("#undo");
     await volume(page, "24,000 mm³");
     await page.context().close();
@@ -348,6 +353,7 @@ try {
       // Sketch 1 (sketch-2): a 40 × 30 rectangle, extruded by the default 10: 40 · 30 · 10 = 12,000 mm³ (Extrude 1, feature-11).
       await drawn(page, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]], tap);
       await status(page, "4 lines, a closed outline.");
+      await openPanel(page, "properties", tap); // the sketch's Extrude button is in the Properties sheet on a phone (U5)
       await press("#sketch-extrude");
       await extrudeEnter(page);
       await volume(page, "12,000 mm³");
@@ -411,16 +417,19 @@ try {
       assert.deepEqual(after, { volume: "12,000 mm³", sketches: [], warning: "Extrude 1 keeps its last shape. Sketch 1 was deleted.", red: ["feature-11"], undo: "Undo Delete Sketch 1 (Ctrl+Z)", open: { menu: false, ask: false } });
       assert.equal(await page.textContent("#error"), "");
       await top();
+      await openPanel(page, "properties", tap); // phone: the warning is in the Properties sheet (U5)
       await page.locator("#kept-warning").scrollIntoViewIfNeeded();
       if (shots) await page.screenshot({ path: `${shots}/delete-kept-${width}.png`, fullPage: tap });
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
 
       // One undo step: Undo brings Sketch 1 back and the warning goes; Redo deletes it again, warned.
       await top();
+      await closePanels(page, tap);
       await press("#undo");
       await until(page, () => !!document.querySelector('#browser [data-node="sketches/sketch-2"]') && document.querySelector("#kept-warning").hidden, null, "undone");
       await volume(page, "12,000 mm³");
       assert.deepEqual(await state(), before);
+      await closePanels(page, tap);
       await press("#redo");
       await until(page, () => !document.querySelector("#kept-warning").hidden, null, "redone");
       await browserOpen();
@@ -444,6 +453,7 @@ try {
       const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
       await drawn(page, pts, tap);
       await statusStarts(page, `${pts.length - 1} lines, a closed outline`);
+      await openPanel(page, "properties", tap); // the sketch's Extrude button is in the Properties sheet on a phone (U5)
       await press("#sketch-extrude");
       await press("#extrude-ok");
       await volume(page, volText);
@@ -472,11 +482,12 @@ try {
       await press('#browser [data-node="body-1"]');
       await until(page, () => document.body.dataset.selection === "body:feature-1", null, "Body 1 selected");
       const verb = "#selection-actions [data-action='design.download-stl']";
-      await openBrowser();
+      await openPanel(page, "properties", tap); // phone: the selection's verbs are in the Properties sheet (U5)
       assert.deepEqual(await stl(verb), ["fission-box.stl", 12, 24000]);
       await openBrowser();
       await page.click('#browser [data-node="body-2"]', { modifiers: ["Shift"] });
       await until(page, () => document.body.dataset.selection?.split(" ").length === 2, null, "both bodies selected");
+      await openPanel(page, "properties", tap);
       assert.deepEqual(await stl(verb), ["fission-2-bodies.stl", 12 + tris, 24000 + vol]);
       assert.equal(await page.textContent("#action-note"), "");
       if (shots) await page.screenshot({ path: `${shots}/two-body-stl-${width}.png`, fullPage: true });
@@ -517,6 +528,7 @@ try {
       const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
       await drawn(page, [[0, 0], [40, 0], [40, 30], [0, 30], [0, 0]], tap);
       await status(page, "4 lines, a closed outline.");
+      await openPanel(page, "properties", tap); // the sketch's Extrude button is in the Properties sheet on a phone (U5)
       await press("#sketch-extrude");
       await extrudeStatus(page, "Sketch 1 makes a closed outline");
       assert.equal(await page.inputValue("#extrude-distance"), "10", "it starts going up");
@@ -535,6 +547,7 @@ try {
       near(bounds(pts, (p) => p[2] < -1e-3), [[0, 40], [0, 30], [-10, -10]], "the end cap's corners, below z = 0");
       near(bounds(pts).slice(2), [[-10, 20]], "z from the flipped end to the box's top");
       // Edit feature (the bar's menu) shows Flip ticked; unticked, the body goes back up: z 0 to 10.
+      await closePanels(page, tap); // the Properties sheet would cover the timeline
       const item = page.locator('#timeline [data-item="feature-11"]');
       await item.scrollIntoViewIfNeeded();
       if (tap) {
@@ -544,6 +557,7 @@ try {
       await until(page, () => document.getElementById("row-menu").open, null, "the item's menu");
       await press("#row-menu-edit");
       await until(page, () => document.getElementById("feature-edit")?.hidden === false, null, "the Edit feature panel");
+      await openPanel(page, "properties", tap); // phone: the Edit feature panel is in the Properties sheet (U5)
       assert.equal(await page.isChecked("#edit-flip"), true, "Edit feature opens with Flip ticked");
       await press(".feature-edit-flip");
       await press("#feature-edit-ok");

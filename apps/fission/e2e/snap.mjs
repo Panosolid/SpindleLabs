@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4185, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4185/";
@@ -97,7 +97,7 @@ async function startSketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
   await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
   // These checks snap against the 10 mm grid: grid snap on (off by default since SF1).
-  await page.check("#sketch-grid-snap");
+  await gridSnapOn(page);
   if (tap) await page.locator("#viewport canvas").scrollIntoViewIfNeeded(); // at phone width the tickbox is below the view
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
 }
@@ -160,6 +160,7 @@ try {
   await check("snapping at 375 px with taps: a tap near a midpoint lands on it, a tap near the chain's column goes vertical", async () => {
     const page = await fresh(375, true);
     await startSketch(page, true);
+    await page.tap('[data-view="top"]'); // the sketch toolbar grew the row above the view after the framing: frame it again for this canvas (U5b)
     const off = 0.4 * 10 * (await mmPerPixel(page));
     for (const p of [[0, 0], [30, 0]]) await at(page, p, true);
     await points(page, "0,0 30,0");

@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { gridSnapOn, openPanel, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4187, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4187/";
@@ -183,7 +183,7 @@ try {
   await check("Snap to grid: ticked, clicks land on the 10 mm grid, and R works straight after ticking (regression)", async () => {
     const page = await fresh();
     await startSketch(page);
-    await page.check("#sketch-grid-snap");
+    await gridSnapOn(page);
     // Focus is on the tickbox: R must still choose the rectangle.
     await page.keyboard.press("r");
     await until(page, () => document.querySelector("#sketch-tool-rectangle")?.getAttribute("aria-pressed") === "true", null, "R chose Rectangle after ticking");
@@ -203,6 +203,7 @@ try {
   await check("free placement at 375 px with taps: taps land where tapped, the tickbox row is 44 px tall, nothing wider than the screen", async () => {
     const page = await fresh(375, true);
     await startSketch(page, true);
+    await page.tap('[data-view="top"]'); // the sketch toolbar grew the row above the view after the framing: frame it again for this canvas (U5b)
     const px = await mmPerPixel(page);
     const corners = [[4.1, 2.7], [31.3, 5.9], [16.6, 24.2]];
     for (const [i, c] of corners.entries()) {
@@ -212,6 +213,7 @@ try {
     const [first] = await pointList(page);
     await at(page, [first[0] + 4 * px, first[1] + 4 * px], true);
     await statusIs(page, "3 lines, a closed outline.");
+    await openPanel(page, "properties"); // the Snap to grid row is in the Properties sheet
     const row = await page.locator(".sketch-grid-snap").boundingBox();
     assert.ok(row.height >= 44, `the Snap to grid row is ${row.height} px tall`);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");

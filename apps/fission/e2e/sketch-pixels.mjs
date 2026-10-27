@@ -25,7 +25,7 @@ import { preview } from "vite";
 import { browserName, launch } from "./browser.mjs";
 import { compareImages, decodePng, encodePng } from "./png.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
-import { startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4193, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4193/";
@@ -152,7 +152,7 @@ try {
   await page.click("#sketch-plane-XY");
   await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
   // The drawing is on the grid: grid snap is off by default since SF1, and Firefox's clicks land on whole pixels.
-  await page.check("#sketch-grid-snap");
+  await gridSnapOn(page);
   await page.mouse.move(0, 0);
   // Each tool's clicks are waited for before the next key: a key pressed while a click is still being
   // snapped would take that click (see the TC2 finding in docs/progress/cad.md).
