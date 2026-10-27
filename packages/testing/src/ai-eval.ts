@@ -28,6 +28,8 @@ export const EVAL_CASES: readonly EvalCase[] = [
   // AI7b: a sketch with a shape drawn in it. The circle's diameter is given; the centre is (10, 5) in the sketch.
   { id: "circle-in-sketch", taskType: "create", prompt: "Sketch a circle 12 mm in diameter on the XY plane, centred at (10, 5).", setup: [], expected: [{ op: "create_sketch", on: "XY" }, { op: "draw_circle", diameter: 12, x: 10, y: 5 }] },
   { id: "line-in-sketch", taskType: "create", prompt: "On the YZ plane, sketch a line from (0, 0) to (20, 10).", setup: [], expected: [{ op: "create_sketch", on: "YZ" }, { op: "draw_line", x1: 0, y1: 0, x2: 20, y2: 10 }] },
+  // AI7c: a drawn outline pulled into a body. Diameter 20 is given; 15 mm is how far.
+  { id: "extrude-circle", taskType: "create", prompt: "Sketch a circle 20 mm in diameter on the XY plane, then extrude it 15 mm.", setup: [], expected: [{ op: "create_sketch", on: "XY" }, { op: "draw_circle", diameter: 20 }, { op: "extrude_sketch", distance: 15 }] },
   { id: "box-by-sizes", taskType: "create", prompt: "Make a box 40 by 30 by 20 mm.", setup: [], expected: [{ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 }] },
   { id: "cylinder-diameter", taskType: "create", prompt: "I need a cylinder 25 mm across and 60 mm tall.", setup: [], expected: [{ op: "set_part", shape: "cylinder", width: 25, height: 60 }] },
   { id: "sphere-radius", taskType: "create", prompt: "A ball with a radius of 15 mm.", setup: [], expected: [{ op: "set_part", shape: "sphere", width: 30 }] },
@@ -127,6 +129,9 @@ export const HELD_OUT_CASES: readonly EvalCase[] = [
   // rule above says). Radius 10 → diameter 20; the front is XZ; centred on the origin, as nothing else is said.
   { id: "held-circle-sketch", taskType: "create", prompt: "Draw a circle with radius 10mm as a sketch on the XY plane.", setup: [], expected: [{ op: "create_sketch", on: "XY" }, { op: "draw_circle", diameter: 20 }] },
   { id: "held-rectangle-sketch", taskType: "create", prompt: "Sketch a 30 by 20 mm rectangle on the front plane.", setup: [BOX], expected: [{ op: "create_sketch", on: "XZ" }, { op: "draw_rectangle", width: 30, height: 20 }] },
+  // AI7c: the front is XZ; 2 cm = 20 mm; "the other way" is a negative distance. The sketch is not named, so the one just started.
+  { id: "held-extrude-rectangle", taskType: "create", prompt: "On the front plane draw a 30 by 20 mm rectangle and extrude it 2 cm.", setup: [], expected: [{ op: "create_sketch", on: "XZ" }, { op: "draw_rectangle", width: 30, height: 20 }, { op: "extrude_sketch", distance: 20 }] },
+  { id: "held-extrude-back", taskType: "create", prompt: "Draw a circle of radius 5 mm in a sketch on the YZ plane and extrude it 12 mm the other way.", setup: [], expected: [{ op: "create_sketch", on: "YZ" }, { op: "draw_circle", diameter: 10 }, { op: "extrude_sketch", distance: -12 }] },
   // AI5c: requests no offered command can do. The right answer is no
   // commands and a plain reason, never a stand-in shape (Ben's circle sketch
   // came back as a 20 × 0.01 mm cylinder, 2026-10-26). Written after

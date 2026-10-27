@@ -4,7 +4,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseCommand } from "@fission/core";
-import { DESIGN_COMMANDS, documentFor, drawRefused } from "../src/index.ts";
+import { commandDistance, DESIGN_COMMANDS, documentFor, drawRefused, extrudable, EXTRUDE_OP, extrudeTarget, extrudeWords, SKETCH_REACH } from "../src/index.ts";
+import { addSketch } from "../src/sketch.ts";
+import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
 
 const params = (c: unknown) => {
   const parsed = parseCommand(c, DESIGN_COMMANDS);
@@ -82,4 +84,55 @@ test("a sketch an extrude is built from is closed to the draw commands, naming t
   assert.equal(drawRefused(rect, "sketch-1"), null);
   // The extrude comes after the sketch, so the sketch is no longer just before the marker: refused as nothing just started.
   assert.throws(() => documentFor({ op: "draw_circle", diameter: 5 }, used), /no sketch just started/);
+});
+
+const rectangleSketch = () => documentFor({ op: "draw_rectangle", width: 30, height: 20 }, documentFor({ op: "create_sketch", on: "XY" }));
+
+test("hand-worked: extrude_sketch (AI7c) puts an extrude of the newest sketch at the marker, the other way when negative", () => {
+  const doc = documentFor({ op: EXTRUDE_OP, distance: 10 }, rectangleSketch());
+  // Sketch 1 is item 1 (id 1) and its 4 points and 4 lines take ids 2 to 9, so the extrude is feature-10, item 2: it depends on the sketch and names it, as the Extrude tool's OK records it.
+  const [sketch, extrude] = doc.timeline.features;
+  assert.deepEqual([sketch.id, extrude.id, extrude.intent.summary, extrude.provenance.self.label], ["sketch-1", "feature-10", "Extrude Sketch 1 by 10 mm", "Extrude 1"]);
+  assert.deepEqual(extrude.intent.parameters, { sketch: "sketch-1", distance: 10 });
+  assert.deepEqual(extrude.dependsOn, ["sketch-1"]);
+  // −10 is 10 mm the other way: the distance stays positive and the extrude is flipped (Fusion's Flip).
+  const back = documentFor({ op: EXTRUDE_OP, distance: -10 }, rectangleSketch()).timeline.features[1];
+  assert.deepEqual([back.intent.parameters, back.intent.summary], [{ sketch: "sketch-1", distance: 10, flip: true }, "Extrude Sketch 1 by 10 mm, flipped"]);
+  // The sketch itself is left as drawn: four lines.
+  assert.equal(doc.sketches[0].curves.length, 4);
+});
+
+test("which sketch an extrude means: the one named, else the open one, else the newest before the marker", () => {
+  // Sketch 1 (sketch-1, its rectangle taking ids 2 to 9) and Sketch 2 (sketch-10), both before the marker.
+  const two = addSketch(rectangleSketch(), "XZ").doc;
+  const id = (command: object, open: string | null = null) => extrudeTarget(two, { op: EXTRUDE_OP, distance: 5, ...command }, open);
+  assert.equal(id({}), "sketch-10", "the newest");
+  assert.equal(id({ sketch: "Sketch 1" }), "sketch-1", "named");
+  assert.equal(id({}, "sketch-1"), "sketch-1", "the open one beats the newest");
+  assert.equal(id({ sketch: "Sketch 2" }, "sketch-1"), "sketch-10", "a name beats the open one");
+  assert.throws(() => id({ sketch: "Sketch 3" }), /no sketch "Sketch 3" before the marker/);
+  // Suppressed, or after the marker: not usable. Suppressing Sketch 2 leaves Sketch 1.
+  assert.deepEqual(extrudable(suppressItem(two, "sketch-10", true)).map((f) => f.id), ["sketch-1"]);
+  assert.equal(extrudeTarget(suppressItem(two, "sketch-10", true), { op: EXTRUDE_OP, distance: 5 }), "sketch-1");
+  // A box, then a sketch, with the marker back on the box: the sketch is after the marker, so an extrude put in there can't use it.
+  const behind = moveMarker(addSketch(documentFor({ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 })).doc, "feature-1");
+  assert.deepEqual(extrudable(behind), []);
+  assert.throws(() => extrudeTarget(behind, { op: EXTRUDE_OP, distance: 5 }), /each comes after the rollback marker or is suppressed/);
+  assert.throws(() => documentFor({ op: EXTRUDE_OP, distance: 5 }), /no sketch to extrude/);
+  assert.throws(() => extrudeTarget(documentFor({ op: "set_part", shape: "box", width: 40, depth: 30, height: 20 }), { op: EXTRUDE_OP, distance: 5 }), /There is no sketch to extrude yet/);
+});
+
+test("the extrude distance: 0 and non-numbers are refused, 1e6 mm is the reach (0.9× and 1.1×)", () => {
+  assert.throws(() => commandDistance({ op: EXTRUDE_OP, distance: 0 }), /Type a distance other than 0 mm/);
+  assert.throws(() => documentFor({ op: EXTRUDE_OP, distance: 0 }, rectangleSketch()), /other than 0 mm/);
+  assert.throws(() => commandDistance({ op: EXTRUDE_OP, distance: Number.NaN }), /needs its distance in mm/);
+  assert.equal(commandDistance({ op: EXTRUDE_OP, distance: -7 }), -7);
+  const ok = (distance: number) => parseCommand({ op: EXTRUDE_OP, distance }, DESIGN_COMMANDS).ok;
+  assert.deepEqual([ok(0.9 * SKETCH_REACH), ok(-0.9 * SKETCH_REACH), ok(1.1 * SKETCH_REACH), ok(-1.1 * SKETCH_REACH)], [true, true, false, false]);
+  assert.equal(parseCommand({ op: EXTRUDE_OP }, DESIGN_COMMANDS).ok, false, "the distance is required");
+});
+
+test("an extrude in words, for the preview and its undo step", () => {
+  assert.equal(extrudeWords({ op: EXTRUDE_OP, distance: 15 }), "extrude the sketch by 15 mm");
+  assert.equal(extrudeWords({ op: EXTRUDE_OP, distance: -8, sketch: "Sketch 2" }), "extrude Sketch 2 by 8 mm the other way");
 });

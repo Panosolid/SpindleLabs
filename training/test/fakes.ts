@@ -17,6 +17,8 @@ export function fakeKernel(answer: (op: string, args: unknown[]) => unknown = ()
       const given = answer(op, args);
       if (given !== undefined) return given;
       // A binary STL with one triangle: 80-byte header, a count, 50 bytes.
+      // A sketch always makes one closed outline (the real kernel is asked in journeys/kernel.journey.ts).
+      if (op === "sketch_outline") return { closed: { segments: [] } };
       return op === "export_stl" ? { bytes: new Uint8Array(134), rounding: 0, warning: null } : { errors: [], volume: 1 };
     }) as KernelCalls["call"],
   };

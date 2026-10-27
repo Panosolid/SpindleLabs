@@ -22,7 +22,10 @@
 // AI7a: the AI starts a sketch on an origin plane or a flat face it was
 // told of, as Create sketch would, in one undo step. AI7b: it draws
 // circles, rectangles and lines in the sketch it just started or the one
-// open, in sketch mm, and is refused when no sketch is open.
+// open, in sketch mm, and is refused when no sketch is open. AI7c: it
+// extrudes a sketch by a distance (the other way when negative) as the
+// Extrude tool's OK does; the kernel is asked first, so a sketch that is
+// not one closed outline is refused before any preview.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -226,7 +229,7 @@ try {
       assert.equal(asked[0].url, "http://localhost:11434/api/chat");
       assert.match(body.messages[0].content, /"op":"set_part","shape":"box","width":40,"depth":30,"height":20/);
       assert.deepEqual(body.messages[1], { role: "user", content: "Make it 10 mm wider." });
-      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line"], "set_part, create_sketch (AI7a) and the draws (AI7b), never export_stl: the AI can't download files");
+      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"], "set_part, create_sketch (AI7a), the draws (AI7b) and extrude_sketch (AI7c), never export_stl: the AI can't download files");
       // The preview: only width moves, 40 → 50; the part is untouched.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: box 50 × 30 × 20 mm");
       assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["width40→50"]);
@@ -577,7 +580,7 @@ try {
         const top = prompt.find((l) => l.startsWith("- face:") && l.includes("facing up"));
         assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm, which is \(-?[\d.]+, -?[\d.]+\) in a sketch on it\.$/, top);
         const ops = asked[0].body.format.properties.commands.items.oneOf.map((c) => c.properties.op.const);
-        assert.deepEqual(ops, ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line"]);
+        assert.deepEqual(ops, ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"]);
         // The preview: a row per command; nothing changed yet.
         assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0)");
         assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "circle—→circle ⌀20 mm at (0, 0)"]);
@@ -617,6 +620,66 @@ try {
         assert.match(await page.textContent("#ai-result"), /No sketch is open to draw in/);
         assert.equal(await undoTitle(page), steps);
         assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI extrudes a rectangle it just drew, then another sketch by name the other way; a sketch that is no closed outline is refused before the preview (AI7c, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const answer = (commands, explanation) => JSON.stringify({ commands, explanation });
+      // A 30 × 20 rectangle at the origin extruded 10: 30 · 20 · 10 = 6,000 mm³ (the readout is the last body's: the new one).
+      const answers = [answer([{ op: "create_sketch", on: "XY" }, { op: "draw_rectangle", width: 30, height: 20 }, { op: "extrude_sketch", distance: 10 }], "So there is a new sketch on the XY plane, and in it a rectangle 30 × 20 mm centred at (0, 0). Then extrude the sketch by 10 mm.")];
+      const { page, asked } = await fresh(answers, { open: false });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        const steps = await undoTitle(page);
+        await ask(page, "Sketch a 30 by 20 mm rectangle on the XY plane, then extrude it 10 mm.");
+        await page.waitForSelector("#ai-preview");
+        // Told what the command does, and that no sketch is there yet to name (so no `sketch` choice).
+        const prompt = asked[0].body.messages[0].content.split("\n");
+        assert.ok(prompt.some((l) => l.startsWith("extrude_sketch makes a new body at the timeline marker from a sketch that makes one closed outline")), prompt.join("\n"));
+        assert.ok(prompt.includes("No sketch can be extruded yet, so extrude_sketch only follows a create_sketch and its drawing in the same answer."), prompt.join("\n"));
+        const spec = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "extrude_sketch");
+        assert.deepEqual(Object.keys(spec.properties), ["op", "distance"]);
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then rectangle 30 × 20 mm centred at (0, 0), then extrude the sketch by 10 mm");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "rectangle—→rectangle 30 × 20 mm centred at (0, 0)", "extrude—→the sketch by 10 mm"]);
+        assert.equal(await undoTitle(page), steps);
+        await page.click("#ai-accept");
+        // The box, Sketch 1, and the extrude: the body is built from the sketch, the sketch left (nothing is open).
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 3, null, { timeout: 8000 });
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
+        await volume(page, "6,000 mm³"); // 30 · 20 · 10
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XY plane, then rectangle 30 × 20 mm centred at (0, 0), then extrude the sketch by 10 mm (Ctrl+Z)");
+        await page.screenshot({ path: `e2e/assistant-extrude-${width}.png` });
+        // Sketch 1 exists now: it can be named, and 5 the other way is a flipped extrude of 5 mm (30 · 20 · 5 = 3,000 mm³).
+        answers.push(answer([{ op: "extrude_sketch", distance: -5, sketch: "Sketch 1" }], "So extrude Sketch 1 by 5 mm the other way."));
+        await ask(page, "Extrude the first sketch 5 mm the other way.");
+        await page.waitForSelector("#ai-preview");
+        const named = asked[1].body.messages[0].content.split("\n");
+        assert.ok(named.includes("With no sketch named, extrude_sketch takes the sketch started earlier in the answer, else the newest sketch: Sketch 1."), named.join("\n"));
+        const second = asked[1].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "extrude_sketch");
+        assert.deepEqual(second.properties.sketch.enum, ["Sketch 1"]);
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["extrude—→Sketch 1 by 5 mm the other way"]);
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 4, null, { timeout: 8000 });
+        await volume(page, "3,000 mm³"); // 30 · 20 · 5
+        assert.equal(await undoTitle(page), "Undo AI: extrude Sketch 1 by 5 mm the other way (Ctrl+Z)");
+        await page.click("#undo");
+        await volume(page, "6,000 mm³");
+        // A sketch that is not one closed outline (a lone line): the kernel's reason, before any preview; nothing changed.
+        answers.push(answer([{ op: "create_sketch", on: "XZ" }, { op: "draw_line", x1: 0, y1: 0, x2: 10, y2: 5 }, { op: "extrude_sketch", distance: 10 }], "So a line, extruded."));
+        const before = await undoTitle(page);
+        await ask(page, "Draw a line from (0, 0) to (10, 5) on the front plane and extrude it 10 mm.");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.equal(await page.$("#ai-preview"), null, "no preview of a change that cannot be made");
+        assert.match(await page.textContent("#ai-result"), /That can't be done: .*closed outline.*Nothing was changed/s);
+        assert.equal(await undoTitle(page), before);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 3);
       } finally {
         await page.close();
       }
