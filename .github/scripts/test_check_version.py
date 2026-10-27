@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from check_version import check, follows, parse_version  # noqa: E402
+from check_version import check, check_changelog, follows, parse_version  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -103,15 +103,23 @@ class Check(unittest.TestCase):
         self.assertEqual(check("0.1.0\n", "# Changelog\n"), ["CHANGELOG.md has no version heading"])
 
 
-class RepositoryFiles(unittest.TestCase):
-    """The real VERSION and CHANGELOG.md, checked on every PR by CI's kernel job."""
+class CheckChangelog(unittest.TestCase):
+    """The headings alone (VERSION is gone; changelog.py works the version out)."""
 
-    def test_version_matches_changelog(self):
-        with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as f:
-            version_text = f.read()
+    def test_good(self):
+        self.assertEqual(check_changelog(GOOD), [])
+
+    def test_skipped_fix(self):
+        self.assertEqual(len(check_changelog(GOOD.replace("## 0.24.1 ", "## 0.24.2 "))), 1)
+
+
+class RepositoryFiles(unittest.TestCase):
+    """The real CHANGELOG.md, checked on every PR by CI's kernel job."""
+
+    def test_changelog_in_order(self):
         with open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8") as f:
             changelog = f.read()
-        self.assertEqual(check(version_text, changelog), [])
+        self.assertEqual(check_changelog(changelog), [])
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ class CiState(unittest.TestCase):
                 check("e2e (${{ matrix.shard }}/3)", conclusion="skipped"), check("coverage", conclusion="skipped")]
         self.assertEqual(ci_state(docs), "success")
         self.assertEqual(ci_state(docs, quick_ok=True), "success")
-        # The kernel job's script tests failing (VERSION against CHANGELOG.md) still blocks it.
+        # The kernel job's script tests failing (CHANGELOG.md and changelog.d/ among them) still blocks it.
         self.assertEqual(ci_state([check("kernel", conclusion="failure")] + docs[1:]), "failure")
 
     def test_cases(self):
