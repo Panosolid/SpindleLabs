@@ -209,12 +209,14 @@ try {
     await page.context().close();
   });
 
-  await check("an open sketch can't be extruded: OK stays off with the kernel's reason; no sketch at all says so; Escape and Cancel leave", async () => {
+  await check("an open sketch can't be extruded: OK stays off with the kernel's reason; with no sketch the box's faces are offered and it says how to pick; Escape and Cancel leave", async () => {
     const page = await fresh();
     await page.click("#extrude");
-    await extrudeStatus(page, "There is no sketch to extrude yet: draw one with Create sketch.");
+    // No sketch, but the box's six flat faces (UX1c; with no body at all it says there is nothing: face-extrude.journey.ts).
+    await extrudeStatus(page, "Click a closed sketch or a flat face in the view, or a sketch's row in the browser, to extrude it.");
+    await page.waitForFunction(() => document.querySelector("#extrude-panel").dataset.faces?.split(" ").length === 6);
     assert.equal(await page.isDisabled("#extrude-ok"), true);
-    assert.equal(await page.textContent("#extrude-profile"), "Click a closed sketch in the view");
+    assert.equal(await page.textContent("#extrude-profile"), "Click a closed sketch or a flat face in the view");
     assert.equal(await page.isVisible("#extrude-clear"), false, "nothing to clear");
     await page.click("#extrude-cancel");
     assert.equal(await page.isVisible("#extrude-panel"), false);
