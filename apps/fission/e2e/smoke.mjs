@@ -1201,8 +1201,9 @@ try {
         const r = await page.evaluate(() => {
           const at = document.activeElement;
           // Firefox gives every scroll container a tab stop of its own (Chromium and WebKit only one with nothing
-          // focusable in it): the page's #workspace and #toolbar, both full of controls (hunt 3e).
-          const scroller = (at?.id === "workspace" || at?.id === "toolbar") && /auto|scroll/.test(getComputedStyle(at).overflowY + getComputedStyle(at).overflowX);
+          // focusable in it): the page's #workspace and #toolbar, both full of controls (hunt 3e), and since U5 the
+          // Browser and Properties sheets (they scroll inside themselves).
+          const scroller = ["workspace", "toolbar", "browser", "properties"].includes(at?.id) && /auto|scroll/.test(getComputedStyle(at).overflowY + getComputedStyle(at).overflowX);
           const control = !!at?.matches("button, input, select, textarea, a[href], summary, [tabindex='0']");
           const el = at?.closest("#topbar, #toolbar, #panel-toggles, #browser, #undo-redo, #view-controls, #timeline, #properties");
           const top = el ? el.getBoundingClientRect().top + document.querySelector("#workspace").scrollTop : -1;
