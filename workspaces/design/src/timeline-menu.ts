@@ -15,6 +15,7 @@
 import type { KernelCalls } from "@fission/core";
 import { isSketchItem, type DesignDocument } from "./document.ts";
 import { planDelete, type DeleteQuestion } from "./delete-ask.ts";
+import type { BodyCache } from "./rebuild.ts";
 import { barEdit, itemMenu, type BarAction, type MenuEntry } from "./timeline-bar.ts";
 import { itemName, renameItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 
@@ -29,6 +30,8 @@ export function menuEntries(doc: DesignDocument, id: string, editing: string | n
 /** What the menu needs from the app. */
 export interface MenuHost {
   kernel: KernelCalls;
+  /** The bodies the design is drawn from, which a delete's settle reuses (`planDelete`); none, its own. */
+  bodies?: BodyCache;
   /** The design now. */
   current(): DesignDocument;
   /** Makes `doc` the design as one undo step named `step`. */
@@ -62,7 +65,7 @@ export async function chooseEntry(host: MenuHost, id: string, action: MenuEntry[
   if (r.kind === "open") return host.edit(r.id);
   if (r.kind === "sketch") return host.editSketch(r.id);
   if (r.kind === "rename") return host.rename(r.id);
-  const plan = await planDelete(host.kernel, before, id);
+  const plan = await planDelete(host.kernel, before, id, host.bodies);
   if (host.current() !== before) return;
   const go = () => {
     if (host.current() === before) host.record(r.step, plan.next);

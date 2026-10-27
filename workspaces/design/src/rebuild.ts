@@ -113,6 +113,8 @@ export class BodyCache {
   private closed = false;
   /** Uses running now (`using`): while any is, `keepOnly` only says what to keep, and the last to end frees the rest. */
   private uses = 0;
+  /** Bodies the kernel failed to free (`free`), freed at the next chance. */
+  private unfreed: BodyHandle[] = [];
   /** The bodies the last `keepOnly` kept (none before the first). */
   private wanted = new Set<BodyHandle>();
   private kernel: KernelCalls;
@@ -146,12 +148,18 @@ export class BodyCache {
     }
   }
 
-  /** A kept body's view, asked of the kernel once. */
+  /** A kept body's view, asked of the kernel once it answers (a failed ask is forgotten, so the next look asks again: T6b). */
   view(handle: BodyHandle): Promise<BodyView> {
     const key = this.keys.get(handle);
     const entry = key === undefined ? undefined : this.bodies.get(key);
     if (!entry) throw new Error(`body ${handle} is not in this cache`);
-    entry.view ??= this.kernel.call("body_view", handle);
+    if (entry.view === undefined) {
+      const asked = this.kernel.call("body_view", handle);
+      entry.view = asked;
+      asked.catch(() => {
+        if (entry.view === asked) entry.view = undefined;
+      });
+    }
     return entry.view;
   }
 
@@ -177,14 +185,35 @@ export class BodyCache {
   }
 
   private async freeUnwanted(): Promise<void> {
+    for (const handle of this.unfreed.splice(0)) await this.free(handle);
     for (const [key, b] of this.bodies) {
       // A use began while the kernel freed the last one: its bodies (and these) wait for it to end.
       if (this.uses > 0) return;
       if (this.wanted.has(b.handle)) continue;
       this.bodies.delete(key);
       this.keys.delete(b.handle);
-      await this.kernel.call("body_free", b.handle);
+      await this.free(b.handle);
     }
+  }
+
+  /**
+   * Frees a body no use holds; one the kernel fails to free is still held
+   * there, so it is tried again at the next chance (once more at once when
+   * the cache is closed: there is no next chance), and the use that ended
+   * keeps its own answer (T6b).
+   */
+  private async free(handle: BodyHandle): Promise<void> {
+    try {
+      await this.kernel.call("body_free", handle);
+    } catch {
+      if (this.closed) await this.kernel.call("body_free", handle).catch(() => {});
+      else this.unfreed.push(handle);
+    }
+  }
+
+  /** Frees `handle`, a body built for a moment outside the cache (Extrude's preview), as the cache frees its own. */
+  release(handle: BodyHandle): Promise<void> {
+    return this.free(handle);
   }
 
   clear(): Promise<void> {
@@ -320,13 +349,23 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
   const bodies = cache ?? new BodyCache(calls);
   const placed = (doc: DesignDocument) => placeOpen(doc, bodies, kernel);
   let was: Promise<Record<string, FeatureResult>> | undefined;
-  /** Where a face sketch lay in `before` with nothing suppressed and no marker. */
+  /**
+   * Where a face sketch lay in `before` with nothing suppressed and no
+   * marker. One that failed there (the kernel failed it: it is placed or
+   * held otherwise, never failed for its own sake) lay somewhere this
+   * can't tell, so the settle fails, and the edit with it, rather than
+   * keep a shape with no place (T6b: a sketch deleted while its face's
+   * view failed once kept its extrude's shape on XY, not on the face).
+   */
   const wasAt = async (id: string) => {
     was ??= placed(before);
     const r = (await was)[id];
+    if (r?.status === "failed") throw new Error(r.message);
     return r?.status === "built" ? r.placement : undefined;
   };
-  return bodies.using(async () => {
+  // Its own cache is closed after: a body the kernel failed to free is tried once more then (T6b).
+  const own = cache === undefined;
+  const settling = bodies.using(async () => {
     const beforeItems = indexOf(before).items;
     const next: Record<string, KeptShape> = {};
     for (const f of after.timeline.features) {
@@ -382,6 +421,7 @@ export async function settleKept(calls: KernelCalls, before: DesignDocument, aft
     }
     return doc;
   });
+  return own ? settling.finally(() => bodies.close()) : settling;
 }
 
 /**
@@ -721,7 +761,8 @@ async function placementOf(kernel: KernelCalls, doc: DesignDocument, sketchId: s
     if (r?.status !== "built" || r.placement === undefined) throw new Error(`${sketchId} is not built, so it lies nowhere`);
     return r.placement;
   } finally {
-    await cache.clear();
+    // Closed, not only cleared: a body the kernel failed to free is tried once more now (T6b), not left for a next use.
+    await cache.close();
   }
 }
 
