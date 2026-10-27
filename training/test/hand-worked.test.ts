@@ -9,130 +9,58 @@ import { generate, RECIPES, RULES } from "../src/index.ts";
 import { fakeKernel } from "./fakes.ts";
 
 const part = (shape: string, width: number, depth: number, height: number) => ({ op: "set_part", shape, width, depth, height });
-const exportStl = { op: "export_stl" };
 
 const now = (shape: string, w: number, d: number, h: number) => `The part now is ${shape}: width ${w} mm, depth ${d} mm, height ${h} mm.`;
 const so = (shape: string, w: number, d: number, h: number, isNew = false) => `So the ${isNew ? "new " : ""}part is ${shape}: width ${w} mm, depth ${d} mm, height ${h} mm.`;
 const exported = "No size changes; the whole part is exported as an STL file.";
 
 // [setup, words, working out, commands]. Each working out is checked line by line against the words, by hand.
-// AI7a's sketch recipe, AI7b's drawing recipe and AI7c's extrude recipe changed seed 1's draws, so these ten and the later ones were checked by hand again.
-const sketchOn = (on: string) => ({ op: "create_sketch", on });
-const extrude = (distance: number) => ({ op: "extrude_sketch", distance });
-const sketched = (on: string) => `So there is a new sketch on the ${on} plane, ready to draw in.`;
-const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane, drawing circles, rectangles and lines in it and extruding it.";
+// AI7a's sketch recipe, AI7b's drawing recipe, AI7c's extrude recipe and AI7d's two rename recipes changed seed 1's draws, so these ten and the later ones were checked by hand again.
 const HAND_CHECKED = [
-  // A cube is a box with every side the same: 3.5 cm = 35 mm; then the export.
-  [[], "I'd like a cube, 3.5cm on each side. Then download it as an STL file.", `A cube is a box with every side the same. 3.5 cm is 35 mm. ${so("a box", 35, 35, 35, true)} Then it is exported as an STL file.`, [part("box", 35, 35, 35), exportStl]],
-  // A radius of 155 is a diameter of 2 × 155 = 310; XZ by its letters; the centre as written.
-  [
-    [],
-    "Sketch a circle with a radius of 155 millimetres centred at (15, 32) mm on the XZ plane.",
-    "The diameter is twice the radius: 2 × 155 = 310 mm. The centre is given in mm in the sketch. So there is a new sketch on the XZ plane, and in it a circle ⌀310 mm at (15, 32).",
-    [sketchOn("XZ"), { op: "draw_circle", diameter: 310, x: 15, y: 32 }],
-  ],
-  // Half as deep: 296 × 0.5 = 148.
-  [
-    [part("box", 59, 296, 28)],
-    "Make it half as deep.",
-    `${now("a box", 59, 296, 28)} That multiplies the depth by 0.5: 296 × 0.5 = 148 mm. Every other size stays. ${so("a box", 59, 148, 28)}`,
-    [part("box", 59, 148, 28)],
-  ],
-  // Only the export; the part stays.
-  [[part("slot", 114, 45, 42)], "Export the STL.", `${now("a slot", 114, 45, 42)} ${exported}`, [exportStl]],
-  // 0.15 m = 150 mm across and 150 mm out: a circle of diameter 150 on XY, extruded 150 (AI7c).
-  [
-    [],
-    "In a sketch on XY, draw a circle 0.15 m across, then extrude it 0.15 m.",
-    "0.15 m is 150 mm. It is centred on the sketch's origin. So there is a new sketch on the XY plane, and in it a circle ⌀150 mm at (0, 0). Then extrude the sketch by 150 mm.",
-    [sketchOn("XY"), { op: "draw_circle", diameter: 150 }, extrude(150)],
-  ],
-  [[part("slot", 51, 1, 2.5)], "Export the STL.", `${now("a slot", 51, 1, 2.5)} ${exported}`, [exportStl]],
-  // A chamfer has no command: no commands and the reason.
-  [[part("plate", 11, 50, 72)], "Chamfer the top edges by 135 mm.", `There is no command for a chamfer yet, so this can't be done and nothing was made. ${CAN_DO}`, []],
-  // Taller adds to the height: 30 + 67 = 97; the width and depth stay.
-  [
-    [part("cylinder", 86, 86, 30)],
-    "Can you make the cylinder 67mm taller?",
-    `${now("a cylinder", 86, 86, 30)} Taller changes the height: 30 + 67 = 97 mm. Every other size stays. ${so("a cylinder", 86, 86, 97)}`,
-    [part("cylinder", 86, 86, 97)],
-  ],
+  // The side is the YZ plane (the view cube's right/left/side face the YZ plane).
+  [[], "New sketch on the side plane.", "The side plane is the YZ plane. So there is a new sketch on the YZ plane, ready to draw in.", [{"op": "create_sketch", "on": "YZ"}]],
+  // Bottom is the XY plane; the rename names no item: the sketch just started is the one.
+  [[], "Create a sketch on bottom and name it \"hinge\".", "The bottom plane is the XY plane. So there is a new sketch on the XY plane. Then the sketch just started is named: rename the newest item to hinge.", [{"op": "create_sketch", "on": "XY"}, {"op": "rename_item", "name": "hinge"}]],
+  // XZ by its letters.
+  [[], "Create a sketch on XZ.", "So there is a new sketch on the XZ plane, ready to draw in.", [{"op": "create_sketch", "on": "XZ"}]],
+  // Three sketches are there (Sketch 1 to 3); the second is Sketch 2, and only its name changes.
+  [[{"op": "create_sketch", "on": "YZ"}, {"op": "create_sketch", "on": "XY"}, {"op": "create_sketch", "on": "XY"}], "Rename Sketch 2 to \"base\".", "Only the name changes, so rename Sketch 2 to base; nothing is built or removed.", [{"op": "rename_item", "item": "Sketch 2", "name": "base"}]],
+  // 39.5 cm = 395 mm, 3 cm = 30 mm, 5 cm = 50 mm; then the export.
+  [[], "Can you make a 39.5cm by 3 cm by 5cm box. Then download it as an STL file.", "Its sizes are the width, depth and height, in that order. 39.5 cm is 395 mm, 3 cm is 30 mm and 5 cm is 50 mm. So the new part is a box: width 395 mm, depth 30 mm, height 50 mm. Then it is exported as an STL file.", [{"op": "set_part", "shape": "box", "width": 395, "depth": 30, "height": 50}, {"op": "export_stl"}]],
+  // 1 cm = 10 mm replaces the width 6.
+  [[{"op": "set_part", "shape": "star", "width": 6, "depth": 6, "height": 9}], "Make the width 1cm.", "The part now is a star: width 6 mm, depth 6 mm, height 9 mm. 1 cm is 10 mm. The width becomes 10 mm. Every other size stays. So the part is a star: width 10 mm, depth 6 mm, height 9 mm.", [{"op": "set_part", "shape": "star", "width": 10, "depth": 6, "height": 9}]],
+  // 2.25 in = 57.15 mm (2.25 × 25.4), 4 in = 101.6 mm (4 × 25.4), 0.25 in = 6.35 mm (0.25 × 25.4).
+  [[], "I need a flat plate with two holes, 2.25 \u00d7 4 in and 0.25 inches thick.", "A plate's two sizes across are its width and depth, and its thickness is the height. 2.25 inches is 57.15 mm, 4 inches is 101.6 mm and 0.25 inches is 6.35 mm. So the new part is a plate: width 57.15 mm, depth 101.6 mm, height 6.35 mm.", [{"op": "set_part", "shape": "plate", "width": 57.15, "depth": 101.6, "height": 6.35}]],
+  // A sketch never changes the part: YZ by its letters.
+  [[{"op": "set_part", "shape": "slot", "width": 44, "depth": 14, "height": 39}], "Start a new sketch on the YZ.", "The part stays as it is. So there is a new sketch on the YZ plane, ready to draw in.", [{"op": "create_sketch", "on": "YZ"}]],
   // 1 inch = 25.4 mm, on every side.
-  [[], "Make a cube with 1 inch sides.", `A cube is a box with every side the same. 1 inch is 25.4 mm. ${so("a box", 25.4, 25.4, 25.4, true)}`, [part("box", 25.4, 25.4, 25.4)]],
+  [[], "Make a cube with 1 inch sides.", "A cube is a box with every side the same. 1 inch is 25.4 mm. So the new part is a box: width 25.4 mm, depth 25.4 mm, height 25.4 mm.", [{"op": "set_part", "shape": "box", "width": 25.4, "depth": 25.4, "height": 25.4}]],
   // 3 mm replaces the 68 mm height.
-  [
-    [part("box", 10, 25, 68)],
-    "Change the height to 3 millimetres.",
-    `${now("a box", 10, 25, 68)} The height becomes 3 mm. Every other size stays. ${so("a box", 10, 25, 3)}`,
-    [part("box", 10, 25, 3)],
-  ],
+  [[{"op": "set_part", "shape": "box", "width": 10, "depth": 25, "height": 68}], "Change the height to 3 millimetres.", "The part now is a box: width 10 mm, depth 25 mm, height 68 mm. The height becomes 3 mm. Every other size stays. So the part is a box: width 10 mm, depth 25 mm, height 3 mm.", [{"op": "set_part", "shape": "box", "width": 10, "depth": 25, "height": 3}]],
 ];
 
 // Later examples of seed 1, chosen for what the first ten lack, each checked by hand.
 const LATER = {
-  // 0.5 inch = 12.7 mm, 0.75 inch = 19.05 mm; the radius doubled: 2 × 12.7 = 25.4; the centre as written; YZ by its letters.
-  11: [
-    [],
-    "In a sketch on YZ, draw a circle of radius 0.5 in centred at (38, -20) mm, then extrude it 0.75 in.",
-    "0.5 inches is 12.7 mm and 0.75 inches is 19.05 mm. The diameter is twice the radius: 2 × 12.7 = 25.4 mm. The centre is given in mm in the sketch. So there is a new sketch on the YZ plane, and in it a circle ⌀25.4 mm at (38, −20). Then extrude the sketch by 19.05 mm.",
-    [sketchOn("YZ"), { op: "draw_circle", diameter: 25.4, x: 38, y: -20 }, extrude(19.05)],
-  ],
-  // Smaller: 2 × 0.5 = 1.
-  15: [
-    [part("sphere", 2, 2, 2)],
-    "Make it half as wide.",
-    `${now("a sphere", 2, 2, 2)} That multiplies the width by 0.5: 2 × 0.5 = 1 mm. Every other size stays. ${so("a sphere", 1, 2, 2)}`,
-    [part("sphere", 1, 2, 2)],
-  ],
-  // The back is the XZ plane (the same plane as the front); radius 1 doubled is 2; extruded 2.
-  25: [
-    [],
-    "In a sketch on back, draw a circle with a radius of 1mm, then extrude it by 2 mm.",
-    "The back plane is the XZ plane. The diameter is twice the radius: 2 × 1 = 2 mm. It is centred on the sketch's origin. So there is a new sketch on the XZ plane, and in it a circle ⌀2 mm at (0, 0). Then extrude the sketch by 2 mm.",
-    [sketchOn("XZ"), { op: "draw_circle", diameter: 2 }, extrude(2)],
-  ],
-  // A radius of 48 is a width of 2 × 48 = 96, and a sphere is 96 every way.
-  45: [
-    [],
-    "I want a sphere 48mm in radius.",
-    `The radius is 48 mm, and the width is the diameter, twice the radius: 2 × 48 = 96 mm. A sphere is as deep and as tall as it is wide. ${so("a sphere", 96, 96, 96, true)}`,
-    [part("sphere", 96, 96, 96)],
-  ],
-  // Arcs can't be drawn yet (circles, rectangles and lines can): no commands, the reason, and what can be done.
-  47: [
-    [part("cylinder", 14, 54.5, 3)],
-    "Draw an arc of radius 5 cm in a sketch on the YZ plane.",
-    `There is no command for drawing arcs yet, so this can't be done and nothing was made. ${CAN_DO}`,
-    [],
-  ],
-  // Inches: 2.25 × 25.4 = 57.15 and 2 × 25.4 = 50.8; the radius doubled: 2 × 57.15 = 114.3.
-  48: [
-    [],
-    "Make a disc of radius 2.25 in, 2 inches thick.",
-    `A disc is a cylinder. 2.25 inches is 57.15 mm and 2 inches is 50.8 mm. The radius is 57.15 mm, and the width is the diameter, twice the radius: 2 × 57.15 = 114.3 mm. A new cylinder is as deep as it is wide. How thick it is, 50.8 mm, is the height. ${so("a cylinder", 114.3, 114.3, 50.8, true)}`,
-    [part("cylinder", 114.3, 114.3, 50.8)],
-  ],
-  // A rectangle in inches: 4.75 × 25.4 = 120.65, 2 × 25.4 = 50.8, 0.25 × 25.4 = 6.35; wide is along x, high along y; the centre as written.
-  78: [
-    [],
-    'Draw a 4.75 inches by 2" rectangle centred at (34, -34) mm in a sketch on back, and extrude it by 0.25".',
-    "The back plane is the XZ plane. 4.75 inches is 120.65 mm, 2 inches is 50.8 mm and 0.25 inches is 6.35 mm. The first size is along the sketch's x, the second along its y. The centre is given in mm in the sketch. So there is a new sketch on the XZ plane, and in it a rectangle 120.65 × 50.8 mm centred at (34, −34). Then extrude the sketch by 6.35 mm.",
-    [sketchOn("XZ"), { op: "draw_rectangle", width: 120.65, height: 50.8, x: 34, y: -34 }, extrude(6.35)],
-  ],
-  // The other way is a negative distance: a radius of 10 doubled is 20, and −78 goes against the sketch's plane.
-  216: [
-    [],
-    "In a sketch on front, draw a circle with a radius of 10 mm, and extrude it the other way by 78 mm.",
-    "The front plane is the XZ plane. The diameter is twice the radius: 2 × 10 = 20 mm. It is centred on the sketch's origin. So there is a new sketch on the XZ plane, and in it a circle ⌀20 mm at (0, 0). The other way is a negative distance: −78 mm. Then extrude the sketch by 78 mm the other way.",
-    [sketchOn("XZ"), { op: "draw_circle", diameter: 20 }, extrude(-78)],
-  ],
-  // 3 mm wide, 1 mm high rectangle centred at (30, −33) on the top (XY) plane; 13 mm the other way is −13.
-  227: [
-    [],
-    "Sketch a rectangle 3 mm wide and 1 mm high centred at (30, -33) mm on the top plane, then extrude it 13mm the other way.",
-    "The top plane is the XY plane. The first size is along the sketch's x, the second along its y. The centre is given in mm in the sketch. So there is a new sketch on the XY plane, and in it a rectangle 3 × 1 mm centred at (30, −33). The other way is a negative distance: −13 mm. Then extrude the sketch by 13 mm the other way.",
-    [sketchOn("XY"), { op: "draw_rectangle", width: 3, height: 1, x: 30, y: -33 }, extrude(-13)],
-  ],
+  // Back is the XZ plane; a 155 × 207.5 rectangle centred at (31, −27) as written; 115 mm the other way is −115.
+  11: [[], "Draw a 155 millimetres by 207.5 millimetres rectangle centred at (31, -27) mm in a sketch on back, and extrude it the other way by 115 millimetres.", "The back plane is the XZ plane. The first size is along the sketch's x, the second along its y. The centre is given in mm in the sketch. So there is a new sketch on the XZ plane, and in it a rectangle 155 \u00d7 207.5 mm centred at (31, \u221227). The other way is a negative distance: \u2212115 mm. Then extrude the sketch by 115 mm the other way.", [{"op": "create_sketch", "on": "XZ"}, {"op": "draw_rectangle", "width": 155, "height": 207.5, "x": 31, "y": -27}, {"op": "extrude_sketch", "distance": -115}]],
+  // Bottom is the XY plane; 0.25 in = 6.35 mm, the radius doubled: 2 × 6.35 = 12.7; 1 in = 25.4 mm; the centre as written.
+  12: [[], "In a sketch on the bottom plane, draw a circle of radius 0.25 inches centred at (38, -17) mm, and extrude it by 1 inch.", "The bottom plane is the XY plane. 0.25 inches is 6.35 mm and 1 inch is 25.4 mm. The diameter is twice the radius: 2 \u00d7 6.35 = 12.7 mm. The centre is given in mm in the sketch. So there is a new sketch on the XY plane, and in it a circle \u230012.7 mm at (38, \u221217). Then extrude the sketch by 25.4 mm.", [{"op": "create_sketch", "on": "XY"}, {"op": "draw_circle", "diameter": 12.7, "x": 38, "y": -17}, {"op": "extrude_sketch", "distance": 25.4}]],
+  // Twice as big: 11.5 × 2 = 23, 6 × 2 = 12, 188 × 2 = 376.
+  13: [[{"op": "set_part", "shape": "l-bracket", "width": 11.5, "depth": 6, "height": 188}], "Make it twice as big.", "The part now is an L bracket: width 11.5 mm, depth 6 mm, height 188 mm. That multiplies every size by 2: 11.5 \u00d7 2 = 23 mm, 6 \u00d7 2 = 12 mm, 188 \u00d7 2 = 376 mm. So the part is an L bracket: width 23 mm, depth 12 mm, height 376 mm.", [{"op": "set_part", "shape": "l-bracket", "width": 23, "depth": 12, "height": 376}]],
+  // Smaller: half of the depth 10 is 10 × 0.5 = 5.
+  14: [[{"op": "set_part", "shape": "slot", "width": 540, "depth": 10, "height": 5.5}], "Make it half as deep.", "The part now is a slot: width 540 mm, depth 10 mm, height 5.5 mm. That multiplies the depth by 0.5: 10 \u00d7 0.5 = 5 mm. Every other size stays. So the part is a slot: width 540 mm, depth 5 mm, height 5.5 mm.", [{"op": "set_part", "shape": "slot", "width": 540, "depth": 5, "height": 5.5}]],
+  // Arcs can't be drawn yet: no commands, the reason, and what can be done (now including renaming).
+  17: [[{"op": "set_part", "shape": "sphere", "width": 27, "depth": 27, "height": 27}], "Draw an arc of radius 1 cm in a sketch on the XZ plane.", "There is no command for drawing arcs yet, so this can't be done and nothing was made. What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane, drawing circles, rectangles and lines in it, extruding it, and renaming an item.", []],
+  // The second of three sketches is Sketch 2, named in the command by its current name.
+  24: [[{"op": "create_sketch", "on": "XY"}, {"op": "create_sketch", "on": "XY"}, {"op": "create_sketch", "on": "XY"}], "Can you rename the second sketch \"hinge\"?", "The second sketch is Sketch 2. Only the name changes, so rename Sketch 2 to hinge; nothing is built or removed.", [{"op": "rename_item", "item": "Sketch 2", "name": "hinge"}]],
+  // The only sketch is Sketch 1.
+  26: [[{"op": "create_sketch", "on": "XZ"}], "Rename the sketch to \"top view\".", "The sketch is Sketch 1. Only the name changes, so rename Sketch 1 to top view; nothing is built or removed.", [{"op": "rename_item", "item": "Sketch 1", "name": "top view"}]],
+  // A sketch on XY, then its name: "Lid outline" as written.
+  60: [[], "Create a sketch on XY and name it \"Lid outline\".", "So there is a new sketch on the XY plane. Then the sketch just started is named: rename the newest item to Lid outline.", [{"op": "create_sketch", "on": "XY"}, {"op": "rename_item", "name": "Lid outline"}]],
+  // The back is the XZ plane; the sketch just started takes the name.
+  78: [[], "New sketch on the back plane, called \"hinge\".", "The back plane is the XZ plane. So there is a new sketch on the XZ plane. Then the sketch just started is named: rename the newest item to hinge.", [{"op": "create_sketch", "on": "XZ"}, {"op": "rename_item", "name": "hinge"}]],
+  // The latest of three sketches is Sketch 3.
+  82: [[{"op": "create_sketch", "on": "XZ"}, {"op": "create_sketch", "on": "YZ"}, {"op": "create_sketch", "on": "XY"}], "Rename the latest sketch to \"bracket\".", "The latest sketch is Sketch 3. Only the name changes, so rename Sketch 3 to bracket; nothing is built or removed.", [{"op": "rename_item", "item": "Sketch 3", "name": "bracket"}]],
 };
 
 test("the first ten examples of seed 1, checked by hand", async () => {
@@ -144,7 +72,7 @@ test("the first ten examples of seed 1, checked by hand", async () => {
   );
 });
 
-test("later examples of seed 1 with a whole scale, a smaller size, a centred circle, a radius, a refusal and inches, checked by hand", async () => {
+test("later examples of seed 1 with a whole scale, a smaller size, a centred circle, a radius, a refusal, inches and renames, checked by hand", async () => {
   const g = await generate({ seed: 1n, count: 300, specs: DESIGN_COMMANDS, rules: RULES, recipes: RECIPES, kernel: fakeKernel(), heldOut: [] });
   assert.ok(g.ok);
   for (const [i, want] of Object.entries(LATER)) {
