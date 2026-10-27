@@ -20,6 +20,11 @@ def run(id, branch, status, event="workflow_dispatch", repo=REPO):
     return {"id": id, "head_branch": branch, "status": status, "event": event, "head_repository": {"full_name": repo}}
 
 
+def kernel_run(id, branch, status, event="workflow_dispatch"):
+    """kernel-nightly.yml's runs all start from this repository's main; the kernel branch is in the title."""
+    return dict(run(id, "main", status, event), display_title=f"Kernel random testing on {branch}")
+
+
 def job(name, status, created):
     return {"name": name, "status": status, "created_at": created}
 
@@ -89,6 +94,37 @@ class Cancel(unittest.TestCase):
         self.assertEqual(bt.to_cancel(runs, "claude/c", REPO), [])
 
 
+class KernelRuns(unittest.TestCase):
+    """The private kernel's random testing (kernel-nightly.yml): runs from main, branch named in the title."""
+
+    def test_the_branch_comes_from_the_title(self):
+        # Worked by hand: the title "Kernel random testing on claude/k-1" names claude/k-1; GitHub's own
+        # head_branch says main (where the workflow file lives); a run without such a title keeps its own.
+        self.assertEqual(bt.run_branch(kernel_run(1, "claude/k-1", "pending")), "claude/k-1")
+        self.assertEqual(bt.run_branch(run(2, "claude/a", "pending")), "claude/a")
+        self.assertEqual(bt.run_branch(dict(run(3, "main", "pending"), display_title="Kernel random testing")), "main")
+
+    def test_a_newer_kernel_run_on_this_branch_stops_it(self):
+        r = bt.yield_reason(NOW, NOW - 600, "claude/k", 1, REPO, [kernel_run(1, "claude/k", "in_progress"), kernel_run(2, "claude/k", "pending")], [])
+        self.assertIn("newer random-testing run on claude/k is waiting (run 2)", r)
+
+    def test_another_kernel_branch_waits_its_hour(self):
+        waiting = [kernel_run(2, "claude/other", "pending")]
+        self.assertIsNone(bt.yield_reason(NOW, NOW - 3599, "claude/k", 1, REPO, waiting, []))
+        self.assertIn("random testing on claude/other is waiting", bt.yield_reason(NOW, NOW - 3600, "claude/k", 1, REPO, waiting, []))
+
+    def test_kernel_mains_and_scheduled_runs_never_count(self):
+        runs = [kernel_run(2, "main", "pending"), kernel_run(3, "claude/k", "pending", event="schedule")]
+        self.assertIsNone(bt.yield_reason(NOW, NOW - 7200, "claude/k", 1, REPO, runs, []))
+        self.assertEqual(bt.to_cancel(runs, "claude/k", REPO), [])
+
+    def test_cancel_finds_the_kernel_branch_by_title(self):
+        runs = [kernel_run(1, "claude/k", "in_progress"), kernel_run(2, "claude/k", "completed"), kernel_run(3, "claude/j", "pending"),
+                run(4, "claude/k", "pending")]
+        # Run 4 is a run of this repository's own branch claude/k (no kernel title): the same name, so it counts too.
+        self.assertEqual(bt.to_cancel(runs, "claude/k", REPO), [1, 4])
+
+
 def fake_gh(d, body):
     path = os.path.join(d, "gh")
     with open(path, "w") as f:
@@ -99,10 +135,12 @@ def fake_gh(d, body):
 class Command(unittest.TestCase):
     """The script for real, with a fake `gh` first on PATH that logs its arguments."""
 
-    def cli(self, body, *args):
+    def cli(self, body, *args, workflow=None):
         with tempfile.TemporaryDirectory() as d:
             fake_gh(d, body)
             env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], GITHUB_REPOSITORY=REPO, GITHUB_RUN_ID="1")
+            if workflow:
+                env["TESTING_WORKFLOW"] = workflow
             out = subprocess.run(["python3", os.path.join(HERE, "branch_testing.py"), *args], env=env, capture_output=True, text=True, timeout=30)
             with open(os.path.join(d, "calls")) as f:
                 return out, f.read().splitlines()
@@ -130,11 +168,30 @@ class Command(unittest.TestCase):
         # Run 8 is finished, so its jobs are never asked for; run 9's queued job is old enough to stop.
         ci = '{"workflow_runs":[{"id":8,"status":"completed"},{"id":9,"status":"in_progress"}]}'
         jobs = '{"jobs":[{"name":"app","status":"queued","created_at":"2020-01-01T00:00:00Z"}]}'
-        body = (f"case \"$*\" in *nightly.yml*) echo '{{\"workflow_runs\":[]}}';; *ci.yml*) echo '{ci}';; "
-                f"*runs/9/jobs*) echo '{jobs}';; *) exit 1;; esac\n")
+        body = (f"case \"$*\" in *nightly.yml*) echo '{{\"workflow_runs\":[]}}';; *kernel-ci.yml*) echo '{{\"workflow_runs\":[]}}';; "
+                f"*ci.yml*) echo '{ci}';; *runs/9/jobs*) echo '{jobs}';; *) exit 1;; esac\n")
         out, calls = self.cli(body, "yield", "claude/a", str(NOW))
         self.assertIn('CI job "app" has waited', out.stdout)
         self.assertEqual([c for c in calls if "/jobs" in c], ["api repos/o/r/actions/runs/9/jobs?filter=latest&per_page=100"])
+
+    def test_yield_counts_the_kernels_ci_jobs_too(self):
+        # The kernel's checks run here too (kernel-ci.yml): its queued job starves merges just the same.
+        ci = '{"workflow_runs":[{"id":7,"status":"queued"}]}'
+        jobs = '{"jobs":[{"name":"checks","status":"queued","created_at":"2020-01-01T00:00:00Z"}]}'
+        body = (f"case \"$*\" in *kernel-nightly.yml*) echo '{{\"workflow_runs\":[]}}';; *kernel-ci.yml*) echo '{ci}';; "
+                f"*/ci.yml*) echo '{{\"workflow_runs\":[]}}';; *runs/7/jobs*) echo '{jobs}';; *) exit 1;; esac\n")
+        out, calls = self.cli(body, "yield", "claude/k", str(NOW), workflow="kernel-nightly.yml")
+        self.assertIn('CI job "checks" has waited', out.stdout)
+        self.assertEqual(calls[0], "api repos/o/r/actions/workflows/kernel-nightly.yml/runs?per_page=30")
+
+    def test_cancel_kernel_runs_asks_without_githubs_branch_filter(self):
+        listing = '{"workflow_runs":[%s]}' % ",".join(
+            '{"id":%d,"head_branch":"main","display_title":"Kernel random testing on %s","status":"in_progress","event":"workflow_dispatch","head_repository":{"full_name":"o/r"}}' % (i, b)
+            for i, b in ((21, "claude/k"), (22, "claude/j")))
+        out, calls = self.cli(f"case \"$*\" in *POST*) ;; *) echo '{listing}';; esac\n", "cancel", "claude/k", workflow="kernel-nightly.yml")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(calls[0], "api -X GET repos/o/r/actions/workflows/kernel-nightly.yml/runs -f event=workflow_dispatch -f per_page=50")
+        self.assertEqual(calls[1:], ["api -X POST repos/o/r/actions/runs/21/cancel"])
 
 
 if __name__ == "__main__":

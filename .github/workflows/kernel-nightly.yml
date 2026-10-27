@@ -1,0 +1,320 @@
+name: Kernel random testing
+
+# The private kernel's Tier 3 (Panosolid/kernel), on this public repo's free
+# runners like its CI (kernel-ci.yml; Ben's decision, 2026-10-27).
+#
+# Nightly, 11pm to 7am Perth (UTC+8), so 15:00 to 22:35 UTC, testing the
+# kernel's main: 8 parallel jobs run the kernel's scripts/endless.sh (the
+# stateful harness plus the OpenCascade oracle, a fresh random seed per round)
+# in two legs, because a GitHub job may last at most 6 hours; alongside the
+# first leg, 4 jobs run cargo mutants over the whole kernel (lib tests, one
+# shard each). Every job is cut off at 22:35 UTC however late it started.
+#
+# "Run workflow" (a kernel thread starts it after each push: workflow_dispatch
+# on this repo's main with `ref` = the kernel branch) tests one kernel branch:
+# 4 jobs for `minutes`, cargo mutants only if asked. Branch runs share one
+# queue and give way like this repo's own did (stop-on-merge.sh with
+# KERNEL_REPO, branch_testing.py with TESTING_WORKFLOW): the rounds stop after
+# the round in progress once the kernel branch has merged into main, a CI job
+# (this repo's or the kernel's) has waited two minutes for a runner, a newer
+# run of the same branch waits, or another branch's run has waited an hour;
+# the kernel repo cancels a branch's runs when its pull request closes. The
+# run's title names the branch, which is how those scripts find it.
+#
+# This log is public: every kernel command runs through kernel_ci.sh run (one
+# RESULT line, the output in a log), nothing is cached and nothing is
+# uploaded as an artifact. Each job pushes its results and logs to the
+# private kernel-results repo (runs/<run>-<attempt>/<job>/), and the collect
+# job adds them to kernel-results' test-results branch with this repo's
+# collect-results.sh (log.csv, summary.txt, failures/<seed>/, mutants/) and
+# files one issue per kind of problem there (file_issues.py).
+#
+# Secrets: KERNEL_READ (kernel: contents read-only, statuses read-write) and
+# RESULTS_WRITE (kernel-results: contents and issues read-write), as for
+# kernel-ci.yml; only this repo's own branches' workflows see them.
+run-name: ${{ github.event_name == 'schedule' && 'Kernel random testing, nightly' || format('Kernel random testing on {0}', inputs.ref) }}
+
+on:
+  schedule:
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Kernel branch to test"
+        default: "main"
+      minutes:
+        description: "Minutes of random testing per job"
+        default: "290"
+      mutants:
+        description: "Also run cargo mutants over the whole kernel"
+        type: boolean
+        default: false
+
+permissions: {}
+
+# The night, the kernel's main by hand, and every kernel branch's runs in one
+# shared group, as nightly.yml had (Ben, 2026-10-26). Tested in
+# .github/scripts/test_ci_concurrency.py.
+concurrency:
+  group: kernel-random-testing-${{ github.event_name == 'schedule' && 'nightly' || inputs.ref == 'main' && 'main' || 'branches' }}
+  cancel-in-progress: false
+
+env:
+  REF: ${{ github.event_name == 'schedule' && 'main' || inputs.ref }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      deadline: ${{ steps.plan.outputs.deadline }}
+      mutants_deadline: ${{ steps.plan.outputs.mutants_deadline }}
+      jobs: ${{ steps.plan.outputs.jobs }}
+      second_leg: ${{ steps.plan.outputs.second_leg }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - id: plan
+        env:
+          NIGHTLY: ${{ github.event_name == 'schedule' }}
+          MINUTES: ${{ inputs.minutes || '290' }}
+          MUTANTS: ${{ inputs.mutants }}
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+        run: |
+          case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
+          [[ $REF =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] || { echo "bad branch name"; exit 1; }
+          # Every job tests this one commit, even if the branch moves meanwhile.
+          sha=$(git ls-remote "https://x-access-token:$KERNEL_READ@github.com/Panosolid/kernel.git" "refs/heads/$REF" 2>/dev/null | cut -f1)
+          [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "no kernel branch $REF"; exit 1; }
+          now=$(date +%s)
+          if [ "$NIGHTLY" = true ]; then
+            # 22:35 UTC of the day the run started (it is meant to start at
+            # 15:00 UTC, so this is the same UTC day).
+            deadline=$(date -u -d "$(date -u +%F) 22:35" +%s)
+            jobs="[0,1,2,3,4,5,6,7]" shards=4
+          else
+            deadline=$(( now + MINUTES * 60 ))
+            jobs="[0,1,2,3]" shards=0
+            [ "$MUTANTS" = true ] && shards=4
+          fi
+          # A leg lasts at most 315 minutes of testing (job limit 350); a second
+          # leg runs when the first can't reach the deadline.
+          second_leg=false
+          [ $(( deadline - now )) -gt $(( 330 * 60 )) ] && second_leg=true
+          # Mutation shards: at most 330 minutes, and never past the night's deadline.
+          mutants_deadline=$(( now + 330 * 60 ))
+          [ "$NIGHTLY" = true ] && [ $deadline -lt $mutants_deadline ] && mutants_deadline=$deadline
+          echo "Testing kernel $REF at $sha until $(date -u -d "@$deadline" '+%F %H:%M UTC'); second leg: $second_leg; mutation shards: $shards"
+          {
+            echo "sha=$sha"
+            echo "deadline=$deadline"
+            echo "mutants_deadline=$mutants_deadline"
+            echo "jobs=$jobs"
+            echo "second_leg=$second_leg"
+            echo "shards=$(if [ $shards -gt 0 ]; then seq -s, 0 $((shards - 1)) | sed 's/.*/[&]/'; else echo '[]'; fi)"
+          } >>"$GITHUB_OUTPUT"
+
+  test:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      # actions: read lets stop-on-merge.sh see waiting runs and CI jobs.
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Panosolid/kernel
+          ref: ${{ needs.plan.outputs.sha }}
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -q cadquery-ocp mpmath >/dev/null 2>&1
+      - name: Random rounds until the time is up (logs in kernel-results)
+        env:
+          DEADLINE: ${{ needs.plan.outputs.deadline }}
+          FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
+          GH_TOKEN: ${{ github.token }}
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_REPO: Panosolid/kernel
+          TESTING_WORKFLOW: kernel-nightly.yml
+        run: |
+          watcher=
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; then
+            .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
+            watcher=$!
+          fi
+          code=0
+          .github/scripts/kernel_ci.sh run rounds "$RUNNER_TEMP/out" k/kernel/scripts/run-until.sh "$DEADLINE" || code=$?
+          [ -z "$watcher" ] || kill "$watcher" 2>/dev/null || true
+          cp "$RUNNER_TEMP/watcher.log" "$RUNNER_TEMP/out/" 2>/dev/null || true
+          exit $code
+      - name: Save the results to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
+          .github/scripts/kernel_ci.sh save endless-a-${{ matrix.job }} "$RUNNER_TEMP/out"
+
+  test-second-leg:
+    needs: [plan, test]
+    if: ${{ !cancelled() && needs.plan.outputs.second_leg == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Panosolid/kernel
+          ref: ${{ needs.plan.outputs.sha }}
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install -q cadquery-ocp mpmath >/dev/null 2>&1
+      - name: Random rounds until the time is up (logs in kernel-results)
+        env:
+          DEADLINE: ${{ needs.plan.outputs.deadline }}
+          FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
+          GH_TOKEN: ${{ github.token }}
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          KERNEL_REPO: Panosolid/kernel
+          TESTING_WORKFLOW: kernel-nightly.yml
+        run: |
+          watcher=
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; then
+            .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
+            watcher=$!
+          fi
+          code=0
+          .github/scripts/kernel_ci.sh run rounds "$RUNNER_TEMP/out" k/kernel/scripts/run-until.sh "$DEADLINE" || code=$?
+          [ -z "$watcher" ] || kill "$watcher" 2>/dev/null || true
+          cp "$RUNNER_TEMP/watcher.log" "$RUNNER_TEMP/out/" 2>/dev/null || true
+          exit $code
+      - name: Save the results to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp -R k/kernel/endless-results/. "$RUNNER_TEMP/out/" 2>/dev/null || true
+          .github/scripts/kernel_ci.sh save endless-b-${{ matrix.job }} "$RUNNER_TEMP/out"
+
+  mutants:
+    needs: plan
+    if: ${{ needs.plan.outputs.shards != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Panosolid/kernel
+          ref: ${{ needs.plan.outputs.sha }}
+          token: ${{ secrets.KERNEL_READ }}
+          path: k
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: Mutation testing, one shard of the whole kernel (logs in kernel-results)
+        env:
+          DEADLINE: ${{ needs.plan.outputs.mutants_deadline }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }}
+          # Opt-level 1: the lib tests run five times faster than at 0, same
+          # verdicts (the kernel's CLAUDE.md, Mutation testing).
+          CARGO_PROFILE_DEV_OPT_LEVEL: "1"
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          out="$RUNNER_TEMP/out"
+          left=$(( DEADLINE - $(date +%s) ))
+          code=124
+          if [ $left -gt 60 ]; then
+            code=0
+            .github/scripts/kernel_ci.sh run mutants-shard-$SHARD "$out" bash -c \
+              "cd k/kernel && timeout -s INT -k 60 $left cargo mutants --shard $SHARD/$SHARDS --sharding round-robin -j 4 --output '$RUNNER_TEMP' -- --lib" || code=$?
+          fi
+          mkdir -p "$out"
+          cp "$RUNNER_TEMP"/mutants.out/*.txt "$out"/ 2>/dev/null || true
+          echo $code >"$out/exit-code.txt"
+          # Counts only (no mutant names): 0 all caught, 2 some missed, 3 some timed out, 124/130 cut off.
+          echo "exit code $code; caught $(grep -c . "$out/caught.txt" 2>/dev/null || echo 0), missed $(grep -c . "$out/missed.txt" 2>/dev/null || echo 0)"
+      - name: Save the results to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+        run: mkdir -p "$RUNNER_TEMP/out" && .github/scripts/kernel_ci.sh save mutants-${{ matrix.shard }} "$RUNNER_TEMP/out"
+
+  collect:
+    needs: [plan, test, test-second-leg, mutants]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Add this run to kernel-results' test-results branch and file issues there
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          GH_TOKEN: ${{ secrets.RESULTS_WRITE }}
+          GH_REPO: Panosolid/kernel-results
+          MUTANT_SHARDS: ${{ needs.plan.outputs.shards == '[]' && '0' || '4' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT: ${{ needs.plan.outputs.sha }}
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          export BRANCH=$REF
+          r="$RUNNER_TEMP/results"
+          git clone -q "https://x-access-token:$RESULTS_WRITE@github.com/Panosolid/kernel-results.git" "$r" 2>/dev/null
+          # Copied out first: collect-results.sh switches the clone to test-results.
+          export IN="$RUNNER_TEMP/incoming"
+          cp -R "$r/runs/$RUN" "$IN" 2>/dev/null || mkdir -p "$IN"
+          cp .github/scripts/collect-results.sh .github/scripts/file_issues.py "$RUNNER_TEMP/"
+          # The summary and issue text name kernel tests: only into the private repo, never this log.
+          cd "$r" && GITHUB_STEP_SUMMARY='' "$GITHUB_WORKSPACE/.github/scripts/kernel_ci.sh" run collect "$RUNNER_TEMP/logs" bash "$RUNNER_TEMP/collect-results.sh"
+      - name: Save the collect log to kernel-results
+        if: always()
+        env:
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
+        run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save collect "$RUNNER_TEMP/logs"

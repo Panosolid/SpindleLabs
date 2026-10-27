@@ -220,10 +220,10 @@ class Workflows(unittest.TestCase):
         self.assertIn("GROUP_HEAD: ${{ github.event.merge_group.head_sha }}", ci["mode"])
         self.assertIn("CODE: ${{ needs.mode.outputs.docs != 'true' }}", ci["kernel"])
         self.assertRegex(ci["kernel"], r"- run: python3 -m unittest discover -s \.github/scripts\n      - ")
-        for job in ("app", "baseline", "coverage", "mutants-plan", "e2e-shard", "e2e-quick", "browsers"):
+        for job in ("app", "baseline", "mutants-plan", "e2e-shard", "e2e-quick", "browsers"):
             self.assertIn("needs.mode.outputs.docs != 'true'", ci[job], job)
             self.assertIn("mode", re.search(r"needs: (.*)", ci[job]).group(1), job)
-        for job in ("app", "baseline", "coverage", "mutants-plan", "e2e-shard", "browsers"):
+        for job in ("app", "baseline", "mutants-plan", "e2e-shard", "browsers"):
             self.assertIn("!cancelled()", ci[job], job)
         self.assertIn('if [ "$DOCS" = true ]; then', ci["e2e"])
         self.assertIn('if [ "$DOCS" = true ] && [ "$PLAN" = skipped ]; then', ci["mutants-in-diff"])

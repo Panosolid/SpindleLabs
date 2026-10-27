@@ -20,6 +20,7 @@ CI = os.path.join(os.path.dirname(HERE), "workflows", "ci.yml")
 
 
 NIGHTLY = os.path.join(os.path.dirname(HERE), "workflows", "nightly.yml")
+KERNEL_NIGHTLY = os.path.join(os.path.dirname(HERE), "workflows", "kernel-nightly.yml")
 
 
 def concurrency(path=CI):
@@ -185,6 +186,44 @@ class RandomTestingGroups(unittest.TestCase):
         # Before: one group per branch, so two branches ran at once.
         before = "random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}"
         self.assertNotEqual(expand(before, dispatch("claude/a")), expand(before, dispatch("claude/b")))
+
+def kernel_dispatch(ref):
+    """kernel-nightly.yml is always started on this repo's main; the kernel branch is the `ref` input."""
+    return dict(dispatch("main"), inputs={"ref": ref})
+
+
+class KernelRandomTestingGroups(unittest.TestCase):
+    """kernel-nightly.yml: the same one-at-a-time rule for the private kernel's branches (2026-10-27)."""
+
+    def group(self, context):
+        return expand(concurrency(KERNEL_NIGHTLY)[0], context)
+
+    def test_worked_by_hand(self):
+        self.assertEqual(self.group(dict(schedule(), inputs={})), "kernel-random-testing-nightly")
+        self.assertEqual(self.group(kernel_dispatch("main")), "kernel-random-testing-main")
+        self.assertEqual(self.group(kernel_dispatch("claude/project-thread-e53sft")), "kernel-random-testing-branches")
+
+    def test_two_kernel_branches_share_one_group(self):
+        self.assertEqual(self.group(kernel_dispatch("claude/a")), self.group(kernel_dispatch("claude/b")))
+
+    def test_branch_runs_never_hold_up_the_night_or_main(self):
+        branch = self.group(kernel_dispatch("claude/a"))
+        self.assertNotEqual(branch, self.group(dict(schedule(), inputs={})))
+        self.assertNotEqual(branch, self.group(kernel_dispatch("main")))
+
+    def test_never_shares_a_group_with_the_apps_nightly(self):
+        for ctx in (dict(schedule(), inputs={}), kernel_dispatch("main"), kernel_dispatch("claude/a")):
+            self.assertNotEqual(self.group(ctx), expand(concurrency(NIGHTLY)[0], ctx))
+
+    def test_nothing_is_cancelled_by_a_newer_run(self):
+        self.assertEqual(concurrency(KERNEL_NIGHTLY)[1], "false")
+
+    def test_grouping_by_this_repos_branch_would_lump_everything_together(self):
+        # Every kernel run starts on this repo's main, so nightly.yml's own rule would put a kernel
+        # branch's run in main's group, holding up main's runs.
+        mine = "kernel-random-testing-${{ github.event_name == 'schedule' && 'nightly' || github.ref == 'refs/heads/main' && 'main' || 'branches' }}"
+        self.assertEqual(expand(mine, kernel_dispatch("claude/a")), expand(mine, kernel_dispatch("main")))
+
 
 if __name__ == "__main__":
     unittest.main()

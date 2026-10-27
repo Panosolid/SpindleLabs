@@ -19,6 +19,12 @@ commands:
       files it (both run `if: always()`); tonight's run on main tests the
       merged code.
 
+The private kernel's random testing (kernel-nightly.yml) runs from this
+repository's main and names the kernel branch it tests in its title
+("Kernel random testing on <branch>"); with TESTING_WORKFLOW=kernel-nightly.yml
+both commands work on those runs and their titles' branches, and `cancel` is
+run by the kernel repository when its pull request merges or closes.
+
 Both need GH_TOKEN and GITHUB_REPOSITORY. A failed lookup is no answer:
 `yield` prints nothing and asks again next time, `cancel` exits 1.
 Tests: test_branch_testing.py."""
@@ -26,6 +32,7 @@ Tests: test_branch_testing.py."""
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -33,6 +40,9 @@ import time
 CI_WAIT = 120
 SHARE = 3600
 WAITING = {"queued", "pending", "waiting", "requested"}
+TITLE = re.compile(r"^Kernel random testing on (\S+)$")
+# Both CI workflows share the runners: this repository's and the kernel's.
+CI_WORKFLOWS = ("ci.yml", "kernel-ci.yml")
 
 
 def stamp(text):
@@ -40,15 +50,21 @@ def stamp(text):
     return datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp()
 
 
+def run_branch(run):
+    """The branch a run tests: a kernel run's from its title, any other run's own."""
+    m = TITLE.match(run.get("display_title") or "")
+    return m.group(1) if m else run["head_branch"]
+
+
 def branch_runs(runs, repo):
-    """The runs started by hand on a branch of this repository (never main's, never the nightly's)."""
-    return [r for r in runs if r["event"] == "workflow_dispatch" and r["head_branch"] != "main" and (r.get("head_repository") or {}).get("full_name") == repo]
+    """The runs started by hand on a branch (never main's, never the nightly's), from this repository."""
+    return [r for r in runs if r["event"] == "workflow_dispatch" and run_branch(r) != "main" and (r.get("head_repository") or {}).get("full_name") == repo]
 
 
 def yield_reason(now, started, branch, own_id, repo, nightly_runs, ci_jobs, ci_wait=CI_WAIT, share=SHARE):
     """Why this branch run's random rounds should stop now, or None. `nightly_runs` are nightly.yml's recent runs, `ci_jobs` the jobs of CI runs not yet finished."""
     waiting = [r for r in branch_runs(nightly_runs, repo) if r["status"] in WAITING and r["id"] != own_id]
-    newer = [r for r in waiting if r["head_branch"] == branch]
+    newer = [r for r in waiting if run_branch(r) == branch]
     if newer:
         return f"a newer random-testing run on {branch} is waiting (run {newer[0]['id']}): this one tests older code"
     starved = [j for j in ci_jobs if j["status"] == "queued" and now - stamp(j["created_at"]) > ci_wait]
@@ -56,13 +72,13 @@ def yield_reason(now, started, branch, own_id, repo, nightly_runs, ci_jobs, ci_w
         j = max(starved, key=lambda j: now - stamp(j["created_at"]))
         return f"CI job \"{j['name']}\" has waited {int(now - stamp(j['created_at'])) // 60} min for a runner: merges come first"
     if waiting and now - started >= share:
-        return f"random testing on {waiting[0]['head_branch']} is waiting and this run has had its {share // 60} minutes"
+        return f"random testing on {run_branch(waiting[0])} is waiting and this run has had its {share // 60} minutes"
     return None
 
 
 def to_cancel(runs, branch, repo):
     """The ids of this branch's runs started by hand that are still running or waiting."""
-    return [r["id"] for r in branch_runs(runs, repo) if r["head_branch"] == branch and r["status"] != "completed"]
+    return [r["id"] for r in branch_runs(runs, repo) if run_branch(r) == branch and r["status"] != "completed"]
 
 
 def gh(*args):
@@ -71,10 +87,11 @@ def gh(*args):
 
 def main(argv):
     repo = os.environ["GITHUB_REPOSITORY"]
+    workflow = os.environ.get("TESTING_WORKFLOW", "nightly.yml")
     if len(argv) == 4 and argv[1] == "yield":
         try:
-            nightly = gh(f"repos/{repo}/actions/workflows/nightly.yml/runs?per_page=30")["workflow_runs"]
-            ci = [r for r in gh(f"repos/{repo}/actions/workflows/ci.yml/runs?per_page=20")["workflow_runs"] if r["status"] != "completed"]
+            nightly = gh(f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=30")["workflow_runs"]
+            ci = [r for w in CI_WORKFLOWS for r in gh(f"repos/{repo}/actions/workflows/{w}/runs?per_page=20")["workflow_runs"] if r["status"] != "completed"]
             jobs = [j for r in ci for j in gh(f"repos/{repo}/actions/runs/{r['id']}/jobs?filter=latest&per_page=100")["jobs"]]
         except (subprocess.SubprocessError, ValueError, KeyError, TypeError):
             return 0
@@ -83,7 +100,9 @@ def main(argv):
             print(reason)
         return 0
     if len(argv) == 3 and argv[1] == "cancel":
-        runs = gh("-X", "GET", f"repos/{repo}/actions/workflows/nightly.yml/runs", "-f", "event=workflow_dispatch", "-f", "per_page=50", "-f", f"branch={argv[2]}")["workflow_runs"]
+        # A kernel run's branch is in its title, not GitHub's branch filter.
+        only = ["-f", f"branch={argv[2]}"] if workflow == "nightly.yml" else []
+        runs = gh("-X", "GET", f"repos/{repo}/actions/workflows/{workflow}/runs", "-f", "event=workflow_dispatch", "-f", "per_page=50", *only)["workflow_runs"]
         ids = to_cancel(runs, argv[2], repo)
         for i in ids:
             subprocess.run(["gh", "api", "-X", "POST", f"repos/{repo}/actions/runs/{i}/cancel"], check=False, timeout=60)
