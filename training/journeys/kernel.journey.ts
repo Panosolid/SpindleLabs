@@ -34,7 +34,20 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
     const last = [...e.setup, ...e.commands].filter((c) => c.op === "set_part").at(-1);
     // A request no command can do, a sketch started (AI7a) and drawn in (AI7b), or one extruded (AI7c), about a new project: no preset part to build (AI5c).
     if (!last) {
-      assert.ok(e.task === "cannot" || (e.commands[0]?.op === "create_sketch" && e.commands.every((c) => c.op === "create_sketch" || c.op.startsWith("draw_") || c.op === "extrude_sketch")), `${e.task}: ${e.prompt}`);
+      const renames = e.commands.some((c) => c.op === "rename_item");
+      assert.ok(e.task === "cannot" || renames || (e.commands[0]?.op === "create_sketch" && e.commands.every((c) => c.op === "create_sketch" || c.op.startsWith("draw_") || c.op === "extrude_sketch")), `${e.task}: ${e.prompt}`);
+      // A rename (AI7d): builds no body; the item the words mean now has the name asked for, and the others keep theirs.
+      if (renames) {
+        const before = e.setup.reduce<DesignDocument | undefined>((d, c) => documentFor(c, d), undefined);
+        const after = e.commands.reduce<DesignDocument | undefined>((d, c) => documentFor(c, d), before)!;
+        const names = (d: DesignDocument | undefined) => (d?.timeline.features ?? []).map((f) => f.provenance.self.label);
+        const named = e.commands.find((c) => c.op === "rename_item")!;
+        // The sketch just started is the newest item of the answer; one already there is the one named ("Sketch n").
+        const index = named.item === undefined ? names(after).length - 1 : names(before).indexOf(String(named.item));
+        assert.ok(index >= 0 && names(after)[index] === named.name, `${e.id} ${e.prompt}: ${names(after)}`);
+        assert.deepEqual(names(after).filter((_, i) => i !== index), names(before).filter((_, i) => i !== index), `${e.id}: the other items keep their names`);
+        continue;
+      }
       // An extrude: the body the real kernel builds has the volume of its outline times its distance, by the formulas (AI7c).
       if (e.commands.some((c) => c.op === "extrude_sketch")) {
         const doc = e.commands.reduce<DesignDocument | undefined>((d, c) => documentFor(c, d), undefined)!;

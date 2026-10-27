@@ -3,13 +3,14 @@
 // generated from them and can't do anything a user couldn't. They set
 // the part (change it, or add a body at the marker), start a sketch on an
 // origin plane or a flat face (AI7a), draw a circle, a rectangle or a line
-// in the sketch open (AI7b), extrude a closed sketch into a body (AI7c), and
-// export every body shown.
+// in the sketch open (AI7b), extrude a closed sketch into a body (AI7c), rename
+// an item (AI7d), and export every body shown.
 
 import type { Command, CommandSpec, Feature } from "@fission/core";
 import { insertAt, isSketchExtrude, isSketchItem, SKETCH_PLANES, withPart, type DesignDocument } from "./document.ts";
 import type { ShapeKind } from "./profiles.ts";
 import { extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, ZERO_DISTANCE } from "./extrude.ts";
+import { NAME_LIMIT, renameItem } from "./timeline-edits.ts";
 import { addSketch, drawCircle, drawLine, drawRectangle } from "./sketch.ts";
 import { freshDesign } from "./start-fresh.ts";
 
@@ -25,6 +26,9 @@ export const SKETCH_REACH = 1e6;
 
 /** The extrude command's name (AI7c): not the plain word, so a working out may still say "extrude". */
 export const EXTRUDE_OP = "extrude_sketch";
+
+/** The rename command's name (AI7d). */
+export const RENAME_OP = "rename_item";
 
 export const DESIGN_COMMANDS: readonly CommandSpec[] = [
   {
@@ -86,6 +90,16 @@ export const DESIGN_COMMANDS: readonly CommandSpec[] = [
     summary: "Extrude a closed sketch into a new body by a distance, as the Extrude tool does, put in the timeline at the marker. A negative distance goes the other way from the sketch's plane. It leaves the sketch and every body already there as they are.",
     params: {
       distance: { type: "number", min: -SKETCH_REACH, max: SKETCH_REACH, description: "how far to extrude, in mm; not 0; negative goes the other way from the sketch's plane" },
+    },
+  },
+  // AI7d: what the timeline's Rename does. The item is left out for the one just before the marker (the one this answer has just made);
+  // ai-view.ts makes `item` a choice of the items' names in the copy the AI is offered (and drops it when there are none).
+  {
+    op: RENAME_OP,
+    summary: "Give an item in the timeline (a sketch, a body) a new name, as Rename in its menu does; the names of the items built from it follow. Nothing else changes. Every item needs its own name, ignoring capitals.",
+    params: {
+      item: { type: "text", maxLength: NAME_LIMIT, optional: true, description: "the item's current name; leave it out for the item just made in this answer, else the last one before the marker" },
+      name: { type: "text", maxLength: NAME_LIMIT, description: `the new name: at least one character and at most ${NAME_LIMIT}, on one line, not another item's name` },
     },
   },
   {
@@ -171,6 +185,28 @@ export function extrudeTarget(doc: DesignDocument, command: Command, open: strin
   return chosen.id;
 }
 
+/**
+ * The item a rename_item command means: the one it names (by its name in
+ * the timeline), else the one just before the marker, which is what the
+ * answer has just made when it made something. A name no item has is refused.
+ */
+export function renameTarget(doc: DesignDocument, command: Command): string {
+  const { features } = doc.timeline;
+  if (command.item !== undefined) {
+    const named = features.find((f) => f.provenance.self.label === command.item);
+    if (!named) throw new Error(`there is no item ${JSON.stringify(command.item)} in the timeline to rename`);
+    return named.id;
+  }
+  const last = features[insertAt(doc) - 1];
+  if (!last) throw new Error("there is no item to rename: the timeline is empty");
+  return last.id;
+}
+
+/** A rename_item command in words, for the preview and its undo step: "rename Sketch 1 to base", "rename the newest item to base". */
+export function renameWords(command: Command): string {
+  return `rename ${command.item === undefined ? "the newest item" : String(command.item)} to ${String(command.name)}`;
+}
+
 /** The distance of an extrude_sketch command, refused when it is not a number or is 0 (a negative one goes the other way). */
 export function commandDistance(command: Command): number {
   const d = command.distance;
@@ -217,6 +253,13 @@ export function documentFor(command: Command, current?: DesignDocument | null): 
     if (!current) throw new Error(`${EXTRUDE_OP}: there is no sketch to extrude: draw one first`);
     const d = commandDistance(command);
     return extrudeSketch(current, extrudeTarget(current, command), Math.abs(d), d < 0).doc;
+  }
+  // A rename of the item named, else the one just made.
+  if (command.op === RENAME_OP) {
+    if (!current) throw new Error(`${RENAME_OP}: there is no item to rename`);
+    const renamed = renameItem(current, renameTarget(current, command), String(command.name));
+    if ("refused" in renamed) throw new Error(renamed.message);
+    return renamed.doc;
   }
   // A sketch on an origin plane, at the marker; one on a face needs the face as built, so only Design's run makes it (workspace.ts).
   if (command.op === "create_sketch") {

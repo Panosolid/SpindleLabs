@@ -11,12 +11,13 @@
 
 import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable } from "./commands.ts";
+import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable, RENAME_OP } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
 import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
 import { addSketch } from "./sketch.ts";
+import { NAME_LIMIT } from "./timeline-edits.ts";
 import { timelineBarItems } from "./timeline-bar.ts";
 
 /** The most timeline items the prompt lists: a small local model's prompt stays short. The last ones are kept. */
@@ -34,9 +35,10 @@ export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySe
   const keeps: Record<string, unknown> = { ...sizes };
   const shownFaces = faces.slice(0, AI_FACES);
   const sketches = doc ? extrudable(doc).slice(-AI_SKETCHES).map((f) => f.provenance.self.label) : [];
-  const commands = aiCommands(shownFaces, sketches);
+  const items = doc ? doc.timeline.features.slice(-AI_TIMELINE_ITEMS).map((f) => f.provenance.self.label) : [];
+  const commands = aiCommands(shownFaces, sketches, items);
   const choiceWords = placeWords(shownFaces);
-  if (!doc) return { setup: [], keeps, notes: [...sketchNotes(undefined, faces, shownFaces), ...drawNotes(undefined, null), ...extrudeNotes(undefined, null)], adds: null, commands, choiceWords };
+  if (!doc) return { setup: [], keeps, notes: [...sketchNotes(undefined, faces, shownFaces), ...drawNotes(undefined, null), ...extrudeNotes(undefined, null), ...renameNotes()], adds: null, commands, choiceWords };
   // The part (the last body that builds) and what makes it; an extruded sketch has no set_part that does.
   const shape = partOf(doc);
   const preset = shape !== null && shape.shape !== "sketch-extrude";
@@ -44,7 +46,7 @@ export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySe
   const { features } = doc.timeline;
   const at = insertAt(doc);
   const adds = preset ? null : `a new body as item ${at + 1}, ${at === 0 ? "at the start of the timeline" : `after ${at}. ${features[at - 1].intent.summary}`}`;
-  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces), ...drawNotes(doc, open), ...extrudeNotes(doc, open)], adds, commands, choiceWords };
+  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces), ...drawNotes(doc, open), ...extrudeNotes(doc, open), ...renameNotes()], adds, commands, choiceWords };
 }
 
 /** The most sketches extrude_sketch's `sketch` offers: the newest ones, like `AI_TIMELINE_ITEMS`. */
@@ -97,14 +99,18 @@ export function aiFaces(scene: Scene | null, label: (feature: string) => string)
 }
 
 /** Design's commands as the AI may use them now: set_part, create_sketch on an origin plane or one of `faces`, and the draw commands (export_stl downloads, so it stays the user's). */
-export function aiCommands(faces: readonly AIFace[], sketches: readonly string[] = []): CommandSpec[] {
+export function aiCommands(faces: readonly AIFace[], sketches: readonly string[] = [], items: readonly string[] = []): CommandSpec[] {
   const setPart = DESIGN_COMMANDS.find((c) => c.op === "set_part")!;
   const sketch = DESIGN_COMMANDS.find((c) => c.op === "create_sketch")!;
   const draws = DESIGN_COMMANDS.filter((c) => DRAW_OPS.includes(c.op));
   const extrude = DESIGN_COMMANDS.find((c) => c.op === EXTRUDE_OP)!;
   // `sketch` is offered only when a sketch exists to name (an empty list of choices is no schema); a sketch just started is always the default.
   const extrudeWith: CommandSpec = sketches.length === 0 ? extrude : { ...extrude, params: { ...extrude.params, sketch: { type: "choice", values: sketches, optional: true, description: "which sketch to extrude, by name; leave it out for the sketch just started or open, else the newest" } } };
-  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }, ...draws, extrudeWith];
+  const rename = DESIGN_COMMANDS.find((c) => c.op === RENAME_OP)!;
+  // `item` is a choice of the items' names, and is not offered at all when none exists; the item just made in the same answer is always the default.
+  const { item, ...justMade } = rename.params;
+  const renameWith: CommandSpec = items.length === 0 ? { ...rename, params: justMade } : { ...rename, params: { item: { ...item, type: "choice", values: items }, ...justMade } };
+  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }, ...draws, extrudeWith, renameWith];
 }
 
 /** How a sketch's x and y lie on each origin plane (sketch.ts PLANES: y is the normal × x), said once. */
@@ -127,6 +133,11 @@ function extrudeNotes(doc: DesignDocument | undefined, open: string | null): str
   const opened = usable.find((f) => f.id === open);
   const takes = opened ?? usable.at(-1)!;
   return [note, `With no sketch named, extrude_sketch takes the sketch started earlier in the answer, else ${opened ? "the open sketch" : "the newest sketch"}: ${takes.provenance.self.label}.`];
+}
+
+/** The prompt's line about renaming (AI7d): what it changes and the one rule on names. */
+function renameNotes(): string[] {
+  return [`rename_item changes only an item's name, which is how the user and the messages refer to it: at most ${NAME_LIMIT} characters, on one line, and no two items share a name (capitals don't count). To name an item this answer has just made, leave \`item\` out; \`item\` names an item already in the timeline.`];
 }
 
 /** Where each place create_sketch can use is, in words for the preview: "the XY plane", "a face of Body 1 (Box 1), facing up (+Z, a top face)". */
