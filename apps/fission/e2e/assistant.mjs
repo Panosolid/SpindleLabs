@@ -32,7 +32,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { gridSnapOn, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
+import { gridSnapOn, reloadEmpty, sheetsClearFor, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4181, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4181/";
@@ -149,7 +149,7 @@ async function fresh(answers = [], { ollama = true, builtIn = false, open = true
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   await pinProperties(page); // the size boxes are in the panel, folded at the start on a wide screen (U0b)
   if (open) await page.click("#assistant-toggle");
-  return { page, asked, listed, builtInAsked, builtInCreated, ollamaHits, remoteHits };
+  return { page: sheetsClearFor(page), asked, listed, builtInAsked, builtInCreated, ollamaHits, remoteHits };
 }
 const looked = (page) => page.waitForFunction(() => !/Looking/.test(document.querySelector("#ai-found").textContent) && document.querySelector("#ai-found").textContent !== "");
 /** Pastes `text` into the key box the way a real paste arrives (an input event of type insertFromPaste). */

@@ -24,7 +24,7 @@ import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4197, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4197/?test-hooks";
@@ -34,7 +34,8 @@ const shots = process.env.E2E_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
 async function fresh(width = 1280, touch = false) {
-  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
+  // At phone width 619 tall keeps the 375 × 440 canvas these pixel probes were tuned on, as 800 did before the view filled the page (U5b).
+  const context = await browser.newContext({ viewport: { width, height: width < 641 ? 619 : 800 }, hasTouch: touch });
   const page = await context.newPage();
   // A fresh project on the page's first load only, so a reload opens what was saved.
   await page.addInitScript(() => {
@@ -221,6 +222,7 @@ try {
       const undoTitle = () => page.getAttribute("#undo", "title");
       const before = await undoTitle();
       const height = page.locator("#height");
+      await openPanel(page, "properties"); // its size boxes are in the Properties sheet
       await height.scrollIntoViewIfNeeded();
       // Typed as a person types: into the box, its text selected, key by key ("-" alone reads as empty in a number box).
       await (tap ? height.tap() : height.click());

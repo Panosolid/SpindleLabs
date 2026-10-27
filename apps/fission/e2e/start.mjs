@@ -77,7 +77,8 @@ export async function switchTo(page, id, tap = false) {
  * "browser") as a person would, pressing its toggle only if the sheet is
  * closed. A no-op where there is no toggle (wide screens).
  */
-export async function openPanel(page, which, tap = true) {
+export async function openPanel(page, which, tap) {
+  tap ??= await page.evaluate(() => navigator.maxTouchPoints > 0); // a touch context taps, a mouse one clicks
   const toggle = `#${which}-toggle`;
   if (!(await page.isVisible(toggle))) return;
   if ((await page.getAttribute(toggle, "aria-expanded")) !== "true") await (tap ? page.tap(toggle) : page.click(toggle));
@@ -85,7 +86,8 @@ export async function openPanel(page, which, tap = true) {
 }
 
 /** Closes whichever phone sheet is open (Properties, Browser) by pressing its toggle, so the view is clear to tap. A no-op where there are no toggles. */
-export async function closePanels(page, tap = true) {
+export async function closePanels(page, tap) {
+  tap ??= await page.evaluate(() => navigator.maxTouchPoints > 0);
   for (const which of ["properties", "browser"]) {
     const toggle = `#${which}-toggle`;
     if ((await page.isVisible(toggle)) && (await page.getAttribute(toggle, "aria-expanded")) === "true") {
@@ -113,8 +115,22 @@ export function sheetsClearFor(page, covered = ["#timeline", "#undo", "#redo", "
   for (const m of ["tap", "click", "fill", "check", "uncheck", "selectOption"]) {
     page[m] = async (sel, ...rest) => {
       if (typeof sel === "string" && (await page.isVisible("#properties-toggle"))) {
-        if (["tap", "click"].includes(m) && covered.some((p) => sel.startsWith(p))) await closePanels(page, m === "tap");
+        if (["tap", "click"].includes(m) && covered.some((p) => sel.startsWith(p))) {
+          await closePanels(page, m === "tap");
+          // The assistant is a sheet too at phone width (a person closes it from Menu ▸ AI): shut it the same way.
+          await page.evaluate(() => {
+            const a = document.getElementById("assistant");
+            if (a && !a.hidden && matchMedia("(max-width: 640px)").matches) document.getElementById("assistant-toggle")?.click();
+          });
+        }
         else if (await inProperties(sel)) await openPanel(page, "properties", m === "tap");
+        else {
+          // Something in the assistant's sheet, shut earlier by this wrapper (or never opened): open it as Menu ▸ AI does.
+          await page.evaluate((x) => {
+            const a = document.getElementById("assistant");
+            if (a?.hidden && document.querySelector(x)?.closest("#assistant") && matchMedia("(max-width: 640px)").matches) document.getElementById("assistant-toggle")?.click();
+          }, sel);
+        }
       }
       return orig[m](sel, ...rest);
     };

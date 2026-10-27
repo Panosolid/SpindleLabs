@@ -884,6 +884,8 @@ for (const slot of ["browser", "properties"] as const) {
     if (now && phone.matches && !open) {
       toggle.click();
       opened = true;
+      // The panel's first box took the keys while the sheet was still closed (nothing hidden is focused): give them again.
+      props.querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
     } else if (!now && opened && open) {
       toggle.click();
       opened = false;
