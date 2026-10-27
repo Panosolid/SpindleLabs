@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane, screenPoint } from "./sketch-screen.mjs";
-import { startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4203, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4203/";
@@ -39,7 +39,7 @@ async function fresh(width = 1280, touch = false) {
   });
   await page.goto(url + "#design");
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
-  return page;
+  return sheetsClearFor(page); // phone: sheets (U5) open for what is inside them and close before the view's, Undo's or the timeline's buttons are pressed
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
@@ -69,12 +69,14 @@ const undoLabel = (page) => page.getAttribute("#undo", "title");
 /** A sketch on the ground plane looked at from the top (as the other sketch checks), on a 1 mm grid with Snap to grid ticked, so hovers and clicks land on exact millimetres. */
 async function sketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
+  await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
   await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-  await (tap ? page.tap("#sketch-grid-snap") : page.check("#sketch-grid-snap"));
+  await gridSnapOn(page);
   // A 1 mm grid, so a hover lands on whole millimetres; then nothing focused, as after drawing.
   await page.fill("#sketch-grid", "1");
   await page.$eval("#sketch-grid", (e) => (e.dispatchEvent(new Event("change")), e.blur()));
+  await closePanels(page, tap); // phone: the sketch's Properties sheet (U5) covers the view's lower part; closed to draw
   await page.locator("#viewport canvas").scrollIntoViewIfNeeded(); // filling the grid box scrolls a phone's page
   await page.waitForTimeout(600); // the camera's damping settles on the plane
 }
@@ -326,6 +328,8 @@ await check("1280 px: a centre arc, its start typed radius 10 at 90°, its end t
 await check("375 px with taps: an arc's end typed, the boxes and hint on screen", async () => {
   const page = await fresh(375, true);
   await sketch(page, true);
+  // The sketch toolbar grows the row above the view after the sketch is framed, so frame it again for this canvas (the tests' screen sums assume the framing of the canvas as it is now).
+  await page.tap('[data-view="top"]');
   await page.keyboard.press("a");
   await clickPlane(page, [10, 10], TOP, true);
   await points(page, "10,10");

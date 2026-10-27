@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
-import { chooseShape, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4195, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4195/?test-hooks";
@@ -40,7 +40,7 @@ async function fresh(width = 1280, touch = false) {
   });
   await page.goto(url + "#design");
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
-  return page;
+  return sheetsClearFor(page); // phone: an open sheet (U5) is closed before the timeline, Undo, Redo or the view's buttons are pressed
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
@@ -70,7 +70,9 @@ function toScreen(cam, box, p) {
 
 /** Clicks (or taps) the world point `p` as the camera sees it now; fails if something is over the canvas there. */
 async function at(page, p, tap = false) {
+  await closePanels(page, tap); // phone: a sheet over the view (U5) is closed to reach the part
   const s = toScreen(await camera(page), await canvasBox(page), p);
+  await closePanels(page, tap); // phone: an open sheet covers part of the view (U5b)
   const on = await page.evaluate(([x, y]) => {
     const e = document.elementFromPoint(x, y);
     return e?.tagName === "CANVAS" && e.closest("#viewport") ? "canvas" : e ? e.id || e.className || e.tagName : "nothing";
@@ -169,7 +171,8 @@ async function createSketch(page, tap = false) {
  * below the last tap, so the second tap goes up and left of it).
  */
 async function rectangle(page, corners, tap = false) {
-  await page.check("#sketch-grid-snap");
+  await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5); `at` closes it again to reach the part
+  await gridSnapOn(page);
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
   if (!tap) for (const p of [...corners, corners[0]]) await at(page, p);
   else {
@@ -180,6 +183,7 @@ async function rectangle(page, corners, tap = false) {
 
 /** Extrude from the sketch panel by `distance`, OK. */
 async function extrude(page, distance, tap = false) {
+  await openPanel(page, "properties", tap); // phone: the Extrude button and its box are in the Properties sheet (U5)
   await press(page, "#sketch-extrude", tap);
   await page.fill("#extrude-distance", String(distance));
   await press(page, "#extrude-ok", tap);
@@ -382,6 +386,7 @@ try {
         const item = page.locator(`#timeline [data-item="${id}"]`);
         await item.scrollIntoViewIfNeeded();
         if (tap) {
+          await closePanels(page, true); // phone: an open sheet (U5) would cover the timeline
           await item.tap();
           await page.tap(`#timeline [data-more="${id}"]`);
         } else await item.click({ button: "right" });
@@ -472,7 +477,9 @@ try {
           assert.equal(await page.$eval("#properties", (el) => el.hasAttribute("data-problem")), true, "the folded panel's button warns");
           await press(page, "#properties-handle", tap);
         }
+        await openPanel(page, "properties", tap); // phone: the warning is in the Properties sheet, closed until its toggle (U5)
         assert.equal(await page.isVisible("#kept-warning"), true);
+        await closePanels(page, tap); // and closed again so the pixel probes below see the whole view
         if (folded) await press(page, "#properties-handle", tap);
         assert.equal(await rowClasses(sketch), "kept");
         assert.equal(await rowClasses(ext), "kept");

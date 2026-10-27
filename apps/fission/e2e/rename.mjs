@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { insertPreset, startWithBox } from "./start.mjs";
+import { closePanels, insertPreset, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4238, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4238/";
@@ -49,6 +49,7 @@ async function fresh(width, touch) {
 /** Opens item `id`'s menu from the bar: a right-click, or (taps) a tap on it and on its ⋯. */
 async function barMenu(page, id, tap) {
   await rebuilt(page);
+  await closePanels(page, tap); // phone: a Properties or Browser sheet (U5) would cover the timeline
   const item = page.locator(`#timeline [data-item="${id}"]`);
   await item.scrollIntoViewIfNeeded();
   if (tap) {
@@ -135,6 +136,7 @@ try {
         assert.deepEqual(await timelineRows(page), [["Base", "Base\nBox: 40 × 30 × 20 mm"], ["Cylinder 1", "Cylinder 1\nCylinder: ⌀40 × 20 mm"]]);
         if (tap) await page.tap("#browser-toggle");
         // Undo gives Box 1 back; Redo Base again.
+        await closePanels(page, tap); // phone: Undo and Redo are docked in the view, under any open sheet
         await press(page, "#undo", tap);
         await until(page, () => document.querySelector('#timeline [data-item="feature-1"]').title.startsWith("1. Box 1\n"), null, "undone");
         await press(page, "#redo", tap);

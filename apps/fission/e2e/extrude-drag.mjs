@@ -13,6 +13,7 @@
 // with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch, untilBodies } from "./browser.mjs";
+import { sheetsClearFor } from "./start.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
@@ -67,7 +68,7 @@ async function fresh(width, touch) {
   await page.waitForSelector("#start-hint", { state: "visible", timeout: 15000 });
   await page.setInputFiles("#open-file", { name: "drag.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(project)) });
   await untilBodies(page, 1, "the box built");
-  return page;
+  return sheetsClearFor(page); // phone: sheets (U5) open for what is inside them and close before the view's, Undo's or the timeline's buttons are pressed
 }
 
 const until = (page, fn, arg, what, state) =>

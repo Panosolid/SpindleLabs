@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { insertPreset } from "./start.mjs";
+import { insertPreset, openPanel } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4240, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4240/";
@@ -185,6 +185,7 @@ try {
         const menu = await rect(page, "#create-menu-menu");
         assert.ok(menu.left >= 0 && menu.right <= width, `the menu on the screen: ${menu.left}-${menu.right}`);
         await press(page, "#create-menu-sketch", tap);
+        await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
         // The same as the icon: the plane choice.
         await until(page, () => document.getElementById("sketch-panel")?.checkVisibility(), null, "Create sketch's plane choice");
         await page.keyboard.press("Escape");
@@ -269,6 +270,8 @@ try {
         }
         await press(page, "#inspect-facts", tap);
         await until(page, () => !document.getElementById("properties").hasAttribute("data-folded"), null, "Body facts opens the panel");
+        await openPanel(page, "properties", tap); // phone: the numbers are in the Properties sheet, closed until its toggle (U5)
+        await page.locator("#volume").scrollIntoViewIfNeeded(); // the sheet scrolls inside itself; the numbers are scrolled into its view
         const numbers = await rect(page, "#volume");
         assert.ok(numbers.top >= 0 && numbers.bottom <= (width > 640 ? 800 : 667) && numbers.width > 0, `the volume on screen: ${JSON.stringify(numbers)}`);
         assert.equal(await page.textContent("#volume"), "24,000 mm³");
@@ -286,6 +289,7 @@ try {
       const page = await fresh(width, tap);
       try {
         await press(page, "#create-sketch", tap);
+        await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet (U5)
         await press(page, "#sketch-plane-XY", tap);
         await page.waitForSelector("#finish-sketch", { state: "visible" });
         assert.deepEqual(await toolbarProblems(page), []);

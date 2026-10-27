@@ -867,6 +867,29 @@ for (const slot of ["browser", "properties"] as const) {
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
+// At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
+// (the plane to sketch on, Edit feature; not Extrude's box, the view's arrow is its main control) and closes again, if it opened it, when
+// that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
+{
+  const toggle = $("properties-toggle");
+  const phone = window.matchMedia("(max-width: 640px)");
+  let wanted = false;
+  let opened = false;
+  new MutationObserver(() => {
+    const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
+    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null;
+    if (now === wanted) return;
+    wanted = now;
+    const open = toggle.getAttribute("aria-expanded") === "true";
+    if (now && phone.matches && !open) {
+      toggle.click();
+      opened = true;
+    } else if (!now && opened && open) {
+      toggle.click();
+      opened = false;
+    } else if (!now) opened = false;
+  }).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+}
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
 const fromHash = (): Page => {
   const id = location.hash.slice(1);

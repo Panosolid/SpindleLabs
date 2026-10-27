@@ -15,7 +15,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4234, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4234/?test-hooks";
@@ -39,7 +39,7 @@ async function fresh(width = 1280, touch = false) {
   await page.goto(url + "#design");
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   await until(page, () => document.querySelector("#save-status").dataset.state === "saved", null, "the box stored");
-  return page;
+  return sheetsClearFor(page); // phone: sheets (U5b) open for what is inside them and close before the view is pressed
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
@@ -72,6 +72,7 @@ function toScreen(cam, box, p) {
 /** Clicks (or taps) the world point `p` as the camera sees it now; fails if something is over the canvas there. */
 async function at(page, p, tap = false) {
   const s = toScreen(await camera(page), await canvasBox(page), p);
+  await closePanels(page, tap); // phone: an open sheet covers part of the view (U5b)
   const on = await page.evaluate(([x, y]) => {
     const e = document.elementFromPoint(x, y);
     return e?.tagName === "CANVAS" && e.closest("#viewport") ? "canvas" : e ? e.id || e.className || e.tagName : "nothing";

@@ -6,7 +6,7 @@ import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, insertPreset, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
+import { chooseShape, closePanels, insertPreset, openPanel, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4174, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4174/";
@@ -99,7 +99,7 @@ async function check(name, fn) {
     console.log(`PASS ${name}`);
   } catch (e) {
     failed = true;
-    console.log(`FAIL ${name}\n  ${e.message.split("\n").join("\n  ")}`);
+    console.log(`FAIL ${name}\n  ${e.message.split("\n").join("\n  ")}\n  ${(e.stack ?? "").split("\n").filter((l) => l.includes("smoke.mjs")).slice(0, 2).join("\n  ")}`);
   }
 }
 
@@ -1048,6 +1048,10 @@ try {
   await check("phone width: no sideways scroll, browser and properties fold behind toggles", async () => {
     await page.setViewportSize({ width: 375, height: 740 });
     await page.goto(url + "#design");
+    // A phone opens with both sheets closed (U5): a new phone browser has no pin (the wide checks above pinned Properties, which would
+    // open it here), and a reload starts the page afresh (the same address would keep the sheets left open).
+    await page.evaluate(() => localStorage.removeItem("fission.properties-pinned"));
+    await page.reload();
     await partShown(page);
     // The canvas keeps the size it was drawn at until the viewer's resize
     // observer runs (a frame after layout), so measure only once it has
@@ -1065,26 +1069,32 @@ try {
           .map((el) => `${el.id || el.tagName}: ${el.scrollWidth} > ${el.clientWidth}`),
       );
     assert.deepEqual(await overflow(), []);
-    // The viewport keeps the full width and a fixed share of the height;
-    // properties start open below it, browser closed.
+    // The viewport keeps the full width and fills the height (U5): from the
+    // panel toggles' bottom to the timeline's top, the page itself never scrolling.
+    // Properties and the browser are bottom sheets, both closed at the start.
     const box = await page.$eval("#viewport", (el) => el.getBoundingClientRect().toJSON());
     assert.equal(box.width, 375);
-    assert.ok(Math.abs(box.height - 0.55 * 740) < 1, `viewport height ${box.height}`);
+    const [togglesBottom, timelineTop] = await page.evaluate(() => [document.querySelector("#panel-toggles").getBoundingClientRect().bottom, document.querySelector("#timeline").getBoundingClientRect().top]);
+    assert.ok(Math.abs(box.top - togglesBottom) < 1 && Math.abs(box.bottom - timelineTop) < 1, `viewport ${box.top} to ${box.bottom}, between the toggles' bottom ${togglesBottom} and the timeline's top ${timelineTop}`);
+    assert.ok(box.height > 0.55 * 740, `viewport height ${box.height}: more than the 55% share it had when the panels stacked under it`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true, "the page does not scroll");
     assert.equal(await page.isVisible("#browser"), false);
-    assert.equal(await page.isVisible("#properties"), true);
+    assert.equal(await page.isVisible("#properties"), false);
     assert.equal(await page.getAttribute("#browser-toggle", "aria-expanded"), "false");
+    assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false");
     await page.screenshot({ path: "e2e/design-375.png" });
     await page.$eval("#workspace", (el) => el.scrollTo(0, el.scrollHeight));
     await page.screenshot({ path: "e2e/design-375-scrolled.png" });
     await page.click("#browser-toggle");
     assert.equal(await page.getAttribute("#browser-toggle", "aria-expanded"), "true");
     assert.deepEqual(await row("feature-1"), ["Box 1", "Box 1\nBox: 40 × 30 × 20 mm"]);
-    await page.click("#properties-toggle");
-    assert.equal(await page.isVisible("#properties"), false);
+    assert.equal(await page.isVisible("#properties"), false, "opening the browser keeps Properties closed");
     assert.deepEqual(await overflow(), []);
     await page.screenshot({ path: "e2e/design-375-browser.png" });
-    // Editing still works with the panel reopened.
+    // Properties' toggle opens its sheet and closes the browser's; editing works there.
     await page.click("#properties-toggle");
+    assert.equal(await page.isVisible("#properties"), true);
+    assert.equal(await page.isVisible("#browser"), false, "opening Properties closes the browser");
     await setSize("width", 50);
     // V = 50·30·20 = 30000.
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
@@ -1096,6 +1106,7 @@ try {
     await page.screenshot({ path: "e2e/laser-375.png" });
     await switchTo(page, "design");
     await page.setViewportSize({ width: 1000, height: 640 });
+    await pinProperties(page); // the wide checks after this type into the panel: pinned again (the phone check cleared the pin)
   });
 
   await check("phone width: a tap selects a face", async () => {
@@ -1104,6 +1115,7 @@ try {
     try {
       await phone.goto(url + "#design");
       await startWithBox(phone, true); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
+      await closePanels(phone, true); // the inserted box opened the Properties sheet (U5); it covers the part
       const box = await phone.locator("#viewport canvas").boundingBox();
       const top = screenPoint(box, [20, 15, 20]); // face 1 (framed to the narrower, horizontal fov)
       await phone.touchscreen.tap(top.x, top.y);
@@ -1139,6 +1151,7 @@ try {
       assert.equal(wide, 375, "no sideways scroll");
       const image = () => phone.evaluate(() => document.querySelector("#viewport canvas").toDataURL());
       const settle = () => phone.waitForTimeout(250);
+      await closePanels(phone, true); // the inserted box opened the Properties sheet (U5); it covers the View buttons
       await phone.tap("#view-controls [data-view=top]");
       await settle();
       const fromButton = await image();
@@ -1172,14 +1185,16 @@ try {
     // one box close together merge into one step, and one that changes
     // nothing drops out of the history, leaving nothing to undo again.
     await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+    await openPanel(page, "properties", false); // a sheet, closed until its toggle (U5): the size boxes are in it
     await setSize("width", 41);
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,600 mm³" && !document.querySelector("#undo").disabled); // 41·30·20
     // Tab from the top and note each region and how far down the page it is drawn.
-    const tabRegions = async () => {
+    const tabRegions = async (last = "timeline") => {
       // Start on the page's first focusable element (in the top bar), whatever was clicked last.
       await page.evaluate(() => document.querySelector("#topbar :is(a[href], button, input, select)").focus());
       const regions = [{ id: "topbar", top: 0 }];
-      for (let i = 0; i < 120 && regions.at(-1)?.id !== "properties"; i++) {
+      // Ends at `last`, or when Tab wraps round to the top bar again (a closed sheet has no stops).
+      for (let i = 0; i < 120 && regions.at(-1)?.id !== last; i++) {
         await page.keyboard.press("Tab");
         const r = await page.evaluate(() => {
           const at = document.activeElement;
@@ -1196,23 +1211,28 @@ try {
           continue;
         }
         assert.ok(r.control, `every tab stop is a control: ${r.what}`);
+        if (r.id === "topbar" && regions.length > 1) break; // wrapped round
         if (r.id !== regions.at(-1)?.id) regions.push({ id: r.id, top: r.top });
       }
       return regions;
     };
     const ids = (regions) => regions.map((r) => r.id);
     const downward = (regions) => regions.every((r, i) => i === 0 || r.top >= regions[i - 1].top);
-    if ((await page.getAttribute("#browser-toggle", "aria-expanded")) === "true") await page.click("#browser-toggle");
+    // Properties and the browser are bottom sheets over the view (U5), closed at the start: with both closed
+    // focus moves down the screen through what is drawn, and a closed sheet has no stops in it.
+    await closePanels(page, false);
     let regions = await tabRegions();
-    assert.deepEqual(ids(regions), ["topbar", "toolbar", "panel-toggles", "undo-redo", "view-controls", "timeline", "properties"], "browser folded: no stops in it");
+    assert.deepEqual(ids(regions), ["topbar", "toolbar", "panel-toggles", "undo-redo", "view-controls", "timeline"], "both sheets closed: no stops in them");
     assert.ok(downward(regions), JSON.stringify(regions));
-    // Opened, the browser sits under its toggle, above the viewport, so focus still moves down the screen.
-    await page.click("#browser-toggle");
+    // An opened sheet's stops follow the page's order (the browser before the view, Properties after the timeline), not
+    // the screen's: the sheet lies over the view's lower part, so only the order of the regions is checked.
+    await openPanel(page, "browser", false);
     await page.screenshot({ path: "e2e/design-375-browser-open.png" });
     regions = await tabRegions();
-    assert.deepEqual(ids(regions), ["topbar", "toolbar", "panel-toggles", "browser", "undo-redo", "view-controls", "timeline", "properties"]);
-    assert.ok(downward(regions), JSON.stringify(regions));
-    await page.click("#browser-toggle");
+    assert.deepEqual(ids(regions), ["topbar", "toolbar", "panel-toggles", "browser", "undo-redo", "view-controls", "timeline"]);
+    await openPanel(page, "properties", false);
+    regions = await tabRegions("properties");
+    assert.deepEqual(ids(regions), ["topbar", "toolbar", "panel-toggles", "undo-redo", "view-controls", "timeline", "properties"], "Properties open closes the browser");
     // The box as it was, stored, for the checks that reload below.
     await setSize("width", 40);
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³" && document.querySelector("#save-status")?.dataset.state === "saved");
@@ -1435,6 +1455,7 @@ try {
       await phone.addInitScript(() => indexedDB.deleteDatabase("fission"));
       await phone.goto(url + "#design");
       await startWithBox(phone); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
+      await openPanel(phone, "properties", false); // the size boxes are in the Properties sheet, closed until its toggle (U5)
       await phone.fill("#width", "50");
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const m = await phone.evaluate(() => {
@@ -1554,6 +1575,7 @@ try {
       await phone.screenshot({ path: "e2e/design-375-storage-full.png" });
       // Space is freed; the next change saves.
       await phone.evaluate(() => (window.__full = false));
+      await openPanel(phone, "properties", false); // the size boxes are in the Properties sheet, closed until its toggle (U5)
       await phone.fill("#width", "50");
       await phone.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
       assert.ok((await storedKeys(phone)).some((k) => k.startsWith("project/")));

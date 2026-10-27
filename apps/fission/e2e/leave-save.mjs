@@ -18,7 +18,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { withPropertiesFolded, pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { gridSnapOn, openPanel, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4232, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4232/";
@@ -69,6 +69,7 @@ async function open(context, want) {
 
 /** Types `value` into the width box as a person would (a click first, which is the user's gesture a leave question needs). */
 async function typeWidth(page, value, tap) {
+  await openPanel(page, "properties", tap); // phone: the size boxes are in the Properties sheet, closed until its toggle (U5)
   await press(page, "#width", tap);
   await page.fill("#width", value);
 }
@@ -111,7 +112,7 @@ try {
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-    await page.check("#sketch-grid-snap");
+    await gridSnapOn(page);
     await page.click("#sketch-tool-rectangle");
     // The sketch's panel floats over the square's corners on a wide screen (U0b).
     await withPropertiesFolded(page, async () => {

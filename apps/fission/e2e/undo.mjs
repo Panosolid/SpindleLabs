@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, startWithBox, switchTo } from "./start.mjs";
+import { chooseShape, closePanels, openPanel, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4180/";
@@ -346,6 +346,7 @@ try {
       const page = await fresh();
       try {
         await page.setViewportSize({ width: w, height: 740 });
+        await openPanel(page, "properties", false); // the sizes are in the Properties sheet, closed until its toggle (U5)
         await page.fill("#width", "50");
         await volume(page, "30,000 mm³");
         assert.equal(await page.isVisible("#undo"), true, "on screen without opening Menu");
@@ -365,6 +366,7 @@ try {
         assert.equal(await page.$$eval("#topbar #undo", (els) => els.length), 0, "no longer on the bar or in Menu");
         await page.click("#menu-toggle");
         await page.screenshot({ path: `e2e/undo-${w}.png` });
+        await closePanels(page, false); // the Properties sheet (U5) covers the lower part of the view; closed with its toggle, as a person would
         await page.click("#undo"); // one tap
         await volume(page, "24,000 mm³");
         // Back to a wide screen: the pair returns to the bar after Save, as Fusion's (U0f2a).

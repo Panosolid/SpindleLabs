@@ -32,7 +32,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { reloadEmpty, startWithBox, switchTo } from "./start.mjs";
+import { gridSnapOn, reloadEmpty, startWithBox, switchTo } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4181, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4181/";
@@ -441,7 +441,7 @@ try {
         await page.click("#create-sketch");
         await page.click("#sketch-plane-XY");
         await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
-        await page.check("#sketch-grid-snap");
+        await gridSnapOn(page);
         await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
         await page.click("#sketch-tool-rectangle");
         for (const p of [[0, 0], [40, 30]]) await clickPlane(page, p, TOP);

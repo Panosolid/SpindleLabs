@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4183, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4183/";
@@ -199,7 +199,7 @@ try {
     assert.equal(await data(page, "planes"), "", "the planes go once one is picked");
     assert.notEqual(await page.$('#browser [data-node="sketches/sketch-2"]'), null, "the browser lists it (folded away for drawing, foldBrowser)");
     await status(page, "Nothing drawn yet.");
-    await page.check("#sketch-grid-snap"); // grid snap, off by default since SF1
+    await gridSnapOn(page); // grid snap, off by default since SF1
     // Each click a little off a grid node lands on the node (grid 10).
     await at(page, [1.5, -2], TOP);
     await points(page, "0,0");
@@ -242,7 +242,7 @@ try {
     const page = await fresh();
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.fill("#sketch-grid", "0");
     await page.press("#sketch-grid", "Enter");
@@ -297,8 +297,10 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     for (const p of [[0, 0], [30, 0], [30, 20], [0, 0]]) await at(page, p, TOP, true);
     await status(page, "3 lines, a closed outline.");
+    await openPanel(page, "properties"); // its Finish sketch button is in the Properties sheet
     const finish = await page.locator("#sketch-finish").boundingBox();
     assert.ok(finish.height >= 44, `Finish is ${finish.height} px tall, at least 44 to tap`);
+    await closePanels(page);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     if (shots) await page.screenshot({ path: `${shots}/sketch-draw-375.png`, fullPage: true });
     await page.tap("#undo");
@@ -310,7 +312,7 @@ try {
     const page = await fresh();
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "true", "Line is the tool a sketch starts with");
     await page.mouse.move(0, 0);
@@ -400,7 +402,7 @@ try {
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await page.mouse.move(0, 0);
     // A line, then Escape and a first click of a new one: (-10, 10) is shown as the click waiting for its other end.
     await at(page, [0, 0], TOP);
@@ -445,7 +447,7 @@ try {
     const page = await fresh();
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.mouse.move(0, 0);
     await page.keyboard.press("c");
@@ -530,7 +532,7 @@ try {
     const page = await fresh();
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     // The flat side first: a line (0, 0) → (40, 0), its chain ended with Escape.
     for (const p of [[0, 0], [40, 0]]) await at(page, p, TOP);
@@ -597,7 +599,7 @@ try {
     await page.tap("#create-sketch");
     await page.tap("#sketch-plane-XY");
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
     await page.tap("#sketch-tool-arc");
     for (const id of ["sketch-tool-line", "sketch-tool-rectangle", "sketch-tool-circle", "sketch-tool-arc"]) {
@@ -619,7 +621,7 @@ try {
     await page.click("#create-sketch");
     await page.click("#sketch-plane-XY");
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
     // A first click that is no line's or arc's end says why.
     await page.keyboard.press("t");
@@ -682,7 +684,7 @@ try {
     await page.tap("#create-sketch");
     await page.tap("#sketch-plane-XY");
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-    await page.check("#sketch-grid-snap"); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
+    await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
     for (const id of ["sketch-tool-line", "sketch-tool-rectangle", "sketch-tool-circle", "sketch-tool-arc", "sketch-tool-centre", "sketch-tool-tangent"]) {
       const b = await page.locator(`#${id}`).boundingBox();

@@ -13,7 +13,7 @@ import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { startWithBox, switchTo } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, startWithBox, switchTo } from "./start.mjs";
 
 /** A 20 × 10 RGBA PNG, all mid grey, with no size in mm (Image shows it at 96 DPI). */
 function grey() {
@@ -111,9 +111,11 @@ const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 /** Sketch 1 on the ground plane with an open chain (0, 0) → (40, 0) → (40, 30), on the grid, seen from above. */
 async function chain(page, tap = false) {
   await press(page, "#create-sketch", tap);
+  await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
   await press(page, "#sketch-plane-XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-  await page.check("#sketch-grid-snap");
+  await gridSnapOn(page);
+  await closePanels(page, tap); // phone: the sketch's Properties sheet (U5) covers the view's lower part; closed to draw
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
   for (const p of [[0, 0], [40, 0], [40, 30]]) await clickPlane(page, p, TOP, tap);
   await points(page, "0,0 40,0 40,30");
@@ -124,6 +126,7 @@ async function chain(page, tap = false) {
 
 /** The saved default design widened to 50 (50 · 30 · 20 = 30,000 mm³), for dropping as a project, and the page put back to 40. */
 async function savedProject(page) {
+  await openPanel(page, "properties", false); // phone: the size boxes are in the Properties sheet (U5)
   await page.fill("#width", "50");
   await until(page, () => document.querySelector("#volume")?.textContent === "30,000 mm³", null, "50 wide");
   const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);

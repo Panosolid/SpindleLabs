@@ -12,7 +12,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, startWithBox } from "./start.mjs";
+import { chooseShape, gridSnapOn, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4177, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4177/";
@@ -162,7 +162,7 @@ try {
       await page.click("#create-sketch");
       await page.click("#sketch-plane-XY");
       await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
-      await page.check("#sketch-grid-snap");
+      await gridSnapOn(page);
       await page.click("#sketch-tool-rectangle");
       for (const p of [[0, 0], [40, 30]]) await clickPlane(page, p, TOP);
       await page.waitForFunction(() => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.");

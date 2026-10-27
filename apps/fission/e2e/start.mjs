@@ -24,6 +24,7 @@ export async function startWithBox(page, tap = false) {
 /** Changes the part's shape with the properties' Shape choice (the toolbar's shape buttons until U0d). */
 export async function chooseShape(page, kind) {
   await pinProperties(page);
+  await openPanel(page, "properties"); // phone: the Properties sheet opens with its toggle (U5)
   await page.selectOption("#shape", kind);
 }
 
@@ -67,4 +68,71 @@ export async function switchTo(page, id, tap = false) {
   const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
   await press("#workspace-menu");
   await press(`#workspace-menu-menu [data-workspace="${id}"]`);
+}
+
+/**
+ * Phone layout (U5): Properties and Browser are sheets over the view, closed
+ * until their toggle (#properties-toggle, #browser-toggle) is pressed, and
+ * opening one closes the other. Opens sheet `which` ("properties" or
+ * "browser") as a person would, pressing its toggle only if the sheet is
+ * closed. A no-op where there is no toggle (wide screens).
+ */
+export async function openPanel(page, which, tap = true) {
+  const toggle = `#${which}-toggle`;
+  if (!(await page.isVisible(toggle))) return;
+  if ((await page.getAttribute(toggle, "aria-expanded")) !== "true") await (tap ? page.tap(toggle) : page.click(toggle));
+  await page.waitForFunction((t) => document.querySelector(t)?.getAttribute("aria-expanded") === "true", toggle);
+}
+
+/** Closes whichever phone sheet is open (Properties, Browser) by pressing its toggle, so the view is clear to tap. A no-op where there are no toggles. */
+export async function closePanels(page, tap = true) {
+  for (const which of ["properties", "browser"]) {
+    const toggle = `#${which}-toggle`;
+    if ((await page.isVisible(toggle)) && (await page.getAttribute(toggle, "aria-expanded")) === "true") {
+      await (tap ? page.tap(toggle) : page.click(toggle));
+      await page.waitForFunction((t) => document.querySelector(t)?.getAttribute("aria-expanded") === "false", toggle);
+    }
+  }
+}
+
+/**
+ * Phone layout (U5): Properties and Browser are sheets that cover part of
+ * the view, so a person closes the open one before reaching what it covers
+ * (the timeline, Undo and Redo docked in the view, the View buttons), and
+ * opens Properties before using a control in it (a size box, the sketch's
+ * and Extrude's buttons). Makes `page.tap`, `page.click`, `page.fill`,
+ * `page.check`, `page.uncheck` and `page.selectOption` do that first, so a long check need
+ * not repeat closePanels / openPanel before each press. `covered` are the
+ * selector prefixes of what a sheet covers. A no-op where there are no
+ * toggles (wide screens).
+ */
+export function sheetsClearFor(page, covered = ["#timeline", "#undo", "#redo", "#view-controls", "[data-view"]) {
+  const orig = {};
+  for (const m of ["tap", "click", "fill", "check", "uncheck", "selectOption"]) orig[m] = page[m].bind(page);
+  const inProperties = (sel) => typeof sel === "string" && page.evaluate((s) => !!document.querySelector(s)?.closest("#properties"), sel).catch(() => false);
+  for (const m of ["tap", "click", "fill", "check", "uncheck", "selectOption"]) {
+    page[m] = async (sel, ...rest) => {
+      if (typeof sel === "string" && (await page.isVisible("#properties-toggle"))) {
+        if (["tap", "click"].includes(m) && covered.some((p) => sel.startsWith(p))) await closePanels(page, m === "tap");
+        else if (await inProperties(sel)) await openPanel(page, "properties", m === "tap");
+      }
+      return orig[m](sel, ...rest);
+    };
+  }
+  // A press or move in the view itself: an open sheet covers part of the view, so it is closed first, as a person would to reach the face under it.
+  for (const [obj, name] of [[page.touchscreen, "tap"], [page.mouse, "click"], [page.mouse, "down"], [page.mouse, "move"]]) {
+    const was = obj[name].bind(obj);
+    obj[name] = async (...args) => {
+      if (await page.isVisible("#properties-toggle")) await closePanels(page, name === "tap");
+      return was(...args);
+    };
+  }
+  return page;
+}
+
+/** Turns sketch grid snap on. On a phone its box is in the Properties sheet: opened for the tap and closed again, leaving the view clear to draw in (a no-op beyond that where there are no toggles). */
+export async function gridSnapOn(page) {
+  await openPanel(page, "properties");
+  await page.check("#sketch-grid-snap");
+  await closePanels(page);
 }

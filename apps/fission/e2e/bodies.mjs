@@ -15,7 +15,7 @@ import { launch } from "./browser.mjs";
 import { withPropertiesFolded } from "./properties.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { chooseFile, fileItem, startWithBox } from "./start.mjs";
+import { chooseFile, closePanels, fileItem, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4205, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4205/";
@@ -39,7 +39,7 @@ async function fresh(width, touch, { box = true } = {}) {
   await page.goto(url + "#design");
   if (box) await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   else await page.waitForSelector("#start-hint", { state: "visible" });
-  return page;
+  return sheetsClearFor(page); // phone: sheets (U5) open for what is inside them and close before the view's, Undo's or the timeline's buttons are pressed
 }
 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
@@ -48,6 +48,7 @@ const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 async function at(page, p, view, tap) {
   const box = await page.locator("#viewport canvas").boundingBox();
   const s = screenPoint(box, p, view);
+  await closePanels(page, tap); // phone: an open sheet covers part of the view (U5b)
   const on = await page.evaluate(([x, y]) => {
     const e = document.elementFromPoint(x, y);
     return e?.tagName === "CANVAS" && e.closest("#viewport") ? "canvas" : e ? e.id || e.className || e.tagName : "nothing";
@@ -99,11 +100,12 @@ const bodyRows = (page) => page.$$eval('[data-node="bodies"] .tree-row', (rows) 
 async function addSquare(page, { square, distance, volume }, tap) {
   // A 10 × 10 square by the rectangle tool: two opposite corners on the grid.
   await press(page, "#create-sketch", tap);
+  await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
   await press(page, "#sketch-plane-XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   // While a sketch is edited File ▾'s New is off, saying why, as the toolbar's Start fresh was hidden then (U0f2a).
   assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: finish or cancel the sketch first."], "New off while sketching");
-  await page.check("#sketch-grid-snap");
+  await gridSnapOn(page);
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
   await press(page, "#sketch-tool-rectangle", tap);
   // The sketch's panel floats over the square's corners on a wide screen (U0b).
@@ -117,6 +119,8 @@ async function addSquare(page, { square, distance, volume }, tap) {
   // The panel shows the part, the last body (LAYOUTS).
   await until(page, (v) => document.querySelector("#volume")?.textContent === v, volume, `the second body, ${volume}`);
   await until(page, () => document.querySelector("#viewport").dataset.sketching !== "true", null, "the sketch finished");
+  // At phone width Properties is a sheet over the view's lower part (U5): a person closes it to see and tap the part.
+  await closePanels(page, tap);
 }
 
 /** Opens (`open`) or closes the browser: a drawer at phone width, the floating panel's fold on a wide screen. */
@@ -287,10 +291,12 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     if (shots) await page.screenshot({ path: `${shots}/start-fresh-${width}-after.png` });
 
     // One undo step: a single Undo brings both bodies and the sketch back; Redo clears them again.
+    await closePanels(page, tap); // a Properties sheet would cover Undo and Redo docked in the view
     await press(page, "#undo", tap);
     await until(page, (v) => document.querySelector("#volume")?.textContent === v, volume, "undone");
     assert.deepEqual({ ...(await state()), undo: "" }, { ...before, undo: "" });
     assert.deepEqual(await bodyRows(page), ["body-1 Body 1", "body-2 Body 2"]);
+    await closePanels(page, tap);
     await press(page, "#redo", tap);
     await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "redone");
     assert.deepEqual(await bodyRows(page), []);

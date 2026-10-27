@@ -24,7 +24,7 @@ import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { withPropertiesFolded, pinProperties } from "./properties.mjs";
-import { startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4211, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4211/?test-hooks";
@@ -63,7 +63,7 @@ async function fresh(width, touch) {
   await page.goto(url + "#design");
   await startWithBox(page); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
   await pinProperties(page); // the size boxes are in the panel, folded at the start on a wide screen (U0b)
-  return page;
+  return sheetsClearFor(page); // phone: an open sheet (U5) is closed before the timeline, Undo or Redo is pressed
 }
 
 // The pinhole camera, as navigation.mjs works it: forward = unit(target −
@@ -164,6 +164,7 @@ async function stillCamera(page) {
  * fixed one can't know: Look at on an empty design centres on the origin.
  */
 async function clickModel(page, [x, y], tap) {
+  await closePanels(page, tap); // phone: a sheet over the view (U5) is closed to click the part
   const cam = await stillCamera(page);
   const box = await page.locator("#viewport canvas").boundingBox();
   const [fx, fy] = onCanvas(cam, box, [x, y, 0]);
@@ -183,9 +184,12 @@ async function clickModel(page, [x, y], tap) {
  */
 async function addSquare(page, tap, layout, live = false) {
   await press(page, "#create-sketch", tap);
+  await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
   await press(page, "#sketch-plane-XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
-  await page.check("#sketch-grid-snap");
+  await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5)
+  await gridSnapOn(page);
+  await closePanels(page, tap); // and it covers the view's lower part, so closed again to draw
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0));
   await press(page, "#sketch-tool-rectangle", tap);
   // The sketch's panel floats over the square's corners on a wide screen (U0b).
@@ -194,12 +198,14 @@ async function addSquare(page, tap, layout, live = false) {
   });
   await until(page, (w) => document.querySelector("#viewport").dataset.sketchPoints?.startsWith(w), layout.corners[0].join(","), "the square's first corner where it was clicked");
   await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "the square closed");
+  await openPanel(page, "properties", tap);
   await press(page, "#sketch-extrude", tap);
   await page.fill("#extrude-distance", String(layout.distance));
   await press(page, "#extrude-ok", tap);
   // The panel shows the last body.
   await until(page, (v) => document.querySelector("#volume")?.textContent === v, layout.volume, "the square's body");
   await until(page, () => document.querySelector("#viewport").dataset.sketching !== "true", null, "the sketch finished");
+  await closePanels(page, tap);
   await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
 }
 
@@ -212,7 +218,7 @@ async function check(name, fn) {
     console.log(`ok - ${name}`);
   } catch (e) {
     failed++;
-    console.log(`not ok - ${name}\n  ${e.message.split("\n").join("\n  ")}`);
+    console.log(`not ok - ${name}\n  ${e.message.split("\n").join("\n  ")}\n  ${(e.stack ?? "").split("\n").filter((l) => l.includes("timeline.mjs")).slice(0, 2).join("\n  ")}`);
   }
 }
 
@@ -231,7 +237,7 @@ try {
 
         await item.scrollIntoViewIfNeeded();
         if (tap) {
-          await item.tap();
+          { await closePanels(page, true); await item.tap(); };
           await page.tap(`#timeline [data-more="${id}"]`);
         } else await item.click({ button: "right" });
         await until(page, () => document.getElementById("row-menu").open, null, `${id}'s menu from the bar`);
@@ -361,6 +367,7 @@ try {
       assert.deepEqual(await state(), noBody);
       // The panel says there is no body, how to add one, and shows no error; no shape is chosen.
       assert.equal(await page.textContent("#intent"), "No body: nothing in the timeline builds");
+      await openPanel(page, "properties", tap); // phone: the panel is a sheet, closed until its toggle (U5)
       assert.equal(await page.isVisible("#no-part"), true);
       assert.equal(await page.textContent("#error"), "");
       assert.equal(await page.inputValue("#shape"), "", "the Shape choice says —");
@@ -556,6 +563,7 @@ try {
       const markerBox = () => page.locator("#timeline .timeline-bar-marker").boundingBox();
       const gapX = async (a, b) => ((await boxOf(a)).x + (await boxOf(a)).width + (await boxOf(b)).x) / 2;
       const drag = async (toX, { hold } = {}) => {
+        await closePanels(page, dragTap); // phone: an open sheet (U5) would cover the bar the marker is dragged along
         const m = await markerBox();
         const y = m.y + m.height / 2;
         await page.mouse.move(m.x + m.width / 2, y);
@@ -929,6 +937,7 @@ try {
       await page.keyboard.press("Escape");
       await until(page, () => !document.body.dataset.selection, null, "nothing selected");
       assert.deepEqual(await panel(), { heading: "Body 2", volume: layout.volume, intent: "Extrude Sketch 1 by 0.0001 mm", stale: "true" });
+      await openPanel(page, "properties", failTap); // phone: the note is in the Properties sheet (U5)
       assert.equal(await page.isVisible("#stale-note"), true);
       if (shots) await page.screenshot({ path: `${shots}/failed-part-${width}.png` });
       // Undo: the square back, drawn, both rows.
@@ -963,7 +972,7 @@ try {
         await item.scrollIntoViewIfNeeded();
         if (tap) {
           // A tap on the picked item unpicks it: its ⋯ is tapped straight away when it already shows.
-          if (!(await page.isVisible(`#timeline [data-more="${id}"]`))) await item.tap();
+          if (!(await page.isVisible(`#timeline [data-more="${id}"]`))) { await closePanels(page, true); await item.tap(); };
           await page.tap(`#timeline [data-more="${id}"]`);
         } else await item.click({ button: "right" });
         await until(page, () => document.getElementById("row-menu").open, null, `${id}'s menu from the bar`);
@@ -983,6 +992,7 @@ try {
         await press(page, "#row-menu-edit", tap);
         await until(page, () => !document.getElementById("row-menu").open, null, "the menu closed");
         await browserClosed();
+        await openPanel(page, "properties", tap); // phone: the Edit feature panel is in the Properties sheet (U5)
         await until(page, (w) => document.getElementById("feature-edit")?.hidden === false && document.getElementById("feature-edit-title")?.textContent === w, `Edit ${id}`, "the Edit feature panel");
       };
       const boxes = () => page.$$eval("#feature-edit input[type=number]", (is) => is.map((i) => [i.id, i.value]));
@@ -1168,6 +1178,7 @@ try {
       assert.deepEqual(await page.$$eval(".tree-row.kept", (rows) => rows.map((r) => getComputedStyle(r).color)), ["rgb(255, 107, 107)", "rgb(255, 107, 107)"]);
       await browserClosed();
       assert.deepEqual(await drawn(page, layout), { box: true, square: true });
+      await openPanel(page, "properties", tap); // phone: the warning is in the Properties sheet (U5)
       await page.locator("#kept-warning").scrollIntoViewIfNeeded();
       if (shots) await page.screenshot({ path: `${shots}/edit-sketch-kept-${width}.png` });
       await top();
@@ -1200,7 +1211,7 @@ try {
 
       await barItem.scrollIntoViewIfNeeded();
       if (tap) {
-        if (!(await page.isVisible('#timeline [data-more="sketch-2"]'))) await barItem.tap();
+        if (!(await page.isVisible('#timeline [data-more="sketch-2"]'))) { await closePanels(page, true); await barItem.tap(); };
         await page.tap('#timeline [data-more="sketch-2"]');
       } else await barItem.click({ button: "right" });
       await until(page, () => document.getElementById("row-menu").open, null, "the bar's menu");
@@ -1252,7 +1263,7 @@ try {
 
       await item.scrollIntoViewIfNeeded();
       if (tap) {
-        if (!(await page.isVisible('#timeline [data-more="sketch-2"]'))) await item.tap();
+        if (!(await page.isVisible('#timeline [data-more="sketch-2"]'))) { await closePanels(page, true); await item.tap(); };
         await page.tap('#timeline [data-more="sketch-2"]');
       } else await item.click({ button: "right" });
       await until(page, () => document.getElementById("row-menu").open, null, "the menu");
@@ -1296,6 +1307,7 @@ try {
       const note = () => page.evaluate(() => (document.getElementById("selection-note").hidden ? "" : document.getElementById("selection-note").textContent));
       /** A click (or tap) on model point `p` where the app's camera puts it, after checking only the canvas is there. */
       const clickAt = async (p) => {
+        await closePanels(page, tap); // phone: a sheet over the view (U5) is closed to click the part
         const cam = await stillCamera(page);
         const box = await page.locator("#viewport canvas").boundingBox();
         const [fx, fy] = onCanvas(cam, box, p);
@@ -1339,7 +1351,7 @@ try {
 
       await item.scrollIntoViewIfNeeded();
       if (tap) {
-        if (!(await page.isVisible('#timeline [data-more="feature-1"]'))) await item.tap();
+        if (!(await page.isVisible('#timeline [data-more="feature-1"]'))) { await closePanels(page, true); await item.tap(); };
         await page.tap('#timeline [data-more="feature-1"]');
       } else await item.click({ button: "right" });
       await until(page, () => document.getElementById("row-menu").open, null, "the box's menu");
