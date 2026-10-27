@@ -53,10 +53,8 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   const view0 = await box(page, "#viewport");
   if (width < 641) assert.ok(view0.height >= 400, `375: the view is ${view0.height} px tall`); // 667 - 44 bar - 45 toolbar - 44 toggles - 33 timeline = about 500
   if (width < 641) {
-    // Properties starts open, as it did when it stacked under the view (its sheet covers the view's bottom part).
-    assert.equal((await box(page, "#properties")).hidden, false, "375: Properties starts open");
-    await page.tap("#properties-toggle");
-    assert.equal((await box(page, "#properties")).hidden, true, "375: its toggle closes it");
+    // Properties starts closed, so the view (and Undo and Redo docked in it) is clear; its toggle opens it.
+    assert.equal((await box(page, "#properties")).hidden, true, "375: Properties starts closed");
     await page.tap("#properties-toggle");
     const props = await box(page, "#properties");
     const ws = await box(page, "#workspace");
