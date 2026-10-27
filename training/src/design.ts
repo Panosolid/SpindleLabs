@@ -18,10 +18,11 @@
 // top plane" is XY, "the front" XZ, "the right" YZ, as the view cube
 // names them). From AI7b a circle, a rectangle or a line can be drawn in
 // it (the sketch is started in the same answer, then drawn in); arcs
-// still can't be.
+// still can't be. From AI7c a drawn circle or rectangle can be extruded
+// by a distance (extrude_sketch, the other way when negative).
 
 import type { Command, KernelCalls } from "@fission/core";
-import { buildSpec, documentFor, drawWords, lastFeature, SHAPES, SKETCH_PLANES, specOf, type DesignDocument } from "@fission/design";
+import { buildSpec, documentFor, drawWords, EXTRUDE_OP, extrudeWords, featureSpec, lastFeature, SHAPES, SKETCH_PLANES, specOf, type DesignDocument } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 import { pick, randomLength, randomSize, randomUnit, unitAfter, type Length } from "./lengths.ts";
 import { CANNOT } from "./working.ts";
@@ -98,6 +99,24 @@ export const DESIGN_RULES: readonly CommandRule[] = [
   drawRule("draw_circle"),
   drawRule("draw_rectangle"),
   drawRule("draw_line"),
+  {
+    op: EXTRUDE_OP,
+    async apply(kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      if (!state.sketched) return { ok: false, reason: "there is no sketch to extrude" };
+      try {
+        // Design's own document for it, then the kernel builds the body: an outline that is not closed, or a size it refuses, is a refusal.
+        const doc = documentFor(command, state.sketched);
+        const spec = await featureSpec(kernel, doc, lastFeature(doc));
+        const view = await buildSpec(kernel, spec);
+        if (view.errors.length > 0) return { ok: false, reason: `the kernel's checks failed: ${view.errors.join("; ")}` };
+        if (!(view.volume > 0)) return { ok: false, reason: `the body has no volume (${view.volume})` };
+        return { ok: true, state: { ...state, sketched: doc, part: spec } };
+      } catch (e) {
+        return { ok: false, reason: `the kernel refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => extrudeWords(c),
+  },
 ];
 
 /** A draw command (AI7b), drawn as Design draws it in the sketch just started; its words are the preview's (`drawWords`). */
@@ -378,7 +397,7 @@ function sketchDraft(r: SeededRandom): Draft {
 }
 
 /** "Sketch a circle 2 cm across on the front plane": a sketch on the plane meant, then the drawing, centred on the sketch's origin unless a centre is given (AI7b). */
-function drawDraft(r: SeededRandom): Draft {
+function drawDraft(r: SeededRandom, extrude = false): Draft | null {
   const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
   const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
   const on = pick(r, [`on the ${word} plane`, `on ${word}`]);
@@ -387,7 +406,17 @@ function drawDraft(r: SeededRandom): Draft {
   const L = () => randomLength(r, unit);
   const sketch = { op: "create_sketch", on: plane };
   const so = (c: Command) => `So there is a ${SKETCHED} ${plane} plane, and in it a ${drawWords(c)}.`;
-  const kind = pick(r, ["circle", "circle", "rectangle", "line"]);
+  // An extrude needs a closed outline: a circle or a rectangle, never a single line.
+  const kind = extrude ? pick(r, ["circle", "rectangle"]) : pick(r, ["circle", "circle", "rectangle", "line"]);
+  // How far, and which way (AI7c): a negative distance goes the other way from the sketch's plane.
+  const dist = extrude ? L() : null;
+  const back = dist !== null && r.next() < 0.25;
+  const distance = dist === null ? 0 : back ? -dist.mm : dist.mm;
+  const also = dist === null ? [] : [dist];
+  const extrudes = dist === null ? null : (back ? pick(r, [`then extrude it ${dist.text} the other way.`, `and extrude it the other way by ${dist.text}.`]) : pick(r, [`then extrude it ${dist.text}.`, `and extrude it by ${dist.text}.`, `then extrude it by ${dist.text}.`]));
+  const ends = (c: Command) => (dist === null ? [so(c)] : [so(c), ...(back ? [`The other way is a negative distance: −${dist.mm} mm.`] : []), `Then ${extrudeWords({ op: EXTRUDE_OP, distance })}.`]);
+  const asked = (prompt: string) => sentence(extrudes === null ? prompt : `${prompt.replace(/\.$/, "")}, ${extrudes}`);
+  const finish = (c: Command): Command[] => (dist === null ? [sketch, c] : [sketch, c, { op: EXTRUDE_OP, distance }]);
   // A centre now and then, in whole mm, written "(x, y)": coordinates in the sketch are millimetres.
   const centre = r.next() < 0.3 ? { x: Math.round(r.next() * 100) - 50, y: Math.round(r.next() * 100) - 50 } : null;
   const at = centre ? ` centred at (${centre.x}, ${centre.y}) mm` : "";
@@ -400,13 +429,13 @@ function drawDraft(r: SeededRandom): Draft {
     const prompt = pick(r, [`sketch a circle ${how}${at} ${on}.`, `in a sketch ${on}, draw a circle ${how}${at}.`]);
     const c: Command = { op: "draw_circle", diameter, ...(centre ?? {}) };
     const sum = radius ? [`The diameter is twice the radius: 2 × ${size.mm} = ${diameter} mm.`] : [];
-    return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, ...conversions([size]), ...sum, ...centreSays, so(c)]), commands: [sketch, c] };
+    return { task: "create", setup: [], prompt: asked(prompt), explanation: working([...which, ...conversions([size, ...also]), ...sum, ...centreSays, ...ends(c)]), commands: finish(c) };
   }
   if (kind === "rectangle") {
     const [w, h] = [L(), L()];
     const prompt = pick(r, [`draw a ${w.text} by ${h.text} rectangle${at} in a sketch ${on}.`, `sketch a rectangle ${w.text} wide and ${h.text} high${at} ${on}.`]);
     const c: Command = { op: "draw_rectangle", width: w.mm, height: h.mm, ...(centre ?? {}) };
-    return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, ...conversions([w, h]), "The first size is along the sketch's x, the second along its y.", ...centreSays, so(c)]), commands: [sketch, c] };
+    return { task: "create", setup: [], prompt: asked(prompt), explanation: working([...which, ...conversions([w, h, ...also]), "The first size is along the sketch's x, the second along its y.", ...centreSays, ...ends(c)]), commands: finish(c) };
   }
   const p = () => Math.round(r.next() * 200) - 100;
   let [x1, y1, x2, y2] = [p(), p(), p(), p()];
@@ -420,7 +449,7 @@ function drawDraft(r: SeededRandom): Draft {
 
 const PLANES = ["top", "front", "right", "XY", "XZ", "YZ"];
 /** What can be done now, said the same way in every refusal. */
-const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane and drawing circles, rectangles and lines in it.";
+const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane, drawing circles, rectangles and lines in it and extruding it.";
 
 /** A request that needs a command Design doesn't offer, and what it would need. Each mentions what it can't do by name, so the words alone say why. */
 function cannotAsk(r: SeededRandom): { prompt: string; needs: string; onPart: boolean } {
@@ -482,6 +511,7 @@ export const DESIGN_RECIPES: readonly Recipe[] = [
     },
   },
   { id: "design.sketch", ops: ["create_sketch", "set_part"], sample: sketchDraft },
-  { id: "design.sketch-draw", ops: ["create_sketch", "draw_circle", "draw_rectangle", "draw_line"], sample: drawDraft },
+  { id: "design.sketch-draw", ops: ["create_sketch", "draw_circle", "draw_rectangle", "draw_line"], sample: (r) => drawDraft(r) },
+  { id: "design.sketch-extrude", ops: ["create_sketch", "draw_circle", "draw_rectangle", EXTRUDE_OP], sample: (r) => drawDraft(r, true) },
   { id: "design.cannot", ops: ["set_part"], sample: cannotDraft },
 ];

@@ -3,11 +3,13 @@
 // generated from them and can't do anything a user couldn't. They set
 // the part (change it, or add a body at the marker), start a sketch on an
 // origin plane or a flat face (AI7a), draw a circle, a rectangle or a line
-// in the sketch open (AI7b), and export every body shown.
+// in the sketch open (AI7b), extrude a closed sketch into a body (AI7c), and
+// export every body shown.
 
-import type { Command, CommandSpec } from "@fission/core";
+import type { Command, CommandSpec, Feature } from "@fission/core";
 import { insertAt, isSketchExtrude, isSketchItem, SKETCH_PLANES, withPart, type DesignDocument } from "./document.ts";
 import type { ShapeKind } from "./profiles.ts";
+import { extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, ZERO_DISTANCE } from "./extrude.ts";
 import { addSketch, drawCircle, drawLine, drawRectangle } from "./sketch.ts";
 import { freshDesign } from "./start-fresh.ts";
 
@@ -20,6 +22,9 @@ export const SHAPES: readonly ShapeKind[] = ["box", "cylinder", "sphere", "l-bra
  * limits when it looks for the outline, as it does for the tools.
  */
 export const SKETCH_REACH = 1e6;
+
+/** The extrude command's name (AI7c): not the plain word, so a working out may still say "extrude". */
+export const EXTRUDE_OP = "extrude_sketch";
 
 export const DESIGN_COMMANDS: readonly CommandSpec[] = [
   {
@@ -72,6 +77,15 @@ export const DESIGN_COMMANDS: readonly CommandSpec[] = [
       y1: { type: "number", min: -SKETCH_REACH, max: SKETCH_REACH, description: "the start's y in the sketch, in mm" },
       x2: { type: "number", min: -SKETCH_REACH, max: SKETCH_REACH, description: "the end's x in the sketch, in mm" },
       y2: { type: "number", min: -SKETCH_REACH, max: SKETCH_REACH, description: "the end's y in the sketch, in mm" },
+    },
+  },
+  // AI7c: what the Extrude tool does with a typed distance. The sketch is left out for the one just started or open;
+  // ai-view.ts adds `sketch` (the sketches before the marker, by name) to the copy the AI is offered.
+  {
+    op: EXTRUDE_OP,
+    summary: "Extrude a closed sketch into a new body by a distance, as the Extrude tool does, put in the timeline at the marker. A negative distance goes the other way from the sketch's plane. It leaves the sketch and every body already there as they are.",
+    params: {
+      distance: { type: "number", min: -SKETCH_REACH, max: SKETCH_REACH, description: "how far to extrude, in mm; not 0; negative goes the other way from the sketch's plane" },
     },
   },
   {
@@ -133,6 +147,44 @@ export function drawWords(command: Command): string {
   throw new Error(`${command.op} is not a draw command`);
 }
 
+/** The sketches an extrude can use: before the marker (an extrude put in there can't use a later one) and not suppressed, as the Extrude tool offers them. */
+export function extrudable(doc: DesignDocument): Feature[] {
+  const at = insertAt(doc);
+  return doc.timeline.features.filter((f, i) => isSketchItem(f) && !f.suppressed && i < at);
+}
+
+/**
+ * The sketch an extrude_sketch command means: the one it names (by its name
+ * in the timeline), else the sketch open (the one just started, when the
+ * answer began one), else the newest before the marker, as the Extrude tool
+ * chooses. A name that isn't one of the sketches it can use is refused.
+ */
+export function extrudeTarget(doc: DesignDocument, command: Command, open: string | null = null): string {
+  const usable = extrudable(doc);
+  if (command.sketch !== undefined) {
+    const named = usable.find((f) => f.provenance.self.label === command.sketch);
+    if (!named) throw new Error(`there is no sketch ${JSON.stringify(command.sketch)} before the marker to extrude`);
+    return named.id;
+  }
+  const chosen = usable.find((f) => f.id === open) ?? usable.at(-1);
+  if (!chosen) throw new Error(doc.timeline.features.some(isSketchItem) ? NO_USABLE_SKETCH : NO_SKETCH);
+  return chosen.id;
+}
+
+/** The distance of an extrude_sketch command, refused when it is not a number or is 0 (a negative one goes the other way). */
+export function commandDistance(command: Command): number {
+  const d = command.distance;
+  if (typeof d !== "number" || !Number.isFinite(d)) throw new Error("extrude_sketch needs its distance in mm");
+  if (d === 0) throw new Error(ZERO_DISTANCE);
+  return d;
+}
+
+/** An extrude_sketch command in words, for the preview and its undo step: "extrude Sketch 1 by 15 mm", "extrude the sketch by 8 mm the other way". */
+export function extrudeWords(command: Command): string {
+  const d = command.distance as number;
+  return `extrude ${command.sketch === undefined ? "the sketch" : String(command.sketch)} by ${Math.abs(d)} mm${d < 0 ? " the other way" : ""}`;
+}
+
 /** The sketch a draw command goes into when only the document is known: the one just before the marker, which create_sketch has just put in (and opened). */
 function lastSketch(doc: DesignDocument): string {
   const item = doc.timeline.features[insertAt(doc) - 1];
@@ -159,6 +211,12 @@ export function documentFor(command: Command, current?: DesignDocument | null): 
     const refused = drawRefused(current, id);
     if (refused) throw new Error(refused);
     return drawingFor(current, id, command);
+  }
+  // An extrude of the sketch named, the one just started or the newest (the kernel judges the outline when it builds).
+  if (command.op === EXTRUDE_OP) {
+    if (!current) throw new Error(`${EXTRUDE_OP}: there is no sketch to extrude: draw one first`);
+    const d = commandDistance(command);
+    return extrudeSketch(current, extrudeTarget(current, command), Math.abs(d), d < 0).doc;
   }
   // A sketch on an origin plane, at the marker; one on a face needs the face as built, so only Design's run makes it (workspace.ts).
   if (command.op === "create_sketch") {

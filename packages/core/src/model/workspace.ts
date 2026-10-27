@@ -156,6 +156,14 @@ export interface MountedWorkspace {
    * afterwards (a rebuild) may finish later. Throws for a command it lacks.
    */
   run?(command: Command): void | Promise<void>;
+  /**
+   * Whether `commands`, run one after another from now, can be done (AI7c):
+   * null for yes, else why not in plain words. Asked of what an answer
+   * proposes before its preview, for commands whose success only the kernel
+   * can tell (an extrude of a sketch that is not one closed outline), which
+   * `run` cannot wait for. Changes nothing. Leave out when `run` judges all.
+   */
+  check?(commands: readonly Command[]): Promise<string | null>;
   /** What the AI assistant is told before a request, as things stand now (`AIView`). Leave out when the workspace offers the AI no command. */
   aiView?(): AIView;
   /** Its entries in the top bar's File ▾ (U0f2a), read each time the menu opens so an entry's off state is current. Leave out when it has none. */

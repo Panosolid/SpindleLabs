@@ -4,7 +4,7 @@
 // dropped, and the kernel really does drop some.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESIGN_COMMANDS, buildSpec, specFor } from "@fission/design";
+import { DESIGN_COMMANDS, buildSpec, documentFor, featureSpec, lastFeature, specFor, type DesignDocument } from "@fission/design";
 import { EVAL_CASES, HELD_OUT_CASES } from "@fission/testing";
 import { nodeKernel } from "../../packages/testing/src/node-kernel.ts";
 import { checkDraft, generate, RECIPES, RULES, type Draft } from "../src/index.ts";
@@ -29,11 +29,23 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
   const refused = Object.entries(g.dropped).filter(([k]) => k.includes("refused")).reduce((n, [, v]) => n + v, 0);
   assert.ok(refused > 0, JSON.stringify(g.dropped));
   let checked = 0;
+  let extruded = 0;
   for (const e of g.examples) {
     const last = [...e.setup, ...e.commands].filter((c) => c.op === "set_part").at(-1);
-    // A request no command can do, or a sketch started (AI7a) and drawn in (AI7b), about a new project: no part to build (AI5c).
+    // A request no command can do, a sketch started (AI7a) and drawn in (AI7b), or one extruded (AI7c), about a new project: no preset part to build (AI5c).
     if (!last) {
-      assert.ok(e.task === "cannot" || (e.commands[0]?.op === "create_sketch" && e.commands.every((c) => c.op === "create_sketch" || c.op.startsWith("draw_"))), `${e.task}: ${e.prompt}`);
+      assert.ok(e.task === "cannot" || (e.commands[0]?.op === "create_sketch" && e.commands.every((c) => c.op === "create_sketch" || c.op.startsWith("draw_") || c.op === "extrude_sketch")), `${e.task}: ${e.prompt}`);
+      // An extrude: the body the real kernel builds has the volume of its outline times its distance, by the formulas (AI7c).
+      if (e.commands.some((c) => c.op === "extrude_sketch")) {
+        const doc = e.commands.reduce<DesignDocument | undefined>((d, c) => documentFor(c, d), undefined)!;
+        const view = await buildSpec(kernel, await featureSpec(kernel, doc, lastFeature(doc)));
+        assert.deepEqual(view.errors, [], `${e.id}: ${e.prompt}`);
+        const [drawn, out] = [e.commands[1], e.commands[2]];
+        const area = drawn.op === "draw_circle" ? Math.PI * ((drawn.diameter as number) / 2) ** 2 : (drawn.width as number) * (drawn.height as number); // πr², or w · h
+        const expected = area * Math.abs(out.distance as number);
+        assert.ok(Math.abs(view.volume - expected) <= 1e-6 * expected, `${e.id} ${e.prompt}: volume ${view.volume}, by hand ${expected}`);
+        extruded++;
+      }
       continue;
     }
     const { shape, width, depth, height } = last as { shape: Parameters<typeof specFor>[0]; width: number; depth: number; height: number };
@@ -47,6 +59,7 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
     } else assert.ok(view.volume > 0);
   }
   assert.ok(checked > 300, `${checked} volumes checked by hand`);
+  assert.ok(extruded > 20, `${extruded} extrudes checked by hand`);
 });
 
 test("the real kernel refuses what it can't build, and the draft is dropped", async () => {

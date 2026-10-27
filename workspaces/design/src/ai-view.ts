@@ -11,7 +11,7 @@
 
 import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { builtFrom, DESIGN_COMMANDS, DRAW_OPS } from "./commands.ts";
+import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
 import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
@@ -33,9 +33,10 @@ export type PanelSizes = { width: number; depth: number; height: number };
 export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySet<string>, sizes: PanelSizes, faces: readonly AIFace[] = [], open: string | null = null): AIView {
   const keeps: Record<string, unknown> = { ...sizes };
   const shownFaces = faces.slice(0, AI_FACES);
-  const commands = aiCommands(shownFaces);
+  const sketches = doc ? extrudable(doc).slice(-AI_SKETCHES).map((f) => f.provenance.self.label) : [];
+  const commands = aiCommands(shownFaces, sketches);
   const choiceWords = placeWords(shownFaces);
-  if (!doc) return { setup: [], keeps, notes: [...sketchNotes(undefined, faces, shownFaces), ...drawNotes(undefined, null)], adds: null, commands, choiceWords };
+  if (!doc) return { setup: [], keeps, notes: [...sketchNotes(undefined, faces, shownFaces), ...drawNotes(undefined, null), ...extrudeNotes(undefined, null)], adds: null, commands, choiceWords };
   // The part (the last body that builds) and what makes it; an extruded sketch has no set_part that does.
   const shape = partOf(doc);
   const preset = shape !== null && shape.shape !== "sketch-extrude";
@@ -43,8 +44,11 @@ export function designAIView(doc: DesignDocument | undefined, failed: ReadonlySe
   const { features } = doc.timeline;
   const at = insertAt(doc);
   const adds = preset ? null : `a new body as item ${at + 1}, ${at === 0 ? "at the start of the timeline" : `after ${at}. ${features[at - 1].intent.summary}`}`;
-  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces), ...drawNotes(doc, open)], adds, commands, choiceWords };
+  return { setup, keeps, notes: [...timelineNotes(doc, failed, sizes, adds), ...sketchNotes(doc, faces, shownFaces), ...drawNotes(doc, open), ...extrudeNotes(doc, open)], adds, commands, choiceWords };
 }
+
+/** The most sketches extrude_sketch's `sketch` offers: the newest ones, like `AI_TIMELINE_ITEMS`. */
+export const AI_SKETCHES = 30;
 
 /** The most faces the prompt lists, like `AI_TIMELINE_ITEMS`: the first ones, in the bodies' build order, are kept. */
 export const AI_FACES = 30;
@@ -93,11 +97,14 @@ export function aiFaces(scene: Scene | null, label: (feature: string) => string)
 }
 
 /** Design's commands as the AI may use them now: set_part, create_sketch on an origin plane or one of `faces`, and the draw commands (export_stl downloads, so it stays the user's). */
-export function aiCommands(faces: readonly AIFace[]): CommandSpec[] {
+export function aiCommands(faces: readonly AIFace[], sketches: readonly string[] = []): CommandSpec[] {
   const setPart = DESIGN_COMMANDS.find((c) => c.op === "set_part")!;
   const sketch = DESIGN_COMMANDS.find((c) => c.op === "create_sketch")!;
   const draws = DESIGN_COMMANDS.filter((c) => DRAW_OPS.includes(c.op));
-  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }, ...draws];
+  const extrude = DESIGN_COMMANDS.find((c) => c.op === EXTRUDE_OP)!;
+  // `sketch` is offered only when a sketch exists to name (an empty list of choices is no schema); a sketch just started is always the default.
+  const extrudeWith: CommandSpec = sketches.length === 0 ? extrude : { ...extrude, params: { ...extrude.params, sketch: { type: "choice", values: sketches, optional: true, description: "which sketch to extrude, by name; leave it out for the sketch just started or open, else the newest" } } };
+  return [setPart, { ...sketch, params: { on: { ...sketch.params.on, type: "choice", values: [...SKETCH_PLANES, ...faces.map((f) => f.name)] } } }, ...draws, extrudeWith];
 }
 
 /** How a sketch's x and y lie on each origin plane (sketch.ts PLANES: y is the normal × x), said once. */
@@ -110,6 +117,16 @@ function drawNotes(doc: DesignDocument | undefined, open: string | null): string
   const used = builtFrom(doc, item.id);
   const what = `${item.provenance.self.label} is open (${item.intent.summary})`;
   return [used === null ? `${what}: the draw commands draw in it, unless create_sketch starts another first.` : `${what}, but ${used} is built from it, so the draw commands can't draw in it: start a new sketch with create_sketch first.`, SKETCH_AXES];
+}
+
+/** The prompt's lines about extruding (AI7c): which sketch an extrude with no name takes, and what it adds. */
+function extrudeNotes(doc: DesignDocument | undefined, open: string | null): string[] {
+  const usable = doc ? extrudable(doc) : [];
+  const note = "extrude_sketch makes a new body at the timeline marker from a sketch that makes one closed outline, and changes nothing else; a negative distance goes the other way from the sketch's plane.";
+  if (usable.length === 0) return [note, "No sketch can be extruded yet, so extrude_sketch only follows a create_sketch and its drawing in the same answer."];
+  const opened = usable.find((f) => f.id === open);
+  const takes = opened ?? usable.at(-1)!;
+  return [note, `With no sketch named, extrude_sketch takes the sketch started earlier in the answer, else ${opened ? "the open sketch" : "the newest sketch"}: ${takes.provenance.self.label}.`];
 }
 
 /** Where each place create_sketch can use is, in words for the preview: "the XY plane", "a face of Body 1 (Box 1), facing up (+Z, a top face)". */
