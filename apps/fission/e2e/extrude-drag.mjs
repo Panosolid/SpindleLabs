@@ -70,6 +70,12 @@ async function fresh(width, touch) {
   await page.waitForSelector("#start-hint", { state: "visible", timeout: 15000 });
   await page.setInputFiles("#open-file", { name: "drag.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(project)) });
   await untilBodies(page, 1, "the box built");
+  // The kernel holding the box is not the box drawn: wait for the view to frame it and no rebuild to be running,
+  // so a pixel read now is the box's and Extrude finds its faces (slow-kernel flake, E2E_KERNEL_DELAY seed 1).
+  await page.waitForFunction(() => {
+    const v = document.querySelector("#viewport");
+    return Number(v.dataset.fits ?? 0) >= 1 && v.dataset.rebuilding !== "true";
+  }, null, { timeout: 15000 }).catch(() => assert.fail("the box drawn: timed out"));
   return page;
 }
 
@@ -90,6 +96,7 @@ const panelState = (page) =>
       undo: q("#undo")?.title,
       bodies: await window.fissionTest?.bodyCount(),
       rebuilding: q("#viewport")?.dataset.rebuilding,
+      offered: q("#viewport")?.dataset.extrudeProfiles,
     });
   });
 const view = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
@@ -196,7 +203,7 @@ try {
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await press("#extrude");
       // Both sketches, then the box's six flat faces (UX1c).
-      await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces");
+      await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces", panelState);
       // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.
       assert.equal(await page.textContent("#extrude-profile"), "Sketch 2");
       await until(page, () => Math.abs(Number(document.querySelector("#extrude-panel").dataset.previewVolume) - 640 * Math.PI) < 1e-6, null, "the circle's preview");
@@ -276,7 +283,8 @@ try {
       else await page.mouse.click(top.x, top.y);
       await until(page, () => document.querySelector("#viewport").dataset.extrudeChosen === "face:feature-1/top", null, "the top face chosen");
       assert.equal(await page.textContent("#extrude-profile"), "Face of Box 1");
-      assert.match(await page.textContent("#extrude-status"), /Joining the new body to the one under the face comes with the Combine tool\.$/);
+      // The kernel checks the face's outline first ("Checking Face of Box 1…"), then the status says the body is a new one.
+      await until(page, () => /Joining the new body to the one under the face comes with the Combine tool\.$/.test(document.querySelector("#extrude-status").textContent), null, "the status saying the extrude is a new body", panelState);
       // 10 · 10 · 10 = 1,000 mm³ on top of the box.
       await until(page, () => document.querySelector("#extrude-panel").dataset.previewVolume === "1000", null, "the face's preview");
       if (shots) await page.screenshot({ path: `${shots}/face-extrude-${width}.png` });

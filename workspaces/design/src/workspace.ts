@@ -920,6 +920,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       lastScene = scene;
       factsButton.disabled = inspecting.none() !== null;
       if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
+      // Extrude opened before this build landed (a slow kernel, a file just opened, an Undo) offered the faces of the scene
+      // before it, or none: they are offered again from this one, so a face is never missing or where the body was.
+      if (extruding && designDoc() === doc) void offerProfiles(doc, [...extruding.usable]);
       const part = partFeature(doc);
       partShown = scene.bodies.find((b) => b.feature === part?.id) ?? (failure === undefined ? null : partShown);
       note = droppedNote(dropped, shared, selectedSketches);
@@ -1373,8 +1376,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const facesOffered = (await faceOffers).filter((p) => p !== null);
     if (!extruding || designDoc() !== doc) return;
     extruding.offered = [...offered.filter((p) => p !== null), ...facesOffered];
+    const before = extruding.faces;
     extruding.faces = new Map(facesOffered.map((p) => [p.id, faces.get(p.id)!]));
     extruding.refusedFaces = refusedFaces;
+    // Offered again from a newer scene: a face chosen from the old one is checked and previewed again from its new
+    // outline, or let go if this scene has no such flat face.
+    const was = extruding.sketch;
+    if (was !== null && before.has(was)) {
+      if (!extruding.faces.has(was)) chooseProfile(null);
+      else if (before.get(was) !== extruding.faces.get(was)) void checkExtrude(was);
+    }
     const wanted = extruding.wanted;
     extruding.wanted = null;
     if (wanted !== null && extruding.sketch === null && extruding.faces.has(wanted)) chooseProfile(wanted);

@@ -213,6 +213,31 @@ test("a face selected before Extrude is chosen; Escape after a drag leaves nothi
   assert.ok(await a.close());
 });
 
+test("regression: Extrude opened before the body is drawn (a slow kernel after an Undo) offers the faces once the build lands", async () => {
+  // Found by the browser check under a slow kernel (E2E_KERNEL_DELAY, seed 5): Extrude opened while the
+  // design was still being built offered the sketches but no face, and never offered them after.
+  const a = await app(box());
+  await openExtrude(a);
+  await a.extrudePointer({ kind: "pick", profile: faceAt(a, [0, 0, 1], [0, 0, 20]).id });
+  await ok(a);
+  assert.equal(a.history.undoLabel(), "Extrude Face of Box 1");
+  // The kernel held: Undo puts the box back and Design is mounted afresh on it, with nothing drawn yet.
+  a.hold();
+  a.history.undo();
+  a.$("#extrude")!.click();
+  for (let i = 0; i < 40; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(offeredFaces(a), [], "nothing drawn, so no face yet");
+  await a.release();
+  // Built: the box's six faces, its top where the box is (z = 20, a 40 × 30 outline), none from before.
+  assert.equal(offeredFaces(a).length, 6, `the box's faces offered once it is drawn: ${offeredFaces(a)}`);
+  const top = faceAt(a, [0, 0, 1], [0, 0, 20]);
+  await a.extrudePointer({ kind: "pick", profile: top.id });
+  // 40 · 30 · 10 = 12,000 mm³ previewed.
+  near(previewVolume(a), 12000, "the top face's preview");
+  await a.key("clear-selection");
+  assert.ok(await a.close());
+});
+
 test("with nothing to extrude the panel says so: an empty design, and a sphere alone (no flat face, no sketch)", async () => {
   const empty: DesignDocument = { version: 3, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const a = await app(empty);
