@@ -16,7 +16,18 @@
 // unless a check gives the page a fake one.
 // AI5c: the answer's working out shows above the preview as plain text,
 // and a request no command can do shows the AI's reason with nothing to
-// accept.
+// accept. AI5c2: answers are streamed, and a bar shows the stage, an
+// estimate and the working out as it is written, never 100% before the
+// preview (Ollama's stream is held piece by piece in the page, `held`).
+// AI7a: the AI starts a sketch on an origin plane or a flat face it was
+// told of, as Create sketch would, in one undo step. AI7b: it draws
+// circles, rectangles and lines in the sketch it just started or the one
+// open, in sketch mm, and is refused when no sketch is open. AI7c: it
+// extrudes a sketch by a distance (the other way when negative) as the
+// Extrude tool's OK does; the kernel is asked first, so a sketch that is
+// not one closed outline is refused before any preview. AI7d: it renames
+// an item (the sketch just started, or one by its name) as the timeline's
+// Rename does, and a name another item has is refused before any preview.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
@@ -40,9 +51,12 @@ const OPENAI_KEY = "sk-proj-test-e2e-0123456789";
  * built-in model that answers from `answers` too (`true`: one that is there;
  * an availability word such as "downloadable": one in that state). Model
  * lists asked for are recorded in `listed`, requests to a model in `asked`,
- * sessions made of the built-in model in `builtInCreated`.
+ * sessions made of the built-in model in `builtInCreated`. `held: true`
+ * answers Ollama's chat requests in the page itself, one line at a time
+ * as the check allows (window.heldLines, window.allowLines), so the bar
+ * can be seen part way.
  */
-async function fresh(answers = [], { ollama = true, builtIn = false, open = true } = {}) {
+async function fresh(answers = [], { ollama = true, builtIn = false, open = true, held = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -63,6 +77,25 @@ async function fresh(answers = [], { ollama = true, builtIn = false, open = true
     await page.addInitScript(() => {
       delete globalThis.LanguageModel;
       if ("LanguageModel" in globalThis) Object.defineProperty(globalThis, "LanguageModel", { value: undefined, configurable: true });
+    });
+  }
+  if (held) {
+    await page.addInitScript(() => {
+      const realFetch = globalThis.fetch;
+      Object.assign(globalThis, { heldLines: [], allowLines: 0, heldAsked: [] });
+      globalThis.fetch = async (input, init) => {
+        if (!String(input).endsWith("/api/chat")) return realFetch(input, init);
+        globalThis.heldAsked.push(JSON.parse(init.body));
+        let sent = 0;
+        const body = new ReadableStream({
+          async pull(controller) {
+            while (sent >= globalThis.allowLines && sent < globalThis.heldLines.length) await new Promise((r) => setTimeout(r, 20));
+            if (sent >= globalThis.heldLines.length) return controller.close();
+            controller.enqueue(new TextEncoder().encode(globalThis.heldLines[sent++]));
+          },
+        });
+        return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+      };
     });
   }
   page.on("pageerror", (e) => errors.push(e.message));
@@ -96,8 +129,13 @@ async function fresh(answers = [], { ollama = true, builtIn = false, open = true
       return route.fulfill({ headers: cors, body: JSON.stringify({ data: [{ id: "claude-opus-5-5" }, { id: "claude-haiku-5-5" }], has_more: false }) });
     }
     asked.push({ url: req.url(), headers: req.headers(), body: req.postDataJSON() });
-    const input = JSON.parse(answers.shift() ?? "{}");
-    return route.fulfill({ headers: cors, body: JSON.stringify({ content: [{ type: "tool_use", name: "answer", input }] }) });
+    const input = answers.shift() ?? "{}";
+    if (!req.postDataJSON().stream) return route.fulfill({ headers: cors, body: JSON.stringify({ content: [{ type: "tool_use", name: "answer", input: JSON.parse(input) }] }) });
+    // Streamed (AI5c2), as Anthropic sends it: the tool's input in pieces of JSON.
+    const event = (type, data) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+    const pieces = input.match(/.{1,9}/gs) ?? [];
+    const sse = [event("content_block_start", { index: 0, content_block: { type: "tool_use", name: "answer", input: {} } }), ...pieces.map((partial_json) => event("content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json } })), event("message_stop", {})];
+    return route.fulfill({ headers: { ...cors, "content-type": "text/event-stream" }, body: sse.join("") });
   });
   await context.route("https://api.openai.com/**", async (route) => {
     const req = route.request();
@@ -193,7 +231,7 @@ try {
       assert.equal(asked[0].url, "http://localhost:11434/api/chat");
       assert.match(body.messages[0].content, /"op":"set_part","shape":"box","width":40,"depth":30,"height":20/);
       assert.deepEqual(body.messages[1], { role: "user", content: "Make it 10 mm wider." });
-      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part"], "only set_part: the AI can't download files");
+      assert.deepEqual(body.format.properties.commands.items.oneOf.map((s) => s.properties.op.const), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"], "set_part, create_sketch (AI7a), the draws (AI7b) and extrude_sketch (AI7c), never export_stl: the AI can't download files");
       // The preview: only width moves, 40 → 50; the part is untouched.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: box 50 × 30 × 20 mm");
       assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["width40→50"]);
@@ -261,6 +299,51 @@ try {
         assert.equal(await page.$eval("#ai-preview", (e) => e.scrollWidth <= e.clientWidth), true);
         await page.$eval("#ai-preview", (e) => e.scrollIntoView());
         await page.screenshot({ path: `e2e/assistant-working-${width}.png` });
+        await page.click("#ai-accept");
+        await volume(page, "30,000 mm³"); // 50 · 30 · 20
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("while the AI answers, a bar shows the stage, an estimate and the working out as it is written, never 100% before the preview (AI5c2, 1280 and 375 px)", async () => {
+    // The answer arrives in five pieces. The bar is 0.05 + 0.85 × (1 − e^(−2n/190)) for n characters written:
+    // after the first piece (24 characters) 0.05 + 0.85 × (1 − e^(−0.2526)) = 0.2398, shown as 24%;
+    // after the fourth (116) 0.05 + 0.85 × (1 − e^(−1.2211)) = 0.6493, shown as 65%.
+    const pieces = ['{"commands":[{"op":"set_', 'part","shape":"box","width":50,', '"depth":30,"height":20}],', '"explanation":"The box becomes 50 mm', ' wide; depth 30 mm and height 20 mm stay."}'];
+    const lines = [...pieces.map((content) => JSON.stringify({ message: { role: "assistant", content }, done: false }) + "\n"), '{"message":{"role":"assistant","content":""},"done":true}\n'];
+    const stage = (page) => page.textContent("#ai-progress .ai-progress-stage");
+    const seen = (page, text) => page.waitForFunction((t) => document.querySelector("#ai-progress .ai-progress-stage")?.textContent === t, text, { timeout: 5000 }).catch(async () => assert.fail(`expected "${text}", saw "${await stage(page)}"`));
+    for (const width of [1280, 375]) {
+      const { page } = await fresh([], { open: false, held: true });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await page.evaluate((l) => (globalThis.heldLines = l), lines);
+        await ask(page, "Make it 50 mm wide.");
+        await seen(page, "Asking the AI… 5%");
+        assert.equal(await page.getAttribute("#ai-progress", "aria-valuenow"), "5");
+        assert.equal((await page.evaluate(() => globalThis.heldAsked[0])).stream, true, "Ollama is asked to stream");
+        await page.evaluate(() => (globalThis.allowLines = 1));
+        await seen(page, "Writing the commands (1 so far)… 24%");
+        assert.equal(await page.$("#ai-progress .ai-working"), null, "no working out yet");
+        await page.evaluate(() => (globalThis.allowLines = 4));
+        await seen(page, "Writing its working out… 65%");
+        assert.equal(await page.textContent("#ai-progress .ai-working-text"), "The box becomes 50 mm");
+        const fill = await page.$eval("#ai-progress .ai-progress-fill", (e) => e.style.width);
+        assert.equal(fill, "65%");
+        assert.equal(await page.$eval("#ai-progress", (e) => e.scrollWidth <= e.clientWidth), true, "no sideways scroll");
+        await page.$eval("#ai-progress", (e) => e.scrollIntoView());
+        await page.waitForTimeout(300); // the bar's width eases in over 0.2 s
+        await page.screenshot({ path: `e2e/assistant-progress-${width}.png` });
+        await volume(page, "24,000 mm³"); // nothing changes while the AI answers
+        await page.evaluate(() => (globalThis.allowLines = 6));
+        await page.waitForSelector("#ai-preview");
+        assert.equal(await page.$("#ai-progress"), null, "the bar gives way to the preview");
+        assert.equal(await page.textContent("#ai-preview .ai-working-text"), "The box becomes 50 mm wide; depth 30 mm and height 20 mm stay.");
         await page.click("#ai-accept");
         await volume(page, "30,000 mm³"); // 50 · 30 · 20
       } finally {
@@ -410,6 +493,253 @@ try {
     }
   });
 
+  await check("the AI starts a sketch on a plane and on the box's top face: told the faces, previewed, one undo step, opened to draw in; a face it wasn't offered is refused (AI7a, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const sketch = (on) => JSON.stringify({ commands: [{ op: "create_sketch", on }], explanation: "So there is a new empty sketch." });
+      const answers = [sketch("XZ")];
+      const { page, asked } = await fresh(answers, { open: false });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        const steps = await undoTitle(page);
+        await ask(page, "Start a sketch on the front plane.");
+        await page.waitForSelector("#ai-preview");
+        // What the model was told: where the sketch goes in the timeline, and the box's six flat faces by name, each
+        // with the way it faces; the answer's schema lets it name only those or an origin plane.
+        const prompt = asked[0].body.messages[0].content.split("\n");
+        assert.ok(prompt.includes("create_sketch adds an empty Sketch 1 as item 2, after 1. Box: 40 × 30 × 20 mm, and opens it; nothing already in the timeline changes."), prompt.join("\n"));
+        const faces = prompt.filter((l) => l.startsWith("- face:"));
+        assert.equal(faces.length, 6, faces.join("\n"));
+        const facing = faces.map((l) => l.match(/facing (.+?), centre/)[1]).sort();
+        assert.deepEqual(facing, ["down (−Z, a bottom face)", "left (−X)", "right (+X)", "the back (+Y)", "the front (−Y)", "up (+Z, a top face)"].sort());
+        // The box stands on the XY plane, 20 mm tall: its top face's centre is 20 mm up.
+        const top = faces.find((l) => l.includes("facing up"));
+        assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm, which is \(-?[\d.]+, -?[\d.]+\) in a sketch on it\.$/, top);
+        const topName = top.match(/^- (face:[^:]+):/)[1];
+        const schema = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "create_sketch");
+        assert.deepEqual(schema.properties.on.enum, ["XY", "XZ", "YZ", ...faces.map((l) => l.match(/^- (face:[^:]+):/)[1])]);
+        // The preview names it; nothing changed yet.
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XZ plane");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XZ plane"]);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
+        assert.equal(await undoTitle(page), steps);
+        await page.click("#ai-accept");
+        // Accepted: Sketch 1 on XZ is item 2, open to draw in, as Create sketch then XZ would leave it, in one AI step.
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2");
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XZ plane (Ctrl+Z)");
+        if (width === 375) await page.screenshot({ path: "e2e/assistant-sketch-375.png" });
+        await page.click("#undo");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 1);
+        assert.equal(await undoTitle(page), steps, "one step, taken back whole");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
+        // On the top face, by the name the model was given.
+        answers.push(sketch(topName));
+        await ask(page, "Sketch on the top of the box.");
+        await page.waitForSelector("#ai-preview");
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on a face of Body 1 (Box 1), facing up (+Z, a top face)");
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2"); // Undo took the counter back too, so the id is reused (never two at once)
+        assert.match(await page.getAttribute('#timeline [data-item="sketch-2"]', "title"), /Sketch 1 on a face of Box 1/);
+        if (width === 1280) await page.screenshot({ path: "e2e/assistant-face-sketch-1280.png" });
+        // A face the model wasn't offered (made up, twice): refused by the answer's check before any preview; nothing changes.
+        answers.push(sketch("face:feature-9/end"), sketch("face:feature-9/end"));
+        const before = await undoTitle(page);
+        await ask(page, "Sketch on the other part's face.");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.match(await page.textContent("#ai-result"), /even after one retry.*Nothing was changed/s);
+        assert.equal(await page.$("#ai-accept"), null);
+        assert.equal(await undoTitle(page), before);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI draws Ben's circle in a new sketch, then a rectangle in the open one: told the sketch axes, previewed, one undo step each; with no sketch open it is refused (AI7b, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const answer = (commands, explanation) => JSON.stringify({ commands, explanation });
+      // Ben's words (2026-10-26): radius 10 → diameter 2 × 10 = 20, centred on the origin as nothing else is said.
+      const answers = [answer([{ op: "create_sketch", on: "XY" }, { op: "draw_circle", diameter: 20 }], "The diameter is twice the radius: 2 × 10 = 20 mm. So there is a new sketch on the XY plane, and in it a circle ⌀20 mm at (0, 0).")];
+      const { page, asked } = await fresh(answers, { open: false });
+      const points = (want) => page.waitForFunction((w) => document.querySelector("#viewport").dataset.sketchPoints === w, want, { timeout: 5000 }).catch(async () => assert.fail(`points ${want}, shown ${await page.getAttribute("#viewport", "data-sketch-points")}`));
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        const steps = await undoTitle(page);
+        await ask(page, "Draw a circle with radius 10mm as a sketch on the XY plane.");
+        await page.waitForSelector("#ai-preview");
+        // What the model was told: no sketch is open, where a sketch's x and y are, and where each face's centre is in them.
+        const prompt = asked[0].body.messages[0].content.split("\n");
+        assert.ok(prompt.includes("No sketch is open: to draw, start one with create_sketch first in the same answer; the draw commands then draw in it."), prompt.join("\n"));
+        assert.ok(prompt.some((l) => l.startsWith("In a sketch, x and y are in mm on its plane: on XY, x is X and y is Y; on XZ, x is X and y is Z;")), prompt.join("\n"));
+        // The box's top face is 20 mm up; its own sketch's x and y are listed after its 3D centre.
+        const top = prompt.find((l) => l.startsWith("- face:") && l.includes("facing up"));
+        assert.match(top, /, centre \(-?[\d.]+, -?[\d.]+, 20\) mm, which is \(-?[\d.]+, -?[\d.]+\) in a sketch on it\.$/, top);
+        const ops = asked[0].body.format.properties.commands.items.oneOf.map((c) => c.properties.op.const);
+        assert.deepEqual(ops, ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]);
+        // The preview: a row per command; nothing changed yet.
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0)");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "circle—→circle ⌀20 mm at (0, 0)"]);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
+        assert.equal(await undoTitle(page), steps);
+        await page.click("#ai-accept");
+        // Accepted: Sketch 1 on XY, open, with the circle's centre at its origin, in one AI step.
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.map((i) => i.dataset.item).join(" ")), "feature-1 sketch-2");
+        await points("0,0");
+        await page.waitForFunction(() => document.querySelector("#sketch-status")?.textContent === "1 circle, a closed outline.");
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0) (Ctrl+Z)");
+        await page.screenshot({ path: `e2e/assistant-circle-${width}.png` });
+        // In the open sketch: a 30 × 20 rectangle centred at (5, 5), so corners (5 ∓ 15, 5 ∓ 10) = (−10, −5) to (20, 15).
+        answers.push(answer([{ op: "draw_rectangle", width: 30, height: 20, x: 5, y: 5 }], "So in it a rectangle 30 × 20 mm centred at (5, 5)."));
+        await ask(page, "Add a 30 by 20 mm rectangle centred at (5, 5).");
+        await page.waitForSelector("#ai-preview");
+        const open = asked[1].body.messages[0].content.split("\n");
+        assert.ok(open.some((l) => /^Sketch 1 is open \(.+\): the draw commands draw in it, unless create_sketch starts another first\.$/.test(l)), open.join("\n"));
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["rectangle—→rectangle 30 × 20 mm centred at (5, 5)"]);
+        await page.click("#ai-accept");
+        await points("0,0 -10,-5 20,-5 20,15 -10,15");
+        assert.equal(await undoTitle(page), "Undo AI: rectangle 30 × 20 mm centred at (5, 5) (Ctrl+Z)");
+        await page.click("#undo");
+        await points("0,0");
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XY plane, then circle ⌀20 mm at (0, 0) (Ctrl+Z)", "the rectangle alone was taken back");
+        await page.click("#undo");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 1);
+        assert.equal(await undoTitle(page), steps, "the sketch and its circle, taken back whole");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
+        // No sketch open: a line alone has nowhere to go. Refused with the reason; nothing changes.
+        answers.push(answer([{ op: "draw_line", x1: 0, y1: 0, x2: 10, y2: 5 }], "So a line from (0, 0) to (10, 5)."));
+        await ask(page, "Draw a line from (0, 0) to (10, 5).");
+        await page.waitForSelector("#ai-preview, #ai-result .ai-error");
+        if (await page.$("#ai-accept")) await page.click("#ai-accept");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.match(await page.textContent("#ai-result"), /No sketch is open to draw in/);
+        assert.equal(await undoTitle(page), steps);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 1);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI extrudes a rectangle it just drew, then another sketch by name the other way; a sketch that is no closed outline is refused before the preview (AI7c, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const answer = (commands, explanation) => JSON.stringify({ commands, explanation });
+      // A 30 × 20 rectangle at the origin extruded 10: 30 · 20 · 10 = 6,000 mm³ (the readout is the last body's: the new one).
+      const answers = [answer([{ op: "create_sketch", on: "XY" }, { op: "draw_rectangle", width: 30, height: 20 }, { op: "extrude_sketch", distance: 10 }], "So there is a new sketch on the XY plane, and in it a rectangle 30 × 20 mm centred at (0, 0). Then extrude the sketch by 10 mm.")];
+      const { page, asked } = await fresh(answers, { open: false });
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        const steps = await undoTitle(page);
+        await ask(page, "Sketch a 30 by 20 mm rectangle on the XY plane, then extrude it 10 mm.");
+        await page.waitForSelector("#ai-preview");
+        // Told what the command does, and that no sketch is there yet to name (so no `sketch` choice).
+        const prompt = asked[0].body.messages[0].content.split("\n");
+        assert.ok(prompt.some((l) => l.startsWith("extrude_sketch makes a new body at the timeline marker from a sketch that makes one closed outline")), prompt.join("\n"));
+        assert.ok(prompt.includes("No sketch can be extruded yet, so extrude_sketch only follows a create_sketch and its drawing in the same answer."), prompt.join("\n"));
+        const spec = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "extrude_sketch");
+        assert.deepEqual(Object.keys(spec.properties), ["op", "distance"]);
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then rectangle 30 × 20 mm centred at (0, 0), then extrude the sketch by 10 mm");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "rectangle—→rectangle 30 × 20 mm centred at (0, 0)", "extrude—→the sketch by 10 mm"]);
+        assert.equal(await undoTitle(page), steps);
+        await page.click("#ai-accept");
+        // The box, Sketch 1, and the extrude: the body is built from the sketch, the sketch left (nothing is open).
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 3, null, { timeout: 8000 });
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
+        await volume(page, "6,000 mm³"); // 30 · 20 · 10
+        assert.equal(await undoTitle(page), "Undo AI: new sketch on the XY plane, then rectangle 30 × 20 mm centred at (0, 0), then extrude the sketch by 10 mm (Ctrl+Z)");
+        await page.screenshot({ path: `e2e/assistant-extrude-${width}.png` });
+        // Sketch 1 exists now: it can be named, and 5 the other way is a flipped extrude of 5 mm (30 · 20 · 5 = 3,000 mm³).
+        answers.push(answer([{ op: "extrude_sketch", distance: -5, sketch: "Sketch 1" }], "So extrude Sketch 1 by 5 mm the other way."));
+        await ask(page, "Extrude the first sketch 5 mm the other way.");
+        await page.waitForSelector("#ai-preview");
+        const named = asked[1].body.messages[0].content.split("\n");
+        assert.ok(named.includes("With no sketch named, extrude_sketch takes the sketch started earlier in the answer, else the newest sketch: Sketch 1."), named.join("\n"));
+        const second = asked[1].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "extrude_sketch");
+        assert.deepEqual(second.properties.sketch.enum, ["Sketch 1"]);
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["extrude—→Sketch 1 by 5 mm the other way"]);
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 4, null, { timeout: 8000 });
+        await volume(page, "3,000 mm³"); // 30 · 20 · 5
+        assert.equal(await undoTitle(page), "Undo AI: extrude Sketch 1 by 5 mm the other way (Ctrl+Z)");
+        await page.click("#undo");
+        await volume(page, "6,000 mm³");
+        // A sketch that is not one closed outline (a lone line): the kernel's reason, before any preview; nothing changed.
+        answers.push(answer([{ op: "create_sketch", on: "XZ" }, { op: "draw_line", x1: 0, y1: 0, x2: 10, y2: 5 }, { op: "extrude_sketch", distance: 10 }], "So a line, extruded."));
+        const before = await undoTitle(page);
+        await ask(page, "Draw a line from (0, 0) to (10, 5) on the front plane and extrude it 10 mm.");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.equal(await page.$("#ai-preview"), null, "no preview of a change that cannot be made");
+        assert.match(await page.textContent("#ai-result"), /That can't be done: .*closed outline.*Nothing was changed/s);
+        assert.equal(await undoTitle(page), before);
+        assert.equal(await page.$$eval("#timeline [data-item]", (items) => items.length), 3);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  await check("the AI names the sketch it just started, renames it by name, and a name another item has is refused before the preview (AI7d, 1280 and 375 px)", async () => {
+    for (const width of [1280, 375]) {
+      const answer = (commands, explanation) => JSON.stringify({ commands, explanation });
+      const answers = [answer([{ op: "create_sketch", on: "XY" }, { op: "rename_item", name: "Base plate" }], "So a sketch on the XY plane, named Base plate.")];
+      const { page, asked } = await fresh(answers, { open: false });
+      const titles = () => page.$$eval("#timeline [data-item]", (els) => els.map((e) => e.title.split("\n")[0]));
+      try {
+        if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
+        if (width === 375) await page.click("#menu-toggle");
+        await page.click("#assistant-toggle");
+        await useOllama(page);
+        await ask(page, "Start a sketch on the XY plane and call it Base plate.");
+        await page.waitForSelector("#ai-preview");
+        // The starting box is the one item there is to name; the prompt says the one rule on names.
+        const first = asked[0].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "rename_item");
+        assert.deepEqual(Object.keys(first.properties), ["op", "item", "name"]);
+        assert.deepEqual(first.properties.item.enum, ["Box 1"]);
+        assert.deepEqual(first.required, ["op", "name"], "the item is optional: left out it is the one just made");
+        assert.ok(asked[0].body.messages[0].content.split("\n").some((l) => l.startsWith("rename_item changes only an item's name")));
+        assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: new sketch on the XY plane, then rename the newest item to Base plate");
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["sketch—→new, on the XY plane", "rename—→Base plate"]);
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelectorAll("#timeline [data-item]").length === 2, null, { timeout: 8000 });
+        assert.deepEqual(await titles(), ["1. Box 1", "2. Base plate"]);
+        await page.screenshot({ path: `e2e/assistant-rename-${width}.png` });
+        // By name now: the choice lists both items; Base plate becomes Lid, one undo step.
+        answers.push(answer([{ op: "rename_item", item: "Base plate", name: "Lid" }], "So rename Base plate to Lid."));
+        await ask(page, "Rename the first sketch to Lid.");
+        await page.waitForSelector("#ai-preview");
+        const second = asked[1].body.format.properties.commands.items.oneOf.find((c) => c.properties.op.const === "rename_item");
+        assert.deepEqual(second.properties.item.enum, ["Box 1", "Base plate"]);
+        assert.deepEqual(await page.$$eval("#ai-preview tr", (rows) => rows.map((r) => r.textContent)), ["renameBase plate→Lid"]);
+        await page.click("#ai-accept");
+        await page.waitForFunction(() => document.querySelector('#timeline [data-item="sketch-2"]').title.startsWith("2. Lid\n"));
+        assert.equal(await undoTitle(page), "Undo AI: rename Base plate to Lid (Ctrl+Z)");
+        await page.click("#undo");
+        await page.waitForFunction(() => document.querySelector('#timeline [data-item="sketch-2"]').title.startsWith("2. Base plate\n"));
+        // Another item's name, in other capitals: refused with the timeline's own words before any preview; nothing changed.
+        answers.push(answer([{ op: "rename_item", item: "Base plate", name: "box 1" }], "So rename Base plate to box 1."));
+        const before = await undoTitle(page);
+        await ask(page, "Rename the first sketch to box 1.");
+        await page.waitForSelector("#ai-result .ai-error");
+        assert.equal(await page.$("#ai-preview"), null, "no preview of a change that cannot be made");
+        assert.match(await page.textContent("#ai-result"), /That can't be done: Box 1 is already the name of another item.*Nothing was changed/s);
+        assert.equal(await undoTitle(page), before);
+        assert.deepEqual(await titles(), ["1. Box 1", "2. Base plate"]);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
   await check("a preview made stale by the user's own edit is refused on Accept", async () => {
     const { page } = await fresh([setPart("box", 50, 30, 20)]);
     try {
@@ -475,6 +805,7 @@ try {
       assert.equal(asked[0].url, "https://api.anthropic.com/v1/messages");
       assert.equal(asked[0].headers["x-api-key"], KEY);
       assert.equal(asked[0].body.model, "claude-haiku-5-5", "the model chosen from the list");
+      assert.equal(asked[0].body.stream, true, "streamed (AI5c2): the fake sends the tool's input in pieces, as Anthropic does");
       assert.equal(JSON.stringify(asked[0].body).includes(KEY), false);
       // A sphere uses only its diameter: 15 mm radius → width 30.
       assert.equal(await page.textContent("#ai-preview .ai-label"), "AI: sphere ⌀30 mm");

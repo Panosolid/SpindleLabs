@@ -54,7 +54,13 @@ check("broken box: page runs without errors or network requests", () => {
 });
 check("broken box: lists its problems and the note", () => {
   assert.match(broken.info, /corner lifted 10 mm/);
-  assert.match(broken.info, /3 problem\(s\)/);
+  // The 20 × 30 × 40 box's corner (20, 30, 40) lifted to z = 50: 10 mm
+  // past the end of each of its three edges (the two along the top at
+  // z = 40 and the upright ending at z = 40), and 10 mm off the top face's
+  // plane z = 40 (it stays on the side planes x = 20 and y = 30, which the
+  // lift runs along): 4 problems.
+  assert.match(broken.info, /4 problem\(s\)/);
+  assert.match(broken.info, /mm off face/);
   assert.match(broken.info, /mm off edge/);
 });
 check("broken box: 12 triangles drawn, problems in red", () => {

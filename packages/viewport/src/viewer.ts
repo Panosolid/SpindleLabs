@@ -363,6 +363,8 @@ export class ViewportView {
       const drag = this.arrowDrag;
       if (!drag || drag.id !== e.pointerId) return;
       this.arrowDrag = null;
+      // Read by the e2e tests: once a drag's end is counted, every move it made has been heard.
+      this.element.dataset.arrowDrags = String(Number(this.element.dataset.arrowDrags ?? 0) + 1);
       this.host.extrudePointer({ kind: "drag", distance: drag.last, done: true });
     };
     canvas.addEventListener("pointerup", end);

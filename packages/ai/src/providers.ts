@@ -50,6 +50,12 @@ export interface AIRequest {
   messages: { role: "user" | "assistant"; content: string }[];
   /** When set, the answer must be JSON matching this schema (constrained output where the provider supports it). */
   jsonSchema?: object;
+  /**
+   * When set, the answer is streamed (AI5c2): called with the whole answer
+   * written so far each time more arrives. The full answer is still what
+   * `complete` returns, and still what is checked.
+   */
+  onText?: (soFar: string) => void;
 }
 
 export interface AIProvider {
