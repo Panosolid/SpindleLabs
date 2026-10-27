@@ -1,16 +1,14 @@
-"""VERSION against CHANGELOG.md.
-
-VERSION (repository root) holds one version, big.step.bugfix (CHANGELOG.md's
-opening paragraph says what each number means). The check fails when:
-- VERSION isn't exactly three whole numbers with dots and no leading zeros,
-  on one line;
+"""CHANGELOG.md's version headings, big.step.bugfix (CHANGELOG.md's opening
+paragraph says what each number means). The check fails when:
 - a "## " heading in CHANGELOG.md isn't a version heading "## X.Y.Z (date)";
-- the newest (first) version heading isn't the one in VERSION;
 - the headings aren't newest first, one version after another: within a step
   the bug-fix number goes up by exactly one, and a new step starts at .0.
 
-`check` is pure (tested in test_check_version.py, which also runs it on the
-repository's own two files, so CI's kernel job checks them on every PR).
+The headings are written by changelog.py's fold, from the fragments in
+changelog.d/ (VERSION, which pull requests used to edit, is gone). `check`
+and `check_changelog` are pure (tested in test_check_version.py, which also
+runs them on the repository's own CHANGELOG.md, so CI's kernel job checks it
+on every PR).
 
 Usage: check_version.py [ROOT]   (default: the repository root)
 """
@@ -20,7 +18,7 @@ import re
 import sys
 
 VERSION_RE = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)")
-HEADING_RE = re.compile(r"## (0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*) \(\d{4}-\d{2}-\d{2}\)$")
+HEADING_RE = re.compile(r"## (0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*) \((\d{4}-\d{2}-\d{2})\)$")
 
 
 def parse_version(text):
@@ -37,7 +35,7 @@ def headings(changelog):
     for n, line in enumerate(changelog.splitlines(), 1):
         if line.startswith("## "):
             m = HEADING_RE.fullmatch(line.rstrip())
-            found.append((n, tuple(int(g) for g in m.groups()) if m else None))
+            found.append((n, tuple(int(g) for g in m.groups()[:3]) if m else None))
     return found
 
 
@@ -52,12 +50,20 @@ def follows(newer, older):
     return newer[:2] > older[:2] and newer[2] == 0
 
 
+def check_changelog(changelog):
+    """Every problem with CHANGELOG.md's headings, one sentence each."""
+    return check(None, changelog)
+
+
 def check(version_text, changelog):
-    """Every problem found, as one sentence each; empty when all is well."""
+    """Every problem found, as one sentence each; empty when all is well.
+    version_text: a version to match the newest heading, or None."""
     errors = []
-    version = parse_version(version_text)
-    if version is None:
-        errors.append(f"VERSION should be big.step.bugfix like 0.24.0 on one line, not {version_text!r}")
+    version = None
+    if version_text is not None:
+        version = parse_version(version_text)
+        if version is None:
+            errors.append(f"VERSION should be big.step.bugfix like 0.24.0 on one line, not {version_text!r}")
     found = headings(changelog)
     for n, v in found:
         if v is None:
@@ -81,15 +87,13 @@ def check(version_text, changelog):
 
 def main(argv):
     root = argv[1] if len(argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..")
-    with open(os.path.join(root, "VERSION"), encoding="utf-8") as f:
-        version_text = f.read()
     with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
         changelog = f.read()
-    errors = check(version_text, changelog)
+    errors = check_changelog(changelog)
     for e in errors:
         print(e)
     if not errors:
-        print(f"VERSION {version_text.strip()} matches CHANGELOG.md")
+        print("CHANGELOG.md's headings are in order")
     return 1 if errors else 0
 
 
