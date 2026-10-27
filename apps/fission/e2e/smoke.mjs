@@ -1052,6 +1052,7 @@ try {
     await page.goto(url + "#design");
     // A phone opens with both sheets closed (U5): a new phone browser has no pin (the wide checks above pinned Properties, which would
     // open it here), and a reload starts the page afresh (the same address would keep the sheets left open).
+    await partShown(page); // the first load has fetched the kernel: a reload in the middle would log WebKit's "access control checks" error
     await page.evaluate(() => localStorage.removeItem("fission.properties-pinned"));
     await page.reload();
     await partShown(page);
