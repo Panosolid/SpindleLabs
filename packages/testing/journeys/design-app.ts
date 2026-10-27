@@ -5,7 +5,7 @@
 // kernel; the viewport is a stand-in that keeps the last mesh and the last
 // selection highlight it was asked to draw. Not a journey itself.
 import assert from "node:assert/strict";
-import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 import { designWorkspace, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
@@ -70,8 +70,16 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   const looks: { plane: Plane; side: 1 | -1 }[] = [];
   let drawings: readonly SketchDrawing[] = [];
   let extrudeShown: ExtrudeShow | null = null;
+  /** Kernel calls since `failCall`, and the one to fail (0: none) and where it failed (T6b fault injection). */
+  let calls = 0;
+  let failAt = 0;
+  let failed: string | null = null;
   const counted: KernelCalls = {
     call: ((op: string, ...args: unknown[]) => {
+      if (++calls === failAt) {
+        failed = op;
+        return Promise.reject(new KernelError({ kind: "internal", inputs: [], message: `injected kernel failure (${op})` }));
+      }
       if (op === "body_build") builds++;
       const call = () => (kernel.call as (op: string, ...a: unknown[]) => Promise<unknown>)(op, ...args);
       return gate ? gate.then(call) : call();
@@ -161,6 +169,14 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     /** The properties panel's note on what a rebuild took out of the selection ("" when hidden). */
     note: () => ($("#selection-note")!.hidden ? "" : $("#selection-note")!.textContent),
     builds: () => builds,
+    /** From now, the nth kernel call fails once as an internal kernel error (0: none fails); counts calls afresh either way. */
+    failCall(n: number) {
+      calls = 0;
+      failAt = n;
+      failed = null;
+    },
+    /** Kernel calls since `failCall`, and the op of the one that failed (null when none has). */
+    calls: () => ({ made: calls, failed }),
     /** How many bodies the kernel holds that it didn't hold before this app was made. */
     bodies: async () => ((await kernel.call("body_count")) as number) - startBodies,
     /** The sketch bar's Finish Sketch is on screen: a sketch is open. */

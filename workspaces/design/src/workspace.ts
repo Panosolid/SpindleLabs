@@ -39,6 +39,7 @@ import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, pr
 import { PROJECT_AGAIN, projectedOpen, projectPick } from "./projection.ts";
 import { sketchEdgeTargets } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
+import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
 import { rounding, snapOnSketch, withSnap, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
@@ -104,7 +105,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // The sketch tool is the user's, not a command yet: whether the AI gets
   // create_sketch and draw_line is the AI workstream's call (docs/ai.md).
   const sketchTitle = "Create sketch: draw lines, rectangles, circles and arcs on a plane. Pick the plane, then click.";
-  const extrudeTitle = "Extrude: make a solid from a closed sketch, by a distance you type. A new body in the timeline, at the marker.";
+  const extrudeTitle = "Extrude: make a solid from a closed sketch or a flat face, by a distance you drag or type. A new body in the timeline, at the marker.";
   const create = button("create-sketch", "Create sketch", sketchTitle, onSketch);
   create.dataset.modelling = ""; // hidden while a sketch is edited (SF3b): the sketch's toolbar stands in
   const extrude = button("extrude", "Extrude", extrudeTitle, onExtrude);
@@ -771,6 +772,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   const menuHost: MenuHost = {
     kernel,
+    bodies,
     current: () => designDoc(),
     record(step, next) {
       leaveExtrude();
@@ -921,6 +923,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       lastScene = scene;
       factsButton.disabled = inspecting.none() !== null;
       if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
+      // Extrude opened before this build landed (a slow kernel, a file just opened, an Undo) offered the faces of the scene
+      // before it, or none: they are offered again from this one, so a face is never missing or where the body was.
+      if (extruding && designDoc() === doc) void offerProfiles(doc, [...extruding.usable]);
       const part = partFeature(doc);
       partShown = scene.bodies.find((b) => b.feature === part?.id) ?? (failure === undefined ? null : partShown);
       note = droppedNote(dropped, shared, selectedSketches);
@@ -1348,6 +1353,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   let extruding: {
     usable: ReadonlySet<string>;
+    /** The flat faces of the bodies on screen it can use (UX1c), by face name, each with its sketch of the face's edges (face-extrude.ts). */
+    faces: ReadonlyMap<string, FaceProfile>;
+    /** The flat faces not offered, by name, with why (a face with holes until step 48). */
+    refusedFaces: ReadonlyMap<string, string>;
+    /** A face selected before Extrude (Fusion: select, then the command): chosen once it is offered. */
+    wanted: string | null;
+    /** The sketch or face chosen (a face by its name). */
     sketch: string | null;
     /** The kernel said the chosen sketch's outline closes (checkExtrude): only then is a preview built. */
     closed: boolean;
@@ -1365,6 +1377,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     cancel: () => leaveExtrude(),
   });
   const sketchLabel = (id: string) => sketchItem(designDoc(), id).provenance.self.label;
+  /** What the chosen `id` extrudes: a sketch of the design, or a face's sketch in the design it was offered in (UX1c). */
+  const sourceOf = (id: string): { doc: DesignDocument; sketch: string; label: string; face: FaceProfile | null } => {
+    const face = extruding?.faces.get(id) ?? null;
+    return face ? { doc: face.doc, sketch: face.sketch, label: face.label, face } : { doc: designDoc(), sketch: id, label: sketchLabel(id), face: null };
+  };
 
   /**
    * Extrude: like Finish sketch first when a sketch is being drawn (that
@@ -1381,11 +1398,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const sketches = doc ? doc.timeline.features.filter(isSketchItem) : [];
     const items = doc ? sketches.filter((f) => !f.suppressed && doc.timeline.features.indexOf(f) < insertAt(doc)) : [];
     const selected = ctx.selection.items.length === 1 ? readProfileReference(ctx.selection.items[0]) : null;
-    const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? items.at(-1)?.id ?? null;
-    extruding = { usable: new Set(items.map((f) => f.id)), sketch: chosen, closed: false, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    // A flat face selected first is chosen once it is offered (UX1c); meanwhile nothing is.
+    const wanted = editing === null && ctx.selection.items.length === 1 && ctx.selection.items[0].kind === "face" ? String(ctx.selection.items[0].id) : null;
+    const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? (wanted ? undefined : items.at(-1)?.id) ?? null;
+    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
-    if (items.length === 0) extrudeBox.showStatus(sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
-    else if (!chosen) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
+    // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
+    if (items.length > 0 ? !chosen : sketches.length === 0 && (lastScene?.bodies.length ?? 0) > 0) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
+    else if (items.length === 0) extrudeBox.showStatus(sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
     showExtrudeView();
     if (doc) void offerProfiles(doc, items.map((f) => f.id));
     if (chosen) void checkExtrude(chosen);
@@ -1405,11 +1425,34 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showExtrude({ profiles: e.offered, chosen: e.sketch, preview: e.preview?.mesh ?? null, arrow });
     // Read by the tests: the sketches it can use, the one chosen, and the volume of the body OK would make, as the kernel worked it out.
     const box = ctx.properties.querySelector<HTMLElement>("#extrude-panel");
-    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), chosen: e.sketch ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
+    if (box) Object.assign(box.dataset, { usable: [...e.usable].join(" "), faces: [...e.faces.keys()].join(" "), chosen: e.sketch ?? "", previewVolume: e.preview ? String(e.preview.volume) : "" });
   }
 
-  /** Every usable sketch that makes a closed outline, offered to click (asked of the kernel at once, none waiting on another). */
+  /**
+   * Every usable sketch that makes a closed outline, then every flat face of
+   * the bodies on screen whose edges do (UX1c), offered to click (asked of
+   * the kernel at once, none waiting on another). Sketches come first, so a
+   * sketch drawn on a face wins a click on both.
+   */
   async function offerProfiles(doc: DesignDocument, ids: readonly string[]) {
+    const scene = lastScene;
+    const faces = new Map<string, FaceProfile>();
+    const refusedFaces = new Map<string, string>();
+    for (const f of sketchableFaces(scene)) {
+      const made = faceProfile(doc, scene, f);
+      if (made !== null && !("refused" in made)) faces.set(made.face, made);
+    }
+    // A face whose edges make no one closed outline (one with holes, until step 48) is not offered; a click on it says why.
+    const faceOffers = Promise.all([...faces.values()].map(async (f): Promise<OfferedProfile | null> => {
+      try {
+        const out = await askOutline(kernel, sketchCurves(f.doc.sketches.find((s) => s.id === f.sketch)!));
+        if ("closed" in out) return { id: f.face, plane: f.plane, outline: out.closed, face: true };
+        refusedFaces.set(f.face, faceOpen(out.open));
+      } catch (e) {
+        refusedFaces.set(f.face, `This face can't be extruded: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return null;
+    }));
     const offered = await Promise.all(ids.map(async (id): Promise<OfferedProfile | null> => {
       const sketch = doc.sketches.find((s) => s.id === id);
       if (!sketch || sketch.curves.length === 0 || projectedOpen(sketch) !== null) return null;
@@ -1420,17 +1463,32 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         return null; // a sketch the kernel refuses is not offered; its status says why when it is chosen
       }
     }));
+    const facesOffered = (await faceOffers).filter((p) => p !== null);
     if (!extruding || designDoc() !== doc) return;
-    extruding.offered = offered.filter((p) => p !== null);
+    extruding.offered = [...offered.filter((p) => p !== null), ...facesOffered];
+    const before = extruding.faces;
+    extruding.faces = new Map(facesOffered.map((p) => [p.id, faces.get(p.id)!]));
+    extruding.refusedFaces = refusedFaces;
+    // Offered again from a newer scene: a face chosen from the old one is checked and previewed again from its new
+    // outline, or let go if this scene has no such flat face.
+    const was = extruding.sketch;
+    if (was !== null && before.has(was)) {
+      if (!extruding.faces.has(was)) chooseProfile(null);
+      else if (before.get(was) !== extruding.faces.get(was)) void checkExtrude(was);
+    }
+    const wanted = extruding.wanted;
+    extruding.wanted = null;
+    if (wanted !== null && extruding.sketch === null && extruding.faces.has(wanted)) chooseProfile(wanted);
+    else if (extruding.sketch === null && extruding.offered.length === 0 && ids.length === 0) extrudeBox.showStatus(doc.sketches.length > 0 ? NO_USABLE_SKETCH : NO_SKETCH, false);
     showExtrudeView();
   }
 
   /** Another sketch chosen (a click in the view, its row in the browser, or ✕ for none): its preview and arrow start again. */
   function chooseProfile(id: string | null) {
     const e = extruding;
-    if (!e || e.sketch === id || (id !== null && !e.usable.has(id))) return;
+    if (!e || e.sketch === id || (id !== null && !e.usable.has(id) && !e.faces.has(id))) return;
     Object.assign(e, { sketch: id, closed: false, base: null, preview: null, arrow: null });
-    extrudeBox.showProfile(id ? sketchLabel(id) : null);
+    extrudeBox.showProfile(id ? sourceOf(id).label : null);
     extrudeBox.showError("");
     if (id) void checkExtrude(id);
     else extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
@@ -1452,7 +1510,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // none keeps the choice, as Fusion does); the arrow dragged sets the distance in whole mm.
   const onExtrudePointer: SharedViewport["onExtrudePointer"] = (pointer) => {
     if (!extruding) return;
-    if (pointer.kind === "pick") return void (pointer.profile !== null && chooseProfile(pointer.profile));
+    if (pointer.kind === "pick") {
+      if (pointer.profile !== null) return void chooseProfile(pointer.profile);
+      // On no outline but on a face that can't be extruded (a curved one, one with holes): say why, keeping the choice.
+      const made = pointer.face != null ? faceProfile(designDoc(), lastScene, pointer.face) : null;
+      const why = made === null ? undefined : "refused" in made ? made.refused : extruding.refusedFaces.get(made.face);
+      if (why) extrudeBox.showError(why);
+      return;
+    }
     const d = snapDistance(pointer.distance);
     if (d === extruding.distance) return;
     extrudeBox.showDistance(String(d));
@@ -1484,16 +1549,17 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const id = e?.sketch;
     const d = e?.distance;
     if (!e || !id || !e.closed || d === null || d === undefined) return;
-    const doc = designDoc();
+    // A face's sketch lives in the design it was offered in (UX1c), a sketch in the design now.
+    const { doc, sketch } = sourceOf(id);
     try {
       if (e.base?.doc !== doc || e.base.sketch !== id) {
-        const made = extrudeSketch(doc, id, 1);
+        const made = extrudeSketch(doc, sketch, 1);
         const spec = await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!);
         if (extruding !== e || e.sketch !== id) return;
         e.base = { doc, sketch: id, spec };
       }
       const handle = await kernel.call("body_build", previewSpec(e.base.spec, d));
-      const view = await kernel.call("body_view", handle).finally(() => void kernel.call("body_free", handle).catch(() => {}));
+      const view = await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       // Out of date: another sketch chosen or the panel closed. A newer distance only means another build follows.
       if (extruding !== e || e.sketch !== id) return;
       e.preview = e.distance === null ? null : view;
@@ -1509,17 +1575,18 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Says whether the chosen sketch makes a closed outline (OK on, and its preview built) or the kernel's reason it doesn't (OK off). */
   const extrudeOutline = latestOnly((curves: ReturnType<typeof sketchCurves>) => askOutline(kernel, curves));
   async function checkExtrude(id: string) {
-    const doc = designDoc();
-    const sketch = doc.sketches.find((s) => s.id === id);
+    const source = sourceOf(id);
+    const sketch = source.doc.sketches.find((s) => s.id === source.sketch);
     if (!sketch) return;
-    const name = sketchItem(doc, id).provenance.self.label;
+    const name = source.label;
     extrudeBox.showStatus(sketch.curves.length === 0 ? `${name} has nothing drawn yet.` : `Checking ${name}…`, false);
     if (sketch.curves.length === 0) return;
     try {
       const { current, value } = await extrudeOutline(sketchCurves(sketch));
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
-        extrudeBox.showStatus(`${name} makes a closed outline.`, true);
+        // A face's extrude is a new body until Combine (35f): said plainly (UX1c).
+        extrudeBox.showStatus(source.face ? `${name} makes a closed outline. ${FACE_NEW_BODY}` : `${name} makes a closed outline.`, true);
         extruding.closed = true;
         refreshPreview();
       } else extrudeBox.showStatus(`${name} can't be extruded: it doesn't make one closed outline (${value.open}).`, false);
@@ -1530,7 +1597,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
 
   /**
    * OK: the kernel builds the extrude first; only one that builds is
-   * recorded, as one undo step ("Extrude Sketch 1"). A negative distance
+   * recorded, as one undo step ("Extrude Sketch 1"; a face's sketch and its
+   * extrude together, "Extrude Face of Box 1", UX1c). A negative distance
    * goes the other way (recorded as Flip). A refused distance keeps the
    * panel open and says why.
    */
@@ -1541,9 +1609,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (typed.trim() === "" || !Number.isFinite(distance)) return extrudeBox.showError("Type the distance in mm.");
     if (distance === 0) return extrudeBox.showError(ZERO_DISTANCE);
     const before = designDoc();
+    const source = sourceOf(id);
+    // A face offered in another design is out of date (that design changed since).
+    if (source.face && source.face.from !== before) return;
     let made: ReturnType<typeof extrudeSketch>;
     try {
-      made = extrudeSketch(before, id, Math.abs(distance), distance < 0);
+      made = extrudeSketch(source.doc, source.sketch, Math.abs(distance), distance < 0);
       await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
     } catch (e) {
       if (extruding?.sketch === id) extrudeBox.showError(e instanceof Error ? e.message : String(e));
@@ -1554,7 +1625,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
-    await update(extrudeStep(before, id), undefined, made.doc);
+    await update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, made.doc);
   }
 
   // Edit feature (step 25a2): an earlier feature's sizes from its timeline item or browser row.

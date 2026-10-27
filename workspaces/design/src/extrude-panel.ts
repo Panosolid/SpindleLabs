@@ -42,7 +42,7 @@ export interface ExtrudePanel {
 }
 
 /** What the profile row says while none is chosen. */
-export const PICK_PROFILE = "Click a closed sketch in the view";
+export const PICK_PROFILE = "Click a closed sketch or a flat face in the view";
 
 export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): ExtrudePanel {
   const document = slot.ownerDocument;
