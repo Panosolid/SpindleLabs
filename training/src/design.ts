@@ -16,10 +16,12 @@
 // reason. From AI7a an empty sketch can be started on an origin plane
 // (create_sketch): the plane named by its letters or by its place ("the
 // top plane" is XY, "the front" XZ, "the right" YZ, as the view cube
-// names them); drawing in it still can't be done, until AI7b.
+// names them). From AI7b a circle, a rectangle or a line can be drawn in
+// it (the sketch is started in the same answer, then drawn in); arcs
+// still can't be.
 
 import type { Command, KernelCalls } from "@fission/core";
-import { buildSpec, documentFor, lastFeature, SHAPES, SKETCH_PLANES, specOf } from "@fission/design";
+import { buildSpec, documentFor, drawWords, lastFeature, SHAPES, SKETCH_PLANES, specOf, type DesignDocument } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 import { pick, randomLength, randomSize, randomUnit, unitAfter, type Length } from "./lengths.ts";
 import { CANNOT } from "./working.ts";
@@ -83,20 +85,39 @@ export const DESIGN_RULES: readonly CommandRule[] = [
     async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
       // Design's own document for it (a sketch builds no body, so there is nothing for the kernel to check).
       try {
-        const doc = documentFor(command);
+        const doc = documentFor(command, state.sketched);
         const sketch = doc.timeline.features.at(-1)!;
         if (sketch.intent.type !== "sketch" || sketch.intent.parameters.plane !== command.on) return { ok: false, reason: `the sketch is not on ${String(command.on)}` };
-        return { ok: true, state: { ...state, sketches: [...(state.sketches ?? []), String(command.on)] } };
+        return { ok: true, state: { ...state, sketched: doc } };
       } catch (e) {
         return { ok: false, reason: `Design refused it: ${reason(e)}` };
       }
     },
     says: (c) => `${SKETCHED} ${String(c.on)} plane`,
   },
+  drawRule("draw_circle"),
+  drawRule("draw_rectangle"),
+  drawRule("draw_line"),
 ];
 
+/** A draw command (AI7b), drawn as Design draws it in the sketch just started; its words are the preview's (`drawWords`). */
+function drawRule(op: string): CommandRule {
+  return {
+    op,
+    async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      if (!state.sketched) return { ok: false, reason: "there is no sketch to draw in" };
+      try {
+        return { ok: true, state: { ...state, sketched: documentFor(command, state.sketched as DesignDocument) } };
+      } catch (e) {
+        return { ok: false, reason: `Design refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => drawWords(c),
+  };
+}
+
 /** What the working out says a create_sketch makes, before the plane's letters. */
-const SKETCHED = "new empty sketch on the";
+const SKETCHED = "new sketch on the";
 
 // ---- Setups: a part that already exists, in mm as the system prompt shows it.
 
@@ -356,21 +377,58 @@ function sketchDraft(r: SeededRandom): Draft {
   return { task: "create", setup, prompt: sentence(prompt), explanation: working([...which, ...kept, `So there is a ${SKETCHED} ${plane} plane, ready to draw in.`]), commands: [{ op: "create_sketch", on: plane }] };
 }
 
+/** "Sketch a circle 2 cm across on the front plane": a sketch on the plane meant, then the drawing, centred on the sketch's origin unless a centre is given (AI7b). */
+function drawDraft(r: SeededRandom): Draft {
+  const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
+  const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
+  const on = pick(r, [`on the ${word} plane`, `on ${word}`]);
+  const which = word === plane ? [] : [`The ${word} plane is the ${plane} plane.`];
+  const unit = randomUnit(r);
+  const L = () => randomLength(r, unit);
+  const sketch = { op: "create_sketch", on: plane };
+  const so = (c: Command) => `So there is a ${SKETCHED} ${plane} plane, and in it a ${drawWords(c)}.`;
+  const kind = pick(r, ["circle", "circle", "rectangle", "line"]);
+  // A centre now and then, in whole mm, written "(x, y)": coordinates in the sketch are millimetres.
+  const centre = r.next() < 0.3 ? { x: Math.round(r.next() * 100) - 50, y: Math.round(r.next() * 100) - 50 } : null;
+  const at = centre ? ` centred at (${centre.x}, ${centre.y}) mm` : "";
+  const centreSays = centre ? ["The centre is given in mm in the sketch."] : ["It is centred on the sketch's origin."];
+  if (kind === "circle") {
+    const size = L();
+    const radius = r.next() < 0.4;
+    const diameter = radius ? round12(2 * size.mm) : size.mm;
+    const how = radius ? pick(r, [`with a radius of ${size.text}`, `of radius ${size.text}`]) : pick(r, [`${size.text} across`, `with a diameter of ${size.text}`]);
+    const prompt = pick(r, [`sketch a circle ${how}${at} ${on}.`, `in a sketch ${on}, draw a circle ${how}${at}.`]);
+    const c: Command = { op: "draw_circle", diameter, ...(centre ?? {}) };
+    const sum = radius ? [`The diameter is twice the radius: 2 × ${size.mm} = ${diameter} mm.`] : [];
+    return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, ...conversions([size]), ...sum, ...centreSays, so(c)]), commands: [sketch, c] };
+  }
+  if (kind === "rectangle") {
+    const [w, h] = [L(), L()];
+    const prompt = pick(r, [`draw a ${w.text} by ${h.text} rectangle${at} in a sketch ${on}.`, `sketch a rectangle ${w.text} wide and ${h.text} high${at} ${on}.`]);
+    const c: Command = { op: "draw_rectangle", width: w.mm, height: h.mm, ...(centre ?? {}) };
+    return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, ...conversions([w, h]), "The first size is along the sketch's x, the second along its y.", ...centreSays, so(c)]), commands: [sketch, c] };
+  }
+  const p = () => Math.round(r.next() * 200) - 100;
+  let [x1, y1, x2, y2] = [p(), p(), p(), p()];
+  if (x1 === x2 && y1 === y2) x2 += 10;
+  const prompt = pick(r, [`draw a line from (${x1}, ${y1}) to (${x2}, ${y2}) mm in a sketch ${on}.`, `sketch a line from (${x1}, ${y1}) to (${x2}, ${y2}) mm ${on}.`]);
+  const c: Command = { op: "draw_line", x1, y1, x2, y2 };
+  return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, "The ends are given in mm in the sketch.", so(c)]), commands: [sketch, c] };
+}
+
 // ---- Requests no command can do yet: the answer is no commands and a plain reason (AI5c).
 
 const PLANES = ["top", "front", "right", "XY", "XZ", "YZ"];
 /** What can be done now, said the same way in every refusal. */
-const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting an empty sketch on a plane.";
+const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane and drawing circles, rectangles and lines in it.";
 
 /** A request that needs a command Design doesn't offer, and what it would need. Each mentions what it can't do by name, so the words alone say why. */
 function cannotAsk(r: SeededRandom): { prompt: string; needs: string; onPart: boolean } {
   const L = () => randomLength(r, randomUnit(r)).text;
   const plane = pick(r, PLANES);
   return pick(r, [
-    // A sketch can be started (AI7a), but nothing drawn in it yet (AI7b): all or nothing, so no commands.
-    () => ({ prompt: `sketch a circle ${L()} across on the ${plane} plane.`, needs: "drawing in a sketch", onPart: false }),
-    () => ({ prompt: `draw a ${L()} by ${L()} rectangle in a sketch on the ${plane} plane.`, needs: "drawing in a sketch", onPart: false }),
-    () => ({ prompt: `draw a line ${L()} long on the top face.`, needs: "drawing in a sketch", onPart: true }),
+    // Circles, rectangles and lines can be drawn (AI7b), arcs not yet: all or nothing, so no commands.
+    () => ({ prompt: `draw an arc of radius ${L()} in a sketch on the ${plane} plane.`, needs: "drawing arcs", onPart: false }),
     () => ({ prompt: `put a ${L()} hole in the centre of the top face.`, needs: "a hole", onPart: true }),
     () => ({ prompt: `drill a ${L()} hole through it.`, needs: "a hole", onPart: true }),
     () => ({ prompt: `fillet all the edges with a ${L()} radius.`, needs: "rounding edges (a fillet)", onPart: true }),
@@ -424,5 +482,6 @@ export const DESIGN_RECIPES: readonly Recipe[] = [
     },
   },
   { id: "design.sketch", ops: ["create_sketch", "set_part"], sample: sketchDraft },
+  { id: "design.sketch-draw", ops: ["create_sketch", "draw_circle", "draw_rectangle", "draw_line"], sample: drawDraft },
   { id: "design.cannot", ops: ["set_part"], sample: cannotDraft },
 ];

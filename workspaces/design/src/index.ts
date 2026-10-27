@@ -1,7 +1,7 @@
 // @fission/design: the CAD workspace, the source of truth for all geometry.
 export { outline, type ProfileKind, type ShapeKind, type Loop, type Outline } from "./profiles.ts";
 export { designWorkspace } from "./workspace.ts";
-export { DESIGN_COMMANDS, documentFor, SHAPES } from "./commands.ts";
+export { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, drawWords, SHAPES, SKETCH_REACH } from "./commands.ts";
 export { AI_FACES, AI_TIMELINE_ITEMS, aiCommands, aiFaces, designAIView, facingWords, type AIFace, type PanelSizes } from "./ai-view.ts";
 export { bodyFeatures, bodyRows, browserTree, rowReference, rowReferences, type BrowserNode } from "./browser.ts";
 export { parameterRows, propertiesPanel, SIZE_KEYS, type ParameterRow, type Verb, type PropertiesPanel, type SizeKey } from "./properties.ts";
