@@ -40,8 +40,8 @@ jobs:
   # A pull request's own run is quick only while main requires the merge
   # queue, which then runs the whole suite on the commit that merges. If this
   # job fails, the jobs below run in full (they test `!= 'false'`), never less.
-  # docs: every changed file is writing (docs/, CHANGELOG.md, README.md,
-  # VERSION, any CLAUDE.md; a merge queue group's files against main's): the
+  # docs: every changed file is writing (docs/, changelog.d/, CHANGELOG.md,
+  # README.md, VERSION, any CLAUDE.md; a merge queue group's files against main's): the
   # kernel job runs only the CI scripts' tests, the rest skip. A skipped job
   # counts as passed for main's ruleset (and automerge.py's PASSING); they
   # skip only on an explicit 'true'.
@@ -68,7 +68,8 @@ jobs:
 
   # Required. Quick: clippy, the tests and the CI scripts' tests (about 2.5
   # minutes); full adds the same-answer and oracle checks (about 7). Docs
-  # only: just the CI scripts' tests (VERSION against CHANGELOG.md among them).
+  # only: just the CI scripts' tests (CHANGELOG.md and changelog.d/ among
+  # them) and a pull request's changelog entry.
   kernel:
     needs: mode
     if: ${{ !cancelled() }}
@@ -77,7 +78,17 @@ jobs:
     env:
       CODE: ${{ needs.mode.outputs.docs != 'true' }}
     steps:
+      # Two commits: a pull request's run tests GitHub's merge of it into
+      # main, whose first parent is main, for the changelog entry check.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # A pull request adds one entry file in changelog.d/ (or only folds
+      # them into CHANGELOG.md), never changes a merged one and never writes
+      # a version heading: numbers are given by merge order (changelog.py).
+      - name: The pull request's changelog entry
+        if: github.event_name == 'pull_request'
+        run: python3 .github/scripts/changelog.py pr HEAD^1 HEAD
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         if: env.CODE == 'true'
         with:
