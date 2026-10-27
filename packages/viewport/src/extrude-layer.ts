@@ -17,8 +17,8 @@ type Vec3 = [number, number, number];
 
 /** The fills' and the preview's blue (the sketch lines' own), and the arrow's, orange while the pointer is on it. */
 export const EXTRUDE_COLOURS = { fill: 0x6cc4ff, preview: 0x4aa3ff, arrow: 0x4aa3ff, arrowHot: 0xffb454 };
-/** How see-through an outline's fill is: offered, under the pointer, chosen. */
-export const FILL_OPACITY = { offered: 0.16, hover: 0.36, chosen: 0.5 };
+/** How see-through an outline's fill is: offered, under the pointer, chosen; a flat face offered (UX1c) is not drawn until the pointer is on it, since the body shows it already. */
+export const FILL_OPACITY = { offered: 0.16, faceOffered: 0, hover: 0.36, chosen: 0.5 };
 /** How see-through the preview's faces are (its edges are drawn solid). */
 export const PREVIEW_OPACITY = 0.45;
 
@@ -47,6 +47,8 @@ export class ExtrudeLayer {
   private arrow = new THREE.Group();
   private shown: ExtrudeShow | null = null;
   private fillMeshes = new Map<string, THREE.Mesh>();
+  /** The offered profiles that are flat faces (UX1c). */
+  private faces = new Set<string>();
   private hover: string | null = null;
   private arrowHot = false;
   private arrowMaterial = new THREE.MeshBasicMaterial({ color: EXTRUDE_COLOURS.arrow, depthTest: false, depthWrite: false, transparent: true });
@@ -83,7 +85,9 @@ export class ExtrudeLayer {
   private drawFills(profiles: readonly OfferedProfile[]) {
     dispose(this.fills);
     this.fillMeshes.clear();
+    this.faces.clear();
     for (const p of profiles) {
+      if (p.face) this.faces.add(p.id);
       const shape = new THREE.Shape(loopPoints(p.outline.outer).map(([x, y]) => new THREE.Vector2(x, y)));
       for (const hole of p.outline.holes) shape.holes.push(new THREE.Path(loopPoints(hole).map(([x, y]) => new THREE.Vector2(x, y))));
       const geometry = new THREE.ShapeGeometry(shape);
@@ -132,7 +136,7 @@ export class ExtrudeLayer {
 
   private paint() {
     for (const [id, mesh] of this.fillMeshes) {
-      (mesh.material as THREE.MeshBasicMaterial).opacity = id === this.shown?.chosen ? FILL_OPACITY.chosen : id === this.hover ? FILL_OPACITY.hover : FILL_OPACITY.offered;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = id === this.shown?.chosen ? FILL_OPACITY.chosen : id === this.hover ? FILL_OPACITY.hover : this.faces.has(id) ? FILL_OPACITY.faceOffered : FILL_OPACITY.offered;
     }
     this.arrowMaterial.color.setHex(this.arrowHot ? EXTRUDE_COLOURS.arrowHot : EXTRUDE_COLOURS.arrow);
   }

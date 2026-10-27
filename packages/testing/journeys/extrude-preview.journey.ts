@@ -45,6 +45,8 @@ async function type(a: App, text: string) {
 
 const panel = (a: App) => a.$("#extrude-panel")!;
 const shown = (a: App) => a.extrudeShown();
+/** The sketches' outlines offered (the box's flat faces are offered after them since UX1c: face-extrude.journey.ts). */
+const sketchOffers = (a: App) => shown(a)!.profiles.filter((p) => !p.face);
 const previewVolume = (a: App) => Number(panel(a).dataset.previewVolume);
 
 /** The body the last feature of the document builds, as the kernel views it (built, read and freed). */
@@ -62,7 +64,7 @@ test("hand-worked: the newest sketch is chosen, both closed outlines offered, an
   const a = await app(twoSketches());
   await openExtrude(a);
   const sketches = a.doc().sketches.map((s) => s.id);
-  assert.deepEqual(shown(a)!.profiles.map((p) => p.id), sketches, "both sketches close, so both are offered in the view");
+  assert.deepEqual(sketchOffers(a).map((p) => p.id), sketches, "both sketches close, so both are offered in the view");
   // The newest, Sketch 2: a circle of radius 5 by the default 10 mm, π · 25 · 10 = 785.398 mm³.
   assert.equal(shown(a)!.chosen, sketches[1]);
   assert.equal(a.$("#extrude-profile")!.textContent, "Sketch 2");
@@ -135,7 +137,7 @@ test("Escape, Cancel and ✕ leave nothing behind; a 0 or empty box shows no pre
   await a.settle();
   assert.equal(shown(a)!.chosen, null);
   assert.equal(shown(a)!.preview, null);
-  assert.equal(a.$("#extrude-profile")!.textContent, "Click a closed sketch in the view");
+  assert.equal(a.$("#extrude-profile")!.textContent, "Click a closed sketch or a flat face in the view");
   assert.equal(a.$("#extrude-status")!.textContent, PICK_PROFILE_STATUS);
   assert.equal((a.$("#extrude-ok") as HTMLButtonElement).disabled, true);
   await a.extrudePointer({ kind: "pick", profile: a.doc().sketches[0].id });
@@ -180,7 +182,7 @@ test("a sketch's row in the browser chooses it, as a click on its outline does; 
   // Sketch 2 suppressed: only Sketch 1 is offered, and a pick of Sketch 2 (a stale click) is refused.
   const b = await app(suppressItem(twoSketches(), second, true));
   await openExtrude(b);
-  assert.deepEqual(shown(b)!.profiles.map((p) => p.id), [first]);
+  assert.deepEqual(sketchOffers(b).map((p) => p.id), [first]);
   assert.equal(shown(b)!.chosen, first);
   await b.extrudePointer({ kind: "pick", profile: second });
   assert.equal(shown(b)!.chosen, first);
@@ -188,7 +190,7 @@ test("a sketch's row in the browser chooses it, as a click on its outline does; 
   // Every sketch unusable: the panel says why, nothing is offered.
   const c = await app(suppressItem(suppressItem(twoSketches(), second, true), first, true));
   await openExtrude(c);
-  assert.deepEqual(shown(c)!.profiles, []);
+  assert.deepEqual(sketchOffers(c), []);
   assert.equal(c.$("#extrude-status")!.textContent, NO_USABLE_SKETCH);
   assert.ok(await c.close());
 });
@@ -200,7 +202,7 @@ test("an open sketch chosen: no preview however the distance is typed, no error 
   const a = await app(doc);
   await openExtrude(a);
   assert.equal(shown(a)!.chosen, s3.id, "the newest is chosen, open or not");
-  assert.deepEqual(shown(a)!.profiles.map((p) => p.id), a.doc().sketches.slice(0, 2).map((s) => s.id), "only the two closed ones are offered");
+  assert.deepEqual(sketchOffers(a).map((p) => p.id), a.doc().sketches.slice(0, 2).map((s) => s.id), "only the two closed ones are offered");
   assert.match(a.$("#extrude-status")!.textContent!, /^Sketch 3 can't be extruded: it doesn't make one closed outline/);
   await type(a, "5");
   assert.equal(shown(a)!.preview, null);
