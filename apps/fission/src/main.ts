@@ -859,7 +859,13 @@ for (const slot of ["browser", "properties"] as const) {
     $("workspace").dataset[slot] = open ? "open" : "closed";
   };
   set(toggle.getAttribute("aria-expanded") === "true");
-  toggle.addEventListener("click", () => set(toggle.getAttribute("aria-expanded") !== "true"));
+  toggle.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") !== "true";
+    // At phone width each opens as a sheet over the view (styles/phone-sheet.css): one at a time.
+    if (open) for (const other of ["browser", "properties"] as const) if (other !== slot) $(`${other}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+    set(open);
+  });
+  toggle.addEventListener("sheet-close", () => set(false));
 }
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
 const fromHash = (): Page => {
