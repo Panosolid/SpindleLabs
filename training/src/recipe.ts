@@ -5,12 +5,15 @@
 // it, so the data grows as commands arrive.
 
 import type { BodySpec, Command, KernelCalls } from "@fission/core";
+import type { DesignDocument } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 
 /** What replaying commands has built so far. Grows a field per workspace as commands arrive. */
 export interface ReplayState {
   /** Design's part, once a set_part has built one. */
   part?: BodySpec;
+  /** Design's document with the sketches create_sketch started and what was drawn in them (AI7a, AI7b). */
+  sketched?: DesignDocument;
 }
 
 export type Applied = { ok: true; state: ReplayState } | { ok: false; reason: string };

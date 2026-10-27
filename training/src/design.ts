@@ -13,10 +13,18 @@
 // what the part ends up as. It is written from the same lengths as the
 // command, never from the command, so a wrong reading shows in the sums.
 // A request no command can do ("cannot") gets no commands and a plain
-// reason.
+// reason. From AI7a an empty sketch can be started on an origin plane
+// (create_sketch): the plane named by its letters or by its place ("the
+// top plane" is XY, "the front" XZ, "the right" YZ, as the view cube
+// names them). From AI7b a circle, a rectangle or a line can be drawn in
+// it (the sketch is started in the same answer, then drawn in); arcs
+// still can't be. From AI7c a drawn circle or rectangle can be extruded
+// by a distance (extrude_sketch, the other way when negative). From AI7d an
+// item can be renamed (rename_item): a sketch that is already there, named
+// "Sketch 2", or the one just started in the same answer.
 
 import type { Command, KernelCalls } from "@fission/core";
-import { buildSpec, documentFor, lastFeature, SHAPES, specOf } from "@fission/design";
+import { buildSpec, documentFor, drawWords, EXTRUDE_OP, extrudeWords, featureSpec, lastFeature, RENAME_OP, renameWords, SHAPES, SKETCH_PLANES, specOf, type DesignDocument } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 import { pick, randomLength, randomSize, randomUnit, unitAfter, type Length } from "./lengths.ts";
 import { CANNOT } from "./working.ts";
@@ -75,7 +83,78 @@ export const DESIGN_RULES: readonly CommandRule[] = [
     },
     says: () => EXPORTED,
   },
+  {
+    op: "create_sketch",
+    async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      // Design's own document for it (a sketch builds no body, so there is nothing for the kernel to check).
+      try {
+        const doc = documentFor(command, state.sketched);
+        const sketch = doc.timeline.features.at(-1)!;
+        if (sketch.intent.type !== "sketch" || sketch.intent.parameters.plane !== command.on) return { ok: false, reason: `the sketch is not on ${String(command.on)}` };
+        return { ok: true, state: { ...state, sketched: doc } };
+      } catch (e) {
+        return { ok: false, reason: `Design refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => `${SKETCHED} ${String(c.on)} plane`,
+  },
+  drawRule("draw_circle"),
+  drawRule("draw_rectangle"),
+  drawRule("draw_line"),
+  {
+    op: EXTRUDE_OP,
+    async apply(kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      if (!state.sketched) return { ok: false, reason: "there is no sketch to extrude" };
+      try {
+        // Design's own document for it, then the kernel builds the body: an outline that is not closed, or a size it refuses, is a refusal.
+        const doc = documentFor(command, state.sketched);
+        const spec = await featureSpec(kernel, doc, lastFeature(doc));
+        const view = await buildSpec(kernel, spec);
+        if (view.errors.length > 0) return { ok: false, reason: `the kernel's checks failed: ${view.errors.join("; ")}` };
+        if (!(view.volume > 0)) return { ok: false, reason: `the body has no volume (${view.volume})` };
+        return { ok: true, state: { ...state, sketched: doc, part: spec } };
+      } catch (e) {
+        return { ok: false, reason: `the kernel refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => extrudeWords(c),
+  },
+  {
+    op: RENAME_OP,
+    async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      if (!state.sketched) return { ok: false, reason: "there is no item to rename" };
+      try {
+        // Design's own document for it (a name builds nothing, so there is no kernel to ask); the name must be the item's afterwards.
+        const doc = documentFor(command, state.sketched);
+        const names = doc.timeline.features.map((f) => f.provenance.self.label);
+        if (!names.includes(String(command.name))) return { ok: false, reason: `no item is named ${String(command.name)} afterwards` };
+        return { ok: true, state: { ...state, sketched: doc } };
+      } catch (e) {
+        return { ok: false, reason: `Design refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => renameWords(c),
+  },
 ];
+
+/** A draw command (AI7b), drawn as Design draws it in the sketch just started; its words are the preview's (`drawWords`). */
+function drawRule(op: string): CommandRule {
+  return {
+    op,
+    async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      if (!state.sketched) return { ok: false, reason: "there is no sketch to draw in" };
+      try {
+        return { ok: true, state: { ...state, sketched: documentFor(command, state.sketched as DesignDocument) } };
+      } catch (e) {
+        return { ok: false, reason: `Design refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => drawWords(c),
+  };
+}
+
+/** What the working out says a create_sketch makes, before the plane's letters. */
+const SKETCHED = "new sketch on the";
 
 // ---- Setups: a part that already exists, in mm as the system prompt shows it.
 
@@ -316,21 +395,128 @@ function shapeEdit(r: SeededRandom, from: Part): Draft | null {
 
 const EXPORT_WORDS = ["export it as an STL", "download it as an STL file", "save it as an STL for printing", "give me the STL file", "export the STL"];
 
+// ---- Starting a sketch (AI7a).
+
+type Plane = (typeof SKETCH_PLANES)[number];
+/** The origin planes by their place, as the view cube names the side each faces (Z up, the front looking along −Y). */
+const PLANE_PLACES: Record<string, Plane> = { top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" };
+
+/** "Start a new sketch on the front plane": an empty sketch on the plane meant; the working out says which plane a place word is. */
+function sketchDraft(r: SeededRandom): Draft {
+  const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
+  const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
+  const on = pick(r, [`on the ${word} plane`, `on ${word}`, ...(word === plane ? [`on the ${word}`] : [])]);
+  const prompt = pick(r, [`start a new sketch ${on}.`, `create a sketch ${on}.`, `new sketch ${on}.`, `I want to sketch ${on}.`, `can you start a sketch ${on}?`, `open a new sketch ${on}, please.`]);
+  // A sketch never changes the part, so it is asked about a new project or one with a part alike.
+  const setup = r.next() < 0.5 ? [randomPart(r)] : [];
+  const which = word === plane ? [] : [`The ${word} plane is the ${plane} plane.`];
+  const kept = setup.length > 0 ? ["The part stays as it is."] : [];
+  return { task: "create", setup, prompt: sentence(prompt), explanation: working([...which, ...kept, `So there is a ${SKETCHED} ${plane} plane, ready to draw in.`]), commands: [{ op: "create_sketch", on: plane }] };
+}
+
+/** "Sketch a circle 2 cm across on the front plane": a sketch on the plane meant, then the drawing, centred on the sketch's origin unless a centre is given (AI7b). */
+function drawDraft(r: SeededRandom, extrude = false): Draft | null {
+  const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
+  const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
+  const on = pick(r, [`on the ${word} plane`, `on ${word}`]);
+  const which = word === plane ? [] : [`The ${word} plane is the ${plane} plane.`];
+  const unit = randomUnit(r);
+  const L = () => randomLength(r, unit);
+  const sketch = { op: "create_sketch", on: plane };
+  const so = (c: Command) => `So there is a ${SKETCHED} ${plane} plane, and in it a ${drawWords(c)}.`;
+  // An extrude needs a closed outline: a circle or a rectangle, never a single line.
+  const kind = extrude ? pick(r, ["circle", "rectangle"]) : pick(r, ["circle", "circle", "rectangle", "line"]);
+  // How far, and which way (AI7c): a negative distance goes the other way from the sketch's plane.
+  const dist = extrude ? L() : null;
+  const back = dist !== null && r.next() < 0.25;
+  const distance = dist === null ? 0 : back ? -dist.mm : dist.mm;
+  const also = dist === null ? [] : [dist];
+  const extrudes = dist === null ? null : (back ? pick(r, [`then extrude it ${dist.text} the other way.`, `and extrude it the other way by ${dist.text}.`]) : pick(r, [`then extrude it ${dist.text}.`, `and extrude it by ${dist.text}.`, `then extrude it by ${dist.text}.`]));
+  const ends = (c: Command) => (dist === null ? [so(c)] : [so(c), ...(back ? [`The other way is a negative distance: −${dist.mm} mm.`] : []), `Then ${extrudeWords({ op: EXTRUDE_OP, distance })}.`]);
+  const asked = (prompt: string) => sentence(extrudes === null ? prompt : `${prompt.replace(/\.$/, "")}, ${extrudes}`);
+  const finish = (c: Command): Command[] => (dist === null ? [sketch, c] : [sketch, c, { op: EXTRUDE_OP, distance }]);
+  // A centre now and then, in whole mm, written "(x, y)": coordinates in the sketch are millimetres.
+  const centre = r.next() < 0.3 ? { x: Math.round(r.next() * 100) - 50, y: Math.round(r.next() * 100) - 50 } : null;
+  const at = centre ? ` centred at (${centre.x}, ${centre.y}) mm` : "";
+  const centreSays = centre ? ["The centre is given in mm in the sketch."] : ["It is centred on the sketch's origin."];
+  if (kind === "circle") {
+    const size = L();
+    const radius = r.next() < 0.4;
+    const diameter = radius ? round12(2 * size.mm) : size.mm;
+    const how = radius ? pick(r, [`with a radius of ${size.text}`, `of radius ${size.text}`]) : pick(r, [`${size.text} across`, `with a diameter of ${size.text}`]);
+    const prompt = pick(r, [`sketch a circle ${how}${at} ${on}.`, `in a sketch ${on}, draw a circle ${how}${at}.`]);
+    const c: Command = { op: "draw_circle", diameter, ...(centre ?? {}) };
+    const sum = radius ? [`The diameter is twice the radius: 2 × ${size.mm} = ${diameter} mm.`] : [];
+    return { task: "create", setup: [], prompt: asked(prompt), explanation: working([...which, ...conversions([size, ...also]), ...sum, ...centreSays, ...ends(c)]), commands: finish(c) };
+  }
+  if (kind === "rectangle") {
+    const [w, h] = [L(), L()];
+    const prompt = pick(r, [`draw a ${w.text} by ${h.text} rectangle${at} in a sketch ${on}.`, `sketch a rectangle ${w.text} wide and ${h.text} high${at} ${on}.`]);
+    const c: Command = { op: "draw_rectangle", width: w.mm, height: h.mm, ...(centre ?? {}) };
+    return { task: "create", setup: [], prompt: asked(prompt), explanation: working([...which, ...conversions([w, h, ...also]), "The first size is along the sketch's x, the second along its y.", ...centreSays, ...ends(c)]), commands: finish(c) };
+  }
+  const p = () => Math.round(r.next() * 200) - 100;
+  let [x1, y1, x2, y2] = [p(), p(), p(), p()];
+  if (x1 === x2 && y1 === y2) x2 += 10;
+  const prompt = pick(r, [`draw a line from (${x1}, ${y1}) to (${x2}, ${y2}) mm in a sketch ${on}.`, `sketch a line from (${x1}, ${y1}) to (${x2}, ${y2}) mm ${on}.`]);
+  const c: Command = { op: "draw_line", x1, y1, x2, y2 };
+  return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, "The ends are given in mm in the sketch.", so(c)]), commands: [sketch, c] };
+}
+
+// ---- Renaming (AI7d).
+
+/** Names people give a sketch; none looks like a default name ("Sketch 2"), so none can be taken. */
+export const ITEM_NAMES = ["base", "Lid outline", "bracket", "mounting plate", "Profile A", "top view", "hinge", "Logo"];
+const ORDINALS = ["first", "second", "third"];
+
+/** The sketches an item rename is asked about: one to three planes' sketches already there, "Sketch 1" … "Sketch 3". */
+function sketchesThere(r: SeededRandom): Command[] {
+  return Array.from({ length: 1 + Math.floor(r.next() * 3) }, () => ({ op: "create_sketch", on: pick(r, SKETCH_PLANES) }));
+}
+
+/** "Rename Sketch 2 to "base"", "call the second sketch "base"": an item that is there, named in the command by its current name. */
+function renameDraft(r: SeededRandom): Draft {
+  const setup = sketchesThere(r);
+  const n = 1 + Math.floor(r.next() * setup.length);
+  const name = pick(r, ITEM_NAMES);
+  const item = `Sketch ${n}`;
+  const which = pick(r, [item, ...(setup.length > 1 && n === setup.length ? ["the newest sketch", "the latest sketch"] : []), ...(setup.length === 1 ? ["the sketch"] : [`the ${ORDINALS[n - 1]} sketch`])]);
+  const prompt = pick(r, [`rename ${which} to "${name}".`, `call ${which} "${name}".`, `change the name of ${which} to "${name}".`, `can you rename ${which} "${name}"?`]);
+  const reading = which === item ? [] : [`${sentence(which)} is ${item}.`];
+  const command: Command = { op: RENAME_OP, item, name };
+  return { task: "rename", setup, prompt: sentence(prompt), explanation: working([...reading, `Only the name changes, so ${renameWords(command)}; nothing is built or removed.`]), commands: [command] };
+}
+
+/** "Start a new sketch on the front plane and call it "base"": the sketch just started is the item, so the command names none. */
+function nameNewDraft(r: SeededRandom): Draft {
+  const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
+  const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
+  const name = pick(r, ITEM_NAMES);
+  const prompt = pick(r, [`start a new sketch on the ${word} plane and call it "${name}".`, `create a sketch on ${word} and name it "${name}".`, `new sketch on the ${word} plane, called "${name}".`]);
+  const which = word === plane ? [] : [`The ${word} plane is the ${plane} plane.`];
+  const command: Command = { op: RENAME_OP, name };
+  return {
+    task: "create",
+    setup: [],
+    prompt: sentence(prompt),
+    explanation: working([...which, `So there is a ${SKETCHED} ${plane} plane.`, `Then the sketch just started is named: ${renameWords(command)}.`]),
+    commands: [{ op: "create_sketch", on: plane }, command],
+  };
+}
+
 // ---- Requests no command can do yet: the answer is no commands and a plain reason (AI5c).
 
 const PLANES = ["top", "front", "right", "XY", "XZ", "YZ"];
 /** What can be done now, said the same way in every refusal. */
-const CAN_DO = "What can be done now is making or resizing a whole ready-made shape: a box, cylinder, sphere, plate, L bracket, slot or star.";
+const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane, drawing circles, rectangles and lines in it, extruding it, and renaming an item.";
 
 /** A request that needs a command Design doesn't offer, and what it would need. Each mentions what it can't do by name, so the words alone say why. */
 function cannotAsk(r: SeededRandom): { prompt: string; needs: string; onPart: boolean } {
   const L = () => randomLength(r, randomUnit(r)).text;
   const plane = pick(r, PLANES);
   return pick(r, [
-    () => ({ prompt: `sketch a circle ${L()} across on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
-    () => ({ prompt: `draw a ${L()} by ${L()} rectangle in a sketch on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
-    () => ({ prompt: `start a new sketch on the ${plane} plane.`, needs: "drawing a sketch", onPart: false }),
-    () => ({ prompt: `draw a line ${L()} long on the top face.`, needs: "drawing a sketch", onPart: true }),
+    // Circles, rectangles and lines can be drawn (AI7b), arcs not yet: all or nothing, so no commands.
+    () => ({ prompt: `draw an arc of radius ${L()} in a sketch on the ${plane} plane.`, needs: "drawing arcs", onPart: false }),
     () => ({ prompt: `put a ${L()} hole in the centre of the top face.`, needs: "a hole", onPart: true }),
     () => ({ prompt: `drill a ${L()} hole through it.`, needs: "a hole", onPart: true }),
     () => ({ prompt: `fillet all the edges with a ${L()} radius.`, needs: "rounding edges (a fillet)", onPart: true }),
@@ -383,5 +569,10 @@ export const DESIGN_RECIPES: readonly Recipe[] = [
       return { task: "create", setup: [], prompt: `${ask}${then}`, explanation: working([...lines, becomes(command, true), `Then it is ${EXPORTED}.`]), commands: [command, { op: "export_stl" }] };
     },
   },
+  { id: "design.sketch", ops: ["create_sketch", "set_part"], sample: sketchDraft },
+  { id: "design.sketch-draw", ops: ["create_sketch", "draw_circle", "draw_rectangle", "draw_line"], sample: (r) => drawDraft(r) },
+  { id: "design.sketch-extrude", ops: ["create_sketch", "draw_circle", "draw_rectangle", EXTRUDE_OP], sample: (r) => drawDraft(r, true) },
+  { id: "design.rename", ops: ["create_sketch", RENAME_OP], sample: renameDraft },
+  { id: "design.sketch-name", ops: ["create_sketch", RENAME_OP], sample: nameNewDraft },
   { id: "design.cannot", ops: ["set_part"], sample: cannotDraft },
 ];

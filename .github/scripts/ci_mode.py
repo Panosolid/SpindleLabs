@@ -15,11 +15,12 @@ run), so the Firefox and WebKit checks are worth running on it. Any doubt
 means yes.
 
 docs: whether every changed file is writing no code or test reads (DOCS
-below: docs/, CHANGELOG.md, README.md, VERSION and any CLAUDE.md), in a pull
+below: docs/, changelog.d/, CHANGELOG.md, README.md, VERSION and any
+CLAUDE.md), in a pull
 request's own run or a merge queue group's (its files: the group's commit
 against main's, so every pull request queued ahead of it counts too). Then
 only the kernel job runs, with just the CI scripts' tests (which check
-VERSION against CHANGELOG.md); every other required job reports skipped,
+CHANGELOG.md and changelog.d/); every other required job reports skipped,
 which main's ruleset counts as passed. Any other file, a rename out of
 anywhere else, no files, or any doubt (the files can't be listed) means no.
 
@@ -44,10 +45,11 @@ def touches_ui(files):
 
 
 # Read by no code, build or test (checked with grep when this list was made;
-# a new reader of one of these means taking it off the list). VERSION and
-# CHANGELOG.md are read by check_version.py, which the kernel job's script
-# tests run in a docs-only run too.
-DOCS_PREFIXES = ("docs/",)
+# a new reader of one of these means taking it off the list). CHANGELOG.md
+# and changelog.d/ are read by changelog.py, which the kernel job's script
+# tests run in a docs-only run too; VERSION is gone (a pull request deleting
+# it is still only writing).
+DOCS_PREFIXES = ("docs/", "changelog.d/")
 DOCS_FILES = ("CHANGELOG.md", "README.md", "VERSION")
 DOCS_NAME = "CLAUDE.md"
 

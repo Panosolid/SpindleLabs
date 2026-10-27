@@ -5,17 +5,18 @@
 import { latestOnly, NO_HIGHLIGHT, type BodySpec, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isHidden, isSketchItem, partFeature, partOf, readDesignDocument, type DesignDocument, type PartKind } from "./document.ts";
+import { insertAt, isHidden, isSketchItem, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
-import { DESIGN_COMMANDS, documentFor } from "./commands.ts";
+import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
 import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
+import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
 import { bodyRows, browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
@@ -25,7 +26,7 @@ import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type Prope
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
-import { hideBody, itemName, TIMELINE_STEPS } from "./timeline-edits.ts";
+import { hideBody, itemName, renameItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
@@ -46,7 +47,7 @@ import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawSt
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
-import { designAIView } from "./ai-view.ts";
+import { aiFaces, designAIView } from "./ai-view.ts";
 import { COPY_SVG, DOWNLOAD_STL, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
@@ -119,6 +120,7 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
             { id: "create-menu-extrude", label: "Extrude", icon: "extrude", title: extrudeTitle, run: onExtrude },
           ],
         },
+        { items: comingItems("Create") },
       ],
     },
   });
@@ -138,11 +140,21 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   facts.disabled = true; // until a body is built (workspace: after each build)
   const inspecting = toolGroup(document, {
     name: "Inspect",
-    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }] },
+    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }] },
   });
   inspecting.add([facts, "inspect"]);
   inspecting.element.dataset.modelling = "";
-  slot.append(creating.element, inserting.element, inspecting.element);
+  // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
+  const coming = (name: string, id: string, icon: IconName, title: string) => {
+    const g = toolGroup(document, { name, solo: icon, menu: { id, title, sections: () => [{ items: comingItems(name as ComingGroup) }] } });
+    g.element.classList.add("coming-soon");
+    g.element.dataset.modelling = "";
+    return g;
+  };
+  const modifying = coming("Modify", "modify-menu", "modify", "Modify: move, copy, combine, fillet and chamfer bodies. Coming soon: open to see what is on the way.");
+  const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
+  // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
+  slot.append(creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
   for (const group of toolbarGroups()) {
     const g = toolGroup(document, { name: group.name });
     g.element.dataset.modelling = "";
@@ -546,6 +558,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
       return runAction(DOWNLOAD_STL, bodies);
     }
+    if (command.op === "create_sketch") return aiSketch(String(command.on));
+    if (DRAW_OPS.includes(command.op)) return aiDraw(command);
+    if (command.op === EXTRUDE_OP) return aiExtrude(command);
+    if (command.op === RENAME_OP) return aiRename(command);
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
     const kind = command.shape as ShapeKind;
     shape = kind;
@@ -1041,6 +1057,136 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return sketchBox.showError(e instanceof Error ? e.message : String(e));
     }
     startNewSketch(made);
+  }
+
+  /**
+   * create_sketch (AI7a): what Create sketch then a click on the plane or
+   * face does, out of any tool open first. A face is found by its name on
+   * the bodies on screen, as the AI was told of them (ai-view.ts
+   * `aiFaces`); a name no flat face there has is refused, so the
+   * assistant puts the project back.
+   */
+  function aiSketch(on: string) {
+    leaveExtrude();
+    leaveEdit();
+    if (mode.kind !== "none") leaveSketch();
+    startNewSketch(sketchOn(designDoc(), on));
+  }
+
+  /** The sketch create_sketch makes on a plane or a named face of the bodies on screen, added to `doc` (a name no flat face there has is refused). */
+  function sketchOn(doc: DesignDocument, on: string): { doc: DesignDocument; id: string } {
+    if ((SKETCH_PLANES as readonly string[]).includes(on)) return addSketch(doc, on as SketchPlane);
+    const spot = lastScene === null ? null : sketchableFaces(lastScene).map((face) => sketchSpot({ face, shift: false }, lastScene)).find((x) => x?.kind === "face" && x.face.plane === on);
+    if (spot?.kind !== "face") throw new Error(`There is no flat face ${on} on the bodies shown to start a sketch on.`);
+    return addFaceSketch(doc, spot.face, spot.drawn);
+  }
+
+  /**
+   * extrude_sketch (AI7c): what the Extrude tool's OK does with a typed
+   * distance, for the sketch named, else the one open, else the newest.
+   * Out of the sketch first without a rebuild (the extrude's own shows the
+   * new design). `check` has already had the kernel build it, so only a
+   * design that changed meanwhile can fail here, and the assistant puts
+   * the project back.
+   */
+  function aiExtrude(command: Command) {
+    leaveExtrude();
+    leaveEdit();
+    const doc = designDoc();
+    const id = extrudeTarget(doc, command, mode.kind === "edit" ? mode.tool.sketch : null);
+    const d = commandDistance(command);
+    const made = extrudeSketch(doc, id, Math.abs(d), d < 0);
+    if (mode.kind !== "none") leaveSketch(false);
+    shape = "sketch-extrude";
+    inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(d));
+    return update(extrudeStep(doc, id), undefined, made.doc);
+  }
+
+  /**
+   * rename_item (AI7d): what Rename in an item's menu does with the name
+   * typed, for the item named, else the one just made. An open sketch stays
+   * open (a draw may follow in the same answer); anything else is recorded as one
+   * step, the part the panel shows left as it is.
+   */
+  function aiRename(command: Command) {
+    const doc = designDoc();
+    const id = renameTarget(doc, command);
+    const renamed = renameItem(doc, id, String(command.name));
+    if ("refused" in renamed) throw new Error(renamed.message);
+    if (renamed.doc === doc) return;
+    const step = TIMELINE_STEPS.rename(itemName(doc.timeline.features.find((f) => f.id === id)!));
+    if (mode.kind === "edit") return applySketchEdit(renamed.doc, step, mode.tool.sketch);
+    leaveExtrude();
+    leaveEdit();
+    return update(step, undefined, renamed.doc);
+  }
+
+  /**
+   * Whether the kernel can build what `commands` would do, played out on a
+   * copy of the design (null: yes; else the reason, in words): the same
+   * steps `run` takes, sketches started and drawn in, and each extrude
+   * built by the kernel (an open or empty outline, or a size it refuses).
+   * Asked before the preview, so the user is never shown a change that
+   * cannot be made. Changes nothing.
+   */
+  async function aiCheck(commands: readonly Command[]): Promise<string | null> {
+    let doc = designDoc();
+    let open: string | null = mode.kind === "edit" ? mode.tool.sketch : null;
+    try {
+      for (const c of commands) {
+        if (c.op === "create_sketch") {
+          const made = sketchOn(doc, String(c.on));
+          doc = made.doc;
+          open = made.id;
+        } else if (DRAW_OPS.includes(c.op)) {
+          if (open === null) throw new Error("No sketch is open to draw in: ask for a new sketch first, or open one with Edit Sketch.");
+          const refused = drawRefused(doc, open);
+          if (refused) throw new Error(refused);
+          doc = drawingFor(doc, open, c);
+        } else if (c.op === RENAME_OP) {
+          const renamed = renameItem(doc, renameTarget(doc, c), String(c.name));
+          if ("refused" in renamed) throw new Error(renamed.message);
+          doc = renamed.doc;
+        } else if (c.op === EXTRUDE_OP) {
+          const id = extrudeTarget(doc, c, open);
+          const d = commandDistance(c);
+          const made = extrudeSketch(doc, id, Math.abs(d), d < 0);
+          const built = await buildSpec(kernel, await featureSpec(kernel, made.doc, made.doc.timeline.features.find((f) => f.id === made.id)!));
+          if (built.errors.length > 0) throw new Error(`the kernel's checks failed: ${built.errors.join("; ")}`);
+          doc = made.doc;
+          open = null;
+        }
+      }
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    return null;
+  }
+
+  /**
+   * A draw command (AI7b): drawn in the sketch open, as its tool would
+   * draw it with typed sizes, the tool's step in the undo list ("Draw
+   * circle", inside the AI's one step). Refused, so the assistant puts the
+   * project back, with no sketch open or one an extrude is built from (its
+   * edits are settled on the kernel first, which an AI step can't wait
+   * for: `drawRefused`). Anything part drawn with the tool is dropped first,
+   * as Escape would.
+   */
+  function aiDraw(command: Command) {
+    if (mode.kind !== "edit") throw new Error("No sketch is open to draw in: ask for a new sketch first, or open one with Edit Sketch.");
+    const id = mode.tool.sketch;
+    const refused = drawRefused(designDoc(), id);
+    if (refused) throw new Error(refused);
+    const next = drawingFor(designDoc(), id, command);
+    if (toolBusy(mode.tool)) {
+      mode.tool = startTool(mode.tool.kind, id);
+      mode.snap = null;
+      toolChanges++;
+      unlock();
+    }
+    applySketchEdit(next, DRAW_STEPS[command.op], id);
+    drawSketches();
+    void showOutline();
   }
 
   /** A new sketch made on a plane or a face: recorded (one undo step), opened with the line tool, looked at square on. */
@@ -1762,6 +1908,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ),
     sleep,
     run,
+    check: aiCheck,
     // File ▾ (U0f2a): New clears the design after asking (start-fresh.ts); Export STL downloads every body shown, as the toolbar's STL does.
     fileEntries: () => {
       const doc = designDoc();
@@ -1775,7 +1922,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // What the AI assistant is told before a request (25c3): the timeline as last built, and the panel's sizes, which a set_part keeps for each it leaves out.
     aiView: () => {
       const [width, depth, height] = inputs.map((i) => Number(i.value));
-      return designAIView(ctx.project.workspaces.design as DesignDocument | undefined, failedNow, { width, depth, height });
+      const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+      const label = (id: string) => doc?.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? id;
+      return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label), mode.kind === "edit" ? mode.tool.sketch : null);
     },
     // Escape clears the selection; Copy with one profile selected runs Copy as SVG (shortcuts.ts).
     shortcut(id) {

@@ -135,15 +135,18 @@ test("a held-out evaluation prompt is never a training example, numbers aside", 
   }
 });
 
+/** set_part alone, for checks whose recipes ask for nothing else (an offered command with no recipe stops the generator). */
+const SET_PART = OFFERED.filter((c) => c.op === "set_part");
+
 test("the same words about the same part always mean one thing", async () => {
-  const g = await generate({ seed: 3n, count: 50, specs: OFFERED, rules: RULES, recipes: [one(draft([box])), one(draft([{ ...box, width: 41 }]), "test.other")], kernel: fakeKernel(), heldOut: [] });
+  const g = await generate({ seed: 3n, count: 50, specs: SET_PART, rules: RULES, recipes: [one(draft([box])), one(draft([{ ...box, width: 41 }]), "test.other")], kernel: fakeKernel(), heldOut: [] });
   assert.ok(g.ok);
   assert.equal(g.examples.length, 1);
   assert.ok(g.conflicts.length > 0 && g.conflicts[0].includes('"width":41'), g.conflicts[0]);
 });
 
 test("a recipe that can't make a sensible request is counted, not forced", async () => {
-  const g = await generate({ seed: 3n, count: 5, specs: OFFERED, rules: RULES, recipes: [one(null)], kernel: fakeKernel(), heldOut: [], maxDrafts: 30 });
+  const g = await generate({ seed: 3n, count: 5, specs: SET_PART, rules: RULES, recipes: [one(null)], kernel: fakeKernel(), heldOut: [], maxDrafts: 30 });
   assert.ok(g.ok);
   assert.deepEqual([g.examples.length, g.drafts, g.dropped["not a sensible request"]], [0, 30, 30]);
 });
@@ -168,11 +171,12 @@ test("every command of every workspace has a rule and a recipe", () => {
   }
 });
 
-test("only offered commands are taught: today's panel offers set_part alone", async () => {
-  assert.deepEqual(OFFERED.map((c) => c.op), ["set_part"]);
+test("only offered commands are taught: today's panel offers set_part, create_sketch (AI7a) the draw commands (AI7b), extrude_sketch (AI7c) and rename_item (AI7d), not export_stl", async () => {
+  assert.deepEqual(OFFERED.map((c) => c.op), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]);
   const g = await generate({ seed: 5n, count: 1_000, specs: OFFERED, rules: RULES, recipes: RECIPES, kernel: fakeKernel(), heldOut: [] });
   assert.ok(g.ok);
-  assert.ok(g.examples.every((e) => e.commands.every((c) => c.op === "set_part")));
+  assert.ok(g.examples.every((e) => e.commands.every((c) => c.op !== "export_stl")));
+  for (const op of ["create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]) assert.ok(g.examples.some((e) => e.commands.some((c) => c.op === op)), `${op} is reached`);
   assert.ok(!g.examples.some((e) => /\bstl\b/i.test(e.prompt)));
 });
 

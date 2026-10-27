@@ -28,13 +28,17 @@ export interface WebLLMModel {
   low_resource_required?: boolean;
 }
 
+/** A whole WebLLM answer, and one piece of a streamed one (its OpenAI-style chunks). */
+export type WebLLMReply = { choices: { message: { content: string | null } }[] };
+export type WebLLMChunk = { choices: { delta?: { content?: string | null } }[] };
+
 /** The parts of WebLLM used here (the real module is loaded only when the provider is used). */
 export interface WebLLMLike {
   prebuiltAppConfig: { model_list: WebLLMModel[] };
   CreateMLCEngine(
     model: string,
     config?: { initProgressCallback?: (report: { progress: number; text: string }) => void },
-  ): Promise<{ chat: { completions: { create(request: object): Promise<{ choices: { message: { content: string | null } }[] }> } } }>;
+  ): Promise<{ chat: { completions: { create(request: object): Promise<WebLLMReply | AsyncIterable<WebLLMChunk>> } } }>;
 }
 
 /**
@@ -75,11 +79,12 @@ export async function inBrowserDownloadBytes(model: WebLLMModel, fetch: Fetch): 
   return total;
 }
 
-/** The request as the OpenAI-style messages WebLLM takes, with the schema as WebLLM's json_object constraint. */
+/** The request as the OpenAI-style messages WebLLM takes, with the schema as WebLLM's json_object constraint; streamed when the request wants the text as it comes. */
 export function webllmRequest(r: AIRequest): object {
   return {
     messages: [{ role: "system", content: r.system }, ...r.messages],
     temperature: 0,
+    ...(r.onText ? { stream: true } : {}),
     ...(r.jsonSchema ? { response_format: { type: "json_object", schema: JSON.stringify(r.jsonSchema) } } : {}),
   };
 }
@@ -117,6 +122,17 @@ export function inBrowserProvider(o: {
         engine.catch(() => (engine = undefined)); // a failed load is tried again next time
       }
       const reply = await (await engine).chat.completions.create(webllmRequest(request));
+      const onText = request.onText;
+      if (onText && Symbol.asyncIterator in reply) {
+        let text = "";
+        for await (const chunk of reply) {
+          const more = chunk.choices[0]?.delta?.content;
+          if (typeof more === "string" && more !== "") onText((text += more));
+        }
+        if (text === "") throw new Error("the in-browser model gave no answer");
+        return text;
+      }
+      if (Symbol.asyncIterator in reply) throw new Error("the in-browser model streamed an answer nobody asked to stream");
       const content = reply.choices[0]?.message.content;
       if (typeof content !== "string") throw new Error("the in-browser model gave no answer");
       return content;
@@ -129,6 +145,8 @@ export interface BuiltInModelLike {
   availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
   create(options: { initialPrompts: { role: "system" | "user" | "assistant"; content: string }[] }): Promise<{
     prompt(input: string, options?: { responseConstraint?: object }): Promise<string>;
+    /** The answer piece by piece, each chunk the next piece (where the browser has it). */
+    promptStreaming?(input: string, options?: { responseConstraint?: object }): AsyncIterable<string>;
     destroy(): void;
   }>;
 }
@@ -160,8 +178,12 @@ export function builtInProvider(o: { api: BuiltInModelLike | undefined }): AIPro
       const last = r.messages.at(-1);
       if (!last || last.role !== "user") throw new Error("a request must end with the user's message");
       const session = await o.api.create({ initialPrompts: [{ role: "system", content: r.system }, ...r.messages.slice(0, -1)] });
+      const options = r.jsonSchema ? { responseConstraint: r.jsonSchema } : undefined;
       try {
-        return await session.prompt(last.content, r.jsonSchema ? { responseConstraint: r.jsonSchema } : undefined);
+        if (!r.onText || !session.promptStreaming) return await session.prompt(last.content, options);
+        let text = "";
+        for await (const more of session.promptStreaming(last.content, options)) if (more !== "") r.onText((text += more));
+        return text;
       } finally {
         session.destroy();
       }
