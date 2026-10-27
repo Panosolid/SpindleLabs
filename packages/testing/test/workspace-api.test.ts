@@ -500,11 +500,11 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const view = plugins.find((p) => p.id === "design")!.mount(ctx);
   await settle();
   assert.match(ctx.properties.querySelector("#error")!.textContent!, /no kernel in this test/);
-  // Its toolbar (16b), Fusion's way (U0f1): Create ▾ (the sketch tool, 21c, and Extrude), Insert ▾ (U0d), Inspect ▾, then the command groups; Start fresh is File ▾'s New (U0f2a).
+  // Its toolbar (16b), Fusion's way (U0f1): Create ▾ (the sketch tool, 21c, and Extrude), Modify ▾ and Construct ▾ (greyed, every tool coming soon), Inspect ▾, Insert ▾ (U0d), then the command groups; Start fresh is File ▾'s New (U0f2a).
   const groups = [...ctx.toolbar.querySelectorAll<HTMLElement>(":scope > [role=group], :scope > * > [role=group]")].filter((g) => g.closest(".menu-button-menu") === null);
-  assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Insert", "Inspect", "Export"]);
+  assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Modify", "Construct", "Inspect", "Insert", "Export"]);
   // The sketch's own toolbar (SF3b) is there too, hidden until a sketch is edited: its Create menu and tools first, Finish Sketch last.
-  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Insert", false], ["Inspect", false], ["Export", false], ["Finish", true]]);
+  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Modify", false], ["Construct", false], ["Inspect", false], ["Insert", false], ["Export", false], ["Finish", true]]);
   // Its File ▾ entries (U0f2a): New is on (the box is there to clear); Export STL is off, saying why, as the failed kernel built nothing.
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);

@@ -1,10 +1,13 @@
 // The AI assistant's panel: one panel for every workspace, aware of the
 // active one. Off until the user picks a provider (nothing is sent
 // anywhere, and every feature works without it). In Design it turns a
-// request into Design's own command (set_part), shows the AI's working
+// request into Design's own commands (set_part; create_sketch and drawing in it, AI7a-b), shows the AI's working
 // out and then what would change, and an accepted change is one "AI: …"
 // undo step; a rejected one changes nothing. A request no command can do
-// gets the AI's plain reason and nothing to accept (AI5c). A remote provider is shown exactly what it will be sent before
+// gets the AI's plain reason and nothing to accept (AI5c). While the AI
+// answers, a bar shows the stage it is at and an estimate of how far along
+// it is, with its working out as it is written (AI5c2); it never shows
+// 100% before the preview is on screen. A remote provider is shown exactly what it will be sent before
 // the first request to it. Opening the panel for the first time picks an
 // AI that runs on this computer if one is found (AI6); options that can't
 // run here are greyed out with the reason. Ollama is looked for only when
@@ -28,6 +31,7 @@ import {
   apiOrigin,
   askBeforeSending,
   proposeAction,
+  PREVIEWING,
   OLLAMA_ENDPOINT,
   PROVIDERS,
   sendsAway,
@@ -39,10 +43,11 @@ import {
   type Detected,
   type Fetch,
   type Preview,
+  type Progress,
   type ProviderSettings,
 } from "@fission/ai";
 import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
-import { DESIGN_COMMANDS, partOf, type DesignDocument } from "@fission/design";
+import { DESIGN_COMMANDS, DRAW_OPS, drawWords, EXTRUDE_OP, extrudeWords, partOf, type DesignDocument } from "@fission/design";
 
 export interface AssistantHost {
   history: History;
@@ -56,7 +61,7 @@ const SETTINGS_KEY = "fission.ai.settings";
 /** The model list's "type a name" choice. */
 const TYPED = "";
 const CONSENT_KEY = "fission.ai.consent:";
-/** The AI may only set the part: Design's one modelling command (export_stl downloads, so it stays the user's). */
+/** What the AI may use when Design's view names no list of its own: set_part (export_stl downloads, so it stays the user's). From AI7a Design's view lists its commands, create_sketch with the faces on screen. */
 const AI_COMMANDS = DESIGN_COMMANDS.filter((c) => c.op === "set_part");
 const SHORT: Record<AIProviderKind, string> = { "in-browser": "in browser", ollama: "Ollama", "api-key": "API key", "browser-built-in": "built-in" };
 
@@ -125,7 +130,7 @@ const usedBy = (shape: unknown) => USED[String(shape)] ?? ["shape", "width", "de
 export function partAfter(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown> } {
   const before: Record<string, unknown> = view.adds === null ? { ...(view.setup[0] ?? {}) } : {};
   const after: Record<string, unknown> = { ...view.keeps, ...(view.setup[0] ?? {}) };
-  for (const c of commands) Object.assign(after, c);
+  for (const c of commands) if (c.op === "set_part") Object.assign(after, c);
   delete before.op;
   delete after.op;
   return { before, after };
@@ -134,6 +139,47 @@ export function partAfter(view: AIView, commands: readonly Command[]): { before:
 /** The preview's rows: each size the shape after uses that differs from before ("—" when there was none), in the panel's order. */
 export function previewRows(before: Record<string, unknown>, after: Record<string, unknown>): { parameter: string; before: unknown; after: unknown }[] {
   return usedBy(after.shape).flatMap((parameter) => (before[parameter] === after[parameter] ? [] : [{ parameter, before: before[parameter], after: after[parameter] }]));
+}
+
+/** A row of the preview: a size before and after, or a sketch started ("sketch", nothing before). */
+export type PreviewRow = { parameter: string; before: unknown; after: unknown };
+
+/**
+ * What accepting `commands` does, for the preview and its undo step's name
+ * (AI7a): the part's rows and name when a set_part changes it, then a row
+ * and a name for each sketch started, where it goes in the view's words.
+ * `adds` is the view's "a new body as item 4, …" only when a set_part
+ * comes before any sketch: a sketch put in first moves the marker, so the
+ * item number would be a guess.
+ */
+export function previewOf(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown>; rows: PreviewRow[]; label: string; adds: string | null } {
+  const { before, after } = partAfter(view, commands);
+  const parts = commands.findIndex((c) => c.op === "set_part");
+  const rows: PreviewRow[] = parts < 0 ? [] : previewRows(before, after);
+  const labels = rows.length > 0 ? [`${view.adds === null ? "" : "new "}${describePart(after)}`] : [];
+  for (const c of commands) {
+    // A drawing (AI7b): its own row, in the order sent, after the sketch it goes in.
+    if (DRAW_OPS.includes(c.op)) {
+      rows.push({ parameter: c.op.replace("draw_", ""), before: undefined, after: drawWords(c) });
+      labels.push(drawWords(c));
+      continue;
+    }
+    // An extrude (AI7c): a row for the body it adds.
+    if (c.op === EXTRUDE_OP) {
+      rows.push({ parameter: "extrude", before: undefined, after: extrudeWords(c).replace(/^extrude /, "") });
+      labels.push(extrudeWords(c));
+      continue;
+    }
+    if (c.op !== "create_sketch") continue;
+    const on = String(c.on);
+    const where = (view.choiceWords && Object.hasOwn(view.choiceWords, on) ? view.choiceWords[on] : undefined) ?? on;
+    rows.push({ parameter: "sketch", before: undefined, after: `new, on ${where}` });
+    labels.push(`new sketch on ${where}`);
+  }
+  const sketchFirst = commands.findIndex((c) => c.op === "create_sketch");
+  const adds = parts < 0 || view.adds === null ? null : sketchFirst >= 0 && sketchFirst < parts ? "a new body at the timeline marker" : view.adds;
+  // With no change at all, the part's own name, as before AI7a ("No change" is shown and Accept is off).
+  return { before, after, rows, label: labels.length > 0 ? labels.join(", then ") : describePart(after), adds };
 }
 
 /** "box 50 × 30 × 20 mm", "cylinder ⌀25 × 60 mm", "sphere ⌀30 mm": the undo step's name. */
@@ -543,33 +589,78 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     discard();
     const button = $<HTMLButtonElement>("ai-ask-button");
     button.disabled = true;
-    say("Asking…");
+    showProgress({ stage: "asking", attempt: 1, fraction: 0, working: "", commands: 0 });
     try {
       if (s.kind === "in-browser" && !(await confirmDownload(s))) return say("Nothing was downloaded or sent.");
       // What Design says about itself (25c3): its timeline, the sizes a set_part keeps, and whether Accept changes the part or adds a body.
       const view = viewOf(host);
-      const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, AI_COMMANDS, view.notes), messages: [{ role: "user", content: words }] }, AI_COMMANDS);
+      const offered = view.commands ?? AI_COMMANDS;
+      const answer = await askForCommands(provider(s), { system: systemPrompt(view.setup, offered, view.notes), messages: [{ role: "user", content: words }] }, offered, showProgress);
       if (!answer.ok) return say(answer.error, true);
       // No commands: the AI says it can't do this with the commands it has (AI5c). Shown, never stood in for.
       if (answer.commands.length === 0) return showCannot(answer.explanation, answer.attempts);
       const design = host.design();
       if (!design?.run) return say("Design isn't open, so nothing was changed.", true);
-      const { before, after } = partAfter(view, answer.commands);
+      // What only the kernel can judge (an extrude's outline) is asked before the preview, so a change that can't be made is never offered (AI7c).
+      const problem = await design.check?.(answer.commands);
+      if (problem) return say(`That can't be done: ${problem} Nothing was changed.`, true);
+      const shown = previewOf(view, answer.commands);
+      const { before } = shown;
       const action = proposeAction(answer.commands, {
-        label: `${view.adds === null ? "" : "new "}${describePart(after)}`,
+        label: shown.label,
         history: host.history,
         run: (c) => void design.run!(c),
         current: () => ({ ...before }),
         state: () => projectToJson(host.project()),
       });
       pending = action;
-      showPreview(action, await action.preview(), before, after, view.adds, answer.attempts, answer.explanation);
+      showProgress({ stage: "checking", attempt: answer.attempts, fraction: PREVIEWING, working: answer.explanation, commands: answer.commands.length }, "Making the preview…");
+      showPreview(action, await action.preview(), shown.rows, shown.adds, answer.attempts, answer.explanation);
     } catch (e) {
       say((e as Error).message, true);
     } finally {
       button.disabled = !settings || workspace !== "design";
     }
   });
+
+  /**
+   * The bar while the AI answers (AI5c2): the stage, an estimate as a bar
+   * and a number (never 100%: that is the preview itself), and the working
+   * out as it is written. Built once per answer and updated in place, so
+   * it doesn't flicker; anything else shown in the result area (the
+   * in-browser model's loading) replaces it until the next update.
+   */
+  function showProgress(p: Progress, label = stageLabel(p)) {
+    let box = document.getElementById("ai-progress");
+    if (!box || !result.contains(box)) {
+      box = document.createElement("div");
+      box.id = "ai-progress";
+      box.className = "ai-progress";
+      box.setAttribute("role", "progressbar");
+      box.setAttribute("aria-valuemin", "0");
+      box.setAttribute("aria-valuemax", "100");
+      box.innerHTML = `<p class="ai-progress-stage"></p><div class="ai-progress-track"><div class="ai-progress-fill"></div></div><p class="ai-progress-note">An estimate: the AI can't know how long its answer will be.</p>`;
+      result.replaceChildren(box);
+    }
+    const percent = Math.min(99, Math.round(p.fraction * 100));
+    box.setAttribute("aria-valuenow", String(percent));
+    box.setAttribute("aria-valuetext", `${label} About ${percent}%.`);
+    box.querySelector(".ai-progress-stage")!.textContent = `${label} ${percent}%`;
+    (box.querySelector(".ai-progress-fill") as HTMLElement).style.width = `${percent}%`;
+    const shown = box.querySelector(".ai-working");
+    if (p.working === "") shown?.remove();
+    else if (shown) shown.querySelector(".ai-working-text")!.textContent = p.working;
+    else box.append(working(p.working));
+  }
+
+  /** What the AI is doing now, in words. */
+  function stageLabel(p: Progress): string {
+    const again = p.attempt === 2 ? "Second try: " : "";
+    if (p.stage === "asking") return p.attempt === 2 ? "The first answer couldn't be used. Asking again…" : "Asking the AI…";
+    if (p.stage === "commands") return `${again}Writing the commands${p.commands > 0 ? ` (${p.commands} so far)` : ""}…`;
+    if (p.stage === "working") return `${again}Writing its working out…`;
+    return `${again}Checking the answer…`;
+  }
 
   /** The AI's working out, as plain text (it is untrusted), or a note that it gave none. */
   function working(explanation: string): HTMLElement {
@@ -593,11 +684,10 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     result.replaceChildren(box);
   }
 
-  function showPreview(action: AIAction, preview: Preview, before: Record<string, unknown>, after: Record<string, unknown>, adds: string | null, attempts: 1 | 2, explanation: string) {
+  function showPreview(action: AIAction, preview: Preview, rows: readonly PreviewRow[], adds: string | null, attempts: 1 | 2, explanation: string) {
     const box = document.createElement("div");
     box.id = "ai-preview";
     box.className = "ai-preview";
-    const rows = previewRows(before, after);
     box.innerHTML = `<p class="ai-label"></p>
       <table>${rows.map((c) => `<tr data-param="${escape(c.parameter)}"><th>${escape(c.parameter)}</th><td>${escape(String(c.before ?? "—"))}</td><td>→</td><td>${escape(String(c.after))}</td></tr>`).join("")}</table>
       <p class="ai-note"></p>

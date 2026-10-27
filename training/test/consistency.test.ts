@@ -84,6 +84,15 @@ test("deliberate breaks: each mislabelling is caught", async () => {
     ["wrong shape", (e) => (/\bball\b/.test(e.prompt) ? setPart(e.commands, (c) => ({ ...c, shape: "cylinder" })) : null)],
     // The export forgotten.
     ["export dropped", (e) => (/\bstl\b/i.test(e.prompt) && e.commands.length === 2 ? e.commands.slice(0, 1) : null)],
+    // A sketch started on the wrong plane: the front (XZ) taken as the top (AI7a).
+    ["front as top", (e) => (/\bfront\b/.test(e.prompt) && e.commands[0]?.op === "create_sketch" ? [{ op: "create_sketch", on: "XY" }] : null)],
+    // AI7b: a circle's radius taken as its diameter, and a rectangle's sides swapped.
+    ["circle radius as diameter", (e) => (/radius/.test(e.prompt) && e.commands[1]?.op === "draw_circle" ? [e.commands[0], { ...e.commands[1], diameter: (e.commands[1].diameter as number) / 2 }] : null)],
+    ["rectangle sides swapped", (e) => (e.commands[1]?.op === "draw_rectangle" && e.commands[1].width !== e.commands[1].height ? [e.commands[0], { ...e.commands[1], width: e.commands[1].height, height: e.commands[1].width }] : null)],
+    // AI7c: "the other way" read as straight on, a distance doubled, and the extrude forgotten.
+    ["extrude other way as straight on", (e) => (e.commands[2]?.op === "extrude_sketch" && (e.commands[2].distance as number) < 0 ? [...e.commands.slice(0, 2), { ...e.commands[2], distance: -(e.commands[2].distance as number) }] : null)],
+    ["extrude distance doubled", (e) => (e.commands[2]?.op === "extrude_sketch" ? [...e.commands.slice(0, 2), { ...e.commands[2], distance: (e.commands[2].distance as number) * 2 }] : null)],
+    ["extrude dropped", (e) => (e.commands[2]?.op === "extrude_sketch" ? e.commands.slice(0, 2) : null)],
     // A sketch request answered with a thin stand-in part (Ben's circle, 2026-10-26).
     ["a stand-in for a sketch", (e) => (e.commands.length === 0 && /sketch/i.test(e.prompt) ? [{ op: "set_part", shape: "cylinder", width: 20, depth: 20, height: 0.01 }] : null)],
   ];
@@ -96,7 +105,7 @@ test("deliberate breaks: each mislabelling is caught", async () => {
 test("a cannot example has no commands, about every kind of request Design can't do, and its working out says so", async () => {
   const g = await run(11n, DESIGN_RECIPES, 2_000);
   const cannot = g.examples.filter((e) => e.task === "cannot");
-  // About 1 recipe in 8 (8 recipes): 250 expected of 2,000; well over 150 shows the recipe runs.
+  // About 1 recipe in 11 (11 recipes): 180 expected of 2,000 (seed 11 is fixed); over 150 shows the recipe runs.
   assert.ok(cannot.length > 150, `${cannot.length}`);
   for (const e of cannot) {
     assert.deepEqual(e.commands, [], e.prompt);
@@ -105,7 +114,7 @@ test("a cannot example has no commands, about every kind of request Design can't
     assert.doesNotMatch(e.explanation, /\d/, e.explanation);
   }
   const needs = new Set(cannot.map((e) => e.explanation.match(/There is no command for (.+?) yet/)?.[1]));
-  assert.deepEqual([...needs].sort(), ["a chamfer", "a hole", "copies or patterns", "drawing a sketch", "hollowing a part out (a shell)", "rounding edges (a fillet)", "text"]);
+  assert.deepEqual([...needs].sort(), ["a chamfer", "a hole", "copies or patterns", "drawing arcs", "hollowing a part out (a shell)", "rounding edges (a fillet)", "text"]);
   // And no other example asks for any of these: the words decide which kind a request is.
   for (const e of g.examples.filter((x) => x.task !== "cannot")) assert.deepEqual(read(e.prompt, e.setup)?.length === 0, false, e.prompt);
 });
