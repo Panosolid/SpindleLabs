@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { AI_FACES, AI_TIMELINE_ITEMS, aiCommands, designAIView, facingWords, SKETCH_AXES, type AIFace } from "../src/ai-view.ts";
 import { addSketch, drawLine, drawRectangle, planeOf } from "../src/sketch.ts";
 import { inSketch } from "../src/face-edges.ts";
+import { documentFor } from "../src/commands.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
@@ -40,9 +41,11 @@ const NONE: ReadonlySet<string> = new Set();
 const sizes = { width: 60, depth: 20, height: 5 };
 const BOX = "1. Box: 40 × 30 × 20 mm.";
 const NO_OPEN = "No sketch is open: to draw, start one with create_sketch first in the same answer; the draw commands then draw in it.";
-const DRAWS = ["draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"];
+const DRAWS = ["draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"];
 // AI7c: the first of the two extrude lines, said once; the second names the sketch a bare extrude takes.
 const EXTRUDE_NOTE = "extrude_sketch makes a new body at the timeline marker from a sketch that makes one closed outline, and changes nothing else; a negative distance goes the other way from the sketch's plane.";
+// AI7d: the one line about renaming, last in every view.
+const RENAME_NOTE = "rename_item changes only an item's name, which is how the user and the messages refer to it: at most 40 characters, on one line, and no two items share a name (capitals don't count). To name an item this answer has just made, leave `item` out; `item` names an item already in the timeline.";
 const NONE_YET = "No sketch can be extruded yet, so extrude_sketch only follows a create_sketch and its drawing in the same answer.";
 const SKETCH1 = "2. Sketch 1 on the XY plane.";
 const EXTRUDE1 = "3. Extrude Sketch 1 by 10 mm.";
@@ -79,6 +82,7 @@ test("hand-worked: the marker on a preset, so set_part changes it in place, and 
     // AI7c: Sketch 1 (item 2) and Sketch 2 (item 5) are both before the marker, so a bare extrude takes the newest, Sketch 2.
     EXTRUDE_NOTE,
     "With no sketch named, extrude_sketch takes the sketch started earlier in the answer, else the newest sketch: Sketch 2.",
+    RENAME_NOTE,
   ]);
 });
 
@@ -123,7 +127,7 @@ test("hand-worked: the marker at the end with the last solid an extruded sketch 
   const d = extrudeSketch(drawRectangle(s.doc, s.id, [0, 0], [40, 30]).doc, s.id, 10).doc;
   const v = designAIView(d, NONE, sizes);
   assert.equal(v.adds, "a new body as item 4, after 3. Extrude Sketch 1 by 10 mm");
-  assert.equal(v.notes.at(-9), "The timeline marker is at the end: every item is built.");
+  assert.equal(v.notes.at(-10), "The timeline marker is at the end: every item is built.");
 });
 
 test("hand-worked: a suppressed sketch greys its extrude from the data (26e), and a lost sketch's extrude builds from its kept shape", () => {
@@ -151,7 +155,7 @@ test("a long timeline lists only its last items, and says how many were left out
   const notes = designAIView(d, NONE, sizes).notes;
   assert.equal(notes[1], "(5 earlier items left out)");
   assert.match(notes[2], /^6\. Box: 14 × 10 × 10 mm\. Builds Body 6\.$/);
-  assert.equal(notes.length, 1 + 1 + AI_TIMELINE_ITEMS + 3 + 2 + 2 + 2);
+  assert.equal(notes.length, 1 + 1 + AI_TIMELINE_ITEMS + 3 + 2 + 2 + 2 + 1);
   // The boundary: exactly AI_TIMELINE_ITEMS items is no cut; one more leaves the first out.
   let e = partDocument("box", 40, 30, 20);
   for (let i = 0; i < AI_TIMELINE_ITEMS - 1; i++) e = insertPreset(e, "box", 10, 10, 10).doc;
@@ -167,7 +171,7 @@ test("no design: no part, nothing added, and a sketch can still start on an orig
     setup: [],
     keeps: sizes,
     // A new project: nothing in the timeline, so the first sketch is Sketch 1, item 1.
-    notes: ["create_sketch adds an empty Sketch 1 as item 1, at the start of the timeline, and opens it; nothing already in the timeline changes.", "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane.", NO_OPEN, SKETCH_AXES, EXTRUDE_NOTE, NONE_YET],
+    notes: ["create_sketch adds an empty Sketch 1 as item 1, at the start of the timeline, and opens it; nothing already in the timeline changes.", "No body is on screen, so a sketch can go only on the XY, XZ or YZ plane.", NO_OPEN, SKETCH_AXES, EXTRUDE_NOTE, NONE_YET, RENAME_NOTE],
     adds: null,
     commands: ["set_part", "create_sketch", ...DRAWS],
     choiceWords: { XY: "the XY plane", XZ: "the XZ plane", YZ: "the YZ plane" },
@@ -187,7 +191,7 @@ test("hand-worked: the faces on screen are offered to create_sketch by name, wit
   const on = v.commands!.find((c) => c.op === "create_sketch")!.params.on;
   assert.ok(on.type === "choice");
   assert.deepEqual(on.values, ["XY", "XZ", "YZ", "face:feature-1/end", "face:feature-1/side-1"]);
-  assert.deepEqual(v.notes.slice(-8, -4), [
+  assert.deepEqual(v.notes.slice(-9, -5), [
     // The box is item 1 and no sketch is there yet: Sketch 1, item 2, after it.
     "create_sketch adds an empty Sketch 1 as item 2, after 1. Box: 40 × 30 × 20 mm, and opens it; nothing already in the timeline changes.",
     "The flat faces a sketch can go on, by name (create_sketch's on), with the way each faces and its centre:",
@@ -216,7 +220,7 @@ test("the prompt lists at most AI_FACES faces, and only those can be chosen", ()
   const at = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, many(AI_FACES));
   assert.ok(!at.notes.some((l) => l.includes("left out") && l.includes("face")), "exactly AI_FACES: no cut");
   const over = designAIView(partDocument("box", 40, 30, 20), NONE, sizes, many(AI_FACES + 2));
-  assert.equal(over.notes.at(-5), "(2 more faces left out)");
+  assert.equal(over.notes.at(-6), "(2 more faces left out)");
   const on = over.commands!.find((c) => c.op === "create_sketch")!.params.on;
   assert.ok(on.type === "choice");
   // 3 origin planes and the first 30 faces; the 31st is not a value, so the answer's check refuses it.
@@ -228,13 +232,13 @@ test("the prompt lists at most AI_FACES faces, and only those can be chosen", ()
 test("hand-worked: the sketch open is named for the draw commands, and one an extrude is built from is said to be closed to them (AI7b)", () => {
   // Box, then Sketch 1 on XZ (sketch-2) with nothing built from it: open, the draw commands draw in it.
   const s = addSketch(partDocument("box", 40, 30, 20), "XZ");
-  const open = designAIView(s.doc, NONE, sizes, [], s.id).notes.slice(-4, -2);
+  const open = designAIView(s.doc, NONE, sizes, [], s.id).notes.slice(-5, -3);
   assert.deepEqual(open, ["Sketch 1 is open (Sketch 1 on the XZ plane): the draw commands draw in it, unless create_sketch starts another first.", SKETCH_AXES]);
   // A rectangle drawn and extruded 10 (Extrude 1): the sketch is closed to the AI, and the prompt says why.
   const used = extrudeSketch(drawRectangle(s.doc, s.id, [0, 0], [40, 30]).doc, s.id, 10).doc;
-  assert.equal(designAIView(used, NONE, sizes, [], s.id).notes.at(-4), "Sketch 1 is open (Sketch 1 on the XZ plane), but Extrude 1 is built from it, so the draw commands can't draw in it: start a new sketch with create_sketch first.");
+  assert.equal(designAIView(used, NONE, sizes, [], s.id).notes.at(-5), "Sketch 1 is open (Sketch 1 on the XZ plane), but Extrude 1 is built from it, so the draw commands can't draw in it: start a new sketch with create_sketch first.");
   // An id that names no item (a sketch open in a design since replaced) is as good as none.
-  assert.equal(designAIView(s.doc, NONE, sizes, [], "sketch-99").notes.at(-4), NO_OPEN);
+  assert.equal(designAIView(s.doc, NONE, sizes, [], "sketch-99").notes.at(-5), NO_OPEN);
 });
 
 test("the sketch axes the AI is told are the ones a sketch on each origin plane really has (AI7b)", () => {
@@ -252,20 +256,40 @@ test("the sketch axes the AI is told are the ones a sketch on each origin plane 
 
 test("hand-worked: extrude_sketch is offered, naming the sketches it can use only when there are some (AI7c)", () => {
   const ops = (cs: ReturnType<typeof aiCommands>) => cs.map((c) => c.op);
-  assert.deepEqual(ops(aiCommands([])), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch"]);
+  assert.deepEqual(ops(aiCommands([])), ["set_part", "create_sketch", "draw_circle", "draw_rectangle", "draw_line", "extrude_sketch", "rename_item"]);
   // No sketch to name: no `sketch` parameter (an empty list of choices is no schema).
-  assert.deepEqual(Object.keys(aiCommands([]).at(-1)!.params), ["distance"]);
-  const extrude = aiCommands([], ["Sketch 1", "Sketch 2"]).at(-1)!.params;
+  assert.deepEqual(Object.keys(aiCommands([]).at(-2)!.params), ["distance"]);
+  const extrude = aiCommands([], ["Sketch 1", "Sketch 2"]).at(-2)!.params;
   assert.deepEqual(Object.keys(extrude), ["distance", "sketch"]);
   assert.deepEqual((extrude.sketch as { values: string[]; optional?: boolean }).values, ["Sketch 1", "Sketch 2"]);
   assert.equal(extrude.sketch.optional, true);
   // The view: the timeline() sketches before the marker are Sketch 1 and Sketch 2 (Sketch 2 is the newest); the notes say which one a bare extrude takes.
   const view = designAIView(timeline(), new Set(), { width: 40, depth: 30, height: 20 });
-  assert.deepEqual((view.commands!.at(-1)!.params.sketch as { values: string[] }).values, ["Sketch 1", "Sketch 2"]);
+  assert.deepEqual((view.commands!.at(-2)!.params.sketch as { values: string[] }).values, ["Sketch 1", "Sketch 2"]);
   assert.ok(view.notes.some((n) => /takes the sketch started earlier in the answer, else the newest sketch: Sketch 2\./.test(n)), view.notes.join("\n"));
   // With Sketch 1 open (its id is sketch-2 in this timeline), a bare extrude takes it.
   const open = designAIView(timeline(), new Set(), { width: 40, depth: 30, height: 20 }, [], "sketch-2");
   assert.ok(open.notes.some((n) => /else the open sketch: Sketch 1\./.test(n)), open.notes.join("\n"));
   // No design, or no sketch: said, so the model does not name one that is not there.
   assert.ok(designAIView(undefined, new Set(), { width: 40, depth: 30, height: 20 }).notes.some((n) => /No sketch can be extruded yet/.test(n)));
+});
+
+test("hand-worked: rename_item is offered, naming the items only when there are some, the timeline's last AI_TIMELINE_ITEMS (AI7d)", () => {
+  const rename = (cs: ReturnType<typeof aiCommands>) => cs.find((c) => c.op === "rename_item")!;
+  // No item to name: only `name` (an empty list of choices is no schema); the item just made is the default.
+  assert.deepEqual(Object.keys(rename(aiCommands([])).params), ["name"]);
+  const named = rename(aiCommands([], [], ["Sketch 1", "Box 1"])).params;
+  assert.deepEqual(Object.keys(named), ["item", "name"]);
+  assert.deepEqual([named.item.type, (named.item as { values: string[] }).values, named.item.optional], ["choice", ["Sketch 1", "Box 1"], true]);
+  // The view lists every item's name, in order, as the timeline lines name them (the fixture's items).
+  const view = designAIView(timeline(), new Set(), { width: 40, depth: 30, height: 20 });
+  const items = (view.commands!.find((c) => c.op === "rename_item")!.params.item as { values: string[] }).values;
+  assert.deepEqual(items, timeline().timeline.features.map((f) => f.provenance.self.label));
+  // A design with more than AI_TIMELINE_ITEMS items offers the last 40, like the lines it lists.
+  let big = documentFor({ op: "create_sketch", on: "XY" });
+  for (let i = 1; i < AI_TIMELINE_ITEMS + 3; i++) big = addSketch(big, "XY").doc;
+  const long = designAIView(big, new Set(), { width: 40, depth: 30, height: 20 }).commands!.find((c) => c.op === "rename_item")!.params.item as { values: string[] };
+  assert.deepEqual([long.values.length, long.values[0], long.values.at(-1)], [AI_TIMELINE_ITEMS, "Sketch 4", `Sketch ${AI_TIMELINE_ITEMS + 3}`]);
+  assert.ok(view.notes.includes(RENAME_NOTE));
+  assert.ok(designAIView(undefined, new Set(), { width: 40, depth: 30, height: 20 }).notes.includes(RENAME_NOTE));
 });

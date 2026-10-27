@@ -136,6 +136,17 @@ export function read(prompt: string, setup: readonly Command[]): Command[] | nul
   // Starting an empty sketch (AI7a), on a plane named by its letters or by the side of the view cube it faces.
   const sketch = t.match(/^(start a new sketch|create a sketch|new sketch|i want to sketch|can you start a sketch|open a new sketch) on (the )?(xy|xz|yz|top|ground|bottom|front|back|right|left|side)( plane)?(, please)?[.?]$/);
   if (sketch) return [{ op: "create_sketch", on: { top: "XY", ground: "XY", bottom: "XY", front: "XZ", back: "XZ", right: "YZ", left: "YZ", side: "YZ" }[sketch[3]] ?? sketch[3].toUpperCase() }];
+  // Naming a sketch (AI7d). One started in the same answer takes the name with no item; one already there is "Sketch n" (the number written, an
+  // ordinal, or the newest when the setup made that many sketches, or the only one), named by its current name.
+  const sketches = setup.filter((c) => c.op === "create_sketch").length;
+  const named = prompt.match(/"([^"]+)"/)?.[1];
+  const started = t.match(/^(start a new sketch|create a sketch|new sketch) on (the )?(xy|xz|yz|top|ground|bottom|front|back|right|left|side)( plane)?(,? (and )?(call it|name it|called) "[^"]+")[.]$/);
+  if (started && named) return [{ op: "create_sketch", on: PLANE_OF[started[3]] }, { op: "rename_item", name: named }];
+  const renaming = t.match(/^(rename|call|change the name of|can you rename) (sketch (\d)|the (first|second|third) sketch|the (newest|latest) sketch|the sketch)( to)? "[^"]+"[.?]$/);
+  if (renaming && named) {
+    const n = renaming[3] ? Number(renaming[3]) : renaming[4] ? ["first", "second", "third"].indexOf(renaming[4]) + 1 : sketches;
+    return n >= 1 && n <= sketches ? [{ op: "rename_item", item: `Sketch ${n}`, name: named }] : null;
+  }
   // Drawing in a new sketch (AI7b): the plane as for a sketch, then a circle, a rectangle or a line, at the origin unless a
   // centre is written "centred at (x, y) mm".
   const drawing = readDrawing(t);

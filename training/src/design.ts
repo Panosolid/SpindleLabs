@@ -19,10 +19,12 @@
 // names them). From AI7b a circle, a rectangle or a line can be drawn in
 // it (the sketch is started in the same answer, then drawn in); arcs
 // still can't be. From AI7c a drawn circle or rectangle can be extruded
-// by a distance (extrude_sketch, the other way when negative).
+// by a distance (extrude_sketch, the other way when negative). From AI7d an
+// item can be renamed (rename_item): a sketch that is already there, named
+// "Sketch 2", or the one just started in the same answer.
 
 import type { Command, KernelCalls } from "@fission/core";
-import { buildSpec, documentFor, drawWords, EXTRUDE_OP, extrudeWords, featureSpec, lastFeature, SHAPES, SKETCH_PLANES, specOf, type DesignDocument } from "@fission/design";
+import { buildSpec, documentFor, drawWords, EXTRUDE_OP, extrudeWords, featureSpec, lastFeature, RENAME_OP, renameWords, SHAPES, SKETCH_PLANES, specOf, type DesignDocument } from "@fission/design";
 import type { SeededRandom } from "@fission/testing";
 import { pick, randomLength, randomSize, randomUnit, unitAfter, type Length } from "./lengths.ts";
 import { CANNOT } from "./working.ts";
@@ -116,6 +118,22 @@ export const DESIGN_RULES: readonly CommandRule[] = [
       }
     },
     says: (c) => extrudeWords(c),
+  },
+  {
+    op: RENAME_OP,
+    async apply(_kernel: KernelCalls, state: ReplayState, command: Command): Promise<Applied> {
+      if (!state.sketched) return { ok: false, reason: "there is no item to rename" };
+      try {
+        // Design's own document for it (a name builds nothing, so there is no kernel to ask); the name must be the item's afterwards.
+        const doc = documentFor(command, state.sketched);
+        const names = doc.timeline.features.map((f) => f.provenance.self.label);
+        if (!names.includes(String(command.name))) return { ok: false, reason: `no item is named ${String(command.name)} afterwards` };
+        return { ok: true, state: { ...state, sketched: doc } };
+      } catch (e) {
+        return { ok: false, reason: `Design refused it: ${reason(e)}` };
+      }
+    },
+    says: (c) => renameWords(c),
   },
 ];
 
@@ -445,11 +463,52 @@ function drawDraft(r: SeededRandom, extrude = false): Draft | null {
   return { task: "create", setup: [], prompt: sentence(prompt), explanation: working([...which, "The ends are given in mm in the sketch.", so(c)]), commands: [sketch, c] };
 }
 
+// ---- Renaming (AI7d).
+
+/** Names people give a sketch; none looks like a default name ("Sketch 2"), so none can be taken. */
+export const ITEM_NAMES = ["base", "Lid outline", "bracket", "mounting plate", "Profile A", "top view", "hinge", "Logo"];
+const ORDINALS = ["first", "second", "third"];
+
+/** The sketches an item rename is asked about: one to three planes' sketches already there, "Sketch 1" … "Sketch 3". */
+function sketchesThere(r: SeededRandom): Command[] {
+  return Array.from({ length: 1 + Math.floor(r.next() * 3) }, () => ({ op: "create_sketch", on: pick(r, SKETCH_PLANES) }));
+}
+
+/** "Rename Sketch 2 to "base"", "call the second sketch "base"": an item that is there, named in the command by its current name. */
+function renameDraft(r: SeededRandom): Draft {
+  const setup = sketchesThere(r);
+  const n = 1 + Math.floor(r.next() * setup.length);
+  const name = pick(r, ITEM_NAMES);
+  const item = `Sketch ${n}`;
+  const which = pick(r, [item, ...(setup.length > 1 && n === setup.length ? ["the newest sketch", "the latest sketch"] : []), ...(setup.length === 1 ? ["the sketch"] : [`the ${ORDINALS[n - 1]} sketch`])]);
+  const prompt = pick(r, [`rename ${which} to "${name}".`, `call ${which} "${name}".`, `change the name of ${which} to "${name}".`, `can you rename ${which} "${name}"?`]);
+  const reading = which === item ? [] : [`${sentence(which)} is ${item}.`];
+  const command: Command = { op: RENAME_OP, item, name };
+  return { task: "rename", setup, prompt: sentence(prompt), explanation: working([...reading, `Only the name changes, so ${renameWords(command)}; nothing is built or removed.`]), commands: [command] };
+}
+
+/** "Start a new sketch on the front plane and call it "base"": the sketch just started is the item, so the command names none. */
+function nameNewDraft(r: SeededRandom): Draft {
+  const word = r.next() < 0.5 ? pick(r, SKETCH_PLANES) : pick(r, Object.keys(PLANE_PLACES));
+  const plane = (SKETCH_PLANES as readonly string[]).includes(word) ? (word as Plane) : PLANE_PLACES[word];
+  const name = pick(r, ITEM_NAMES);
+  const prompt = pick(r, [`start a new sketch on the ${word} plane and call it "${name}".`, `create a sketch on ${word} and name it "${name}".`, `new sketch on the ${word} plane, called "${name}".`]);
+  const which = word === plane ? [] : [`The ${word} plane is the ${plane} plane.`];
+  const command: Command = { op: RENAME_OP, name };
+  return {
+    task: "create",
+    setup: [],
+    prompt: sentence(prompt),
+    explanation: working([...which, `So there is a ${SKETCHED} ${plane} plane.`, `Then the sketch just started is named: ${renameWords(command)}.`]),
+    commands: [{ op: "create_sketch", on: plane }, command],
+  };
+}
+
 // ---- Requests no command can do yet: the answer is no commands and a plain reason (AI5c).
 
 const PLANES = ["top", "front", "right", "XY", "XZ", "YZ"];
 /** What can be done now, said the same way in every refusal. */
-const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane, drawing circles, rectangles and lines in it and extruding it.";
+const CAN_DO = "What can be done now is making or resizing a whole ready-made shape (a box, cylinder, sphere, plate, L bracket, slot or star), or starting a sketch on a plane, drawing circles, rectangles and lines in it, extruding it, and renaming an item.";
 
 /** A request that needs a command Design doesn't offer, and what it would need. Each mentions what it can't do by name, so the words alone say why. */
 function cannotAsk(r: SeededRandom): { prompt: string; needs: string; onPart: boolean } {
@@ -513,5 +572,7 @@ export const DESIGN_RECIPES: readonly Recipe[] = [
   { id: "design.sketch", ops: ["create_sketch", "set_part"], sample: sketchDraft },
   { id: "design.sketch-draw", ops: ["create_sketch", "draw_circle", "draw_rectangle", "draw_line"], sample: (r) => drawDraft(r) },
   { id: "design.sketch-extrude", ops: ["create_sketch", "draw_circle", "draw_rectangle", EXTRUDE_OP], sample: (r) => drawDraft(r, true) },
+  { id: "design.rename", ops: ["create_sketch", RENAME_OP], sample: renameDraft },
+  { id: "design.sketch-name", ops: ["create_sketch", RENAME_OP], sample: nameNewDraft },
   { id: "design.cannot", ops: ["set_part"], sample: cannotDraft },
 ];
