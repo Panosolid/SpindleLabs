@@ -146,6 +146,26 @@ export interface ExtrudeShow {
  */
 export type ExtrudePointer = { kind: "pick"; profile: string | null; face?: number | null } | { kind: "drag"; distance: number; done: boolean };
 
+/** A handle of the Move tool's gizmo (35e2c): the arrow along X, Y or Z, or the ring turning about it. */
+export type MoveHandle = "x" | "y" | "z" | "turnX" | "turnY" | "turnZ";
+
+/** What the Move tool shows in the view while its panel is open (35e2c): three arrows along X, Y and Z and three rings about them, at `centre` (mm), where the pivot ends up. */
+export interface MoveHandlesShow {
+  centre: [number, number, number];
+}
+
+/**
+ * A Move handle dragged (35e2c): how far since the press, not snapped:
+ * along an arrow in mm (where the pointer's ray passes nearest the arrow's
+ * line), round a ring in degrees (counter-clockwise looking down its axis,
+ * counted on past a whole turn); `done` when the button is let go.
+ */
+export interface MovePointer {
+  handle: MoveHandle;
+  amount: number;
+  done: boolean;
+}
+
 /**
  * What the viewport draws in the selection colour (step 17d): the whole
  * body, and faces and edges by kernel index. Indices the body on screen
@@ -220,6 +240,14 @@ export interface SharedViewport {
   showExtrude(show: ExtrudeShow | null): void;
   /** Hears the pointer while Extrude is shown; the shown workspace sets it and puts back null on hide. */
   onExtrudePointer: ((pointer: ExtrudePointer) => void) | null;
+  /**
+   * Draws the Move tool's arrows and rings (35e2c); null takes them away.
+   * While shown, a press on one drags it (whatever the navigation mode) and
+   * the drag goes to onMovePointer, never to onPick.
+   */
+  showMoveHandles(show: MoveHandlesShow | null): void;
+  /** Hears the Move handles' drags; the shown workspace sets it and puts back null on hide. */
+  onMovePointer: ((pointer: MovePointer) => void) | null;
   /**
    * While set and a sketch is being edited (showSketches), clicks and
    * hovers over the viewport come here instead of onPick, with where they

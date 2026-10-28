@@ -254,3 +254,109 @@ test("regression (35e2b's browser check): a moved body downloads as STL, and is 
   const corners = (k: number, f: (...x: number[]) => number) => f(...p.filter((_, i) => i % 3 === k));
   near([[0, 1, 2].map((k) => corners(k, Math.min)), [0, 1, 2].map((k) => corners(k, Math.max))] as Box3, want, "the mesh other workspaces are handed");
 });
+
+/** The box round a mesh's points. */
+const meshBox = (positions: readonly number[]): Box3 => [
+  [0, 1, 2].map((k) => Math.min(...positions.filter((_, i) => i % 3 === k))) as Box3[0],
+  [0, 1, 2].map((k) => Math.max(...positions.filter((_, i) => i % 3 === k))) as Box3[1],
+];
+
+test("an edited Move's preview (35e2c) draws the bodies where the kernel puts them after OK, a later Move among them, seeded (FISSION_SEED)", async () => {
+  const { changedMove, editedMoveMesh } = await import("@fission/design");
+  const seed = BigInt(process.env.FISSION_SEED ?? "35");
+  const r = seeded(seed);
+  const pick = (n: number) => Math.floor(r.next() * n);
+  const angle = () => (pick(3) === 0 ? 0 : 15 * (pick(25) - 12));
+  const values = () => v({ x: pick(201) - 100, y: pick(201) - 100, z: pick(201) - 100, turnX: angle(), turnY: angle(), turnZ: angle(), pivotX: pick(100) - 50, pivotY: pick(100) - 50, pivotZ: pick(100) - 50 });
+  const bodies = () => [["feature-1"], ["feature-2"], ["feature-1", "feature-2"]][pick(3)];
+  for (let n = 0; n < 20; n++) {
+    // A box and a cylinder, Move 1 of some, and half the time Move 2 of some after it; Move 1 edited.
+    let d = insertPreset(partDocument("box", 1 + pick(60), 1 + pick(60), 1 + pick(60)), "cylinder", 2 + pick(40), 2 + pick(40), 1 + pick(40)).doc;
+    const first = insertMove(d, bodies(), values());
+    d = first.doc;
+    if (pick(2) === 0) d = insertMove(d, bodies(), values()).doc;
+    const to = values();
+    const what = `seed ${seed} case ${n} (Move 1 to ${JSON.stringify(to)}; FISSION_SEED=${seed} to replay)`;
+    const preview = editedMoveMesh(await sceneOf(d), d, (await built(d)).results, first.id, to);
+    const kernel = (await sceneOf(changedMove(d, first.id, to))).mesh;
+    // Unlike a new Move's preview (from the body's points as made, small whole numbers here), this one starts from the
+    // points as built and moved, which the kernel sends as 32-bit floats. A point at distance R from the origin has each
+    // part rounded by at most R·2^-24, so it is off by at most √3·R·2^-24; the Move's turns and shifts keep that length;
+    // the kernel's own mesh to compare with is rounded once more, R·2^-24 a part. So LINEAR plus (√3 + 1)·R·2^-24,
+    // R the farthest point from the origin in either mesh (a turn can bring a far point near the origin).
+    const reach = (m: readonly number[]) => Math.max(...m.map((_, i) => (i % 3 === 0 ? Math.hypot(m[i], m[i + 1], m[i + 2]) : 0)));
+    const bound = LINEAR + (Math.sqrt(3) + 1) * Math.max(reach(kernel.positions), reach((await sceneOf(d)).mesh.positions)) * 2 ** -24;
+    assert.equal(preview.positions.length, kernel.positions.length, what);
+    preview.positions.forEach((x, i) => assert.ok(Math.abs(x - kernel.positions[i]) <= bound, `${what}: point number ${i} ${x}, the kernel's ${kernel.positions[i]}`));
+    preview.edge_lines.forEach((x, i) => assert.ok(Math.abs(x - kernel.edge_lines[i]) <= bound, `${what}: line number ${i}`));
+    preview.normals.forEach((x, i) => assert.ok(Math.abs(x - kernel.normals[i]) <= 1e-6, `${what}: normal number ${i}`));
+  }
+});
+
+test("Move's handles in the app (35e2c): a drag fills the boxes in whole mm and 15° steps, the preview and handles follow, OK builds what was shown", async () => {
+  const { app } = await import("./design-app.ts");
+  const { bodyReference } = await import("@fission/design");
+  const a = await app(BOX());
+  const before = meshBox(a.mesh()!.positions);
+  const box = (k: string) => (a.$(`#move-${k}`) as HTMLInputElement).value;
+  // No handles until a body is picked.
+  await a.key("move-tool");
+  assert.equal(a.moveHandlesShown(), null, "nothing picked: no handles");
+  a.selection.set([bodyReference("feature-1")]);
+  await a.settle();
+  // The box 40 × 30 × 20 from `before`: the handles at its middle.
+  const middle = [0, 1, 2].map((k) => (before[0][k] + before[1][k]) / 2);
+  assert.deepEqual(a.moveHandlesShown()?.centre, middle);
+  // 12.4 mm along X while held: 12 in the box, the box drawn 12 mm on, the handles with it.
+  await a.movePointer({ handle: "x", amount: 12.4, done: false });
+  assert.equal(box("x"), "12");
+  near(meshBox(a.mesh()!.positions), [[before[0][0] + 12, before[0][1], before[0][2]], [before[1][0] + 12, before[1][1], before[1][2]]], "held at 12 mm");
+  assert.deepEqual(a.moveHandlesShown()?.centre, [middle[0] + 12, middle[1], middle[2]]);
+  // Let go at 12.6 mm: 13.
+  await a.movePointer({ handle: "x", amount: 12.6, done: true });
+  assert.equal(box("x"), "13");
+  // Round Z: 50° snaps to 45; then a second drag of 140° (135 more) to 180; a third of 20° (15 more) to 195°, shown as −165.
+  for (const [amount, want] of [[50, "45"], [140, "180"], [20, "-165"]] as const) {
+    await a.movePointer({ handle: "turnZ", amount, done: true });
+    assert.equal(box("turnZ"), want, `after ${amount}°`);
+  }
+  // A typed box is the user's: the next drag starts from it.
+  const y = a.$("#move-y") as HTMLInputElement;
+  y.value = "2.5";
+  y.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  await a.movePointer({ handle: "y", amount: -3.2, done: true });
+  assert.equal(box("y"), "-0.5");
+  const shown = a.mesh()!.positions.slice();
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  await a.settle();
+  const move = a.doc().timeline.features.at(-1)!;
+  assert.deepEqual([move.intent.parameters.x, move.intent.parameters.y, move.intent.parameters.turnZ], [13, -0.5, -165]);
+  assert.equal(a.moveHandlesShown(), null, "OK takes the handles away");
+  // The kernel's body is where the preview drew it.
+  const kernel = a.mesh()!.positions;
+  assert.equal(kernel.length, shown.length);
+  kernel.forEach((x, i) => assert.ok(Math.abs(x - shown[i]) <= LINEAR, `point number ${i}: ${x}, the preview's ${shown[i]}`));
+});
+
+test("an edited Move previews in the app (35e2c): its handles at its pivot moved, a drag moves the body before OK, Cancel puts it back", async () => {
+  const { app } = await import("./design-app.ts");
+  const moved = insertMove(BOX(), ["feature-1"], v({ x: 10 }));
+  const a = await app(moved.doc);
+  const built = meshBox(a.mesh()!.positions);
+  await a.doubleClick(moved.id);
+  assert.equal((a.$("#move-x") as HTMLInputElement).value, "10", "the edit opened on Move 1");
+  const pivot = moved.doc.timeline.features.at(-1)!.intent.parameters;
+  assert.deepEqual(a.moveHandlesShown()?.centre, [(pivot.pivotX as number) + 10, pivot.pivotY, pivot.pivotZ]);
+  // 5 mm up Z: the box drawn 5 mm up before OK (35e2b drew it as built until OK).
+  await a.movePointer({ handle: "z", amount: 5, done: true });
+  near(meshBox(a.mesh()!.positions), [[built[0][0], built[0][1], built[0][2] + 5], [built[1][0], built[1][1], built[1][2] + 5]], "edited, up 5");
+  // Typed back to no shift along X: the box drawn 10 mm back.
+  const x = a.$("#move-x") as HTMLInputElement;
+  x.value = "0";
+  x.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  near(meshBox(a.mesh()!.positions), [[built[0][0] - 10, built[0][1], built[0][2] + 5], [built[1][0] - 10, built[1][1], built[1][2] + 5]], "edited, back along X");
+  (a.$("#move-cancel") as HTMLButtonElement).click();
+  await a.settle();
+  near(meshBox(a.mesh()!.positions), built, "Cancel: as built");
+  assert.equal(a.moveHandlesShown(), null);
+});
