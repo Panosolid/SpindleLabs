@@ -207,8 +207,8 @@ const WALKERS = { "Design: shape to STL": designShapeToStl, "Design: sketch to S
  * too, 684 bytes, 40 · 30 · 10 = 12,000 mm³.
  */
 const FILES = {
-  "Design: shape to STL": { name: "fission-box.stl", length: 684, volume: 30000 },
-  "Design: sketch to STL": { name: "fission-extrude.stl", length: 684, volume: 12000 },
+  "Design: shape to STL": { name: "spindlelabs-box.stl", length: 684, volume: 30000 },
+  "Design: sketch to STL": { name: "spindlelabs-extrude.stl", length: 684, volume: 12000 },
 };
 
 /** Turns per build when a journey is walked against a reference build, after one warm-up walk on each. */

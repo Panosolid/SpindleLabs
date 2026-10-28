@@ -185,7 +185,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         for (const f of features) files.push(await ctx.kernel.call("export_stl", await featureSpec(ctx.kernel, doc, f), kindOf(f)));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
-        const saved = await save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), `fission-${one ? name : `${features.length}-bodies`}.stl`);
+        const saved = await save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`);
         if (saved === false) return { message: "Export STL cancelled: nothing was saved.", bad: false };
         // Mark the bodies that warned on screen too: every face of one moves in single precision.
         const warned = features.filter((_, i) => files[i].warning);

@@ -185,7 +185,7 @@ await check("without a picker, Export STL asks for the name too, and a project s
     await chooseFile(page, "file-export-stl", false);
     await page.waitForSelector(".save-name input");
     assert.equal(await page.textContent(".save-name .ext"), ".stl");
-    assert.match(await page.inputValue(".save-name input"), /^(spindlelabs|fission)-box$/);
+    assert.match(await page.inputValue(".save-name input"), /^spindlelabs-box$/);
     await page.fill(".save-name input", "My box");
     const [stl] = await Promise.all([page.waitForEvent("download"), page.click(".save-name .ok")]);
     assert.equal(stl.suggestedFilename(), "My box.stl");

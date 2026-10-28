@@ -58,7 +58,7 @@ test("Download STL saves the kernel's file under the shape's name and clears the
   assert.deepEqual(outcome, { message: "", bad: false });
   // The kernel is asked for the part's own spec, named by its shape.
   assert.deepEqual(calls, [["export_stl", specOf(box, lastFeature(box)), "box"]]);
-  assert.deepEqual(saved, [{ name: "fission-box.stl", bytes: [1, 2, 3] }]);
+  assert.deepEqual(saved, [{ name: "spindlelabs-box.stl", bytes: [1, 2, 3] }]);
   assert.deepEqual(overlays, [`clear ${STL_OVERLAY}`]);
 });
 
@@ -96,7 +96,7 @@ test("the same body picked twice is downloaded once, as its own file", async () 
   const { r, saved } = registry();
   const { ctx } = context(box, async () => ({ bytes: new Uint8Array([1, 2, 3]), rounding: 0, warning: null }));
   assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body, body], ctx), { message: "", bad: false });
-  assert.deepEqual(saved, [{ name: "fission-box.stl", bytes: [1, 2, 3] }]);
+  assert.deepEqual(saved, [{ name: "spindlelabs-box.stl", bytes: [1, 2, 3] }]);
 });
 
 // ---- Copy as SVG (X6b) ----
