@@ -4,6 +4,7 @@
 # Node / Vite
 node_modules/
 apps/fission/dist/
+apps/fission/dist-offline/
 
 # Python
 __pycache__/

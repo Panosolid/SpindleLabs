@@ -82,7 +82,7 @@ test("hand-worked: a box and an extruded rectangle download as one STL of 24 tri
   // The toolbar's STL: every body shown, Body 1 then Body 2.
   const bodies = shownBodyRefs(doc);
   assert.deepEqual(bodies.map((b) => b.id), ["body:feature-1", `body:${extrude}`]);
-  assert.deepEqual(await a.run(DOWNLOAD_STL, bodies), { message: "", bad: false });
+  assert.deepEqual(await a.run(DOWNLOAD_STL, bodies), { message: "Exported spindlelabs-2-bodies.stl.", bad: false });
   assert.equal(a.saved.length, 1);
   const [file] = a.saved;
   assert.equal(file.name, "spindlelabs-2-bodies.stl");

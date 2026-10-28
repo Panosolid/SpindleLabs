@@ -98,3 +98,16 @@ test("writeServiceWorker on a built folder: sw.js runs as a script and lists the
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("offline mode off: the plugin ships the clean-up worker and no manifest link", async () => {
+  const { offlinePlugin } = await import("../offline.mjs");
+  assert.deepEqual(offlinePlugin(false).transformIndexHtml(), []);
+  assert.equal(offlinePlugin(true).transformIndexHtml()[0].attrs.rel, "manifest");
+  const off = readFileSync(new URL("../sw-off.js", import.meta.url), "utf8");
+  // It must delete our caches, remove itself, and handle no fetch (so the network answers).
+  assert.match(off, /caches\.delete/);
+  assert.match(off, /registration\.unregister\(\)/);
+  assert.ok(!off.includes('"fetch"'));
+  // Breaking it that way is caught: without unregister the pattern is gone.
+  assert.doesNotMatch(off.replace("registration.unregister()", ""), /registration\.unregister\(\)/);
+});

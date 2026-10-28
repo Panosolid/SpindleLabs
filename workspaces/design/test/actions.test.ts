@@ -55,7 +55,7 @@ test("Download STL saves the kernel's file under the shape's name and clears the
     return { bytes: new Uint8Array([1, 2, 3]), rounding: 0, warning: null };
   });
   const outcome = await r.get(DOWNLOAD_STL)!.run([body], ctx);
-  assert.deepEqual(outcome, { message: "", bad: false });
+  assert.deepEqual(outcome, { message: "Exported spindlelabs-box.stl.", bad: false });
   // The kernel is asked for the part's own spec, named by its shape.
   assert.deepEqual(calls, [["export_stl", specOf(box, lastFeature(box)), "box"]]);
   assert.deepEqual(saved, [{ name: "spindlelabs-box.stl", bytes: [1, 2, 3] }]);
@@ -66,7 +66,7 @@ test("a warning from the kernel is shown as bad and marks the whole body", async
   const { r, saved } = registry();
   const warning = "single-precision numbers: this part's corners move by up to 1.250e-2 mm";
   const { ctx, overlays } = context(box, async () => ({ bytes: new Uint8Array([9]), rounding: 0.0125, warning }));
-  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body], ctx), { message: warning, bad: true });
+  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body], ctx), { message: `Exported spindlelabs-box.stl. ${warning}`, bad: true });
   assert.equal(saved.length, 1, "the file is still saved: the warning says how far it is off");
   assert.deepEqual(overlays, [{ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: warning, marks: [{ target: { body: true }, severity: "warning" }] }]);
 });
@@ -95,7 +95,7 @@ test("Download STL refuses without a part, with nothing, or with anything not a 
 test("the same body picked twice is downloaded once, as its own file", async () => {
   const { r, saved } = registry();
   const { ctx } = context(box, async () => ({ bytes: new Uint8Array([1, 2, 3]), rounding: 0, warning: null }));
-  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body, body], ctx), { message: "", bad: false });
+  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body, body], ctx), { message: "Exported spindlelabs-box.stl.", bad: false });
   assert.deepEqual(saved, [{ name: "spindlelabs-box.stl", bytes: [1, 2, 3] }]);
 });
 
@@ -121,6 +121,12 @@ function copying(doc: unknown, copy: CopySvg, registerProducers = true) {
   return { run: (targets: Selected[]) => r.get(COPY_SVG)!.run(targets, ctx), copied, r };
 }
 const fine: CopySvg = async () => {};
+
+test("Copy as SVG's tooltip names its key", () => {
+  const { r } = registry();
+  const a = r.actionsFor(targetsOf([profile], slot))[0];
+  assert.match(a.title ?? "", /Ctrl\+C/);
+});
 
 test("a selected profile offers Copy as SVG; a part with no profile, or a profile it lacks, offers nothing", () => {
   const { r } = registry();

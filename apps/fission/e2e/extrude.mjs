@@ -97,6 +97,7 @@ const extrudeStatus = (page, want) => until(page, (w) => document.querySelector(
  */
 async function extrudeEnter(page) {
   await until(page, () => document.querySelector("#extrude-ok")?.disabled === false, null, "Extrude's OK on");
+  assert.match((await page.getAttribute("#extrude-ok", "title")) ?? "", /Enter/, "OK's tooltip names Enter");
   await page.press("#extrude-distance", "Enter");
 }
 
@@ -490,7 +491,7 @@ try {
       await until(page, () => document.body.dataset.selection?.split(" ").length === 2, null, "both bodies selected");
       await openPanel(page, "properties", tap);
       assert.deepEqual(await stl(verb), ["spindlelabs-2-bodies.stl", 12 + tris, 24000 + vol]);
-      assert.equal(await page.textContent("#action-note"), "");
+      assert.equal(await page.textContent("#action-note"), "Exported spindlelabs-2-bodies.stl.");
       if (shots) await page.screenshot({ path: `${shots}/two-body-stl-${width}.png`, fullPage: true });
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
       await page.context().close();
