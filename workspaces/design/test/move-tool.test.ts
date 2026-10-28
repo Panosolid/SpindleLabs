@@ -108,11 +108,13 @@ test("the preview moves only the picked bodies' points, lines and normals, keepi
   assert.equal(movedMesh(scene, [], v({ x: 3 })).positions.join(), scene.mesh.positions.join(), "nothing picked: nothing moves");
 });
 
-test("the boxes read: every one a number, or the first that isn't named", () => {
+test("the boxes read: every one a number (an empty one 0), or the first that isn't named", () => {
   const all = Object.fromEntries(MOVE_PARAMS.map((k) => [k, "0"])) as Record<(typeof MOVE_PARAMS)[number], string>;
   assert.deepEqual(readMoveBoxes({ ...all, x: "12.5", turnZ: "-90", pivotY: "1e3" }), { values: v({ x: 12.5, turnZ: -90, pivotY: 1000 }) });
-  assert.deepEqual(readMoveBoxes({ ...all, y: "" }), { bad: "y" }, "an empty box is not 0");
-  assert.deepEqual(readMoveBoxes({ ...all, turnX: "  " }), { bad: "turnX" });
+  // An empty box counts as 0 (Ben, 2026-10-28), spaces alone too, and a box left out.
+  assert.deepEqual(readMoveBoxes({ ...all, y: "" }), { values: v({}) }, "an empty box is 0");
+  assert.deepEqual(readMoveBoxes({ ...all, x: "7", turnX: "  " }), { values: v({ x: 7 }) });
+  assert.deepEqual(readMoveBoxes({ x: "3" }), { values: v({ x: 3 }) });
   assert.deepEqual(readMoveBoxes({ ...all, pivotZ: "ten" }), { bad: "pivotZ" });
   assert.deepEqual(readMoveBoxes({ ...all, z: "Infinity" }), { bad: "z" });
   assert.deepEqual(readMoveBoxes({ ...all, x: "1", y: "x" }), { bad: "y" }, "the first bad box, in the panel's order");

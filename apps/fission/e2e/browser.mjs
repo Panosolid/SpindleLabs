@@ -26,8 +26,8 @@ export async function untilBodies(page, n, what = `${n} bodies in the kernel`, t
   }
 }
 
-/** Launches the chosen browser. */
-export function launch() {
+/** Launches the chosen browser; `args`, command-line switches for Chromium (e2e/kernel-restart.mjs caps WebAssembly memory). */
+export function launch(args = []) {
   // E2E_CHROMIUM runs the Chromium checks on another build, for example CI's
   // (Playwright's own, "Chrome for Testing", a newer Chrome than a sandbox
   // may have); otherwise a sandbox's preinstalled Chromium, else Playwright's.
@@ -41,6 +41,7 @@ export function launch() {
   // and Mesa's software GL.
   if (browserName === "firefox") options.firefoxUserPrefs = { "webgl.force-enabled": true, "webgl.disabled": false, "webgl.enable-webgl2": true };
   if (process.env.E2E_HEADED) options.headless = false;
+  if (browserName === "chromium" && args.length) options.args = args;
   return ENGINES[browserName].launch(options).then(underTestCSP);
 }
 

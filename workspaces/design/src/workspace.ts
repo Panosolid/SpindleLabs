@@ -477,6 +477,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Settling an edit (26c, 26g) places its face sketches on these bodies too, reusing what is built: a body is never
   // held twice, and the ones a settle builds that no rebuild keeps are freed once it ends (BodyCache.using).
   const bodies = new BodyCache(kernel);
+  // A kernel that trapped is replaced by a fresh one (kernel-client.ts): its bodies are gone, so the design is built
+  // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). Once only
+  // while that build runs: a design that traps the fresh kernel too shows the failure rather than restarting forever.
+  let healing = false;
+  const stopHealing = kernel.onRestart?.(() => {
+    bodies.forget();
+    if (healing) return;
+    healing = true;
+    void show(designDoc(), shape).finally(() => (healing = false));
+  });
   let rebuilds: Promise<unknown> = Promise.resolve();
   const build = latestOnly((doc: DesignDocument) => {
     const next = rebuilds.then(() => buildPart(doc));
@@ -2347,6 +2357,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       toolChanges++;
       moves++;
       sleep();
+      stopHealing?.();
       void bodies.close();
       viewport.showSketches([]);
       typed.element.remove();
