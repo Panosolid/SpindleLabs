@@ -482,6 +482,9 @@ function closeSplit() {
   $("topbar-actions").addEventListener("click", () => setMenu(false)); // after the chosen button's own handler
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || toggle.getAttribute("aria-expanded") !== "true") return;
+    // Menu's Escape is its own, as every menu's is (menu-button.ts): the shortcut table below never also cancels the sketch's plane prompt.
+    e.preventDefault();
+    e.stopImmediatePropagation();
     setMenu(false);
     toggle.focus();
   });
@@ -843,11 +846,18 @@ withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 // One assistant panel for every workspace, beside the viewport.
-$("assistant-toggle").addEventListener("click", () => {
+const setAssistant = (open: boolean) => {
   const panel = $("assistant");
-  panel.hidden = !panel.hidden;
-  $("assistant-toggle").setAttribute("aria-pressed", String(!panel.hidden));
-  if (!panel.hidden) assistant.opened();
+  if (!!panel.hidden !== open) return;
+  panel.hidden = !open;
+  $("assistant-toggle").setAttribute("aria-pressed", String(open));
+  if (open) assistant.opened();
+};
+$("assistant-toggle").addEventListener("click", () => {
+  const open = !!$("assistant").hidden;
+  // At phone width the panel is a sheet over the view like the other two (styles/phone-sheet.css): one at a time.
+  if (open && window.matchMedia("(max-width: 640px)").matches) for (const slot of ["browser", "properties"]) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  setAssistant(open);
 });
 // At phone width the browser and properties fold away behind two toggles
 // (theme.css hides a closed one there); wider screens hide the toggles and
@@ -863,6 +873,7 @@ for (const slot of ["browser", "properties"] as const) {
     const open = toggle.getAttribute("aria-expanded") !== "true";
     // At phone width each opens as a sheet over the view (styles/phone-sheet.css): one at a time.
     if (open) for (const other of ["browser", "properties"] as const) if (other !== slot) $(`${other}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+    if (open && window.matchMedia("(max-width: 640px)").matches) setAssistant(false);
     set(open);
   });
   toggle.addEventListener("sheet-close", () => set(false));
@@ -875,10 +886,11 @@ for (const slot of ["browser", "properties"] as const) {
   const phone = window.matchMedia("(max-width: 640px)");
   let wanted = false;
   let opened = false;
-  new MutationObserver(() => {
+  // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
+  const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
     const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null;
-    if (now === wanted) return;
+    if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
     if (now && phone.matches && !open) {
@@ -894,7 +906,9 @@ for (const slot of ["browser", "properties"] as const) {
       toggle.click();
       opened = false;
     } else if (!now) opened = false;
-  }).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+  };
+  phone.addEventListener("change", () => phone.matches && update(true));
+  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
 }
 // A press in the view outside a sheet puts the sheet away (a tap on the part beside it is the way out; the toggles still work).
 {
@@ -905,6 +919,7 @@ for (const slot of ["browser", "properties"] as const) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
     }
+    setAssistant(false);
   });
 }
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
