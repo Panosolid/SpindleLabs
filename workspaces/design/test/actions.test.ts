@@ -122,6 +122,12 @@ function copying(doc: unknown, copy: CopySvg, registerProducers = true) {
 }
 const fine: CopySvg = async () => {};
 
+test("Copy as SVG's tooltip names its key", () => {
+  const { r } = registry();
+  const a = r.actionsFor(targetsOf([profile], slot))[0];
+  assert.match(a.title ?? "", /Ctrl\+C/);
+});
+
 test("a selected profile offers Copy as SVG; a part with no profile, or a profile it lacks, offers nothing", () => {
   const { r } = registry();
   assert.deepEqual(representationsOf(profile, slot), ["outline"]);

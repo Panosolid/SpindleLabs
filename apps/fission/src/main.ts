@@ -16,8 +16,8 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
-import { changeNote, fileMenu, iconSvg, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
+import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
@@ -563,18 +563,19 @@ function keepOnFirstChange() {
 }
 
 // Save and Open: the whole project, every workspace's data, as one
-// .spindlelabs.json file (docs/project-format.md). Opening replaces the project
+// .spindle file (docs/project-format.md). Opening replaces the project
 // only once all of it has read cleanly; a refused file leaves the open
 // project as it was and says why.
 const fileStatus = (message: string) => ($("file-status").textContent = message);
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
-async function save() {
+/** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
+let savedTo: FileHandle | null = null;
+async function save(asNew = false) {
   try {
     await started; // the project shown, not the empty one the app starts with
-    const url = URL.createObjectURL(new Blob([projectToJson(ctx.project)], { type: "application/json" }));
-    const a = Object.assign(document.createElement("a"), { href: url, download: `${ctx.project.name.replace(/[\\/:*?"<>|]/g, "-") || "Untitled"}.spindlelabs.json` });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    const result = await saveFile(document, { suggestedName: ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
+    if (result.status === "failed") return fileStatus(result.message);
+    if (result.status === "saved") savedTo = result.handle;
     fileStatus("");
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
@@ -583,10 +584,11 @@ async function save() {
 const SAVE_TITLE = $("save").title;
 withIcon($("save"), "save"); // its word kept as its name, out of sight (styles/app-bar.css)
 $("save").addEventListener("click", () => void save());
+const SAVE_AS_TITLE = "Save As…: save the whole project under a name and in a place you choose";
 // Open takes what a drop or paste takes (X6): every format with an importer,
 // routed by its contents, so a PNG opens in Image and a project as a project.
 $<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => representations.importerFor(f.format))
-  .flatMap((f) => (f.format === "project" ? [".json"] : f.extensions))
+  .flatMap((f) => (f.format === "project" ? [".spindle", ".json"] : f.extensions))
   .join(",");
 const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFor(f.format)).map((f) => f.many).join(", ")}`;
 // File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
@@ -595,6 +597,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFo
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
+  saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
   where: () => {
     const id = panesInUse().map((p) => pool.showing(p))[0];
     return id ? workspaceTitle(id) : "Community";
@@ -610,6 +613,7 @@ const file = fileMenu(document, {
 $("file-bar").prepend(file.element);
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
+  savedTo = null; // the file belonged to the old project
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -698,7 +702,10 @@ $("open-file").addEventListener("change", async () => {
 // Files from outside (X6): a file dropped anywhere on the app, or pasted
 // (outside a text field), goes through the representation registry: a
 // project opens as Open does, a PNG or JPEG opens in Image, and anything
-// else is refused in the top bar with what will take it and when.
+// else is refused in the top bar with what will take it and when. A file
+// for a workspace not on screen asks first ("Open in Image?"; the owner's
+// ask, 2026-10-28): Cancel opens nothing and leaves you where you were.
+const elsewhere = openElsewhere(document);
 async function receive(files: File[]) {
   await started; // or the project being reopened would replace what this opens
   const heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await f.slice(0, HEAD_BYTES).arrayBuffer()) })));
@@ -706,6 +713,11 @@ async function receive(files: File[]) {
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
   const file = files[0];
+  const target = route.importer.workspace;
+  if (target && pool.showing("main") !== target && pool.showing("split") !== target) {
+    const here = pool.showing("main");
+    if (!(await elsewhere.ask(file.name, formatInfo(route.format).one, workspaceName(target), here ? workspaceName(here) : null))) return;
+  }
   try {
     await route.importer.open(file.name, new Uint8Array(await file.arrayBuffer()));
   } catch (e) {

@@ -5,6 +5,7 @@
 // it and Ctrl+C both run it (X6b, 25c1).
 
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
+import { saveFile, STL_KIND } from "@fission/ui";
 import { bodyFeatures } from "./browser.ts";
 import { isHidden, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
@@ -19,17 +20,15 @@ export const COPY_SVG = "design.copy-svg";
 /** The STL-precision overlay: the whole part, while its last export warned. Design clears it on every edit. */
 export const STL_OVERLAY = "design.stl-precision";
 
-/** Hands `bytes` to the browser as a file download. */
-function download(bytes: Uint8Array<ArrayBuffer>, name: string) {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "model/stl" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+/** Asks for the file's name and place (the browser's save picker, or a name box), then saves it; false when the user closed the box. */
+async function download(bytes: Uint8Array<ArrayBuffer>, name: string): Promise<boolean> {
+  const r = await saveFile(document, { suggestedName: name, kind: STL_KIND, bytes });
+  if (r.status === "failed") throw new Error(r.message);
+  return r.status === "saved";
 }
 
-export type SaveFile = (bytes: Uint8Array<ArrayBuffer>, name: string) => void;
+/** Hands a file to the user; false (rather than nothing) says they chose not to save it. */
+export type SaveFile = (bytes: Uint8Array<ArrayBuffer>, name: string) => void | boolean | Promise<void | boolean>;
 
 /** Puts an SVG file on the clipboard; rejects when the browser refuses. */
 export type CopySvg = (svg: string) => Promise<void>;
@@ -187,7 +186,8 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
         const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
-        save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), file);
+        const saved = await save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), file);
+        if (saved === false) return { message: "Export STL cancelled: nothing was saved.", bad: false };
         // Mark the bodies that warned on screen too: every face of one moves in single precision.
         const warned = features.filter((_, i) => files[i].warning);
         if (warned.length > 0)
@@ -207,7 +207,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
     id: COPY_SVG,
     workspace: "design",
     label: "Copy as SVG",
-    title: "Copy the profile or sketch as an SVG drawing, sized in mm, to paste into a drawing program or a laser cutter's software.",
+    title: "Copy the profile or sketch as an SVG drawing, sized in mm, to paste into a drawing program or a laser cutter's software. Key: Ctrl+C (⌘C on a Mac).",
     kinds: ["outline"],
     uses: "outline",
     count: "one",
