@@ -851,6 +851,7 @@ const setAssistant = (open: boolean) => {
   if (!!panel.hidden !== open) return;
   panel.hidden = !open;
   $("assistant-toggle").setAttribute("aria-pressed", String(open));
+  document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
   if (open) assistant.opened();
 };
 $("assistant-toggle").addEventListener("click", () => {
