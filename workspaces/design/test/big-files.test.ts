@@ -31,11 +31,11 @@ function content(n: number, take: () => number): { points: Sketch["points"]; cur
   return { points, curves };
 }
 
-/** A version 3 design from an empty timeline, as `shape` says. */
+/** A version 4 design from an empty timeline, as `shape` says. */
 function bigDesign({ pairs, content: per = 6, lone = 0, loneContent = 6, kept = [] }: Shape): DesignDocument {
   let next = 1;
   const take = () => next++;
-  const doc: DesignDocument = { version: 3, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const doc: DesignDocument = { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const extrudes: string[] = [];
   const sketch = (n: number) => {
     const id = `sketch-${take()}`;

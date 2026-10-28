@@ -143,7 +143,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 3;
+  version: 4;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -268,7 +268,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return { version: 3, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } };
+  return { version: 4, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } };
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -652,6 +652,16 @@ function checkKept(kept: unknown, feature: string): void {
   }
 }
 
+/** An item's provenance, checked: its own name, and a `from` list of where it came from, each a workspace, an id and a name. */
+function checkProvenance(provenance: unknown, feature: string): void {
+  const at = `Design feature ${feature}`;
+  const entry = (p: unknown): boolean => isRecord(p) && typeof p.workspace === "string" && typeof p.id === "string" && typeof p.label === "string";
+  if (!isRecord(provenance)) throw new Error(`${at} has no provenance`);
+  if (!entry(provenance.self)) throw new Error(`${at}'s provenance has no name of its own`);
+  if (!Array.isArray(provenance.from)) throw new Error(`${at}'s provenance has no 'from' list`);
+  if (!provenance.from.every(entry)) throw new Error(`${at}'s provenance lists something that is not a workspace, id and name`);
+}
+
 /** The name a preset was given before U0e, from its id's number and its type: "Feature 3 (box)", "Feature 5 (extrude)" for a slot. */
 export const oldPresetName = (f: Feature): string => `Feature ${idNumber(f.id) ?? f.id} (${f.intent.type})`;
 
@@ -711,8 +721,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const [list, limit, what] of [[data.profiles, DESIGN_LIMITS.profiles, "profiles"], [isRecord(data.timeline) ? data.timeline.features : undefined, DESIGN_LIMITS.items, "timeline items"], [data.sketches, DESIGN_LIMITS.items, "sketches"]] as const)
     if (Array.isArray(list)) notTooMany(list.length, limit, "Design data has", what);
   const v2 = data.version === 1 ? migrateDesignV1(data) : data;
-  const d = (v2.version === 2 ? migrateDesignV2(v2) : v2) as Partial<DesignDocument>;
-  if (d.version !== 3) throw new Error(`Design data version ${shown(d.version)} is not one this SpindleLabs reads (1, 2 or 3)`);
+  const v3 = v2.version === 2 ? migrateDesignV2(v2) : v2;
+  // Version 4 has version 3's fields; only data saved before it can hold the old preset names, renamed once checked (below).
+  const old = v3.version === 3;
+  const d = (old ? { ...v3, version: 4 } : v3) as Partial<DesignDocument>;
+  if (d.version !== 4) throw new Error(`Design data version ${shown(d.version)} is not one this SpindleLabs reads (1, 2, 3 or 4)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -727,6 +740,10 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (typeof f?.id !== "string" || typeof intent?.type !== "string" || typeof intent.summary !== "string" || typeof intent.parameters !== "object" || intent.parameters === null)
       throw new Error(`Design feature ${i + 1} has no id or intent`);
     if (typeof f.suppressed !== "boolean") throw new Error(`Design feature ${f.id}: suppressed must be true or false, not ${shown(f.suppressed)}`);
+    // The graph, the edits and the browser panel read these on every item (file fuzz hunt 10-28: a file without them opened, then crashed).
+    if (!Array.isArray(f.dependsOn)) throw new Error(`Design feature ${f.id} has no dependsOn list`);
+    for (const id of f.dependsOn as unknown[]) if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);
+    checkProvenance(f.provenance, f.id);
   }
   // Two items with one id are said as that first (timeline hunt, finding 12: a sketch item's id given to another item
   // was refused as "a sketch with no content", sending the reader to the wrong place); every id is checked below.
@@ -829,7 +846,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
   for (const f of d.timeline.features) if (!isSketchItem(f)) shapeWith(f, (id) => profiles.get(id));
-  return withShortNames(d as DesignDocument);
+  const read = d as DesignDocument;
+  return old ? withShortNames(read) : read;
 }
 
 /**

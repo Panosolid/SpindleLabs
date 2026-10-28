@@ -116,7 +116,7 @@ test("Design's saved data reads back, and anything else is refused clearly", asy
   const doc = partDocument("slot", 40, 30, 20);
   assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(doc))), doc);
   assert.throws(() => readDesignDocument(null), /Design data is missing/);
-  assert.throws(() => readDesignDocument({ ...doc, version: 4 }), /version 4 is not one this SpindleLabs reads \(1, 2 or 3\)/);
+  assert.throws(() => readDesignDocument({ ...doc, version: 5 }), /version 5 is not one this SpindleLabs reads \(1, 2, 3 or 4\)/);
   // An empty timeline is a design with everything deleted (24f4): it opens, with no part; a missing one is still refused.
   const emptied = readDesignDocument({ ...doc, profiles: [], timeline: { features: [] } });
   assert.deepEqual(emptied.timeline.features, []);
@@ -171,10 +171,10 @@ test("a version-1 file with a Design part opens (outer migration, then Design's 
   const p = projectFromJson(JSON.stringify(v1), DESIGN);
   assert.deepEqual(p.links, []);
   // Its ids are feature-1 only, so the counter starts at 2; then version 2 to 3 changes nothing for one solid feature,
-  // and its old name "Feature 1 (box)" is the short name of the first box (U0e).
+  // and in version 3 to 4 its old name "Feature 1 (box)" becomes the short name of the first box (U0e).
   const design = JSON.parse(HAND_WRITTEN).workspaces.design;
   design.timeline.features[0].provenance.self.label = "Box 1";
-  assert.deepEqual(p.workspaces.design, { ...design, version: 3, nextId: 2, sketches: [] });
+  assert.deepEqual(p.workspaces.design, { ...design, version: 4, nextId: 2, sketches: [] });
 });
 
 test("partOf undoes partDocument for every shape (self-consistency)", () => {
@@ -201,7 +201,7 @@ test("Design data the panel can't show is refused when the file is opened, each 
   assert.throws(broken((d) => (d.timeline.features = {})), /Design data has no timeline/);
   // Everything deleted (24f4): opens as a design with no body.
   assert.equal(partOf(projectFromJson(JSON.stringify({ ...JSON.parse(HAND_WRITTEN), workspaces: { design: { ...JSON.parse(HAND_WRITTEN).workspaces.design, profiles: [], timeline: { features: [] } } } }), DESIGN).workspaces.design as DesignDocument), null);
-  assert.throws(broken((d) => ((d as { version: number }).version = 4)), /Design data version 4 is not one this SpindleLabs reads \(1, 2 or 3\)/);
+  assert.throws(broken((d) => ((d as { version: number }).version = 5)), /Design data version 5 is not one this SpindleLabs reads \(1, 2, 3 or 4\)/);
   const extrude = (edit: (d: DesignDocument) => void) => {
     const doc = partDocument("slot", 40, 30, 20);
     edit(doc);
