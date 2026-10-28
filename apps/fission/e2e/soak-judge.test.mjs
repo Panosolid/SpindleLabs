@@ -39,7 +39,7 @@ test("the heap allowance: 0.9× passes, 1.1× fails", () => {
   // A heap rising g bytes a cycle has means 20·g apart, so g a cycle is measured exactly.
   const at = (g) => judgeSoak(run(40, (r) => (r.heap += g * r.cycle)));
   assert.deepEqual(at(0.9 * HEAP_PER_CYCLE), []);
-  assert.deepEqual(at(1.1 * HEAP_PER_CYCLE), ["the JavaScript heap keeps growing: 22,000 bytes a cycle (at most 20,000)"]);
+  assert.deepEqual(at(1.1 * HEAP_PER_CYCLE), ["the JavaScript heap keeps growing: 55,000 bytes a cycle (at most 50,000)"]);
 });
 
 test("WebAssembly memory growing in the second half fails; in the first half it may", () => {

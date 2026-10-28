@@ -12,8 +12,15 @@
 export const COUNTS = ["bodies", "nodes", "listeners", "documents", "geometries", "textures", "programs", "objects"];
 /** How much of the run is warm-up: the readings up to this fraction of the last cycle. */
 export const WARM_UP = 0.25;
-/** Heap growth allowed per cycle once warm, in bytes (a real leak of one project copy per cycle is ~50 KB). */
-export const HEAP_PER_CYCLE = 20_000;
+/**
+ * Heap growth allowed per cycle once warm, in bytes. A healthy run on
+ * 2026-10-28 still grew about 19 KB a cycle over cycles 10-40, all of it the
+ * engine's (a heap census of cycles 6 to 18: compiled code and its feedback,
+ * Chromium's own performance-timing entries; no object of the app's grew),
+ * so 50 KB leaves room for that; the split-view leak this test found grew
+ * 234 KB a cycle.
+ */
+export const HEAP_PER_CYCLE = 50_000;
 
 /** Problems in `readings` (each { cycle, heap, wasm, …COUNTS }, cycle 0 first), in words; none means it levelled off. */
 export function judgeSoak(readings) {
