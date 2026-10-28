@@ -176,11 +176,14 @@ try {
 
   await check("the box is actually drawn", async () => {
     await page.waitForTimeout(300);
-    const background = [0x14, 0x16, 0x1a];
-    const centre = await pixel(0.5, 0.5);
+    // The backdrop (packages/viewport/src/backdrop.ts) runs from (30, 38, 52) at the top
+    // to (14, 16, 22) at the bottom: 2 % down it is (30 − 0.32, 38 − 0.44, 52 − 0.6) =
+    // (29.68, 37.56, 51.4); halfway, each channel's mean, (22, 27, 37).
     const corner = await pixel(0.02, 0.02);
-    assert.deepEqual(corner, background, "corner should be empty background");
-    assert.notDeepEqual(centre, background, "centre of the view should show the body");
+    const centre = await pixel(0.5, 0.5);
+    const near = (got, want) => got.every((c, i) => Math.abs(c - want[i]) <= 1.5);
+    assert.ok(near(corner, [29.68, 37.56, 51.4]), `corner should be empty backdrop, got ${corner}`);
+    assert.ok(!near(centre, [22, 27, 37]) && centre.some((c, i) => Math.abs(c - [22, 27, 37][i]) > 12), `centre of the view should show the body, got ${centre}`);
   });
 
   await foldBrowser(false);
@@ -390,8 +393,8 @@ try {
       const s = screenPoint(box, p, view);
       return pixel((s.x - box.x) / box.width, (s.y - box.y) / box.height);
     };
-    // The body is lit grey-blue, far brighter than the background
-    // (0x14, 0x16, 0x1a) and the grid lines on it.
+    // The body is lit grey-blue, far brighter than the backdrop (a dark
+    // blue, every channel under 60, backdrop.ts) and the grid lines on it.
     const isBody = ([r, g, b]) => r + g + b > 3 * 80;
     const clickView = async (name) => {
       await page.click(`#view-controls [data-view=${name}]`);
@@ -649,7 +652,8 @@ try {
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(3) * 0.001 / 2) < 1e-9, `framed radius ${r}`);
     await page.waitForTimeout(300);
-    assert.notDeepEqual(await pixel(0.5, 0.5), [0x14, 0x16, 0x1a], "the cube should fill the centre of the view");
+    const cube = await pixel(0.5, 0.5);
+    assert.ok(cube[0] + cube[1] + cube[2] > 3 * 80, `the cube should fill the centre of the view (lit body, far brighter than the backdrop), got ${cube}`);
     await page.screenshot({ path: "e2e/tiny-cube.png" });
     // Back to 40 × 30 × 20, one size at a time, re-framing whenever the body
     // reaches past 1.5× the framed radius:
@@ -693,7 +697,8 @@ try {
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(2900) / 2) < 1e-4, `framed radius ${r}`);
     await page.waitForTimeout(300);
-    assert.notDeepEqual(await pixel(0.5, 0.5), [0x14, 0x16, 0x1a], "the bracket should be drawn");
+    const bracket = await pixel(0.5, 0.5);
+    assert.ok(bracket[0] + bracket[1] + bracket[2] > 3 * 80, `the bracket should be drawn (lit body, far brighter than the backdrop), got ${bracket}`);
     await page.screenshot({ path: "e2e/l-bracket.png" });
   });
 

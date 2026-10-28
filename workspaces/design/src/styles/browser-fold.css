@@ -1,38 +1,39 @@
 /* The browser's own fold (SF3d): the panel floats over the view, so its
    title folds the whole tree away and gives the view back. */
-.browser-fold > summary { cursor: pointer; padding: 4px 2px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #b5bbc4; }
-.browser-fold[open] > summary { margin-bottom: 4px; border-bottom: 1px solid #2a2e35; }
+.browser-fold > summary { cursor: pointer; padding: 4px 2px; font-size: 13px; font-weight: 600; color: #b5bbc4; }
+.browser-fold[open] > summary { margin-bottom: 4px; border-bottom: 1px solid #232c3b; }
 
-/* Floating rows: over the view (one workspace, wide screen) the panel has no
-   backdrop of its own. The title is a slim bar and every group and row is a
-   compact block sized to its words, so the part shows through between them
-   and clicks there reach the view. Each block's backdrop is opaque enough
-   that its words stay readable over a white or a black view (layout.mjs
-   works the contrast out); the panel's own see-through box is the base
-   layout's (theme.css). Split view and phones keep the solid column. */
+/* The floating card (UX2, the owner's ask 2026-10-28; it was a column of
+   separate blocks sized to their words, SF3d): over the view (one
+   workspace, wide screen) the panel is one rounded card (theme.css, from
+   look.css), and its title, groups and rows are plain full-width rows on
+   it, tinted under the mouse; the chosen row glows blue. Its words stay
+   readable over a white or a black view (layout.mjs works the contrast
+   out through the card). Split view and phones keep the solid column. */
 @media (min-width: 641px) {
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) { --browser-block: rgba(28, 31, 36, 0.84); color: #e6e9ee; }
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) > summary { pointer-events: auto; margin: 0 0 4px; padding: 4px 8px; background: var(--browser-block); border: 1px solid #353a43; border-radius: 4px; }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) { --browser-block: transparent; color: #e6e9ee; }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) > summary { pointer-events: auto; margin: 0; padding: 4px 8px; background: none; border: none; text-transform: none; letter-spacing: 0; font-size: 13px; color: #e6e8eb; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree summary,
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row:not(#none),
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none) { pointer-events: auto; width: fit-content; max-width: 100%; box-sizing: border-box; margin: 3px 0; background: var(--browser-block); border-radius: 3px; }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none) { pointer-events: auto; width: 100%; max-width: 100%; box-sizing: border-box; margin: 3px 0; background: var(--browser-block); border-radius: var(--look-radius-s); }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree summary { padding: 2px 8px 2px 6px; font-size: 13px; text-transform: none; letter-spacing: 0; color: #c4cbd5; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .browser-row-eye:not(#none) { pointer-events: auto; margin: 1px 0; background: var(--browser-block); }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *)[open] > summary { margin-bottom: 6px; }
   /* The rows' colour comes from the panel, not the rows, so a red row (a failed item, a kept shape) keeps its red. */
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row:not(#none) { padding: 2px 8px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree summary:hover,
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row:not(#none):hover,
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none):hover { background: rgba(42, 46, 53, 0.96); }
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row[aria-current="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
-  /* A sketch's row and its ⋯ sit side by side as two blocks. */
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none):hover { background: rgba(120, 165, 230, 0.1); }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row[aria-current="true"]:not(#none) { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
+  /* A sketch's row takes the line, its ⋯ at the end. */
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row { justify-content: flex-start; }
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row > .tree-row:not(#none) { flex: 0 1 auto; }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row > .tree-row:not(#none) { flex: 1 1 auto; min-width: 0; }
   /* Slim rows like Fusion's (U0a): one line each, 22 px tall with 2 px
      between, smaller words; a label too long for the panel ends in "…" and
      its tooltip (the row's title) has it whole. */
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) :is(.tree summary, .tree-row:not(#none), .delete-ask-more:not(#none)) { margin: 1px 0; font-size: 13px; line-height: 18px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree-row:not(#none) { padding: 1px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
-  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none) { min-width: 24px; padding: 1px 4px; }
+  .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-more:not(#none) { width: auto; flex: none; min-width: 24px; padding: 1px 4px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row { gap: 2px; }
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .tree .tree { padding-left: 12px; }
 }
@@ -45,7 +46,7 @@
 .browser-fold .browser-row-icon { flex: none; margin-right: 5px; vertical-align: -3px; opacity: 0.85; }
 .browser-fold .tree summary .browser-row-icon { margin-left: 2px; }
 .browser-fold .browser-row-eye:not(#none) { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; padding: 1px 3px; background: none; border: 1px solid transparent; border-radius: 3px; color: #b5bbc4; cursor: pointer; }
-.browser-fold .browser-row-eye:not(#none):hover, .browser-fold .browser-row-eye:not(#none):focus-visible { border-color: #353a43; color: #e6e9ee; }
+.browser-fold .browser-row-eye:not(#none):hover, .browser-fold .browser-row-eye:not(#none):focus-visible { border-color: #2c3749; color: #e6e9ee; }
 .browser-fold .browser-row-eye[aria-pressed="false"]:not(#none) { color: #6f7680; }
 .browser-fold .browser-row-hidden > .tree-row { opacity: 0.55; }
 @media (max-width: 640px) {

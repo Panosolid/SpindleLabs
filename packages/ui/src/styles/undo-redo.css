@@ -9,4 +9,4 @@
 .undo-redo button#undo, .undo-redo button#redo { padding-left: 6px; padding-right: 6px; }
 .undo-redo button:disabled { opacity: 0.35; cursor: default; }
 .undo-redo.docked { position: absolute; right: 8px; bottom: 8px; z-index: 1; flex-direction: column; gap: 4px; }
-.undo-redo.docked button#undo, .undo-redo.docked button#redo { width: 44px; height: 44px; padding: 0; background: rgba(38, 42, 49, 0.9); }
+.undo-redo.docked button#undo, .undo-redo.docked button#redo { width: 44px; height: 44px; padding: 0; background: rgba(29, 37, 51, 0.9); }
