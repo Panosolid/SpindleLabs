@@ -270,7 +270,8 @@ try {
         }
         await press(page, "#inspect-facts", tap);
         await until(page, () => !document.getElementById("properties").hasAttribute("data-folded"), null, "Body facts opens the panel");
-        await openPanel(page, "properties", tap); // phone: the numbers are in the Properties sheet, closed until its toggle (U5)
+        // Phone: Body facts opens the Properties sheet itself, so the numbers are not behind a closed sheet (demo rehearsal 10-28).
+        if (tap) await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "Body facts opens the Properties sheet");
         await page.locator("#volume").scrollIntoViewIfNeeded(); // the sheet scrolls inside itself; the numbers are scrolled into its view
         const numbers = await rect(page, "#volume");
         assert.ok(numbers.top >= 0 && numbers.bottom <= (width > 640 ? 800 : 667) && numbers.width > 0, `the volume on screen: ${JSON.stringify(numbers)}`);

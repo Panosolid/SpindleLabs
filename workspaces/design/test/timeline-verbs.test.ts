@@ -179,7 +179,7 @@ test("hand-worked: an earlier body downloads alone, as its own shape (Body 1 is 
   assert.deepEqual(await d.run([body("feature-1")]), { message: "", bad: false });
   // The box's own spec: feature-1's, not the part's (the slot, feature-17).
   assert.deepEqual(d.calls, [["export_stl", specOf(doc, doc.timeline.features[0]), "box"]]);
-  assert.deepEqual(d.saved, [{ name: "fission-box.stl", bytes: [...stl("box", 1, 5)] }]);
+  assert.deepEqual(d.saved, [{ name: "spindlelabs-box.stl", bytes: [...stl("box", 1, 5)] }]);
 });
 
 test("hand-worked: two bodies picked slot first come out in build order, joined into one file", async () => {
@@ -188,7 +188,7 @@ test("hand-worked: two bodies picked slot first come out in build order, joined 
   assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "", bad: false });
   assert.deepEqual(d.calls.map((c) => c[2]), ["box", "slot"]);
   assert.equal(d.saved.length, 1);
-  assert.equal(d.saved[0].name, "fission-2-bodies.stl");
+  assert.equal(d.saved[0].name, "spindlelabs-2-bodies.stl");
   assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 30), stl("slot", 2, 40)], "2 bodies")]);
   assert.deepEqual(d.overlays, [`clear ${STL_OVERLAY}`]);
 });
