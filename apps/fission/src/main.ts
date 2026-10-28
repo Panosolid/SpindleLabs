@@ -23,6 +23,7 @@ import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { watchKernel } from "./kernel-lost.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -48,6 +49,8 @@ const workspaces: WorkspacePlugin[] = [
 ];
 
 const kernel = new KernelClient();
+// The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
+watchKernel(kernel);
 // The one conversion layer: every workspace says what it can hand over.
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);

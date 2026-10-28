@@ -30,8 +30,11 @@ export type KernelRequest = {
   [K in keyof KernelOps]: { id: number; op: K; args: KernelOps[K]["args"] };
 }[keyof KernelOps];
 
-/** A failed reply's `stopped`: the call trapped (`isTrap`), so the worker's kernel can't be trusted with another call. */
-export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure; stopped?: true };
+/**
+ * A failed reply's `stopped`: the call trapped (`isTrap`), so the worker's kernel can't be trusted with another call.
+ * Its `missing`: the kernel's file never downloaded (KERNEL_NOT_DOWNLOADED, after the worker's own tries).
+ */
+export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure; stopped?: true; missing?: true };
 
 /**
  * Whether a kernel call stopped the WebAssembly itself (a trap: running out
@@ -94,6 +97,15 @@ export interface KernelCalls {
    * The app's client has it; a kernel that is never replaced (tests) may not.
    */
   onRestart?(listener: () => void): () => void;
+  /**
+   * Calls `listener` when the kernel's files didn't download: its worker
+   * script or its .wasm (a failing network, or a new build deployed since
+   * this page loaded, whose old files are gone). Every call fails until
+   * `retry` starts a kernel that does download. Returns the way to stop.
+   */
+  onMissing?(listener: () => void): () => void;
+  /** Starts a fresh kernel in place of one that is missing or gone (the listeners of onRestart hear of it); does nothing to one that works. */
+  retry?(): void;
 }
 
 export class KernelClient implements KernelCalls {
@@ -103,6 +115,9 @@ export class KernelClient implements KernelCalls {
   /** Set once the worker is gone (its error event): every call fails with it. */
   private failed: KernelError | null = null;
   private restartListeners = new Set<() => void>();
+  private missingListeners = new Set<() => void>();
+  /** This worker's files didn't download (told once per worker). */
+  private missing = false;
 
   constructor() {
     this.start();
@@ -115,6 +130,7 @@ export class KernelClient implements KernelCalls {
       if (worker !== this.worker) return; // a kernel already replaced
       const reply = event.data;
       if (!reply.ok && reply.stopped) return this.restart();
+      if (!reply.ok && reply.missing) this.lost();
       const p = this.pending.get(reply.id);
       if (!p) return;
       this.pending.delete(reply.id);
@@ -133,6 +149,7 @@ export class KernelClient implements KernelCalls {
       this.failed = new KernelError({ kind: "internal", inputs: [], message: `The geometry kernel ${why}. Reload the page to try again.` });
       this.pending.forEach((p) => p.reject(this.failed!));
       this.pending.clear();
+      if (!event.message) this.lost();
     };
   }
 
@@ -151,6 +168,31 @@ export class KernelClient implements KernelCalls {
     this.start();
     waiting.forEach((p) => p.reject(stopped));
     this.restartListeners.forEach((listener) => listener());
+  }
+
+  /** The kernel's files didn't download: the listeners hear of it once for this worker. */
+  private lost() {
+    if (this.missing) return;
+    this.missing = true;
+    this.missingListeners.forEach((listener) => listener());
+  }
+
+  retry(): void {
+    if (!this.missing && !this.failed) return;
+    this.worker.terminate();
+    const waiting = [...this.pending.values()];
+    this.pending.clear();
+    this.failed = null;
+    this.missing = false;
+    this.start();
+    // A missing kernel answers every call at once, so none is normally left waiting; one that is fails as before.
+    waiting.forEach((p) => p.reject(new KernelError({ kind: "internal", inputs: [], message: KERNEL_NOT_DOWNLOADED })));
+    this.restartListeners.forEach((listener) => listener());
+  }
+
+  onMissing(listener: () => void): () => void {
+    this.missingListeners.add(listener);
+    return () => void this.missingListeners.delete(listener);
   }
 
   onRestart(listener: () => void): () => void {
