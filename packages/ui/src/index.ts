@@ -12,3 +12,4 @@ export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type M
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";
 export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from "./tool-group.ts";
 export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type FileMenuEntry, type FileMenuParts } from "./file-menu.ts";
+export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";

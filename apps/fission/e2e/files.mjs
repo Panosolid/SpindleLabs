@@ -87,6 +87,14 @@ const paste = (page, selector, files) =>
     [selector, files.map((f) => ({ name: f.name, bytes: [...f.bytes] }))],
   );
 
+/** Answers the shell's "Open in Image?" (asked when a file belongs to a workspace not on screen): its confirm, or Cancel. */
+async function answer(page, yes, tap = false) {
+  await page.waitForSelector("#open-elsewhere", { state: "visible" });
+  const sel = yes ? "#open-elsewhere-confirm" : "#open-elsewhere-cancel";
+  await (tap ? page.tap(sel) : page.click(sel));
+  await page.waitForSelector("#open-elsewhere", { state: "hidden" });
+}
+
 const status = (page) => page.textContent("#file-status");
 const waitStatus = (page, re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector("#file-status").textContent), re.source);
 const bytes = (s) => Buffer.from(s, "latin1");
@@ -163,6 +171,7 @@ try {
     const page = await fresh();
     try {
       assert.equal(await drop(page, "#viewport", [{ name: "plate.png", bytes: png }]), "taken");
+      await answer(page, true);
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
       // 200 × 100 px at 0.1 mm per pixel: 20 × 10 mm.
       await page.waitForFunction(() => document.querySelector("#image-mm")?.textContent === "20 × 10 mm");
@@ -176,6 +185,7 @@ try {
       assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
       // The same paste with nothing focused opens it.
       assert.equal(await paste(page, "body", [{ name: "pasted.png", bytes: png }]), true);
+      await answer(page, true);
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
       await page.waitForFunction(() => document.querySelector("#layer-list")?.textContent.includes("Layer 1"));
       // A refused paste says why, like a refused drop.
@@ -196,6 +206,7 @@ try {
       await page.waitForSelector("#split-toolbar #image-open");
       await drop(page, "#viewport", [{ name: "plate.png", bytes: png }]);
       await page.waitForFunction(() => document.querySelector("#split-properties #image-mm")?.textContent === "20 × 10 mm");
+      assert.equal(await page.isVisible("#open-elsewhere"), false, "Image is on screen already: nothing to ask");
       assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
       assert.equal(await page.evaluate(() => document.body.dataset.split), "image");
     } finally {
@@ -229,6 +240,7 @@ try {
     const page = await fresh();
     try {
       await page.setInputFiles("#open-file", { name: "logo.png", mimeType: "image/png", buffer: png });
+      await answer(page, true);
       await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image" || document.querySelector("#file-status").textContent !== "");
       assert.equal(await status(page), "");
       assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "image");
@@ -254,6 +266,85 @@ try {
       // The picker offers images as well as projects.
       const accept = (await page.getAttribute("#open-file", "accept")).split(",");
       for (const ext of [".json", ".png", ".jpg", ".jpeg"]) assert.ok(accept.includes(ext), `Open's picker accepts ${accept}, not ${ext}`);
+    } finally {
+      await page.close();
+    }
+  });
+
+  // The owner's report (2026-10-28): File ▾ > Open in an empty Design with an image switched to Image without asking, and
+  // Design's "Start your design" card stayed floating over the image. Now the shell asks first, Cancel changes nothing,
+  // and the card shows only while Design is on screen.
+  for (const [width, tap] of [[1280, false], [393, true]])
+    await check(`Open… with an image in an empty Design asks "Open in Image?"; Cancel stays; Open in Image leaves no Design card over it (${width} px${tap ? ", taps" : ""})`, async () => {
+      const context = await browser.newContext({ viewport: { width, height: tap ? 852 : 800 }, hasTouch: tap });
+      const page = await context.newPage();
+      await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+      page.on("pageerror", (e) => errors.push(e.message));
+      try {
+        await page.goto(url + "#design");
+        await page.waitForSelector("#start-hint", { state: "visible" });
+        const open = () => page.setInputFiles("#open-file", { name: "car.png", mimeType: "image/png", buffer: png });
+        await open();
+        await page.waitForSelector("#open-elsewhere", { state: "visible" });
+        assert.equal(await page.textContent("#open-elsewhere-heading"), "Open in Image?");
+        assert.equal(await page.textContent("#open-elsewhere-words"), "“car.png” is a PNG image, which opens in the Image workspace. Design stays as it is, and the workspace menu at the top takes you back.");
+        assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design", "nothing switches before the answer");
+        // The question is a small box, never most of the view (the owner's phone rule), and fits the width.
+        const box = await page.$eval("#open-elsewhere", (d) => d.getBoundingClientRect().toJSON());
+        assert.ok(box.left >= 0 && box.right <= width, `the question fits the width: ${box.left}..${box.right}`);
+        assert.ok(box.width * box.height < 0.3 * width * (tap ? 852 : 800), `the question covers ${Math.round((100 * box.width * box.height) / (width * (tap ? 852 : 800)))}% of the screen`);
+        if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/open-in-image-ask-${width}.png` });
+        // Cancel: still Design, its card still there, nothing opened, nothing said.
+        await answer(page, false, tap);
+        await page.waitForTimeout(200);
+        assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
+        assert.equal(await page.isVisible("#start-hint"), true, "the card stays in Design");
+        assert.equal(await status(page), "");
+        // Escape answers no too (wide screen: a phone has no key).
+        if (!tap) {
+          await open();
+          await page.waitForSelector("#open-elsewhere", { state: "visible" });
+          await page.keyboard.press("Escape");
+          await page.waitForSelector("#open-elsewhere", { state: "hidden" });
+          assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
+        }
+        // Open in Image: the image, 200 × 100 px at 0.1 mm per pixel = 20 × 10 mm, and no Design card over it.
+        await open();
+        await answer(page, true, tap);
+        await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
+        await page.waitForFunction(() => document.querySelector("#image-mm")?.textContent === "20 × 10 mm");
+        await page.waitForFunction(() => document.querySelector("#layer-list")?.textContent.includes("Layer 1"));
+        assert.equal(await page.isVisible("#start-hint"), false, "Design's card must not float over Image");
+        if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/open-in-image-opened-${width}.png` });
+        // Back in Design, the design is still empty, so its card is back.
+        await switchTo(page, "design", tap);
+        await page.waitForFunction(() => document.body.dataset.activeWorkspace === "design");
+        await page.waitForSelector("#start-hint", { state: "visible" });
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, "no sideways scroll");
+      } finally {
+        await context.close();
+      }
+    });
+
+  await check("a dropped or pasted image in Design asks too, and Cancel opens nothing", async () => {
+    const page = await fresh();
+    try {
+      for (const send of [() => drop(page, "#viewport", [{ name: "plate.png", bytes: png }]), () => paste(page, "body", [{ name: "plate.png", bytes: png }])]) {
+        await send();
+        await answer(page, false);
+        await page.waitForTimeout(200);
+        assert.equal(await page.evaluate(() => document.body.dataset.activeWorkspace), "design");
+        assert.equal(await status(page), "");
+      }
+      // Nothing reached Image: shown now, it has no layer.
+      await switchTo(page, "image");
+      await page.waitForFunction(() => document.body.dataset.activeWorkspace === "image");
+      await page.waitForTimeout(200);
+      assert.equal(await page.evaluate(() => document.querySelector("#layer-list")?.textContent.includes("Layer 1") ?? false), false, "a cancelled image was opened anyway");
+      // Image on screen: a dropped image opens there without a question.
+      await drop(page, "#viewport", [{ name: "plate.png", bytes: png }]);
+      await page.waitForFunction(() => document.querySelector("#image-mm")?.textContent === "20 × 10 mm");
+      assert.equal(await page.isVisible("#open-elsewhere"), false);
     } finally {
       await page.close();
     }
