@@ -3,7 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
@@ -13,8 +13,10 @@ import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from ".
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
 import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, wheelFactor, zoomAt, type CameraPose, type NavMode } from "./navigation.ts";
 import { navBar } from "./nav-bar.ts";
-import { ARROW_GRAB_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
+import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
+import { handleAxis, handleLines, handleNear, isRing, ringAngle, turnBetween } from "./move-handles.ts";
+import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
@@ -61,6 +63,13 @@ interface ViewHost {
   extrudePointer(pointer: ExtrudePointer): void;
   /** The outline under the pointer and whether it is on the arrow, drawn brighter. */
   setExtrudeHover(profile: string | null, arrow: boolean): void;
+  /** The Move tool's arrows and rings (35e2c). */
+  readonly move: MoveLayer;
+  /** Whether Move's handles are shown and a workspace hears their drags. */
+  moving(): boolean;
+  movePointer(pointer: MovePointer): void;
+  /** The handle under the pointer or held, drawn orange; null for none. */
+  setMoveHot(handle: MoveHandle | null): void;
 }
 
 /**
@@ -95,6 +104,12 @@ export class ViewportView {
   private bar: ReturnType<typeof navBar>;
   /** Extrude's arrow while it is held (UX1b): the pointer, how far along the arrow it grabbed, and the distance last handed on. */
   private arrowDrag: { id: number; offset: number; last: number } | null = null;
+  /**
+   * A Move handle while it is held (35e2c): the pointer, the handle, its
+   * centre at the press, where along the arrow (mm) or round the ring
+   * (radians) the press was and the pointer last was, and the turn so far.
+   */
+  private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
     this.host = host;
@@ -138,6 +153,7 @@ export class ViewportView {
     this.controls.mouseButtons.RIGHT = null;
     this.controls.zoomToCursor = true;
     this.dragArrow(); // first, so a press on Extrude's arrow is a drag whatever the navigation mode
+    this.dragMoveHandle(); // and a press on a Move handle (35e2c)
     this.navigate();
     this.setMode("orbit");
 
@@ -171,6 +187,13 @@ export class ViewportView {
       if (this.queuedHover) return;
       this.queuedHover = requestAnimationFrame(() => {
         this.queuedHover = 0;
+        // Move's handles (35e2c): one under the pointer lights, and nothing else does; held, it stays lit.
+        if (this.host.moving()) {
+          if (this.moveDrag) return;
+          const handle = pointer ? this.handleAt(pointer.x, pointer.y, "mouse") : null;
+          this.host.setMoveHot(handle);
+          if (handle) return this.host.setHover(null, null);
+        }
         if (this.host.extruding()) {
           if (this.arrowDrag) return; // the arrow stays lit while it is held
           // Only what a click would pick lights: an outline, and the arrow under the pointer.
@@ -203,6 +226,7 @@ export class ViewportView {
       pointer = null;
       this.host.setHover(null, null);
       this.host.setExtrudeHover(null, false);
+      if (!this.moveDrag) this.host.setMoveHot(null);
       this.host.setPlaneHover(null);
       if (this.host.sketchPlane()) this.host.sketchPointer({ kind: "move", at: null });
     });
@@ -218,6 +242,7 @@ export class ViewportView {
     this.bar.canLookAt(!this.image && this.host.sketchPlane() !== null);
     this.host.frame(this);
     this.sizeArrow();
+    this.placeMoveHandles();
     paintBackdrop(this.renderer); // the near-black blue gradient behind the scene (UX2)
     this.renderer.render(this.host.scene, this.camera);
     if (!this.image) this.cube.render(this.renderer, this.camera);
@@ -378,6 +403,112 @@ export class ViewportView {
     };
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);
+  }
+
+  /**
+   * Dragging a Move handle (35e2c), as Extrude's arrow is dragged: a press
+   * within ARROW_GRAB_PX of one (more room for a finger) grabs it, whatever
+   * the navigation mode, and neither the camera nor the click picker hears
+   * it. An arrow hands on how far the point of its line nearest the
+   * pointer's ray has gone since the press (extrude-pick.ts arrowDistance);
+   * a ring how far the pointer has gone round it (move-handles.ts
+   * ringAngle, added up a step at a time so it counts on past a whole
+   * turn), in degrees. A move the pointer can't say (looking along the
+   * arrow, or side-on to the ring) is skipped.
+   */
+  private dragMoveHandle() {
+    const canvas = this.renderer.domElement;
+    this.element.addEventListener("pointerdown", (e) => {
+      const centre = this.host.move.state?.centre;
+      if (e.target !== canvas || this.moveDrag || !e.isPrimary || e.button !== 0 || !this.host.moving() || !centre) return;
+      const handle = this.handleAt(e.clientX, e.clientY, e.pointerType === "touch" ? "touch" : "mouse");
+      const at = handle === null ? null : this.alongHandle(handle, centre, e.clientX, e.clientY);
+      if (handle === null || at === null) return;
+      e.preventDefault(); // keeps the focus where it was, so Enter after a drag is the panel's OK
+      e.stopPropagation();
+      if (canvas.ownerDocument.activeElement instanceof HTMLElement) canvas.ownerDocument.activeElement.blur();
+      canvas.setPointerCapture(e.pointerId);
+      this.moveDrag = { id: e.pointerId, handle, centre: [...centre], start: at, last: at, turned: 0, amount: 0 };
+      this.host.setMoveHot(handle);
+    }, { capture: true, signal: this.listening.signal });
+    canvas.addEventListener("pointermove", (e) => {
+      const drag = this.moveDrag;
+      if (!drag || e.pointerId !== drag.id) return;
+      const at = this.alongHandle(drag.handle, drag.centre, e.clientX, e.clientY);
+      if (at === null) return;
+      if (isRing(drag.handle)) {
+        drag.turned += turnBetween(drag.last, at);
+        drag.amount = (drag.turned * 180) / Math.PI;
+      } else drag.amount = at - drag.start;
+      drag.last = at;
+      this.host.movePointer({ handle: drag.handle, amount: drag.amount, done: false });
+    });
+    const end = (e: PointerEvent) => {
+      const drag = this.moveDrag;
+      if (!drag || drag.id !== e.pointerId) return;
+      this.moveDrag = null;
+      // Read by the e2e tests: once a drag's end is counted, every move it made has been heard.
+      this.element.dataset.moveDrags = String(Number(this.element.dataset.moveDrags ?? 0) + 1);
+      this.host.setMoveHot(null);
+      this.host.movePointer({ handle: drag.handle, amount: drag.amount, done: true });
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+  }
+
+  /** Where the ray through a point on screen is along a Move arrow's line (mm) or round a ring (radians) centred at `centre`; null when it can't say. */
+  private alongHandle(handle: MoveHandle, centre: [number, number, number], clientX: number, clientY: number): number | null {
+    if (this.image || !this.aim(clientX, clientY)) return null;
+    const { origin, direction } = this.raycaster.ray;
+    const axis = handleAxis(handle);
+    if (isRing(handle)) return ringAngle(origin.toArray(), direction.toArray(), centre, axis);
+    return arrowDistance(origin.toArray(), direction.toArray(), centre, [axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0]);
+  }
+
+  /** One CSS pixel in mm at the Move handles' centre in this view, or null while none are shown. */
+  private movePixel(): number | null {
+    const centre = this.host.move.state?.centre;
+    if (!centre || this.image) return null;
+    const mm = arrowLength(this.camera.position.distanceTo(new THREE.Vector3(...centre)), this.camera.fov, this.renderer.domElement.clientHeight);
+    return mm === null ? null : mm / ARROW_PX;
+  }
+
+  /** Each Move handle's line on screen (client pixels, NaN for a point behind the camera); empty while none are shown. */
+  private handleScreen(): { handle: MoveHandle; screen: { x: number; y: number }[] }[] {
+    const pixel = this.movePixel();
+    const centre = this.host.move.state?.centre;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (pixel === null || !centre || rect.width === 0 || rect.height === 0) return [];
+    return handleLines(centre, pixel).map(({ handle, points }) => ({
+      handle,
+      screen: points.map((p) => {
+        const v = new THREE.Vector3(...p).project(this.camera);
+        return v.z >= -1 && v.z <= 1 ? ndcToClient(v, rect) : { x: NaN, y: NaN };
+      }),
+    }));
+  }
+
+  /** The Move handle under a point on screen (within ARROW_GRAB_PX), or null. */
+  private handleAt(clientX: number, clientY: number, pointer: "mouse" | "touch"): MoveHandle | null {
+    return this.host.moving() ? handleNear(this.handleScreen(), { x: clientX, y: clientY }, ARROW_GRAB_PX[pointer]) : null;
+  }
+
+  /**
+   * Sizes Move's handles for this view as it draws, and says on the element
+   * where a press grabs each (`data-move-handles`: "x 412.0,300.5 y …",
+   * client pixels, an arrow's middle and a point an eighth of the way round
+   * a ring; read by the e2e test).
+   */
+  private placeMoveHandles() {
+    const pixel = this.movePixel();
+    if (pixel !== null) this.host.move.placeAt(pixel);
+    const said = pixel === null ? "" : this.handleScreen().flatMap(({ handle, screen }) => {
+      const p = isRing(handle) ? screen[screen.length >> 3] : { x: (screen[0].x + screen[1].x) / 2, y: (screen[0].y + screen[1].y) / 2 };
+      return Number.isFinite(p.x) && Number.isFinite(p.y) ? [`${handle} ${p.x.toFixed(1)},${p.y.toFixed(1)}`] : [];
+    }).join(" ");
+    if ((this.element.dataset.moveHandles ?? "") === said) return;
+    if (said) this.element.dataset.moveHandles = said;
+    else delete this.element.dataset.moveHandles;
   }
 
   /** How long Extrude's arrow is in this view, in mm: ARROW_PX on screen where its foot is. */
@@ -861,6 +992,9 @@ export class Viewer implements SharedViewport {
   /** Extrude's outlines, preview and arrow (UX1b), and who hears its pointer. */
   private extrude = new ExtrudeLayer();
   private extrudeHandler: ((pointer: ExtrudePointer) => void) | null = null;
+  /** Move's arrows and rings (35e2c), and who hears their drags. */
+  private moveLayer = new MoveLayer();
+  private moveHandler: ((pointer: MovePointer) => void) | null = null;
   /** The main view first, then any added ones. */
   private views: ViewportView[] = [];
   readonly element: HTMLElement;
@@ -878,7 +1012,7 @@ export class Viewer implements SharedViewport {
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group);
+    this.scene.add(grid, this.axes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
 
     this.host = {
       scene: this.scene,
@@ -908,6 +1042,14 @@ export class Viewer implements SharedViewport {
         if (profile) this.element.dataset.extrudeHover = profile;
         else delete this.element.dataset.extrudeHover;
         this.element.dataset.arrowHot = String(arrow);
+      },
+      move: this.moveLayer,
+      moving: () => this.moveHandler !== null && this.moveLayer.state !== null,
+      movePointer: (pointer) => this.moveHandler?.(pointer),
+      setMoveHot: (handle) => {
+        if (!this.moveLayer.setHot(handle)) return;
+        if (handle) this.element.dataset.moveHot = handle;
+        else delete this.element.dataset.moveHot;
       },
     };
     this.views.push(new ViewportView(this.host, container));
@@ -1031,6 +1173,23 @@ export class Viewer implements SharedViewport {
       else this.element.dataset[key] = value;
     }
     if (!show) delete this.element.dataset.extrudeHover;
+  }
+
+  get onMovePointer() {
+    return this.moveHandler;
+  }
+
+  set onMovePointer(handler: ((pointer: MovePointer) => void) | null) {
+    this.moveHandler = handler;
+    if (!handler) this.host.setMoveHot(null);
+  }
+
+  /** Move's arrows and rings at `show.centre` (35e2c); null takes them away. Says the centre on the element (`data-move-centre`, read by the e2e test). */
+  showMoveHandles(show: MoveHandlesShow | null) {
+    this.moveLayer.show(show);
+    if (!show) this.host.setMoveHot(null);
+    if (show) this.element.dataset.moveCentre = show.centre.join(",");
+    else delete this.element.dataset.moveCentre;
   }
 
   set onSketchPointer(handler: ((pointer: SketchPointer) => void) | null) {
