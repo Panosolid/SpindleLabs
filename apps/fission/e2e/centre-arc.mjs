@@ -3,7 +3,8 @@
 // hover and by keys, Centre arc chosen from it; a centre, a start and a
 // pointer swept counter-clockwise past half a turn draw three quarters of
 // a circle (the preview first), closed by two lines and extruded to 750π
-// mm³ worked by hand; the note for a start on the centre; Escape drops
+// mm³ worked by hand; the note for a start on the centre, for an end back
+// on the start and for an arc on top of itself; Escape drops
 // the clicks; and at 375 px with taps (no hover) the shorter way round,
 // with the Arc menu whole on screen and its rows 44 px tall. Screenshots
 // go to E2E_SHOTS when set. Run with `npm run e2e` (after `npm run build`).
@@ -164,6 +165,31 @@ await check("Escape drops the centre and start", async () => {
     await points(page, "20,10 30,10");
     await page.keyboard.press("Escape");
     await points(page, "");
+  } finally {
+    await page.context().close();
+  }
+});
+
+await check("an end clicked back on the start, and an arc drawn again on top of itself, each draw nothing and say why", async () => {
+  const page = await fresh();
+  try {
+    await startSketch(page);
+    await page.click("#sketch-tool-centre");
+    // Centre (20, 10), start (30, 10), then round and back onto (30, 10): no turn (sketch hunt arc-1).
+    await clickPlane(page, [20, 10]);
+    await clickPlane(page, [30, 10]);
+    for (const p of [[20, 20], [10, 10], [20, 0]]) await hover(page, p);
+    await clickPlane(page, [30, 10]);
+    await until(page, () => /^An arc needs to turn/.test(document.querySelector("#sketch-grid-error").textContent), null, "the no-turn note");
+    await points(page, "20,10 30,10");
+    // The start stays: a click at (20, 20) draws the quarter (30, 10) → (20, 20).
+    await clickPlane(page, [20, 20]);
+    await points(page, "30,10 20,20 20,10");
+    // The same three clicks again: the arc is there already (sketch hunt snap-1).
+    for (const p of [[20, 10], [30, 10], [20, 20]]) await clickPlane(page, p);
+    await until(page, () => /^There is an arc between these two points/.test(document.querySelector("#sketch-grid-error").textContent), null, "the same-arc note");
+    if (shots) await page.screenshot({ path: `${shots}/centre-arc-same-1280.png` });
+    await until(page, () => document.querySelector("#sketch-status").textContent.startsWith("1 arc"), null, "still one arc");
   } finally {
     await page.context().close();
   }
