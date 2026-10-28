@@ -177,9 +177,13 @@ const isPrimitive = (kind: ShapeKind): kind is keyof typeof SHAPE_TYPES => Objec
 /**
  * A name folded for comparing: two items' names must differ, ignoring case
  * ("Box 1" and "box 1" are one name), since messages name items by them
- * (U0e: "Delete Box 1").
+ * (U0e: "Delete Box 1"), and ignoring how its letters are spelled in code
+ * points: "Café" with é as one (U+00E9) or as e and a combining accent
+ * (U+0301) reads the same, so it is one name (NFC, app sweep 2026-10-28,
+ * finding 18). Look-alikes of other kinds (a zero-width space, a
+ * right-to-left mark) stay apart: the owner's call.
  */
-export const nameKey = (name: string): string => name.toLowerCase();
+export const nameKey = (name: string): string => name.toLowerCase().normalize("NFC");
 
 /** Every timeline item's name (`nameKey`), but item `except`'s. */
 export function takenNames(doc: Pick<DesignDocument, "timeline">, except?: string): Set<string> {
