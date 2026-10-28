@@ -223,6 +223,20 @@ export class BodyCache {
     return this.keepOnly([]);
   }
 
+  /**
+   * The kernel was replaced by a fresh one (KernelCalls.onRestart): every
+   * body it kept went with it, so all are forgotten, never freed (a fresh
+   * kernel hands out the same handles again, for other bodies). The next
+   * rebuild builds every body anew.
+   */
+  forget(): void {
+    this.bodies.clear();
+    this.keys.clear();
+    this.building.clear();
+    this.unfreed = [];
+    this.wanted = new Set();
+  }
+
   /** Design is gone for good: frees every body, and every one still being built once it is answered. */
   close(): Promise<void> {
     this.closed = true;
