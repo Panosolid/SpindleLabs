@@ -52,18 +52,22 @@ export function launch() {
  * the real policy there (the kernel's WebAssembly, what it refuses).
  * WebKit's bypassCSP ignores a policy given in a <meta> tag, so there the
  * app's page is served with that tag taken out instead.
+ *
+ * They block the app's service worker too (offline mode) unless given
+ * `serviceWorkers: "allow"`: requests it answers never reach page.route,
+ * which many checks use. e2e/offline.mjs allows it and checks it.
  */
 function underTestCSP(browser) {
   const newContext = browser.newContext.bind(browser);
   const newPage = browser.newPage.bind(browser);
   browser.newContext = async (options = {}) => {
-    const context = await newContext({ bypassCSP: true, ...options });
+    const context = await newContext({ bypassCSP: true, serviceWorkers: "block", ...options });
     if (context && options.bypassCSP !== false && STRIP_META_CSP) await stripMetaCSP(context);
     if (context) await slowKernel(context);
     return context;
   };
   browser.newPage = async (options = {}) => {
-    const page = await newPage({ bypassCSP: true, ...options });
+    const page = await newPage({ bypassCSP: true, serviceWorkers: "block", ...options });
     if (options.bypassCSP !== false && STRIP_META_CSP) await stripMetaCSP(page.context());
     await slowKernel(page.context());
     return page;

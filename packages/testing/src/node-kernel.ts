@@ -39,6 +39,7 @@ export function nodeKernel(): KernelCalls {
     body_step: (body) => wasm.body_step(body),
     body_free: (body) => wasm.body_free(body),
     body_count: () => wasm.body_count(),
+    wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };
   return {
     // Async like the worker, and errors become KernelError rejections as

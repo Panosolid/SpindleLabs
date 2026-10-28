@@ -308,6 +308,28 @@ try {
     await page.context().close();
   });
 
+  await check("at 375 px wide with taps: the typed Length/Angle box keeps clear of the corners, so a four-sided outline closes by tapping the first corner again (beginner hunt 10-28)", async () => {
+    const page = await fresh(375, true);
+    await page.tap("#create-sketch");
+    await page.tap("#sketch-plane-XY");
+    await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
+    const corners = [[0, 0], [30, 0], [30, 20], [0, 20]];
+    for (const p of corners) await at(page, p, TOP, true);
+    // The fourth tap has opened the boxes by that corner: none of the four corners is under them (or within a fingertip of them).
+    await until(page, () => !document.querySelector(".typed-entry")?.hidden, null, "the typed boxes shown");
+    const covered = await page.evaluate(() => {
+      const b = document.querySelector(".typed-entry").getBoundingClientRect();
+      return b.width > 0 && b.height > 0 ? b.toJSON() : null;
+    });
+    const box = await page.locator("#viewport canvas").boundingBox();
+    // The first corner is what the closing tap needs.
+    const s = screenPoint(box, [0, 0, 0], TOP);
+    assert.ok(!(s.x >= covered.left - 22 && s.x <= covered.right + 22 && s.y >= covered.top - 22 && s.y <= covered.bottom + 22), `the first corner at ${JSON.stringify(s)} is under the boxes ${JSON.stringify(covered)}`);
+    await at(page, [0, 0], TOP, true);
+    await status(page, "4 lines, a closed outline.");
+    await page.context().close();
+  });
+
   await check("the rectangle tool: R, two corners make four lines as one undo step, a corner on the row says why, Escape, L, extruded 10 mm is 12,000 mm³", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
