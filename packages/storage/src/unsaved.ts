@@ -33,13 +33,18 @@ export interface JournalStorage extends MarkStorage {
   key(index: number): string | null;
 }
 
-/** The journal entry holding `text`, the file text of the project as it was at `written`. */
-export const journalEntry = (text: string, written: Date) => `@${written.getTime()}\n${text}`;
+/**
+ * The journal entry holding `text`, the file text of the project as it was at `written`. `kept` marks one the last
+ * visit's recovery couldn't store ("@<ms>!"): it is put back whatever the store holds, and no tab saves over it.
+ */
+export const journalEntry = (text: string, written: Date, kept = false) => `@${written.getTime()}${kept ? "!" : ""}\n${text}`;
 
 /** An entry's file text and the time it was written (null for an entry from before entries had one). */
-export function readJournalEntry(entry: string): { text: string; written: Date | null } {
-  const head = /^@(\d{1,15})\n/.exec(entry); // 15 digits: every time a Date can hold until the year 33658
-  return head ? { text: entry.slice(head[0].length), written: new Date(Number(head[1])) } : { text: entry, written: null };
+export function readJournalEntry(entry: string): { text: string; written: Date | null; kept: boolean } {
+  const head = /^@(\d{1,15})(!?)\n/.exec(entry); // 15 digits: every time a Date can hold until the year 33658
+  return head
+    ? { text: entry.slice(head[0].length), written: new Date(Number(head[1])), kept: head[2] === "!" }
+    : { text: entry, written: null, kept: false };
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -85,7 +90,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     const entry = readJournalEntry(text);
     const holds = modified.get(id);
     // Strictly older only: written the same millisecond, no one can tell which came first, and keeping a change beats losing one.
-    if (entry.written !== null && holds !== undefined && entry.written.getTime() < holds.getTime()) {
+    if (!entry.kept && entry.written !== null && holds !== undefined && entry.written.getTime() < holds.getTime()) {
       remove(journal, k);
       continue;
     }
@@ -102,6 +107,11 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
       await store.save(id, project, entry.written ?? undefined); // the state as of when the entry was written
     } catch (e) {
       problems.push(`unsaved changes from your last visit couldn't be stored (${message(e)}); they are kept in this browser for the next visit`);
+      try {
+        journal.setItem(k, journalEntry(entry.text, entry.written ?? new Date(0), true)); // so no tab saves over them meanwhile
+      } catch {
+        // storage off or full: kept as it was
+      }
       continue;
     }
     remove(journal, k);
