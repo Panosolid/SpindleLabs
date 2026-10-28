@@ -39,6 +39,8 @@ function fake(): Fake {
     showPlanes() {},
     showExtrude() {},
     onExtrudePointer: null,
+    showMoveHandles() {},
+    onMovePointer: null,
     showImage(rep) {
       if (rep === null) return void f.log.push("empty"); // Image's own empty view
       if (f.failShow) throw new Error(f.failShow);

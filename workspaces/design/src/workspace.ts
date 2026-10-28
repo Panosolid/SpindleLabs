@@ -10,8 +10,8 @@ import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { changedMove, insertMove, MOVE_STEP, moveValues, NO_MOVE } from "./move.ts";
-import { MOVE_BOX_WORDS, movedMesh, pickedBodies, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
+import { changedMove, insertMove, MOVE_STEP, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
+import { draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
@@ -496,6 +496,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const feature = partFeature(doc);
     const build = await rebuildTimeline(doc, bodies, kernel);
     failedNow = new Set(Object.keys(build.results).filter((id) => build.results[id].status === "failed"));
+    resultsNow = build.results;
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
     const result = feature && build.results[feature.id];
@@ -697,6 +698,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let failedNow: ReadonlySet<string> = new Set();
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
+  /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
+  let resultsNow: Readonly<Record<string, { status: string }>> = {};
   /**
    * What a pointer on sketch `id` may snap to on its face's edges (26f):
    * their ends, middles and centres in the plane the sketch is drawn in
@@ -961,8 +964,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
       const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines);
       lastScene = scene;
-      // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go).
+      // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
       if (picksBodies()) pickMoveBodies();
+      else if (moveBox.shown) previewMove();
       factsButton.disabled = inspecting.none() !== null;
       if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(scene)); // the faces offered are this scene's
       // Extrude opened before this build landed (a slow kernel, a file just opened, an Undo) offered the faces of the scene
@@ -1820,21 +1824,59 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /**
    * The preview: a new Move's bodies drawn turned and shifted by the boxes
    * as typed (move-tool.ts `movedMesh`, no kernel call), the rest as built;
-   * a box that isn't a number shows them where they are. An edited Move's
-   * bodies are drawn as built until OK (its preview waits for 35e2c).
+   * an edited Move's bodies where OK will put them (35e2c, `editedMoveMesh`:
+   * out of where the Move put them as built, into where the boxes say); a
+   * box that isn't a number shows them as built. The arrows and rings
+   * follow (`showMoveHandles`).
    */
   function previewMove() {
     if (!lastScene) return;
     const read = readMoveBoxes(moveBox.typed);
-    viewport.showBody(picksBodies() && "values" in read ? movedMesh(lastScene, moveBodies, read.values) : lastScene.mesh);
+    const v = moveBox.shown && "values" in read ? read.values : null;
+    const id = moveBox.editing;
+    viewport.showBody(v === null ? lastScene.mesh : id === null ? movedMesh(lastScene, moveBodies, v) : editedMoveMesh(lastScene, designDoc(), resultsNow, id, v));
+    showMoveHandles();
   }
+
+  /**
+   * Move's arrows and rings (35e2c) where the pivot ends up, while the panel
+   * is open on bodies and every box reads as a number (a box half typed
+   * hides them, as it stops the preview); taken away otherwise.
+   */
+  function showMoveHandles() {
+    const read = readMoveBoxes(moveBox.typed);
+    const on = shown && moveBox.shown && moveBodies.length > 0 && "values" in read;
+    viewport.showMoveHandles(on ? { centre: handlesCentre(read.values) } : null);
+  }
+
+  /** The Move's numbers as a handle's drag began (the boxes then), or null while none is held. */
+  let dragFrom: MoveValues | null = null;
+  /**
+   * A Move handle dragged (35e2c): the handle's box set to its number at the
+   * press moved by the drag in whole millimetres or 15° steps
+   * (`draggedValues`), so the typed values follow the drag and the preview
+   * and handles follow the box; a box typed after the drag is the user's.
+   */
+  const onMovePointer: SharedViewport["onMovePointer"] = (pointer) => {
+    if (!moveBox.shown) return;
+    if (dragFrom === null) {
+      const read = readMoveBoxes(moveBox.typed);
+      if ("bad" in read) return moveBox.showError(`Type the ${MOVE_BOX_WORDS[read.bad]}.`);
+      dragFrom = read.values;
+    }
+    moveBox.setValue(pointer.handle, draggedValues(dragFrom, pointer.handle, pointer.amount)[pointer.handle]);
+    if (pointer.done) dragFrom = null;
+    previewMove();
+  };
 
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected. */
   function leaveMove() {
     if (!moveBox.shown) return;
     moveBox.hide();
     moveBodies = [];
+    dragFrom = null;
     showMoveHint();
+    viewport.showMoveHandles(null);
     if (lastScene) viewport.showBody(lastScene.mesh);
   }
 
@@ -2147,7 +2189,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.onPick = onPick;
     viewport.onSketchPointer = onSketchPointer;
     viewport.onExtrudePointer = onExtrudePointer;
+    viewport.onMovePointer = onMovePointer;
     showExtrudeView();
+    showMoveHandles();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
     globalThis.addEventListener?.("keydown", onHeldKey);
@@ -2173,6 +2217,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
     viewport.showExtrude(null);
+    viewport.onMovePointer = null;
+    viewport.showMoveHandles(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
     globalThis.removeEventListener?.("keydown", onHeldKey);

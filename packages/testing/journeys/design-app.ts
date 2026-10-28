@@ -5,7 +5,7 @@
 // kernel; the viewport is a stand-in that keeps the last mesh and the last
 // selection highlight it was asked to draw. Not a journey itself.
 import assert from "node:assert/strict";
-import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 import { designWorkspace, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
@@ -70,6 +70,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   const looks: { plane: Plane; side: 1 | -1 }[] = [];
   let drawings: readonly SketchDrawing[] = [];
   let extrudeShown: ExtrudeShow | null = null;
+  let moveHandlesShown: MoveHandlesShow | null = null;
   /** Kernel calls since `failCall`, and the one to fail (0: none) and where it failed (T6b fault injection). */
   let calls = 0;
   let failAt = 0;
@@ -106,6 +107,8 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     showPlanes: (p, faces = []) => void (planes = { planes: p, faces }),
     showExtrude: (show) => void (extrudeShown = show),
     onExtrudePointer: null,
+    showMoveHandles: (show) => void (moveHandlesShown = show),
+    onMovePointer: null,
   };
   let view: MountedWorkspace;
   let mounting = false;
@@ -225,6 +228,13 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     /** A click on an outline (or none) or a drag of the arrow, as the viewport hands it over while Extrude is shown. */
     async extrudePointer(pointer: ExtrudePointer) {
       viewport.onExtrudePointer?.(pointer);
+      await settle();
+    },
+    /** Where Move's arrows and rings were last shown (35e2c); null when they are not. */
+    moveHandlesShown: () => moveHandlesShown,
+    /** A Move handle dragged, as the viewport hands it over: `amount` mm along an arrow or degrees round a ring since the press. */
+    async movePointer(pointer: MovePointer) {
+      viewport.onMovePointer?.(pointer);
       await settle();
     },
     /** A click on the view while nothing is sketched on: a face, an edge or a plane, as the viewport hands it over. */
