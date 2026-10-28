@@ -15,8 +15,8 @@ const params = (c: unknown) => {
 };
 
 test("a sphere needs only its width, a cylinder its width and height", () => {
-  // A sphere of width 30 is diameter 30; nothing else is read.
-  assert.deepEqual(params({ op: "set_part", shape: "sphere", width: 30 }), { diameter: 30 });
+  // A sphere of width 30 is diameter 30; nothing else is read. It rests on the floor: its centre 30 / 2 = 15 up.
+  assert.deepEqual(params({ op: "set_part", shape: "sphere", width: 30 }), { diameter: 30, centreZ: 15 });
   // A cylinder 25 across and 60 tall: diameter 25, height 60; no depth needed.
   assert.deepEqual(params({ op: "set_part", shape: "cylinder", width: 25, height: 60 }), { diameter: 25, height: 60 });
   // A box still takes all three.

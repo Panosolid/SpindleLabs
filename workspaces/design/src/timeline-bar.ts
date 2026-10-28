@@ -9,7 +9,7 @@
 // 24e edit with its undo step's name, or refused with the message shown
 // (`barEdit`). Behaviour copied from the reference app's timeline.
 
-import { buildingItems, greyedBy, greyedItems, isSketchItem, type DesignDocument } from "./document.ts";
+import { buildingItems, greyedBy, greyedItems, isMoveItem, isSketchItem, type DesignDocument } from "./document.ts";
 import { deleteItem, itemName, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS } from "./timeline-edits.ts";
 import { dragItem } from "./timeline-reorder.ts";
 
@@ -207,6 +207,9 @@ function sketchOff(doc: DesignDocument, at: number, editing: string | null): str
   return null;
 }
 
+/** Why Edit feature is off on a Move until its panel lands (step 35e2b): placeholders never pretend to work. */
+export const MOVE_EDIT_OFF = "A move's numbers are edited in the Move panel, which isn't built yet";
+
 /**
  * Item `id`'s menu (a right-click on it, or its ⋯ on a phone): Edit
  * feature (a solid feature's sizes, step 25a2) or Edit Sketch (a sketch
@@ -223,7 +226,7 @@ export function itemMenu(doc: DesignDocument, id: string, editing: string | null
   if (at < 0) throw new Error(`there is no item ${id} in the timeline`);
   const item = doc.timeline.features[at];
   const busy = editing === id ? editedWords(itemName(item)) : null;
-  const edit: MenuEntry = isSketchItem(item) ? { action: "edit-sketch", label: "Edit Sketch", off: sketchOff(doc, at, editing) } : { action: "edit", label: "Edit feature", off: null };
+  const edit: MenuEntry = isSketchItem(item) ? { action: "edit-sketch", label: "Edit Sketch", off: sketchOff(doc, at, editing) } : { action: "edit", label: "Edit feature", off: isMoveItem(item) ? MOVE_EDIT_OFF : null };
   return [
     edit,
     { action: "marker", label: "Move the marker here", off: marker === at + 1 ? "The marker is already here" : rollsBack(doc, editing, at + 1) },

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createMenuRows, menuMove, sketchToolbar, FINISH_TITLE, type MenuEntry } from "../src/sketch-toolbar.ts";
+import { createMenuRows, menuMove, sketchToolbar, FINISH_TITLE, SNAP_TITLE, type MenuEntry } from "../src/sketch-toolbar.ts";
 import { sketchPanel } from "../src/sketch-panel.ts";
 import type { ToolKind } from "../src/sketch-tool.ts";
 
@@ -40,23 +40,46 @@ function bar() {
   doc.body.append(slot);
   const chosen: ToolKind[] = [];
   let finished = 0;
-  const t = sketchToolbar(slot, { tool: (k) => chosen.push(k), finish: () => finished++ });
+  const snaps: boolean[] = [];
+  const t = sketchToolbar(slot, { tool: (k) => chosen.push(k), finish: () => finished++, snap: (on) => snaps.push(on) });
   const $ = (id: string) => doc.getElementById(id) as HTMLElement;
-  return { doc, slot, t, $, chosen, finished: () => finished };
+  return { doc, slot, t, $, chosen, snaps, finished: () => finished };
 }
 
-test("hidden until shown; shown, the Create group comes first and Finish Sketch last, around the modelling buttons", () => {
+test("hidden until shown; shown, the Create group comes first, then the modelling buttons, Snap, and Finish Sketch last", () => {
   const { slot, t, $ } = bar();
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, true);
   assert.equal($("finish-sketch").closest<HTMLElement>(".tool-group")!.hidden, true);
   t.show("line");
   const groups = [...slot.children].map((g) => (g as HTMLElement).getAttribute("aria-label") ?? g.id);
-  assert.deepEqual(groups, ["Create", "modelling", "Finish"]);
+  assert.deepEqual(groups, ["Create", "modelling", "Snapping", "Finish"]);
+  assert.equal($("sketch-snap").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("sketch-create").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("finish-sketch").closest<HTMLElement>(".tool-group")!.hidden, false);
   assert.equal($("finish-sketch").title, FINISH_TITLE);
   t.hide();
   assert.equal($("finish-sketch").closest<HTMLElement>(".tool-group")!.hidden, true);
+  assert.equal($("sketch-snap").closest<HTMLElement>(".tool-group")!.hidden, true);
+});
+
+test("the Snap button: pressed and \"Snap on\" at the start; a click asks for off, and shown off it reads \"Snap off\" and asks for on", () => {
+  const { t, $, snaps } = bar();
+  t.show("line");
+  const snap = $("sketch-snap");
+  assert.equal(snap.getAttribute("aria-pressed"), "true");
+  assert.equal(snap.textContent, "Snap on");
+  assert.equal(snap.title, SNAP_TITLE.on);
+  assert.match(snap.title, /Hold Ctrl \(Cmd on a Mac\)/);
+  snap.click();
+  // The toolbar only reports: the workspace turns snapping off and shows it so.
+  assert.deepEqual(snaps, [false]);
+  assert.equal(snap.getAttribute("aria-pressed"), "true", "unchanged until shown");
+  t.showSnap(false);
+  assert.equal(snap.getAttribute("aria-pressed"), "false");
+  assert.equal(snap.textContent, "Snap off");
+  assert.equal(snap.title, SNAP_TITLE.off);
+  snap.click();
+  assert.deepEqual(snaps, [false, true]);
 });
 
 test("the tool in use: exactly its button pressed and its menu row ticked, keys in the titles", () => {

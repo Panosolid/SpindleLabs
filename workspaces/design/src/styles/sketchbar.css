@@ -4,6 +4,13 @@
    the base layout's "#workspace button" while every selector still starts
    with .sketchbar. */
 .sketchbar.sketchbar-finish:not(#none) { margin-left: auto; }
+/* The Snap toggle stands just before Finish Sketch, the pair pushed right together. */
+.sketchbar.sketchbar-snap:not(#none) { margin-left: auto; }
+.sketchbar.sketchbar-snap:not(#none) + .sketchbar.sketchbar-finish:not(#none) { margin-left: 0; }
+/* The Snap toggle (snap.ts snapsNow): lit while snapping is on, plain and dimmed while off. */
+.sketchbar #sketch-snap:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
+.sketchbar #sketch-snap[aria-pressed="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
+.sketchbar #sketch-snap[aria-pressed="false"]:not(#none) { color: #8a919c; }
 .sketchbar #finish-sketch:not(#none) { background: #1f5f3f; border-color: #3ddc97; font-weight: 600; padding: 7px 16px; }
 .sketchbar #finish-sketch:not(#none):hover { background: #26744c; }
 /* U0f: Finish Sketch's icon before its words, and each menu row's icon before its name. */
