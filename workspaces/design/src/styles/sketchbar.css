@@ -8,6 +8,7 @@
 .sketchbar.sketchbar-snap:not(#none) { margin-left: auto; }
 .sketchbar.sketchbar-snap:not(#none) + .sketchbar.sketchbar-finish:not(#none) { margin-left: 0; }
 /* The Snap toggle (snap.ts snapsNow): lit while snapping is on, plain and dimmed while off. */
+.sketchbar #sketch-snap:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
 .sketchbar #sketch-snap[aria-pressed="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
 .sketchbar #sketch-snap[aria-pressed="false"]:not(#none) { color: #8a919c; }
 .sketchbar #finish-sketch:not(#none) { background: #1f5f3f; border-color: #3ddc97; font-weight: 600; padding: 7px 16px; }

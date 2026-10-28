@@ -47,6 +47,7 @@ export const ICONS = {
   "tangent-arc": [tone("M2.5 18A1.5 1.5 0 1 0 5.5 18A1.5 1.5 0 1 0 2.5 18Z"), line("M4 18H11M11 18A6 6 0 0 0 17 12V4")],
   project: [tone("M4 14 12 18 20 14 12 10Z"), line("M4 14 12 18 20 14 12 10ZM12 3V9M9.5 6.5 12 9 14.5 6.5")],
   finish: [tone("M4 12A8 8 0 1 1 20 12A8 8 0 1 1 4 12Z"), line("M8 12.5 11 15.5 16.5 9")],
+  snap: [tone("M5 4H10V12A2 2 0 0 0 14 12V4H19V12A7 7 0 0 1 5 12Z"), line("M5 4H10V12A2 2 0 0 0 14 12V4H19V12A7 7 0 0 1 5 12ZM5 8H10M14 8H19")],
   // Files and the app.
   new: [tone("M6 3H14L19 8V21H6Z"), line("M6 3H14L19 8V21H6ZM14 3V8H19M12.5 11.5V17.5M9.5 14.5H15.5")],
   open: [tone("M3 9H21L19 19H5Z"), line("M3 19V5H9L11 7H19V9M3 19 5 9H21L19 19Z")],

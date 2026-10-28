@@ -59,8 +59,8 @@ export function createMenuRows(): MenuEntry[] {
 
 /** The Snap button's tooltip, on and off. */
 export const SNAP_TITLE = {
-  on: "Snapping is on: points snap to nearby corners, edges, midpoints and centres, or line up with them. Click to turn it off. Hold Ctrl (Cmd on a Mac) to place one point without snapping.",
-  off: "Snapping is off: points go exactly where you click. Click to turn it on again.",
+  on: "Snap on: points snap to nearby corners, edges, midpoints and centres, or line up with them. Click to turn it off. Hold Ctrl (Cmd on a Mac) to place one point without snapping.",
+  off: "Snap off: points go exactly where you click. Click to turn it on again.",
 } as const;
 
 /** Finish Sketch's tooltip. */
@@ -257,12 +257,13 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
 
   // Snap: a toggle, pressed while snapping is on; its words say which.
   const snapGroup = group("sketchbar-snap", "Snapping");
-  const snap = button("Snap on", "sketch-snap");
+  const snap = withIcon(button("Snap on", "sketch-snap"), "snap");
+  const snapWord = snap.querySelector(".tool-word")!;
   snap.addEventListener("click", () => on.snap(snap.getAttribute("aria-pressed") !== "true"));
   snapGroup.append(snap);
   const showSnap = (on: boolean) => {
     snap.setAttribute("aria-pressed", String(on));
-    snap.textContent = on ? "Snap on" : "Snap off";
+    snapWord.textContent = on ? "Snap on" : "Snap off";
     snap.title = on ? SNAP_TITLE.on : SNAP_TITLE.off;
   };
   showSnap(true);
