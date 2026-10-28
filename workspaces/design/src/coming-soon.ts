@@ -6,8 +6,8 @@
 // that pretends to work. When a tool lands, its line here goes and a real
 // item takes its place: test/coming-soon.test.ts fails once its step is
 // ticked in docs/roadmap.md (or docs/progress/cad.md for 35e2 and
-// 35f) while its line is still here. Modify ▾ and Construct ▾ hold only
-// these for now. Styles: src/styles/coming-soon.css.
+// 35f) while its line is still here. Construct ▾ holds only these for now;
+// Modify ▾ has Move (35e2b) before them. Styles: src/styles/coming-soon.css.
 
 import type { MenuItem } from "@fission/ui";
 
@@ -32,7 +32,6 @@ export const COMING_SOON: readonly ComingTool[] = [
   { id: "pattern", label: "Pattern", group: "Create", step: "61", does: "repeat a body or feature in rows or round a circle" },
   { id: "sweep", label: "Sweep", group: "Create", step: "70", does: "move a sketch along a path to make a solid" },
   { id: "loft", label: "Loft", group: "Create", step: "71", does: "blend between two or more sketches to make a solid" },
-  { id: "move", label: "Move/Rotate", group: "Modify", step: "35e2", does: "move or turn a body, by dragging arrows or typing distances and angles" },
   { id: "duplicate", label: "Duplicate body", group: "Modify", step: "35e2", does: "make a copy of a body" },
   { id: "mirror", label: "Mirror body", group: "Modify", step: "35e2", does: "make a mirror image of a body across a plane" },
   { id: "combine", label: "Combine", group: "Modify", step: "35f", does: "join two bodies into one, cut one from another, or keep only where they overlap" },

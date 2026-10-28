@@ -3,11 +3,52 @@
    (packages/ui or a workspace), with every selector starting with .<feature>;
    the app loads them all, so adding one never edits this file or a list. */
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: #14161a; color: #e6e8eb; font: 14px system-ui, sans-serif; }
+/* The clean look (UX2, the owner's ask 2026-10-28, after Life360): one set
+   of shared values every floating surface and button takes, so they match
+   and a new feature matches by using them. Values only (the base theme
+   holds them, as every feature's file uses them).
+   Motion (hover easing, press) is motion.css's, never here.
+   - Corners: 8 px on controls, 12 px on small cards, 16 px on panels, a
+     pill on floating bars and round buttons.
+   - Floating cards: near-black blue, a faint light top edge and a thin blue
+     hairline instead of a hard border, two shadow levels (a resting one and
+     a raised one for panels), Material's elevation idea.
+   - The accent for what is chosen or primary only: a chosen tool glows with
+     the bright blue edge on a dark blue fill; the one main action of a place
+     (Create sketch, OK) is filled bright blue with dark words.
+   - Spacing on a 4 px grid; targets at least 36 px with a mouse, 44 px to
+     tap (Apple's 44 pt, Material's 48 dp). */
+:root {
+  --look-radius-s: 8px;
+  --look-radius-m: 12px;
+  --look-radius-l: 16px;
+  --look-radius-pill: 999px;
+  --look-space-1: 4px;
+  --look-space-2: 8px;
+  --look-space-3: 12px;
+  --look-space-4: 16px;
+  --look-target: 36px;
+  --look-target-touch: 44px;
+  --look-float: rgba(21, 27, 38, 0.96);
+  --look-float-raised: rgba(29, 37, 51, 0.98);
+  --look-field: #0f141c;
+  --look-edge: rgba(120, 165, 230, 0.16);
+  --look-top-light: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --look-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.32);
+  --look-shadow-2: 0 2px 4px rgba(0, 0, 0, 0.4), 0 14px 36px rgba(0, 0, 0, 0.5);
+  --look-accent: #4aa8ff;
+  --look-accent-text: #8cc8ff;
+  --look-on-accent: #07111c;
+  --look-active-fill: rgba(74, 168, 255, 0.16);
+  --look-glow: 0 0 0 1px rgba(74, 168, 255, 0.35), 0 0 14px rgba(74, 168, 255, 0.35);
+  --look-primary-fill: linear-gradient(180deg, #62b6ff 0%, #3d98f2 100%);
+  --look-primary-glow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 4px 14px rgba(74, 168, 255, 0.35);
+}
+html, body { margin: 0; height: 100%; background: #0f141c; color: #e6e8eb; font: 14px system-ui, sans-serif; }
 body { display: flex; flex-direction: column; }
 
 /* Top bar: name, workspace tabs, community. */
-#topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; padding: 0 12px; min-height: 44px; background: #1c1f24; border-bottom: 1px solid #2a2e35; flex-shrink: 0; }
+#topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; padding: 0 12px; min-height: 44px; background: linear-gradient(180deg, #1b2332, #161d2a); border-bottom: 1px solid var(--look-edge); box-shadow: var(--look-top-light); flex-shrink: 0; }
 #topbar h1 { font-size: 16px; margin: 0; white-space: nowrap; }
 #version { font-size: 12px; color: #8a919c; font-weight: normal; }
 /* Under 1440 px the kernel version gives its room to the bar; it stays in the name's tooltip. */
@@ -25,7 +66,7 @@ body { display: flex; flex-direction: column; }
 #file-notice { order: 99; flex-basis: 100%; display: flex; align-items: baseline; gap: 8px; padding: 0 0 8px; color: #f5b14c; font-size: 12px; }
 #file-notice:has(#file-status:empty) { display: none; }
 #file-status { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-#topbar #file-dismiss { padding: 2px 8px; font-size: 12px; border: 1px solid #2a2e35; border-radius: 4px; }
+#topbar #file-dismiss { padding: 2px 8px; font-size: 12px; border: 1px solid #232c3b; border-radius: var(--look-radius-s); }
 #save-status { color: #b5bbc4; font-size: 12px; white-space: nowrap; }
 #save-status:empty { display: none; }
 #save-status[data-state="error"] { order: 98; flex-basis: 100%; color: #f5b14c; white-space: normal; overflow-wrap: anywhere; padding-bottom: 8px; }
@@ -37,8 +78,8 @@ body { display: flex; flex-direction: column; }
    placed explicitly so an empty slot (hidden) leaves the others where they are. */
 #workspace { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
 #toolbar { grid-column: 1 / -1; grid-row: 1; }
-#toolbar, #split-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 12px; background: #1c1f24; border-bottom: 1px solid #2a2e35; }
-#browser { grid-column: 1; grid-row: 2; width: 220px; border-right: 1px solid #2a2e35; }
+#toolbar, #split-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 12px; background: linear-gradient(180deg, #161d2a, #121824); border-bottom: 1px solid var(--look-edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03); }
+#browser { grid-column: 1; grid-row: 2; width: 220px; border-right: 1px solid #232c3b; }
 #viewport { grid-column: 2; grid-row: 2; }
 /* The floating browser: in the viewport's own cell, over it (later in the
    stacking order), as tall as its rows up to the view's buttons; the notes
@@ -49,19 +90,21 @@ body { display: flex; flex-direction: column; }
    One workspace on a wide screen only: split
    view keeps its browser columns and phones their Browser toggle. */
 @media (min-width: 641px) {
-  #workspace:not([data-split="on"]) #browser { grid-column: 2; z-index: 2; align-self: start; justify-self: start; margin: 8px; width: 240px; max-height: calc(100% - 64px); padding: 6px 10px; gap: 6px; background: rgba(28, 31, 36, 0.92); border: 1px solid #353a43; border-radius: 6px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
-  #workspace:not([data-split="on"]) #browser:has(> .browser-fold) { padding: 0; gap: 0; background: none; border: none; box-shadow: none; pointer-events: none; }
+  #workspace:not([data-split="on"]) #browser { grid-column: 2; z-index: 2; align-self: start; justify-self: start; margin: 8px; width: 240px; max-height: calc(100% - 64px); padding: 6px 10px; gap: 6px; background: rgba(21, 27, 38, 0.92); border: 1px solid #2c3749; border-radius: var(--look-radius-s); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+  #workspace:not([data-split="on"]) #browser:has(> .browser-fold) { padding: 8px; gap: 0; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+  /* Folded, the card is one slim title row. */
+  #workspace:not([data-split="on"]) #browser:has(> .browser-fold:not([open])) { padding: 4px 8px; }
 }
 #timeline, #split-timeline { grid-column: 1 / -1; grid-row: 3; min-width: 0; }
-#properties { grid-column: 3; grid-row: 2; width: 300px; border-left: 1px solid #2a2e35; }
+#properties { grid-column: 3; grid-row: 2; width: 300px; border-left: 1px solid #232c3b; }
 #assistant { grid-column: 4; grid-row: 2; }
-#browser, #properties, #split-browser, #split-properties { padding: 16px; background: #1c1f24; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
+#browser, #properties, #split-browser, #split-properties { padding: 16px; background: #161d2a; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; }
 /* Scroll bars like Fusion's: thin, only when the panel overflows (auto), and seen only while the pointer is over the panel. */
 :is(#browser, #properties, #split-browser, #split-properties):is(:hover, :focus-within) { scrollbar-color: #4a515c transparent; }
 #toolbar:empty, #browser:empty, #properties:empty, #timeline:empty, #split-toolbar:empty, #split-browser:empty, #split-properties:empty, #split-timeline:empty { display: none; }
-#workspace aside h2 { font-size: 13px; margin: 8px 0 0; text-transform: uppercase; letter-spacing: 0.06em; color: #8a919c; }
+#workspace aside h2 { font-size: 13px; font-weight: 600; margin: 8px 0 0; color: #e6e8eb; }
 label { display: flex; align-items: center; gap: 8px; }
-label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background: #14161a; border: 1px solid #2a2e35; color: inherit; border-radius: 4px; font-family: ui-monospace, monospace; }
+label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background: #0f141c; border: 1px solid #232c3b; color: inherit; border-radius: var(--look-radius-s); font-family: ui-monospace, monospace; }
 #stats, #feature-info { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 8px 0 0; }
 #stats dt, #feature-info dt { color: #8a919c; }
 #stats dd { margin: 0; font-family: ui-monospace, monospace; }
@@ -72,21 +115,21 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
 #status.bad { color: #ff6b6b; }
 #error { color: #ff6b6b; min-height: 1em; margin: 0; white-space: pre-wrap; }
 #viewport, #split-viewport { min-width: 0; position: relative; }
-#workspace #split-bar button { padding: 5px 8px; background: rgba(38, 42, 49, 0.9); font-size: 13px; }
+#workspace #split-bar button { padding: 5px 8px; background: rgba(29, 37, 51, 0.9); font-size: 13px; }
 .view-cube { position: absolute; top: 8px; right: 8px; width: 96px; height: 96px; touch-action: none; }
-.overlay-legend { position: absolute; top: 112px; right: 8px; margin: 0; padding: 6px 10px; list-style: none; background: rgba(20, 22, 26, 0.85); color: #f5b14c; border-radius: 6px; font-size: 13px; }
-#workspace button { padding: 7px 10px; background: #262a31; border: 1px solid #353a43; color: inherit; border-radius: 4px; font: inherit; cursor: pointer; }
-#workspace button:hover { background: #2e333b; }
+.overlay-legend { position: absolute; top: 112px; right: 8px; margin: 0; padding: 6px 10px; list-style: none; background: rgba(15, 20, 28, 0.85); color: #f5b14c; border-radius: var(--look-radius-s); font-size: 13px; }
+#workspace button { padding: 7px 10px; background: #1e2735; border: 1px solid #2c3749; color: inherit; border-radius: var(--look-radius-s); font: inherit; cursor: pointer; }
+#workspace button:hover { background: #263142; }
 .tool-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.tool-group + .tool-group { border-left: 1px solid #2a2e35; padding-left: 10px; margin-left: 4px; }
+.tool-group + .tool-group { border-left: 1px solid #232c3b; padding-left: 10px; margin-left: 4px; }
 .tool-group-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #8a919c; margin-right: 4px; }
-#toolbar button[aria-pressed="true"], #split-toolbar button[aria-pressed="true"], #workspace #split-toggle[aria-pressed="true"] { background: #23384f; border-color: #4aa8ff; }
+#toolbar button[aria-pressed="true"], #split-toolbar button[aria-pressed="true"], #workspace #split-toggle[aria-pressed="true"] { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
 .tree { list-style: none; margin: 0; padding: 0; }
 .tree .tree { padding-left: 14px; }
 .tree summary { cursor: pointer; padding: 4px 2px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #8a919c; }
 #workspace .tree-row { display: block; width: 100%; text-align: left; padding: 4px 6px; background: none; border: 1px solid transparent; overflow-wrap: anywhere; }
-#workspace .tree-row:hover { background: #262a31; }
-#workspace .tree-row[aria-current="true"] { background: #23384f; border-color: #4aa8ff; }
+#workspace .tree-row:hover { background: #1e2735; }
+#workspace .tree-row[aria-current="true"] { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
 #action-note { margin: 0; font-size: 13px; min-height: 1em; overflow-wrap: anywhere; }
 #workspace .verbs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 #workspace .selection-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -102,22 +145,22 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
 #split { display: contents; }
 #split[hidden] { display: none; }
 #split-toggle { position: absolute; right: 8px; bottom: 8px; }
-#split-bar { position: absolute; left: 8px; top: 8px; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: rgba(28, 31, 36, 0.9); border-radius: 4px; font-size: 13px; }
+#split-bar { position: absolute; left: 8px; top: 8px; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: rgba(21, 27, 38, 0.9); border-radius: var(--look-radius-s); font-size: 13px; }
 #split-bar label { gap: 6px; }
 #split-bar select { padding: 4px 6px; font-family: inherit; }
-#workspace #split-toggle { padding: 5px 8px; background: rgba(38, 42, 49, 0.9); font-size: 13px; }
+#workspace #split-toggle { padding: 7px 14px; background: var(--look-float); border-color: var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); font-size: 13px; }
 #workspace[data-split="on"] { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto auto; grid-template-rows: auto auto minmax(0, 1fr) auto; }
 #workspace[data-split="on"] #timeline { grid-column: 1 / 3; grid-row: 4; }
-#workspace[data-split="on"] #split-timeline { grid-column: 3 / 5; grid-row: 4; border-left: 2px solid #2a2e35; }
+#workspace[data-split="on"] #split-timeline { grid-column: 3 / 5; grid-row: 4; border-left: 2px solid #232c3b; }
 #workspace[data-split="on"] #toolbar { grid-column: 1 / 3; }
-#workspace[data-split="on"] #split-toolbar { grid-column: 3 / 5; grid-row: 1; border-left: 2px solid #2a2e35; }
+#workspace[data-split="on"] #split-toolbar { grid-column: 3 / 5; grid-row: 1; border-left: 2px solid #232c3b; }
 #workspace[data-split="on"] #viewport { grid-column: 2; grid-row: 2 / 4; }
-#workspace[data-split="on"] #split-viewport { grid-column: 3; grid-row: 2 / 4; border-left: 2px solid #2a2e35; }
+#workspace[data-split="on"] #split-viewport { grid-column: 3; grid-row: 2 / 4; border-left: 2px solid #232c3b; }
 #workspace[data-split="on"] #browser, #workspace[data-split="on"] #properties, #split-browser, #split-properties { width: 240px; }
 #workspace[data-split="on"] #browser { grid-column: 1; grid-row: 2; max-height: 40vh; }
-#workspace[data-split="on"] #properties { grid-column: 1; grid-row: 3; border-left: none; border-right: 1px solid #2a2e35; }
-#split-browser { grid-column: 4; grid-row: 2; max-height: 40vh; border-left: 1px solid #2a2e35; }
-#split-properties { grid-column: 4; grid-row: 3; border-left: 1px solid #2a2e35; }
+#workspace[data-split="on"] #properties { grid-column: 1; grid-row: 3; border-left: none; border-right: 1px solid #232c3b; }
+#split-browser { grid-column: 4; grid-row: 2; max-height: 40vh; border-left: 1px solid #232c3b; }
+#split-properties { grid-column: 4; grid-row: 3; border-left: 1px solid #232c3b; }
 /* A pane with nothing in its browser gives its properties the whole column. */
 #workspace[data-split="on"]:has(#browser:empty) #properties { grid-row: 2 / 4; }
 #workspace[data-split="on"]:has(#split-browser:empty) #split-properties { grid-row: 2 / 4; }
@@ -146,16 +189,16 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
   #toolbar { flex-wrap: nowrap; overflow-x: auto; flex-shrink: 0; }
   .tool-group { flex-wrap: nowrap; }
   #toolbar button { white-space: nowrap; }
-  #panel-toggles { display: flex; gap: 6px; padding: 6px 12px; order: 1; flex-shrink: 0; background: #1c1f24; border-bottom: 1px solid #2a2e35; }
+  #panel-toggles { display: flex; gap: 6px; padding: 6px 12px; order: 1; flex-shrink: 0; background: #161d2a; border-bottom: 1px solid #232c3b; }
   #panel-toggles button[aria-expanded="true"] { background: #23384f; border-color: #4aa8ff; }
   #workspace:has(#browser:empty) #browser-toggle, #workspace:has(#properties:empty) #properties-toggle { display: none; }
   #viewport { height: 55vh; flex-shrink: 0; order: 3; }
   #timeline { flex-shrink: 0; order: 3; } /* after the viewport in the page, so under it */
-  #browser, #properties { width: auto; flex-shrink: 0; border-left: none; border-right: none; border-top: 1px solid #2a2e35; overflow-y: visible; }
+  #browser, #properties { width: auto; flex-shrink: 0; border-left: none; border-right: none; border-top: 1px solid #232c3b; overflow-y: visible; }
   #browser { order: 2; }
   #properties { order: 4; }
   #workspace[data-browser="closed"] #browser, #workspace[data-properties="closed"] #properties { display: none; }
-  #workspace #assistant { width: auto; order: 5; flex-shrink: 0; border-left: none; border-top: 1px solid #2a2e35; }
+  #workspace #assistant { width: auto; order: 5; flex-shrink: 0; border-left: none; border-top: 1px solid #232c3b; }
   #topbar { gap: 8px; padding: 0 8px; }
   #topbar h1 #version { display: none; }
   /* A little smaller, so File ▾ and the workspace button fit beside the name in the wider system fonts. */
@@ -165,7 +208,7 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
      choice or a tap elsewhere closes it. */
   #menu-toggle { display: block; }
   #topbar { position: relative; }
-  #topbar-actions { display: none; position: absolute; top: 44px; right: 0; z-index: 20; min-width: 180px; flex-direction: column; background: #1c1f24; border: 1px solid #2a2e35; border-top: none; }
+  #topbar-actions { display: none; position: absolute; top: 44px; right: 0; z-index: 20; min-width: 180px; flex-direction: column; background: #161d2a; border: 1px solid #232c3b; border-top: none; }
   #topbar[data-menu="open"] #topbar-actions { display: flex; }
   #topbar #topbar-actions button { text-align: left; padding: 12px 16px; border-bottom: none; border-left: 2px solid transparent; }
   #topbar #topbar-actions button[aria-pressed="true"] { border-left-color: #4aa8ff; }
@@ -176,7 +219,7 @@ label input, label select { flex: 1; min-width: 0; padding: 6px 8px; background:
   #save-status:not([data-state="error"]) { position: absolute; font-size: 0; }
 }
 [hidden] { display: none !important; }
-#assistant { width: 320px; padding: 16px; background: #1c1f24; border-left: 1px solid #2a2e35; overflow-y: auto; }
+#assistant { width: 320px; padding: 16px; background: #161d2a; border-left: 1px solid #232c3b; overflow-y: auto; }
 #assistant[hidden] { display: none; }
 #assistant h4 { margin: 12px 0 4px; }
 #assistant .where { font-weight: normal; font-size: 12px; color: #8a919c; }

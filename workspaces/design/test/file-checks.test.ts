@@ -65,7 +65,8 @@ test("a timeline item with no dependsOn list, or one holding a non-id, is refuse
 test("a timeline item with no provenance, no name of its own, or no 'from' list is refused on open with a message naming it", () => {
   assert.throws(() => readDesignDocument(broken((f) => delete f.provenance)), /Design feature feature-1 has no provenance/);
   assert.throws(() => readDesignDocument(broken((f) => delete f.provenance.self)), /Design feature feature-1's provenance has no name of its own/);
-  assert.throws(() => readDesignDocument(broken((f) => (f.provenance.self.label = 3))), /Design feature feature-1's provenance has no name of its own/);
+  assert.throws(() => readDesignDocument(broken((f) => delete f.provenance.self.id)), /Design feature feature-1's provenance has no name of its own/);
+  assert.throws(() => readDesignDocument(broken((f) => (f.provenance.self.label = 3))), /Design feature feature-1's name must be text, not 3/);
   assert.throws(() => readDesignDocument(broken((f) => delete f.provenance.from)), /Design feature feature-1's provenance has no 'from' list/);
   assert.throws(() => readDesignDocument(broken((f) => (f.provenance.from = [null]))), /Design feature feature-1's provenance lists something that is not a workspace, id and name/);
   assert.throws(() => readDesignDocument(broken((f) => (f.provenance.from = [{ workspace: "design", id: "profile-1" }]))), /Design feature feature-1's provenance lists something that is not a workspace, id and name/);

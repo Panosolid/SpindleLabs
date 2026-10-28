@@ -221,3 +221,15 @@ test("a profile that is not an object is refused with Design's own message (foun
     assert.throws(() => readDesignDocument({ ...doc, profiles: [bad, ...doc.profiles] }), /^Error: Design profile 1 is not an object$/);
   assert.throws(() => readDesignDocument({ ...doc, profiles: [...doc.profiles, null] }), /^Error: Design profile 2 is not an object$/);
 });
+
+// ---- A version given as text is quoted in the refusal (app sweep 2026-10-28, finding 25) ----
+test("a Design version written as text is quoted, so \"4\" doesn't read as the 4 it isn't", () => {
+  const doc = partDocument("box", 40, 30, 20);
+  // Before: 'Design data version 4 is not one this SpindleLabs reads (1, 2, 3 or 4)', which says 4 isn't 4.
+  assert.throws(() => readDesignDocument({ ...doc, version: "4" }), { message: 'Design data version "4" is not one this SpindleLabs reads (1, 2, 3 or 4)' });
+  assert.throws(() => readDesignDocument({ ...doc, version: "" }), { message: 'Design data version "" is not one this SpindleLabs reads (1, 2, 3 or 4)' });
+  // A number, and anything that isn't text, read as they did.
+  assert.throws(() => readDesignDocument({ ...doc, version: 5 }), { message: "Design data version 5 is not one this SpindleLabs reads (1, 2, 3 or 4)" });
+  assert.throws(() => readDesignDocument({ ...doc, version: null }), { message: "Design data version null is not one this SpindleLabs reads (1, 2, 3 or 4)" });
+  assert.throws(() => readDesignDocument({ ...doc, version: [4] }), { message: "Design data version a list is not one this SpindleLabs reads (1, 2, 3 or 4)" });
+});

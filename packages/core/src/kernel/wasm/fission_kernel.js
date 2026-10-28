@@ -1,3 +1,4 @@
+/*! SpindleLabs kernel. Copyright (c) 2026 Ben (GitHub: benpy28) and Panosolid. All rights reserved. Use only as part of SpindleLabs: see LICENSE-KERNEL.txt. */
 
 export function begin(key) {
     const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);

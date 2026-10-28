@@ -33,6 +33,7 @@ export function selectors(css: string): string[] {
   for (const m of body.matchAll(/([^{}]+)\{/g)) {
     const head = m[1].trim();
     if (head.startsWith("@")) continue;
+    if (/^(from|to|\d+(\.\d+)?%)(\s*,\s*(from|to|\d+(\.\d+)?%))*$/.test(head)) continue; // a @keyframes step, not a selector
     out.push(...topLevel(head).map((s) => s.trim()));
   }
   return out;
@@ -47,6 +48,10 @@ test("selectors are read by hand-worked example", () => {
   // and a media query whose own line is skipped: four selectors.
   const css = "/* a { b */ .x { c: d; }\n.x:hover, .x .y { e: f; }\n@media (max-width: 9px) { .x.z { g: h; } }";
   assert.deepEqual(selectors(css), [".x", ".x:hover", ".x .y", ".x.z"]);
+});
+
+test("keyframe steps are not selectors (hand-worked: only .x remains)", () => {
+  assert.deepEqual(selectors("@keyframes k { from { a: b; } 50%, to { a: c; } } .x { }"), [".x"]);
 });
 
 test("a comma inside :is(…) or :not(…) is part of its selector, not a new one (hand-worked)", () => {

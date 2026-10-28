@@ -1,0 +1,43 @@
+/* The Move panel (step 35e2b, move-panel.ts): at the top of the properties
+   while a Move is made or edited, a card in the new look (near-black blue,
+   the bright blue edge of the mode you are in, OK filled bright blue; the
+   --look-* values once the new look is in, these colours until then). Each
+   row's three boxes sit side by side, so the whole panel stays short: at
+   phone width it is the only thing in the Properties sheet while it is
+   open, so one tap on Move never covers most of the view. */
+.move-panel { border-left: 3px solid var(--look-accent, #4aa8ff); padding: 4px 0 8px 10px; margin-bottom: 12px; }
+.move-panel h2 { margin: 0 0 4px; overflow-wrap: anywhere; }
+.move-panel p { margin: 4px 0; }
+.move-panel .move-panel-bodies { overflow-wrap: anywhere; color: var(--look-accent-text, #8cc8ff); }
+.move-panel .move-panel-note { color: #8b95a3; font-size: 0.9em; }
+.move-panel .move-panel-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 6px; margin: 6px 0; min-width: 0; }
+.move-panel .move-panel-legend { grid-column: 1 / -1; font-size: 0.9em; color: #b9c3d1; }
+.move-panel .move-panel-box { display: flex; align-items: center; gap: 4px; min-width: 0; margin: 0; }
+.move-panel .move-panel-axis { flex: none; width: 1.1em; color: #8b95a3; font-size: 0.85em; }
+.move-panel .move-panel-box input { flex: 1; width: 100%; min-width: 0; padding: 4px 6px; background: var(--look-field, #0f141c); border: 1px solid #232c3b; color: inherit; border-radius: var(--look-radius-s, 6px); }
+.move-panel .move-panel-box input:focus { outline: none; border-color: var(--look-accent, #4aa8ff); box-shadow: var(--look-glow, 0 0 0 1px rgba(74, 168, 255, 0.35)); }
+.move-panel .move-panel-pivot { margin: 6px 0; }
+.move-panel .move-panel-pivot summary { cursor: pointer; color: #b9c3d1; font-size: 0.9em; }
+.move-panel .move-panel-pivot .move-panel-row { margin-top: 4px; }
+.move-panel .move-panel-pivot .move-panel-legend { display: none; }
+.move-panel .move-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
+.move-panel #move-ok { background: var(--look-primary-fill, #3d98f2); border-color: transparent; color: var(--look-on-accent, #07111c); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
+.move-panel button:disabled { opacity: 0.45; cursor: default; }
+@media (max-width: 700px) {
+  .move-panel button, .move-panel .move-panel-box input { min-height: 44px; }
+  .move-panel .move-panel-pivot summary { min-height: 44px; display: flex; align-items: center; }
+  /* Short enough for a phone's sheet: the longer words go, the boxes stay. */
+  .move-panel > .move-panel-note:not(#move-pick) { display: none; }
+}
+@media (max-width: 640px) {
+  /* In the phone's Properties sheet the Move panel is alone, so the sheet is only as tall as it. */
+  .move-panel:not([hidden]) ~ * { display: none !important; }
+  /* Each row's name beside its boxes, the title and the bodies on one line: the panel as short as it can be. */
+  .move-panel .move-panel-row { grid-template-columns: 4.2em repeat(3, minmax(0, 1fr)); align-items: center; margin: 4px 0; }
+  .move-panel .move-panel-legend { grid-column: auto; font-size: 0.8em; line-height: 1.2; }
+  .move-panel .move-panel-pivot .move-panel-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .move-panel h2 { display: inline; font-size: 1.05em; margin-right: 8px; }
+  .move-panel .move-panel-bodies, .move-panel #move-pick { display: inline; }
+  .move-panel .move-panel-bodies[hidden], .move-panel #move-pick[hidden] { display: none; }
+  .move-panel .move-panel-pivot, .move-panel .move-panel-buttons { margin: 4px 0 0; }
+}

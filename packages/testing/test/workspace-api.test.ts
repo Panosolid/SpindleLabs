@@ -153,6 +153,8 @@ function testContext({ empty = false } = {}): WorkspaceContext {
     showPlanes() {},
     showExtrude() {},
     onExtrudePointer: null,
+    showMoveHandles() {},
+    onMovePointer: null,
   };
   // A new project's design starts empty (U0c); these tests work on a part, the 40 × 30 × 20 box (feature-1).
   const project = emptyProject();
@@ -504,7 +506,7 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const groups = [...ctx.toolbar.querySelectorAll<HTMLElement>(":scope > [role=group], :scope > * > [role=group]")].filter((g) => g.closest(".menu-button-menu") === null);
   assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Modify", "Construct", "Inspect", "Insert", "Export"]);
   // The sketch's own toolbar (SF3b) is there too, hidden until a sketch is edited: its Create menu and tools first, Finish Sketch last.
-  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Modify", false], ["Construct", false], ["Inspect", false], ["Insert", false], ["Export", false], ["Finish", true]]);
+  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Modify", false], ["Construct", false], ["Inspect", false], ["Insert", false], ["Export", false], ["Snapping", true], ["Finish", true]]);
   // Its File ▾ entries (U0f2a): New is on (the box is there to clear); Export STL is off, saying why, as the failed kernel built nothing.
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);
@@ -682,7 +684,7 @@ test("Design says the project changed when it writes the part; placeholders neve
       assert.equal(changes.get(ctx), 1);
       assert.deepEqual(ctx.project.workspaces.design, { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
       const before = ctx.project.workspaces.design;
-      const width = ctx.properties.querySelector("input") as HTMLInputElement;
+      const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";
       width.dispatchEvent(new (ctx.properties.ownerDocument.defaultView as unknown as typeof globalThis).Event("input"));
       assert.notEqual(ctx.project.workspaces.design, before, "the edit wrote a new document");

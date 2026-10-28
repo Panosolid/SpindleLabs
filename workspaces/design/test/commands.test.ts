@@ -15,8 +15,8 @@ const params = (c: unknown) => {
 };
 
 test("a sphere needs only its width, a cylinder its width and height", () => {
-  // A sphere of width 30 is diameter 30; nothing else is read.
-  assert.deepEqual(params({ op: "set_part", shape: "sphere", width: 30 }), { diameter: 30 });
+  // A sphere of width 30 is diameter 30; nothing else is read. It rests on the floor: its centre 30 / 2 = 15 up.
+  assert.deepEqual(params({ op: "set_part", shape: "sphere", width: 30 }), { diameter: 30, centreZ: 15 });
   // A cylinder 25 across and 60 tall: diameter 25, height 60; no depth needed.
   assert.deepEqual(params({ op: "set_part", shape: "cylinder", width: 25, height: 60 }), { diameter: 25, height: 60 });
   // A box still takes all three.
@@ -74,6 +74,33 @@ test("hand-worked: the draw commands (AI7b) draw in the sketch just started, as 
   // The reach: 1e6 mm either way passes, past it does not.
   assert.ok(parseCommand({ op: "draw_line", x1: -1e6, y1: 0, x2: 1e6, y2: 0 }, DESIGN_COMMANDS).ok);
   assert.equal(parseCommand({ op: "draw_line", x1: -1.1e6, y1: 0, x2: 0, y2: 0 }, DESIGN_COMMANDS).ok, false);
+});
+
+test("a drawn circle's diameter and a rectangle's sides take only the sizes a typed entry takes: 0.001 mm to 1e6 mm (0.9× and 1.1× of each)", () => {
+  // Sweep 2026-10-28, item 8: they were only checked to be more than 0, so 1e300 reached the view (a NaN error there) and
+  // 1e-12 was drawn, sizes the circle and rectangle tools' typed boxes refuse (readLength: MIN_TYPED to MAX_TYPED).
+  const sketched = documentFor({ op: "create_sketch", on: "XY" });
+  const circle = (diameter: number) => () => documentFor({ op: "draw_circle", diameter }, sketched);
+  const rectangle = (width: number, height: number) => () => documentFor({ op: "draw_rectangle", width, height }, sketched);
+  // 0.9 × 0.001 = 0.0009 is under the smallest, 1.1 × 0.001 = 0.0011 over it; 0.9 × 1e6 = 900,000 is under the largest, 1.1 × 1e6 = 1,100,000 over it.
+  const small = /at least 0\.001 mm/;
+  const big = /at most 1000000 mm/;
+  assert.throws(circle(0.0009), small);
+  assert.throws(circle(1.1e6), big);
+  assert.throws(circle(1e300), big);
+  assert.throws(circle(1e-12), small);
+  // A diameter of 0.0011 is a radius of 0.00055 mm: the circle is drawn with that radius.
+  assert.equal(documentFor({ op: "draw_circle", diameter: 0.0011 }, sketched).sketches[0].curves[0].kind, "circle");
+  assert.equal(circle(9e5)().sketches[0].curves.length, 1);
+  // Each side on its own: a rectangle is 4 lines when both are in range.
+  assert.throws(rectangle(0.0009, 10), small);
+  assert.throws(rectangle(10, 0.0009), small);
+  assert.throws(rectangle(1.1e6, 10), big);
+  assert.throws(rectangle(10, 1e300), big);
+  assert.equal(rectangle(0.0011, 9e5)().sketches[0].curves.length, 4);
+  // The words say which size and what was asked, so the refusal is plain.
+  assert.throws(circle(1e300), /^Error: A circle ⌀1e\+300 mm can't be drawn: a length can be at most 1000000 mm/);
+  assert.throws(rectangle(10, 1e300), /^Error: A rectangle's height of 1e\+300 mm can't be drawn: a length can be at most 1000000 mm/);
 });
 
 test("a sketch an extrude is built from is closed to the draw commands, naming the extrude", async () => {

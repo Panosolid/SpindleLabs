@@ -40,13 +40,13 @@ function bigDesign({ pairs, content: per = 6, lone = 0, loneContent = 6, kept = 
   const sketch = (n: number) => {
     const id = `sketch-${take()}`;
     doc.sketches.push({ id, ...content(n, take), constraints: [] });
-    doc.timeline.features.push({ id, intent: { type: "sketch", parameters: { plane: "XY" }, summary: `Sketch on the XY plane` }, provenance: { self: { workspace: "design", id, label: "Sketch" }, from: [] }, dependsOn: [], suppressed: false });
+    doc.timeline.features.push({ id, intent: { type: "sketch", parameters: { plane: "XY" }, summary: `Sketch on the XY plane` }, provenance: { self: { workspace: "design", id, label: `Sketch ${doc.sketches.length}` }, from: [] }, dependsOn: [], suppressed: false });
     return id;
   };
   for (let i = 0; i < pairs; i++) {
     const s = sketch(per);
     const id = `feature-${take()}`;
-    doc.timeline.features.push({ id, intent: { type: "extrude", parameters: { sketch: s, distance: 5 }, summary: "Extrude" }, provenance: { self: { workspace: "design", id, label: "Extrude" }, from: [] }, dependsOn: [s], suppressed: false });
+    doc.timeline.features.push({ id, intent: { type: "extrude", parameters: { sketch: s, distance: 5 }, summary: "Extrude" }, provenance: { self: { workspace: "design", id, label: `Extrude ${extrudes.length + 1}` }, from: [] }, dependsOn: [s], suppressed: false });
     extrudes.push(id);
   }
   for (let i = 0; i < lone; i++) sketch(loneContent);

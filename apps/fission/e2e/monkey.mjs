@@ -89,7 +89,7 @@ async function open(browser) {
   await page.goto(url);
   // A new project starts empty (U0c): ready once the kernel has said its version and the start hint shows.
   await page.waitForFunction(() => /kernel v/.test(document.getElementById("version")?.textContent ?? "") && document.querySelector("#start-hint")?.hidden === false, null, { timeout: 20000 });
-  return { context, page, errors, saved: null, savedName: "Untitled.spindlelabs.json", known: new Set(), design: null, seen: new Set() };
+  return { context, page, errors, saved: null, savedName: "Untitled.spindle", known: new Set(), design: null, seen: new Set() };
 }
 
 /** In the page: what can be clicked, typed into and right-clicked now, each with a selector a replay can find again. */
@@ -189,7 +189,7 @@ async function settle(page) {
  * such a download in the same moment as Save.
  */
 async function save(s, stray = false) {
-  const project = (d) => d.suggestedFilename().endsWith(".spindlelabs.json");
+  const project = (d) => d.suggestedFilename().endsWith(".spindle");
   const click = (stray) => {
     if (stray) Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob(["SpindleLabs STL: stray"])), download: "fission-box.stl" }).click();
     document.getElementById("save").click();

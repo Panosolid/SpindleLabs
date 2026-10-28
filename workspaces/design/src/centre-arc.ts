@@ -62,20 +62,46 @@ export function sweep(c: SketchXY, s: SketchXY, swept: number, p: SketchXY): num
  * c + (p − c)·(r / d), r = |s − c| and d = |p − c|, so it is on the circle
  * through `s` (to within rounding of the coordinates) and lands exactly
  * where a whole-number ratio makes it exact, (3, 4) from the centre with
- * r = 10 at (6, 8). Counter-clockwise (`ccw`) it runs from `s` to the end;
- * clockwise it is counter-clockwise from the end to `s`, so the ends swap.
- * Null when `p` is on the centre (no direction) or the end comes out on
- * `s` itself (no turn).
+ * r = 10 at (6, 8). A `p` already on that circle to within rounding
+ * (`ON_CIRCLE`) is the end itself: c + (p − c)·1 is not always p in
+ * floating point (−1.7 + (−1.9 − −1.7) is −1.9000000000000001), and an
+ * end a rounding off the point clicked would miss the point there (an
+ * outline's corner, or the start). Counter-clockwise (`ccw`) it runs from
+ * `s` to the end; clockwise it is counter-clockwise from the end to `s`,
+ * so the ends swap. Null when `p` is on the centre (no direction) or the
+ * end comes out less than MIN_CHORD from `s` (no turn, or a turn so
+ * nearly whole that the ends can't be told apart).
  */
 export function centreArc(c: SketchXY, s: SketchXY, p: SketchXY, ccw: boolean): SketchArc | null {
   const d = Math.sqrt((p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2);
   if (d === 0) return null;
-  const k = Math.sqrt((s[0] - c[0]) ** 2 + (s[1] - c[1]) ** 2) / d;
-  const e: [number, number] = [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k];
-  if (e[0] === s[0] && e[1] === s[1]) return null;
+  const r = Math.sqrt((s[0] - c[0]) ** 2 + (s[1] - c[1]) ** 2);
+  const big = Math.max(Math.abs(c[0]), Math.abs(c[1]), Math.abs(s[0]), Math.abs(s[1]), Math.abs(p[0]), Math.abs(p[1]));
+  const k = r / d;
+  const e: [number, number] = Math.abs(d - r) <= ON_CIRCLE * big ? [p[0], p[1]] : [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k];
+  if (Math.sqrt((e[0] - s[0]) ** 2 + (e[1] - s[1]) ** 2) < MIN_CHORD) return null;
   const [start, end] = ccw ? [s, e] : [e, s];
   return { start: [start[0], start[1]], end: [end[0], end[1]], centre: [c[0], c[1]] };
 }
+
+/**
+ * The modeller's smallest piece, 0.001 mm: an arc whose ends are closer
+ * than this is refused with the whole outline it is in ("has its ends
+ * … mm apart"), so the tool refuses it at the click instead.
+ */
+export const MIN_CHORD = 1e-3;
+
+/**
+ * How far d = |p − c| may be from r = |s − c|, as a multiple of the
+ * largest coordinate's size M, and still be the same distance up to
+ * rounding: each difference is rounded once (off by at most εM/2 per
+ * coordinate's own rounding plus ε·2M for the subtraction), the sum of
+ * squares and the square root add a few ε relative to the result (at most
+ * 2√2·M), so two lengths of one true distance differ by well under 16εM.
+ * Two different grid points are at least the grid apart, far above it
+ * (16εM is 3.6e-9 mm at the largest size, 1e6 mm).
+ */
+export const ON_CIRCLE = 16 * Number.EPSILON;
 
 /** The tool after a hover at `p` (snapped): the sweep follows the pointer once the start is down. */
 export function centreHover(tool: CentreArcTool, p: SketchXY): CentreArcTool {
@@ -89,12 +115,29 @@ export const NO_DIRECTION = "An arc needs an end: click away from its centre to 
 export const NO_TURN = "An arc needs to turn: click its end away from its start.";
 
 /**
+ * Why an arc on top of one already there draws nothing (the line tool's
+ * SAME_LINE, for arcs): its ends would each have two arcs on them, so
+ * three curve ends meet there as soon as anything else joins and the
+ * outline breaks. The other way round the same centre (the ends swapped)
+ * is the rest of the circle, not on top, and is drawn.
+ */
+export const SAME_ARC = "There is an arc between these two points round this centre already: a second one on top of it would break the outline.";
+
+/** Whether the sketch has an arc from `start` to `end` round `centre`, all three shared points (a new point is never under an arc already there). */
+export function arcThere(sketch: Sketch, start: LineEnd, end: LineEnd, centre: LineEnd): boolean {
+  if (typeof start !== "string" || typeof end !== "string" || typeof centre !== "string") return false;
+  return sketch.curves.some((c) => c.kind === "arc" && c.start === start && c.end === end && c.centre === centre);
+}
+
+/**
  * A centre arc's clicks: the centre, the start, then the end (`centreArc`,
  * the way round from `sweep`, this click included), one undo step. The
  * centre and start share points already there; the end shares one only if
- * it is exactly there, else it is a new point. A start on the centre, an
- * end on the centre or one that comes out on the start draws nothing and
- * says why. After an arc the tool starts again from a new centre.
+ * it is exactly there (an end clicked on a point of its circle is that
+ * point, `centreArc`), else it is a new point. A start on the centre, an
+ * end on the centre, one that comes out within MIN_CHORD of the start, or
+ * an arc on top of one already there (`arcThere`) draws nothing and says
+ * why. After an arc the tool starts again from a new centre.
  */
 export function centreClick(doc: DesignDocument, sketch: Sketch, tool: CentreArcTool, at: SketchXY): { doc: DesignDocument; tool: CentreArcTool; drew: boolean; note?: string } {
   if (tool.centre === null) return { doc, tool: { ...tool, centre: [at[0], at[1]] }, drew: false };
@@ -106,7 +149,9 @@ export function centreClick(doc: DesignDocument, sketch: Sketch, tool: CentreArc
   const arc = centreArc(tool.centre, tool.start, at, swept >= 0);
   if (!arc) return { doc, tool: { ...tool, swept }, drew: false, note: angleAt(tool.centre, tool.start, at) === null ? NO_DIRECTION : NO_TURN };
   const share = (p: SketchXY): LineEnd => pointAt(sketch, p) ?? p;
-  const drawn = drawArc(doc, tool.sketch, share(arc.start), share(arc.end), share(arc.centre));
+  const ends = [share(arc.start), share(arc.end), share(arc.centre)] as const;
+  if (arcThere(sketch, ...ends)) return { doc, tool: { ...tool, swept }, drew: false, note: SAME_ARC };
+  const drawn = drawArc(doc, tool.sketch, ...ends);
   return { doc: drawn.doc, tool: { ...tool, centre: null, start: null, swept: 0 }, drew: true };
 }
 

@@ -18,6 +18,7 @@
 // take turns: a new chapter's scene draws on the spare one and fades in
 // while the old one fades out (chapters.ts blendAt), both still turning.
 
+import { releaseShared } from "../release.ts";
 import * as THREE from "three";
 import { CHAPTERS, blendAt, playStep, chapterAt, chapterForKey, glideAt, glideDuration, glossary, restingScroll, stageLayout, type Chapter } from "./chapters.ts";
 import { GUIDE_FOV, aimCamera, buildScene, type GuideScene } from "./scenes.ts";
@@ -436,6 +437,7 @@ export function openGuide(opener?: HTMLElement | null): GuideDialog {
     cancelAnimationFrame(raf);
     removeEventListener("resize", onResize);
     for (const layer of layers) {
+      if (layer.renderer) releaseShared(layer.renderer, [world, ...layers.flatMap((l) => (l.scene ? [l.scene.root] : []))]); // three.js's lookup texture for lit materials outlives the guide
       layer.scene?.dispose();
       layer.scene = null;
       layer.renderer?.dispose();

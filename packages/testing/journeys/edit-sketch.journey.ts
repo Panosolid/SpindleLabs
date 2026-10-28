@@ -496,7 +496,7 @@ const PLANTS: { name: string; find: string; replace: string }[] = [
   // The plan's own: Finish Sketch rebuilds nothing.
   { name: "finish-skips-rebuild", find: "    if (drew) void show(designDoc(), shape);\n", replace: "" },
   // Opening another sketch leaves the first without rebuilding it.
-  { name: "switch-skips-rebuild", find: "    leaveEdit();\n    if (mode.kind !== \"none\") leaveSketch();\n    editingSketch = { id, grid", replace: "    leaveEdit();\n    if (mode.kind !== \"none\") leaveSketch(false);\n    editingSketch = { id, grid" },
+  { name: "switch-skips-rebuild", find: "    leaveMove();\n    if (mode.kind !== \"none\") leaveSketch();\n    editingSketch = { id, grid", replace: "    leaveMove();\n    if (mode.kind !== \"none\") leaveSketch(false);\n    editingSketch = { id, grid" },
   // The warning stays up while its sketch is open again.
   { name: "warning-while-open", find: "    if (mode.kind !== \"edit\") return;\n    showKept();\n    lookAtSketch();", replace: "    if (mode.kind !== \"edit\") return;\n    lookAtSketch();" },
   // The old live link: every drawn line rebuilds what is built from the sketch, part way through the outline.

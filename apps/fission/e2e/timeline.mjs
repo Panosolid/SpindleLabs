@@ -20,6 +20,7 @@
 // navigation.mjs, since a body leaving may refit the view. Screenshots go
 // to E2E_SHOTS when set. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
+import { backdropAt } from "./backdrop.mjs";
 import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
@@ -86,15 +87,17 @@ function onCanvas(cam, box, p) {
   return [(nx + 1) / 2, (1 - ny) / 2];
 }
 
-/** The canvas's colour at each model point, through the camera the app has now (a frame or two after it settles), after its top left corner's. */
+/** The canvas's colour at each model point, through the camera the app has now (a frame or two after it settles), after the backdrop's colour on the first point's row (backdrop.mjs); `.empties` has the backdrop's colour on each point's own row. */
 async function colours(page, points) {
   await rebuilt(page);
   await page.waitForTimeout(250);
   const cam = await page.evaluate(() => window.fissionTest.camera());
   const box = await page.locator("#viewport canvas").boundingBox();
-  const at = [[0.01, 0.01], ...points.map((p) => onCanvas(cam, box, p))];
+  const at = points.map((p) => onCanvas(cam, box, p));
   for (const [fx, fy] of at) assert.ok(fx > 0 && fx < 1 && fy > 0 && fy < 1, `a probe off the canvas: ${fx}, ${fy}`);
-  return page.evaluate((spots) => {
+  // "Empty" is the backdrop's colour on the first probe's row (a gradient, backdrop.mjs).
+  const empty = backdropAt(at[0]?.[1] ?? 0);
+  const seen = await page.evaluate((spots) => {
     const src = document.querySelector("#viewport canvas");
     const c = document.createElement("canvas");
     c.width = src.width;
@@ -103,6 +106,7 @@ async function colours(page, points) {
     ctx.drawImage(src, 0, 0);
     return spots.map(([fx, fy]) => Array.from(ctx.getImageData(Math.floor(src.width * fx), Math.floor(src.height * fy), 1, 1).data.slice(0, 3)));
   }, at);
+  return Object.assign([empty, ...seen], { empties: at.map(([, fy]) => backdropAt(fy)) });
 }
 
 // Where the square goes, as in bodies.mjs: beside the box at 1280 px (x 50
@@ -110,8 +114,8 @@ async function colours(page, points) {
 // the view is narrow and tall, extruded 30 so its top shows over the box
 // (10 · 10 · 30 = 3,000 mm³). The top faces' middles: the box's (20, 15,
 // 20); the square's (55, 5, 10) or (15, 45, 30). "Drawn" is: not the
-// background, sampled in the canvas's top left corner, which the framed
-// bodies never reach (a model point under the floor can be behind the box).
+// backdrop's colour at that height (a gradient, backdrop.mjs; it was a flat
+// grey sampled in the canvas's top left corner).
 const LAYOUTS = {
   1280: { corners: [[50, 0], [60, 10]], distance: 10, volume: "1,000 mm³", top: [55, 5, 10] },
   375: { corners: [[10, 40], [20, 50]], distance: 30, volume: "3,000 mm³", top: [15, 45, 30] },
@@ -119,8 +123,9 @@ const LAYOUTS = {
 const BOX_TOP = [20, 15, 20];
 const differs = (a, b) => a.some((x, i) => Math.abs(x - b[i]) > 12);
 async function drawn(page, layout) {
-  const [empty, box, square] = await colours(page, [BOX_TOP, layout.top]);
-  return { box: differs(box, empty), square: differs(square, empty) };
+  const seen = await colours(page, [BOX_TOP, layout.top]);
+  const [, box, square] = seen;
+  return { box: differs(box, seen.empties[0]), square: differs(square, seen.empties[1]) };
 }
 
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
@@ -1020,7 +1025,8 @@ try {
       const box = await page.locator("#feature-edit").boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width, `the panel fits across the screen: ${JSON.stringify(box)}`);
       // The first box has the keys: typing goes into it.
-      assert.equal(await page.evaluate(() => document.activeElement?.id), "edit-width");
+      // (On a phone the sheet opens a moment before the box can take the keys, so wait for them.)
+      await until(page, () => document.activeElement?.id === "edit-width", null, "the first box has the keys");
 
       // 2. A height of 0: the kernel's words, nothing recorded, the panel stays open.
       await page.fill("#edit-height", "0");

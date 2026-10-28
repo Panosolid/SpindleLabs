@@ -22,9 +22,11 @@ function fakeScene() {
     showSketches: (d) => void calls.push(`showSketches ${d.length}`),
     showPlanes: (p, faces) => void calls.push(`showPlanes ${p.map((x) => x.id).join(",")}${faces ? ` faces ${faces.join(",")}` : ""}`),
     showExtrude: (show) => void calls.push(`showExtrude ${show ? show.profiles.map((p) => p.id).join(",") : "none"}`),
+    showMoveHandles: (show) => void calls.push(`showMoveHandles ${show ? show.centre.join(",") : "none"}`),
     onPick: null,
     onSketchPointer: null,
     onExtrudePointer: null,
+    onMovePointer: null,
   };
   return { scene, calls };
 }
@@ -166,4 +168,25 @@ test("Extrude's view (UX1b) goes to the scene, and its pointer to the pane that 
   assert.equal(scene.onSketchPointer, null, "the sketch pointer is separate");
   a.onExtrudePointer = null;
   assert.equal(scene.onExtrudePointer, null);
+});
+
+test("Move's handles (35e2c) go to the scene, and their drags to the pane that set it most recently and still has one", () => {
+  const { scene, calls } = fakeScene();
+  const make = paneViewports(scene);
+  const a = make(fakeView("a", calls));
+  const b = make(fakeView("b", calls));
+  a.showMoveHandles({ centre: [1, 2, 3] });
+  b.showMoveHandles(null);
+  assert.deepEqual(calls, ["showMoveHandles 1,2,3", "showMoveHandles none"]);
+  const handlerA = () => {};
+  const handlerB = () => {};
+  a.onMovePointer = handlerA;
+  b.onMovePointer = handlerB;
+  assert.equal(scene.onMovePointer, handlerB, "the newest wins");
+  assert.equal(a.onMovePointer, handlerA, "each pane keeps its own");
+  b.onMovePointer = null;
+  assert.equal(scene.onMovePointer, handlerA, "a keeps it when b hides");
+  assert.equal(scene.onExtrudePointer, null, "Extrude's pointer is separate");
+  a.onMovePointer = null;
+  assert.equal(scene.onMovePointer, null);
 });
