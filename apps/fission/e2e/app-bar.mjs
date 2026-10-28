@@ -57,8 +57,10 @@ const NEW_ON = "New: clear the whole design and start again from an empty one. I
  * least 16 px on screen), a name (its words, or its aria-label), and, for
  * Save, its words out of sight. Empty when all is well.
  */
+// Measured once the menu's opening slide has finished: mid-slide a 16 px icon reads 15.999996 px.
 const barProblems = (page) =>
-  page.evaluate(() => {
+  page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
     const out = [];
     const sels = ["#save", "#undo", "#redo", "#file-menu-menu [role=menuitem]", "#assistant-toggle", "#guide-open", "#community"];
     for (const b of document.querySelectorAll(sels.join(","))) {
