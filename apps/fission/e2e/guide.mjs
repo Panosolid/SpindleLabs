@@ -304,7 +304,7 @@ try {
     const words = await (await page.request.get(`${url}privacy.html`)).text();
     const assistant = await import("node:fs").then((fs) => fs.readFileSync(new URL("../src/assistant.ts", import.meta.url), "utf8"));
     assert.match(assistant, />Remove key</);
-    for (const said of ["choose Remove key", "Anthropic, OpenAI", "Ollama", "in-browser model", "no analytics", 'href="third-party-licences.txt"', "panosolid.github.io"]) assert.ok(words.includes(said), said);
+    for (const said of ["choose Remove key", "Anthropic, OpenAI", "Ollama", "in-browser model", "no analytics", 'href="third-party-licences.txt"', "spindlelabs.app"]) assert.ok(words.includes(said), said);
     assert.ok(await page.$("dialog.guide[open]"));
   });
 
