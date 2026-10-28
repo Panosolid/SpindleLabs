@@ -982,7 +982,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** What the typed boxes keep off: the sketch's points and, on a touch screen, the finger's own point (the corner it just placed, which the next tap may need). */
   const keepClear = () => {
     const points = viewport.editedScreenPoints();
-    return window.matchMedia("(hover: none)").matches ? [...points, { x: screen.x, y: screen.y }] : points;
+    return globalThis.matchMedia?.("(hover: none)").matches ? [...points, { x: screen.x, y: screen.y }] : points;
   };
   /** Shows the modelling buttons (true) or the sketch's toolbar in their place (false). */
   function modelling(on: boolean) {
