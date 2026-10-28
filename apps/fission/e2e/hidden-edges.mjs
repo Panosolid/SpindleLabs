@@ -235,8 +235,11 @@ try {
         const left = probe(img, [0, 0, 0], [0, 30, 0], ts);
         // Sketch 2's line: where the body can't hide it (beside it), and where it passes behind.
         const along = Array.from({ length: 161 }, (_, i) => i / 160);
-        const beside = probe(img, [-60, 15, 0], [100, 15, 0], along).filter((p) => p.refs.every((r) => !far(r, img.at(2, 2), FLAT)));
-        const behind = probe(img, [-60, 15, 0], [100, 15, 0], along).filter((p) => p.refs.every((r) => far(r, img.at(2, 2), 3 * SHOWS)));
+        // The backdrop is a gradient down the canvas (backdrop.ts), so "background" is the canvas's
+        // left edge on the probe's own row, which nothing in this view covers.
+        const backdrop = (p) => img.at(2, p.at[1]);
+        const beside = probe(img, [-60, 15, 0], [100, 15, 0], along).filter((p) => p.refs.every((r) => !far(r, backdrop(p), FLAT)));
+        const behind = probe(img, [-60, 15, 0], [100, 15, 0], along).filter((p) => p.refs.every((r) => far(r, backdrop(p), 3 * SHOWS)));
         if (MEASURE) console.log(`back\n  ${say(back)}\nleft\n  ${say(left)}\nbeside\n  ${say(beside)}\nbehind\n  ${say(behind)}`);
 
         // The probes can fail: Sketch 2 beside the body is a line to them.

@@ -80,16 +80,21 @@ async function journey(plugin: WorkspacePlugin): Promise<DesignDocument> {
   await a.settle();
   await a.pick({ face: faceWhere(a.mesh()!, (p) => p[2] === 20) });
   await a.key("sketch-circle");
-  // ---- The snap: 0.4 mm (4 px) from the corner, 0.36 mm from the right edge's middle; 1.5 mm off, nothing. ----
+  // ---- The snap: 0.4 mm (4 px) from the corner, 0.36 mm from the right edge's middle; 1.5 mm off, the edge; 2.5 mm off, nothing. ----
   a.pointer("move", [39.6, 29.7]);
   await a.settle();
   assert.equal(snapShown(a), "edge endpoint 40,30");
   a.pointer("move", [40.3, 15.2]);
   await a.settle();
   assert.equal(snapShown(a), "edge midpoint 40,15");
+  // 1.5 mm from the corner is out of its reach; 0.3 mm off the back edge it lands on that edge (snapping control, 10-28), not the corner.
   a.pointer("move", [38.5, 29.7]);
   await a.settle();
-  assert.equal(snapShown(a), "", "1.5 mm from the corner is out of reach");
+  assert.equal(snapShown(a), "on edge 38.5,30", "1.5 mm from the corner is out of reach, on the back edge");
+  // 2 mm in from the back edge too (2.5 mm from the corner, 1.5 mm from x = 40, 2 mm from y = 30): nothing.
+  a.pointer("move", [38.5, 28]);
+  await a.settle();
+  assert.equal(snapShown(a), "", "out of reach of the corner, the edges and their lines");
   // ---- The circle: centre on the corner, exactly, pinned, in one step. ----
   await a.click(39.6, 29.7);
   await a.click(45, 30);
@@ -229,7 +234,7 @@ const PLANTS: { name: string; find: string; replace: string }[] = [
   // A click snaps onto the edges but its point is never pinned.
   { name: "click-not-pinned", find: "      let next = pinNewPoints(before, done.doc, done.tool.sketch, edges);", replace: "      let next = done.doc;" },
   // The hover shows the edge's snap, but the click ignores it.
-  { name: "click-ignores-edges", find: "      const snapped = snapOnSketch(designDoc(), mode.tool, at, rounded, pointer.pixel, edges).at;", replace: "      const snapped = snapOnSketch(designDoc(), mode.tool, at, rounded, pointer.pixel).at;" },
+  { name: "click-ignores-edges", find: "      const snapped = snapHere(designDoc(), mode.tool, at, rounded, pointer.pixel, edges, held).at;", replace: "      const snapped = snapHere(designDoc(), mode.tool, at, rounded, pointer.pixel, [], held).at;" },
   // The settle runs on the click's document, dropping the pin made from it.
   { name: "settle-drops-pin", find: "          next = await settleKept(kernel, before, next, bodies);\n        } catch (e) {\n          return sketchBox.showError(e instanceof Error ? e.message : String(e));\n        }\n        // Undo, Escape", replace: "          next = await settleKept(kernel, before, done.doc, bodies);\n        } catch (e) {\n          return sketchBox.showError(e instanceof Error ? e.message : String(e));\n        }\n        // Undo, Escape" },
   // The rebuild's followed points never taken into the document: drawn, saved and held where they were snapped.

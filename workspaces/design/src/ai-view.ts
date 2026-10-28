@@ -13,7 +13,7 @@ import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
 import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable, RENAME_OP } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
-import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
+import { insertAt, isHidden, isMoveItem, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
 import { addSketch } from "./sketch.ts";
@@ -165,6 +165,9 @@ function sketchNotes(doc: DesignDocument | undefined, faces: readonly AIFace[], 
   ];
 }
 
+/** What set_part does when the part is a preset, unless an extrude in the same answer has made its body the part. */
+const IN_PLACE = "set_part changes the part in place, unless extrude_sketch comes before it in the same answer: the extruded body is then the part, so set_part adds a new body after it.";
+
 /** The prompt's lines about the timeline: each item and its state, the marker, and what set_part does now. */
 function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: PanelSizes, adds: string | null): string[] {
   const { features, marker } = doc.timeline;
@@ -179,6 +182,7 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     // 26e (Q3): built on a suppressed item, it is greyed with it.
     if (item.greyed !== null) return `${label} Greyed: builds nothing while ${item.greyed}, which it is built on, is suppressed.`;
     if (isSketchItem(f)) return `${label} A sketch: builds no body.`;
+    if (isMoveItem(f)) return `${label} A move: builds no body; ${item.failed ? "failed, so it moves nothing" : "the bodies it moves are where it puts them from here on"}.`;
     if (item.failed) return `${label} Failed: builds no body${failed.has(f.id) ? "" : " (its sketch is gone)"}.`;
     const kept = keptOf(doc, f) ? " Its sketch is lost (deleted, or no longer a closed outline), so it builds from the shape it kept." : "";
     const hidden = isHidden(doc, f.id) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";
@@ -189,7 +193,8 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     marker === undefined ? "The timeline marker is at the end: every item is built." : marker === "start" ? "The timeline marker is at the start: nothing is built." : `The timeline marker is after item ${features.findIndex((f) => f.id === marker) + 1}: items after it are not built.`;
   // The part an extruded sketch: named, so the model knows what the user calls "it" and that set_part leaves it as it is.
   const what = part === null ? "Nothing builds a body, so" : `The part (the last body) is ${features.indexOf(part) + 1}. ${part.intent.summary}, an extruded sketch, which no command you can use changes, so`;
-  const does = adds === null ? "set_part changes the part in place." : `${what} set_part adds ${adds}; nothing already in the timeline changes.`;
+  // An extrude earlier in the same answer makes its body the part, so a set_part after it adds one (sweep 2026-10-28: the note said "in place").
+  const does = adds === null ? IN_PLACE : `${what} set_part adds ${adds}; nothing already in the timeline changes.`;
   return [
     "The design's timeline, in build order:",
     ...shown,

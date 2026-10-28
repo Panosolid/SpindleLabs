@@ -35,5 +35,6 @@ test("the tools' help no longer says points snap to the grid; the snap help says
   // Regression (SF1): every tool's help said "snapped to the grid", which stopped being true.
   for (const [kind, help] of Object.entries(TOOL_HELP)) assert.doesNotMatch(help, /grid/i, kind);
   assert.match(SNAP_HELP, /where you click/);
-  assert.match(SNAP_HELP, /ends, midpoints and centres/);
+  assert.match(SNAP_HELP, /ends, midpoints, centres and body edges/);
+  assert.match(SNAP_HELP, /Hold Ctrl \(Cmd on a Mac\)/);
 });

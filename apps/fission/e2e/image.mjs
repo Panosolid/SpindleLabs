@@ -39,8 +39,15 @@ const RED = [255, 0, 0];
 const GREEN = [0, 255, 0];
 const BLUE = [0, 0, 255];
 const WHITE = [255, 255, 255];
-/** The viewport's background, 0x14161a (packages/viewport/src/viewer.ts). */
-const BACKGROUND = [20, 22, 26];
+/**
+ * The viewport's backdrop (packages/viewport/src/backdrop.ts): a gradient from
+ * (30, 38, 52) at the top row to (14, 16, 22) at the bottom, so it depends on
+ * the height sampled. Halfway down it is each channel's mean,
+ * ((30 + 14) / 2, (38 + 16) / 2, (52 + 22) / 2) = (22, 27, 37); a fifth of the
+ * way down, top + 0.2 × (bottom − top) = (26.8, 33.6, 46).
+ */
+const BACKGROUND = [22, 27, 37];
+const BACKGROUND_FIFTH = [26.8, 33.6, 46];
 // Top-left red, top-right green, bottom-left blue, bottom-right white (rows run from the top).
 const quarters = (x, y) => [...(y < 50 ? (x < 100 ? RED : GREEN) : x < 100 ? BLUE : WHITE), 255];
 const plate = makePng(200, 100, quarters, 10000); // 10000 px/m = 254 DPI
@@ -106,7 +113,7 @@ const sheetOnScreen = () =>
     const ctx = c.getContext("2d");
     ctx.drawImage(src, 0, 0);
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    // The image's colours are all fully saturated or white; the background is dark grey.
+    // The image's colours are all fully saturated or white; the backdrop is dark blue, every channel under 60.
     const isSheet = (x, y) => Math.max(...d.slice(4 * (y * c.width + x), 4 * (y * c.width + x) + 3)) > 200;
     const cy = Math.floor(c.height / 2);
     const cx = Math.floor(c.width / 2);
@@ -115,7 +122,13 @@ const sheetOnScreen = () =>
     return { width: xs.at(-1) - xs[0] + 1, height: ys.at(-1) - ys[0] + 1, canvas: [c.width, c.height] };
   });
 
-/** The grey sheet's extent on screen: pixels clearly lighter than the background (20, 22, 26), along the middle row and column. */
+/**
+ * The grey sheet's extent on screen along the middle row and column: pixels
+ * nearer the sheet's grey (the centre's red) than the backdrop's (the middle
+ * row's first pixel), so an edge pixel counts when the sheet covers more than
+ * half of it, whatever the brightness. (A fixed 60 counted a pixel a quarter
+ * covered at 179 grey but not at 128, and the sheet seemed to grow a pixel.)
+ */
 const sheetOnScreenGrey = () =>
   page.evaluate(() => {
     const src = document.querySelector("#viewport canvas");
@@ -125,9 +138,11 @@ const sheetOnScreenGrey = () =>
     const ctx = c.getContext("2d");
     ctx.drawImage(src, 0, 0);
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    const isSheet = (x, y) => d[4 * (y * c.width + x)] > 60;
     const cy = Math.floor(c.height / 2);
     const cx = Math.floor(c.width / 2);
+    const red = (x, y) => d[4 * (y * c.width + x)];
+    const half = (red(cx, cy) + red(0, cy)) / 2;
+    const isSheet = (x, y) => red(x, y) > half;
     const xs = [...Array(c.width).keys()].filter((x) => isSheet(x, cy));
     const ys = [...Array(c.height).keys()].filter((y) => isSheet(cx, y));
     return { left: xs[0], right: xs.at(-1), top: ys[0], bottom: ys.at(-1) };
@@ -223,7 +238,7 @@ try {
     // Back to the framing, then zoom in: a point outside the sheet becomes part of it.
     await page.click("[data-view=fit]");
     await settle();
-    near(await pixel(0.5, 0.2), [20, 22, 26], "background above the sheet");
+    near(await pixel(0.5, 0.2), BACKGROUND_FIFTH, "background above the sheet");
     await page.mouse.move(...at(0.5, 0.5));
     for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -200);
     await settle();
@@ -344,7 +359,7 @@ try {
     assert.equal(await page.textContent("#layer-list .layer-visibility"), "Show");
     // The hidden layer's row is dimmed (styles/image.css reaches the page).
     assert.equal(await page.$eval("#layer-list .layer-hidden .tree-row", (el) => getComputedStyle(el).opacity), "0.5");
-    near(await pixel(0.5, 0.5), [20, 22, 26], "hidden");
+    near(await pixel(0.5, 0.5), BACKGROUND, "hidden");
     await page.click("#layer-list .layer-visibility");
     await page.waitForTimeout(100);
     assert.equal(await page.textContent("#layer-list .layer-visibility"), "Hide");

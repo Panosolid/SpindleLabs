@@ -2,7 +2,7 @@
 // Run with `npm test` (Node's built-in test runner).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { KernelClient, KernelError, kernelFailure, latestOnly } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_RESTARTED, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -84,11 +84,20 @@ test("anything else thrown is an internal failure with no inputs", () => {
  */
 class FakeWorker {
   static last: FakeWorker;
+  static made = 0;
+  terminated = false;
   onmessage: ((e: { data: unknown }) => void) | null = null;
   onerror: ((e: { message?: string; preventDefault(): void }) => void) | null = null;
   posted: unknown[] = [];
   constructor() {
     FakeWorker.last = this;
+    FakeWorker.made++;
+  }
+  terminate() {
+    this.terminated = true;
+  }
+  reply(data: KernelResponse) {
+    this.onmessage?.({ data });
   }
   postMessage(m: unknown) {
     this.posted.push(m);
@@ -148,4 +157,80 @@ test("a worker that throws while it starts says what it threw, for this call and
       w2.fail("");
       await assert.rejects(p, /didn't load/);
     });
+  }));
+
+/** `(module (func (export "f") unreachable))`, by hand: calling f traps, as a kernel call that runs out of memory does. */
+const TRAPS = new Uint8Array([
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, // "\0asm", version 1
+  0x01, 0x04, 0x01, 0x60, 0x00, 0x00, // types: one, () -> ()
+  0x03, 0x02, 0x01, 0x00, // functions: one, of type 0
+  0x07, 0x05, 0x01, 0x01, 0x66, 0x00, 0x00, // exports: "f", function 0
+  0x0a, 0x05, 0x01, 0x03, 0x00, 0x00, 0x0b, // code: no locals, unreachable, end
+]);
+
+test("a trap is told apart from a refusal", () => {
+  const f = new WebAssembly.Instance(new WebAssembly.Module(TRAPS)).exports.f as () => void;
+  let trapped: unknown;
+  try {
+    f();
+  } catch (e) {
+    trapped = e;
+  }
+  assert.ok(trapped !== undefined, "f trapped");
+  assert.equal(isTrap(trapped), true);
+  // The kernel's own refusals are plain Errors with a kind: never a trap.
+  assert.equal(isTrap(Object.assign(new Error("width must be positive"), { kind: "invalid-input", inputs: [] })), false);
+  assert.equal(isTrap(new Error("unreachable")), false, "the word alone is not a trap");
+  assert.equal(isTrap("unreachable"), false);
+  assert.equal(isTrap(undefined), false);
+});
+
+const stoppedReply = (id: number): KernelResponse => ({ id, ok: false, error: { kind: "internal", inputs: [], message: "unreachable" }, stopped: true });
+
+test("a call that stops the kernel starts a fresh one: every call sent to the old one fails, later ones go to the new one", () =>
+  withFakeWorker(async (client, old) => {
+    let heard = 0;
+    client.onRestart(() => heard++);
+    const made = FakeWorker.made;
+    const first = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+    const second = client.call("body_count");
+    old.reply(stoppedReply(1));
+    // Both calls the old kernel had fail with the same words; it is let go, and one new worker is made.
+    await assert.rejects(first, (e: KernelError) => e instanceof KernelError && e.kind === "internal" && e.message === KERNEL_RESTARTED);
+    await assert.rejects(second, (e: KernelError) => e.message === KERNEL_RESTARTED);
+    assert.equal(old.terminated, true);
+    assert.equal(FakeWorker.made, made + 1);
+    assert.equal(heard, 1, "the listener hears of it once");
+    const fresh = FakeWorker.last;
+    assert.notEqual(fresh, old);
+    // The next call goes to the new kernel (ids go on counting) and its answer is used.
+    const third = client.call("body_count");
+    assert.deepEqual(fresh.posted, [{ id: 3, op: "body_count", args: [] }]);
+    // A late word from the old kernel is never taken, even for an id the new one is waiting on.
+    old.answer(3, 99);
+    fresh.answer(3, 0);
+    assert.equal(await third, 0);
+    // An error event from the old worker no longer counts either: the new one keeps working.
+    old.fail("gone");
+    const fourth = client.call("kernel_version");
+    fresh.answer(4, "0.32.30");
+    assert.equal(await fourth, "0.32.30");
+  }));
+
+test("a refusal is only a refusal: the kernel is kept, and a listener that stopped listening hears nothing", () =>
+  withFakeWorker(async (client, worker) => {
+    let heard = 0;
+    const stop = client.onRestart(() => heard++);
+    const made = FakeWorker.made;
+    const refused = client.call("make_box", -1, 1, 1);
+    worker.reply({ id: 1, ok: false, error: { kind: "invalid-input", inputs: [], message: "width must be positive" } });
+    await assert.rejects(refused, /width must be positive/);
+    assert.equal(FakeWorker.made, made, "no new worker");
+    assert.equal(worker.terminated, false);
+    assert.equal(heard, 0);
+    stop();
+    client.call("body_count").catch(() => {});
+    worker.reply(stoppedReply(2));
+    assert.equal(heard, 0, "stopped listening");
+    assert.equal(FakeWorker.made, made + 1, "the kernel is still replaced");
   }));

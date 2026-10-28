@@ -5,7 +5,7 @@
    The confirm button is the warning red of something that clears work;
    Cancel keeps the plain look and has the focus. ":not(#none)" lifts a
    rule over the base layout's "#workspace button". */
-.start-fresh { max-width: min(420px, calc(100vw - 32px)); padding: 16px 18px; background: #1c1f24; color: #e6e9ee; border: 1px solid #353a43; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55); }
+.start-fresh { max-width: min(420px, calc(100vw - 32px)); padding: 16px 18px; background: #161d2a; color: #e6e9ee; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .start-fresh::backdrop { background: rgba(0, 0, 0, 0.5); }
 .start-fresh h2 { margin: 0 0 8px; font-size: 1.1em; }
 .start-fresh p { margin: 0 0 14px; line-height: 1.45; color: #c4cbd5; }

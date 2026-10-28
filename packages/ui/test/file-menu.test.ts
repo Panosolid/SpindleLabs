@@ -124,3 +124,13 @@ test("an item runs the entry on screen when it is chosen, not the one there when
   assert.deepEqual(ran.at(-1), "open");
   window.happyDOM.close();
 });
+
+test("Save As… is listed after Save when the shell gives it, runs as the shell's own, and is left out when it isn't given", () => {
+  const { ran, entry, parts: p } = parts(() => null);
+  assert.equal(fileSections(p)[0].items.length, 3); // New, Open…, Save: unchanged without it
+  const withAs = { ...p, saveAs: entry("file-save-as", "Save As…") };
+  const items = fileSections(withAs)[0].items;
+  assert.deepEqual(items.map((i) => [i.id, i.label, i.icon]), [[NEW_ID, "New", "new"], ["open", "Open…", "open"], ["file-save", "Save", "save"], ["file-save-as", "Save As…", "save"]]);
+  items[3].run();
+  assert.deepEqual(ran, ["file-save-as"]);
+});

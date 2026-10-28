@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHistory } from "@fission/core";
-import { partDocument, type DesignDocument } from "../src/document.ts";
+import { nameKey, partDocument, type DesignDocument } from "../src/document.ts";
 import { drawnFrame } from "../src/face-sketch.ts";
 import { addFaceSketch, addSketch, drawCircle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
@@ -208,4 +208,24 @@ test("the box stays on the screen: a point past the window's edge is pulled back
   t.box.close();
   t.box.show("Box 1", { x: -40, y: -10 }, () => null);
   assert.deepEqual([t.$("rename-box").style.left, t.$("rename-box").style.top], ["0px", "0px"]);
+});
+
+test("a name that is another's in other code points is taken: Café typed composed and decomposed is one name (app sweep finding 18)", () => {
+  // "Café" can be typed as 4 code points, C a f U+00E9 (é composed, NFC), or
+  // as 5, C a f e U+0301 (e and a combining acute, NFD): the same word on
+  // screen, so the same name. Before: names were only lower-cased, so both were allowed.
+  const composed = "Café";
+  const decomposed = "Café";
+  assert.equal([...composed].length, 4);
+  assert.equal([...decomposed].length, 5);
+  const doc = renamed(design(), "feature-1", composed);
+  for (const typed of [decomposed, "CAFÉ", "café"]) {
+    const r = renameItem(doc, "feature-5", typed);
+    assert.deepEqual("refused" in r ? [r.refused, r.message] : null, ["taken", `${composed} is already the name of another item: each item needs its own name, since messages name items by them`], JSON.stringify(typed));
+  }
+  // The other way round too, and a different word stays free: "Cafe" with no accent is another name.
+  const other = renamed(design(), "feature-1", decomposed);
+  assert.equal((renameItem(other, "feature-5", composed) as { refused?: string }).refused, "taken");
+  assert.deepEqual(names(renamed(doc, "feature-5", "Cafe")), [composed, "Sketch 1", "Cafe"]);
+  assert.equal(nameKey(composed), nameKey(decomposed));
 });

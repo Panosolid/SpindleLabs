@@ -5,10 +5,24 @@
 import init, * as kernel from "./wasm/fission_kernel.js";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
-import { kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
-const ready = init().then(() => startKernel(kernel.begin, release));
+// A .wasm that didn't download or compile fails every call with the app's
+// words, not the browser's; a build that doesn't match its kernel.json keeps
+// its own. Handled here once, so a failed start is never an uncaught error
+// before the first call awaits it (app sweep 2026-10-28, finding 7).
+let memory: WebAssembly.Memory | null = null;
+const ready = init().then(
+  (exports) => {
+    memory = exports.memory;
+    return startKernel(kernel.begin, release);
+  },
+  () => {
+    throw new Error(KERNEL_NOT_DOWNLOADED);
+  },
+);
+ready.catch(() => {});
 
 const ops = {
   kernel_version: () => kernel.kernel_version(),
@@ -26,6 +40,7 @@ const ops = {
   body_step: (body: BodyHandle) => kernel.body_step(body),
   body_free: (body: BodyHandle) => kernel.body_free(body),
   body_count: () => kernel.body_count(),
+  wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
 self.onmessage = async (event: MessageEvent<KernelRequest>) => {
@@ -36,7 +51,8 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
     const fn = ops[op] as (...a: unknown[]) => unknown;
     reply = { id, ok: true, value: fn(...args) };
   } catch (e) {
-    reply = { id, ok: false, error: kernelFailure(e) };
+    // A trap leaves this kernel unfit for another call: the client replaces this worker (kernel-client.ts, restart).
+    reply = isTrap(e) ? { id, ok: false, error: kernelFailure(e), stopped: true } : { id, ok: false, error: kernelFailure(e) };
   }
   self.postMessage(reply);
 };

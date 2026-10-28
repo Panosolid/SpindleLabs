@@ -210,9 +210,9 @@ try {
     await check(`${at}: the tools still to come are greyed with "Coming soon", say what each will do, and choosing one does nothing`, async () => {
       const page = await fresh(width, tap);
       try {
-        // Modify ▾ and Construct ▾ hold only tools to come: their buttons greyed (coming-soon.css), still opening to show them.
+        // Construct ▾ holds only tools to come: its button greyed (coming-soon.css), still opening to show them; Modify ▾ has Move (35e2b).
         const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, b.disabled]));
-        assert.deepEqual(faded, [["modify-menu", "0.5", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
+        assert.deepEqual(faded, [["modify-menu", "1", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
         const lists = {};
         for (const menu of ["create-menu", "modify-menu", "construct-menu", "inspect-menu"]) {
           await press(page, `#${menu}`, tap);
@@ -224,7 +224,7 @@ try {
         }
         assert.deepEqual(lists, {
           "create-menu": ["revolve", "hole", "pattern", "sweep", "loft"],
-          "modify-menu": ["move", "duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
+          "modify-menu": ["duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
           "construct-menu": ["plane", "axis", "point"],
           "inspect-menu": ["measure", "section"],
         });
@@ -270,7 +270,8 @@ try {
         }
         await press(page, "#inspect-facts", tap);
         await until(page, () => !document.getElementById("properties").hasAttribute("data-folded"), null, "Body facts opens the panel");
-        await openPanel(page, "properties", tap); // phone: the numbers are in the Properties sheet, closed until its toggle (U5)
+        // Phone: Body facts opens the Properties sheet itself, so the numbers are not behind a closed sheet (demo rehearsal 10-28).
+        if (tap) await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "Body facts opens the Properties sheet");
         await page.locator("#volume").scrollIntoViewIfNeeded(); // the sheet scrolls inside itself; the numbers are scrolled into its view
         const numbers = await rect(page, "#volume");
         assert.ok(numbers.top >= 0 && numbers.bottom <= (width > 640 ? 800 : 667) && numbers.width > 0, `the volume on screen: ${JSON.stringify(numbers)}`);

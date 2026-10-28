@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
  * Only the balance depends on them: a wrong or missing entry makes one share slower, never skips a check. */
 export const SECONDS = {
   "smoke.mjs": 60,
+  "offline.mjs": 15,
+  "offline-off.mjs": 8,
   "storage.mjs": 2,
   "image.mjs": 23,
   "styles.mjs": 1,

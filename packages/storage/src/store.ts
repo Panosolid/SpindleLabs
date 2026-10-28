@@ -21,10 +21,27 @@ export interface ProjectStore {
   list(): Promise<ProjectSummary[]>;
   /** Reads and upgrades a stored project; refuses a missing or corrupt one with a message. */
   open(id: string): Promise<Project>;
-  /** Stores the project under `id`, replacing what was there. */
-  save(id: string, project: Project): Promise<void>;
+  /**
+   * Stores the project under `id`, replacing what was there. `read` is when
+   * the project was in that state (autosave reads it, a journal entry was
+   * written), kept as its save time: the next visit compares it with a
+   * journal entry's time (unsaved.ts). Left out, it is now. Given
+   * `unchangedSince`, the save time of the stored project as this tab last
+   * read or wrote it, the save is refused with a ProjectChangedError when
+   * the store's is another (another tab saved since), so a stale tab never
+   * overwrites newer work.
+   */
+  save(id: string, project: Project, read?: Date, unchangedSince?: Date): Promise<void>;
   /** Forgets a stored project; refuses an id that is not stored. */
   remove(id: string): Promise<void>;
+}
+
+/** A save refused because another tab stored the project since this one last read or wrote it (app sweep 2026-10-28, finding 2). */
+export class ProjectChangedError extends Error {
+  constructor() {
+    super("This project was changed in another tab. Reload to see the newer version.");
+    this.name = "ProjectChangedError";
+  }
 }
 
 const PROJECT = "project/";
@@ -74,11 +91,21 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
         throw new Error(`can't open the stored project "${id}": ${message(e)}`);
       }
     },
-    async save(id, project) {
+    async save(id, project, read, unchangedSince) {
       checkId(id);
       const text = projectToJson(project); // refuses NaN and the like before anything is written
+      // The save time is when the state was read, never when the writes finish: a journal entry written while
+      // they run holds a newer state, and must not look older than this one (unsaved.ts).
+      const when = read ?? now();
+      if (Number.isNaN(when.getTime())) throw new Error("a stored project needs a valid save time");
+      const modified = when.toISOString();
+      if (unchangedSince !== undefined) {
+        // Read just before writing: another tab's save landing in between is the one gap left (IndexedDB has no compare-and-set across tabs here).
+        const holds = readSummary(id, await kv.get(SUMMARY + id));
+        if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
+      }
       await kv.set(PROJECT + id, text);
-      await kv.set(SUMMARY + id, JSON.stringify({ name: project.name, modified: now().toISOString() }));
+      await kv.set(SUMMARY + id, JSON.stringify({ name: project.name, modified }));
     },
     async remove(id) {
       checkId(id);

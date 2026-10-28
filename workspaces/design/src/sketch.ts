@@ -13,9 +13,10 @@ import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, Ske
 import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { curvePoints, insertAt, insertItem, isSketchItem, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
+import { SAME_PLACE } from "./snap.ts";
 
 /** The undo step each sketch edit is recorded as. */
 export const SKETCH_STEPS = { create: "Create sketch", draw: "Draw line", rectangle: "Draw rectangle", circle: "Draw circle", arc: "Draw arc", centre: "Draw centre arc", tangent: "Draw tangent arc", project: "Project", unproject: "Remove projection", delete: "Delete line", move: "Move point" } as const;
@@ -112,7 +113,7 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
 export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
   if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(`${shown(face.plane)} is not a face of ${shown(face.feature)}`);
   const on = doc.timeline.features.find((f) => f.id === face.feature);
-  if (!on || isSketchItem(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
+  if (!on || !makesBody(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
   if (doc.timeline.features.indexOf(on) >= insertAt(doc)) throw new Error(`${on.provenance.self.label} comes after the rollback marker, so a sketch put in at the marker can't be on it`);
   const frame = squared(drawn.plane);
   if (frame === null || (drawn.side !== 1 && drawn.side !== -1)) throw new Error("a sketch on a face needs a frame and a side of 1 or -1");
@@ -221,22 +222,57 @@ export function pointAt(sketch: Sketch, at: readonly [number, number]): string |
 }
 
 /**
+ * The sketch's point at `at` for a line's end: one exactly there, else the
+ * nearest within SAME_PLACE (snap.ts, the kernel's 10 nm), the first listed
+ * of any as near. A typed end is worked out with cos and sin, which are not
+ * exact (cos 120° is −0.4999999999999998), so a typed equilateral
+ * triangle's last side ends about 1e-15 mm from its first corner (app
+ * sweep 2026-10-28): that is the corner, as the kernel would take it, and
+ * the chain closes on it rather than leaving a stray point on top of it.
+ * Only line ends: an arc's ends and centre must stay exactly as far apart
+ * as worked out (the kernel's check_arcs), so arcs share `pointAt`'s.
+ */
+export function pointNear(sketch: Sketch, at: readonly [number, number]): string | null {
+  const exact = pointAt(sketch, at);
+  if (exact !== null) return exact;
+  let best: SketchPoint | null = null;
+  let bestD = SAME_PLACE;
+  for (const p of sketch.points) {
+    const d = Math.sqrt((p.x - at[0]) ** 2 + (p.y - at[1]) ** 2);
+    if (d < bestD || (d === bestD && best === null)) [best, bestD] = [p, d];
+  }
+  return best?.id ?? null;
+}
+
+/**
  * A rectangle with opposite corners `a` and `c`, its sides along the
  * sketch's x and y: four lines a → (c.x, a.y) → c → (a.x, c.y) → a, drawn
  * as the line tool would draw them click by click, so each corner is one
- * shared point. A corner landing exactly on a point the sketch already has
- * shares that point (the line tool's rule). Corners on one row or column
- * have no width or no height and are refused.
+ * shared point. A corner landing on a point the sketch already has shares
+ * that point (`pointNear`, the line tool's rule), and a side joining two
+ * points a line already joins is that line, not a second one on top of it
+ * (the line tool's SAME_LINE; app sweep 2026-10-28): `ids` are the four
+ * sides, shared ones by their own ids. A projected line (27d) is traced
+ * over, not shared: the outline leaves it out (27e). Corners on one row or column, or
+ * closer to it than 2·SAME_PLACE (two corners that near could both be one
+ * point already there), have no width or no height and are refused.
  */
 export function drawRectangle(doc: DesignDocument, sketchId: string, a: readonly [number, number], c: readonly [number, number]): { doc: DesignDocument; ids: string[] } {
   const sketch = sketchIn(doc, sketchId);
   for (const [x, y] of [a, c]) if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`a sketch point needs x and y in mm, not ${x}, ${y}`);
-  if (a[0] === c[0] || a[1] === c[1]) throw new Error(`a rectangle needs a width and a height: its corners (${a[0]}, ${a[1]}) and (${c[0]}, ${c[1]}) are on one ${a[0] === c[0] ? "column" : "row"}`);
-  const corners: LineEnd[] = ([a, [c[0], a[1]], c, [a[0], c[1]]] as const).map((p) => pointAt(sketch, p) ?? p);
+  if (flat(a, c)) throw new Error(`a rectangle needs a width and a height: its corners (${a[0]}, ${a[1]}) and (${c[0]}, ${c[1]}) are on one ${Math.abs(a[0] - c[0]) <= 2 * SAME_PLACE ? "column" : "row"}`);
+  const corners: LineEnd[] = ([a, [c[0], a[1]], c, [a[0], c[1]]] as const).map((p) => pointNear(sketch, p) ?? p);
   const ids: string[] = [];
   let next = doc;
   for (let i = 0; i < 4; i++) {
-    const drawn = drawLine(next, sketchId, corners[i], corners[(i + 1) % 4]);
+    const [from, to] = [corners[i], corners[(i + 1) % 4]];
+    const now = sketchIn(next, sketchId);
+    const there = typeof from === "string" && typeof to === "string" ? now.curves.find((x) => x.kind === "line" && !now.projected?.some((p) => p.made === x.id) && ((x.start === from && x.end === to) || (x.start === to && x.end === from))) : undefined;
+    if (there) {
+      ids.push(there.id);
+      continue;
+    }
+    const drawn = drawLine(next, sketchId, from, to);
     next = drawn.doc;
     ids.push(drawn.id);
     const line = sketchIn(next, sketchId).curves.find((x) => x.id === drawn.id) as SketchLineCurve;
@@ -245,6 +281,9 @@ export function drawRectangle(doc: DesignDocument, sketchId: string, a: readonly
   }
   return { doc: next, ids };
 }
+
+/** Whether corners `a` and `c` are on one row or column, or within 2·SAME_PLACE of it (`drawRectangle`). */
+export const flat = (a: readonly [number, number], c: readonly [number, number]): boolean => Math.abs(a[0] - c[0]) <= 2 * SAME_PLACE || Math.abs(a[1] - c[1]) <= 2 * SAME_PLACE;
 
 /**
  * The sketch without this curve, and without the points only it used (and
@@ -397,7 +436,7 @@ export function projectEdges(doc: DesignDocument, sketchId: string, edges: reado
   };
   for (const e of edges) {
     const on = features.findIndex((f) => f.id === e.feature);
-    if (on < 0 || on > at || isSketchItem(features[on])) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
+    if (on < 0 || on > at || !makesBody(features[on])) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
     if (projected.some((p) => p.feature === e.feature && p.edge === e.edge)) continue;
     const [id, after] = take(next, "projection");
     next = after;

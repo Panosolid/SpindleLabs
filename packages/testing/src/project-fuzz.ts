@@ -53,6 +53,7 @@ import {
   suppressItem,
   unproject,
   withPart,
+  withRuledNames,
   type DesignDocument,
   type EdgeToProject,
   type KeptShape,
@@ -558,6 +559,16 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   const old = upgraded.workspaces.design;
   if (isObj(old) && old.version === 1) upgraded.workspaces.design = migrateDesignV2(migrateDesignV1(old));
   if (isObj(old) && old.version === 2) upgraded.workspaces.design = migrateDesignV2(old);
+  // And names held to Rename's rules (app sweep finding 17): an empty, repeated or over-long name is repaired as it
+  // opens. It changes names only (short-names.test.ts checks what it makes, by hand), so the rest must still match.
+  // (Data a stand-in reader let through, that Design's would refuse, is compared as it is.)
+  if (isObj(upgraded.workspaces.design)) {
+    try {
+      upgraded.workspaces.design = withRuledNames(upgraded.workspaces.design as unknown as DesignDocument);
+    } catch {
+      // not Design's data: nothing to repair
+    }
+  }
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;
 }

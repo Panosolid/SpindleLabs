@@ -9,6 +9,8 @@
 .feature-edit .feature-edit-row input { width: 6em; }
 .feature-edit .feature-edit-note { color: #8b95a3; font-size: 0.9em; }
 .feature-edit .feature-edit-buttons { display: flex; gap: 6px; margin-top: 4px; }
+/* OK is the box's main action (UX2): bright blue, the one filled button. */
+.feature-edit #feature-edit-ok { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
 .feature-edit button:disabled { opacity: 0.45; cursor: default; }
 /* Flip (26c): a tick box before its word, the whole row a target for the pointer. */
 .feature-edit .feature-edit-flip { display: flex; align-items: center; gap: 6px; cursor: pointer; width: fit-content; }

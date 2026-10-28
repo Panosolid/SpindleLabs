@@ -48,7 +48,7 @@ import type { BodyNames } from "./naming.ts";
 import { sharedBy } from "./references.ts";
 import { findInScene, sceneHit, type Scene } from "./scene.ts";
 import type { EdgeToProject } from "./sketch.ts";
-import { SAME_PLACE } from "./snap.ts";
+import { SAME_PLACE, type EdgeCurve } from "./snap.ts";
 
 /**
  * An edge of a body projected into a sketch (kept in the sketch's content,
@@ -454,4 +454,31 @@ export function projectPick(doc: DesignDocument, sketchId: string, scene: Scene 
   const n = refused.length;
   const reasons = [...new Set(refused)].join(" ");
   return { edges, note: n === picked.length ? `None of this face's edges could be projected: ${reasons}` : `${n} of this face's ${picked.length} edges ${n === 1 ? "was" : "were"} left out: ${reasons}` };
+}
+
+/**
+ * The edges sketch `sketchId` can land on part way along (snap.ts, "on
+ * edge"): every edge of every body shown (`scene`) whose feature is before
+ * the sketch, seen from it through `plane` (`edgeShape`), as
+ * face-edges.ts `sketchEdgeTargets` offers their corners; none for a
+ * sketch on a face that is lost or shared. An edge seen end on (a point)
+ * offers its corner only, and one `edgeShape` refuses (a slanted round
+ * edge, an ellipse from the sketch) offers nothing along it.
+ */
+export function sketchEdgeCurves(doc: DesignDocument, sketchId: string, scene: Scene | null, plane: Plane | undefined): EdgeCurve[] {
+  const features = doc.timeline.features;
+  const at = features.findIndex((f) => f.id === sketchId);
+  const facePlane = features[at]?.intent.parameters.plane;
+  if (scene === null || plane === undefined || at < 0) return [];
+  if (isFacePlane(facePlane) && findInScene(faceReference(facePlane), scene).status !== "found") return [];
+  const before = new Set(features.slice(0, at).map((f) => f.id));
+  const out: EdgeCurve[] = [];
+  for (const b of scene.bodies) {
+    if (!before.has(b.feature)) continue;
+    for (let e = 0; e < b.view.edge_types.length; e++) {
+      const shape = edgeShape(b.view, e, plane);
+      if (!("refused" in shape) && shape.kind !== "point") out.push(shape);
+    }
+  }
+  return out;
 }

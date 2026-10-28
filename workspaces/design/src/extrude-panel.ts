@@ -94,6 +94,7 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       error.hidden = true;
       const ok = el("button", "extrude-ok", "", "OK");
       ok.type = "button";
+      ok.title = "Make the solid (Enter)";
       ok.disabled = true; // until the kernel says the outline is closed
       ok.addEventListener("click", () => on.ok(input.value));
       const cancel = el("button", "extrude-cancel", "", "Cancel");

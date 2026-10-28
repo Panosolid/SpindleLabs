@@ -53,6 +53,7 @@ import { faceReference, isFacePlane } from "./face-sketch.ts";
 import type { BodyNames } from "./naming.ts";
 import { sharedBy } from "./references.ts";
 import { findInScene, type Scene } from "./scene.ts";
+import { SAME_PLACE } from "./snap.ts";
 
 /** What a face's edge offers: an end (a vertex), the middle of a line or arc, the centre of an arc or circle. The words match snap.ts's kinds. */
 export type EdgeKind = "endpoint" | "midpoint" | "centre";
@@ -263,6 +264,11 @@ export function pointWords(cause: PointWarning["cause"], n: number, sketchLabel:
  * so a pin made there would be judged against a body it isn't on).
  */
 export function sketchEdgeTargets(doc: DesignDocument, sketchId: string, scene: Scene | null, plane: Plane | undefined): EdgeTarget[] {
+  return placedBefore(doc, sketchId, scene, plane).map(({ off: _, ...t }) => t);
+}
+
+/** `sketchEdgeTargets` with each point's distance from the plane, in that order. */
+function placedBefore(doc: DesignDocument, sketchId: string, scene: Scene | null, plane: Plane | undefined): Placed[] {
   const features = doc.timeline.features;
   const at = features.findIndex((f) => f.id === sketchId);
   const facePlane = features[at]?.intent.parameters.plane;
@@ -272,5 +278,21 @@ export function sketchEdgeTargets(doc: DesignDocument, sketchId: string, scene: 
   const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));
   const key = (t: Placed) => `${t.feature}/${t.name}`;
   all.sort((a, b) => a.off - b.off || (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
-  return all.map(({ off: _, ...t }) => t);
+  return all;
+}
+
+/**
+ * The corners (vertices) of `sketchEdgeTargets` that lie in the sketch's
+ * plane, within SAME_PLACE (10 nm) of it, each place once: what the
+ * pointer lines up with (snap.ts columns and rows) besides the sketch's
+ * own points. A corner off the plane is snapped to but never lined up
+ * with.
+ */
+export function sketchPlaneCorners(doc: DesignDocument, sketchId: string, scene: Scene | null, plane: Plane | undefined): SketchXY[] {
+  const out: SketchXY[] = [];
+  for (const t of placedBefore(doc, sketchId, scene, plane)) {
+    if (t.kind !== "endpoint" || t.off > SAME_PLACE) continue;
+    if (!out.some((p) => p[0] === t.at[0] && p[1] === t.at[1])) out.push(t.at);
+  }
+  return out;
 }

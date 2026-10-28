@@ -1,5 +1,0 @@
-fix
-
-- A tiny, nearly closed corner far from the origin (arcs a couple of µm across leaving their corner a few millionths of a radian apart, tens of km out) no longer crashes the kernel. Its points round by more than the gap between the arcs near the corner, so the mesher kept halving chords there until it ran out of memory (8 GB). Chords shorter than the kernel's 10 nm tolerance are no longer split: what such a chord still touches is within tolerance of its own curve. Found by the devious-parts generator (issue #345's seeds); checked by a test that rebuilds that face and aborts on the old code, and boundary tests at 0.9× and 1.1× of the 10 nm limit.
-- The OpenCascade oracle's own crossing check no longer divides by zero on two nearly concentric circles (issue #92's new case: a hole 1e-96 mm off centre); two circles now meet only when their centres are between the difference and the sum of the radii apart.
-- The monkey tester's Save check takes only the project file, so a Download STL that finishes late is no longer read as a broken save (issue #362); a self-test starts a stray STL download beside Save and fails with the old check.
