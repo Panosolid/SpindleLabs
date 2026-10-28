@@ -139,7 +139,7 @@ try {
         assert.deepEqual(m, [16, "13px", true], id);
       }
       assert.equal(await page.textContent("#ai-status"), "off", "the AI's state still shows, inside its button");
-      assert.equal(await page.getAttribute("#save", "title"), "Save the whole project as a .spindlelabs.json file");
+      assert.equal(await page.getAttribute("#save", "title"), "Save the whole project as a .spindle file");
       // Again in DejaVu Sans, the wide font CI's Linux uses for system-ui.
       await page.addStyleTag({ content: "html, body { font-family: 'DejaVu Sans' !important; }" });
       assert.equal((await rect(page, "#topbar")).height, 44, "one row in DejaVu Sans");
@@ -161,7 +161,7 @@ try {
   for (const [width, tap] of [[1280, false], [375, true]]) {
     const at = `${width} px${tap ? ", taps" : ""}`;
 
-    await check(`${at}: File ▾ lists New, Open…, Save, Export STL with icons; on an empty design New and Export STL are off, saying why; Open… opens the picker; Save downloads the project`, async () => {
+    await check(`${at}: File ▾ lists New, Open…, Save, Save As…, Export STL with icons; on an empty design New and Export STL are off, saying why; Open… opens the picker; Save downloads the project`, async () => {
       const page = await fresh(width, tap);
       try {
         await press(page, "#file-menu", tap);
@@ -169,9 +169,10 @@ try {
           ["start-fresh", "new", true],
           ["open", "open", false],
           ["file-save", "save", false],
+          ["file-save-as", "save", false],
           ["file-export-stl", "export", true],
         ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Export STL"]);
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Save As…", "Export STL"]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.deepEqual(await barProblems(page), [], "every item's icon drawn");
@@ -193,7 +194,7 @@ try {
         assert.equal(await page.getAttribute("#file-menu", "aria-expanded"), "false", "a choice closes the menu");
         // Save downloads the project, the same file as the Save icon's (two ways agreeing; at phone width the icon is File ▾'s).
         const [download] = await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-save", tap)]);
-        assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
+        assert.equal(download.suggestedFilename(), "Untitled.spindle");
         const fromMenu = JSON.parse(readFileSync(await download.path(), "utf8"));
         assert.equal(fromMenu.workspaces.design.timeline.features.length, 0, "the empty design");
         if (!tap) {
@@ -339,7 +340,7 @@ try {
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-save");
       const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Enter")]);
-      assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
+      assert.equal(download.suggestedFilename(), "Untitled.spindle");
       await page.focus("#file-menu");
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Escape");
