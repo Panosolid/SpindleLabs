@@ -13,7 +13,8 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, closePanels, openPanel, startWithBox, switchTo } from "./start.mjs";
+import { chooseShape, closePanels, openPanel, sheetsClearFor, startWithBox, switchTo } from "./start.mjs";
+import { TOP, screenPoint } from "./sketch-screen.mjs";
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4180/";
@@ -379,6 +380,45 @@ try {
       }
     });
   }
+
+  await check("Undo pressed at once after a sketch click drops the click, with no page error (app sweep 2026-10-28)", async () => {
+    // A new sketch on XY, a click, and Ctrl+Z before the kernel has rounded the click: the undo takes the sketch out,
+    // and the click, still waiting, was for that sketch. On main it went on and threw "there is no sketch sketch-2".
+    // The click's rounding (snap_to_grid, place_freely) is held back 400 ms on its way to the kernel's worker, in every
+    // engine, so the key always comes first (the sweep's repro slowed Chromium's CPU instead: it threw 5 runs in 5).
+    const page = await fresh();
+    const before = errors.length;
+    try {
+      sheetsClearFor(page);
+      await page.click("#create-sketch");
+      await openPanel(page, "properties", false);
+      await page.click("#sketch-plane-XY");
+      await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+      await closePanels(page, false);
+      await page.evaluate(() => {
+        const send = Worker.prototype.postMessage;
+        Worker.prototype.postMessage = function (message, ...rest) {
+          if (message?.op === "snap_to_grid" || message?.op === "place_freely") {
+            window.kernelHeld = (window.kernelHeld ?? 0) + 1;
+            return void setTimeout(() => send.call(this, message, ...rest), 400);
+          }
+          return send.call(this, message, ...rest);
+        };
+      });
+      const box = await page.locator("#viewport canvas").boundingBox();
+      const p = screenPoint(box, [10, 10, 0], TOP);
+      await page.mouse.click(p.x, p.y);
+      await page.waitForFunction(() => (window.kernelHeld ?? 0) > 0); // the click sent to the kernel, its answer held back
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(1500); // the held answers have come back by now
+      assert.deepEqual(errors.slice(before), [], "no page error");
+      // Undo took the sketch out (Redo would bring it back); the click drew nothing.
+      assert.match(await page.getAttribute("#redo", "title"), /^Redo Create sketch/);
+    } finally {
+      errors.length = before;
+      await page.close();
+    }
+  });
 
   assert.deepEqual(errors, [], "no page errors or console errors");
 } catch (e) {

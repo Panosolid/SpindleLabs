@@ -24,7 +24,7 @@ import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, V
 import { greyedItems, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
 import { arcThere, centreClick, centreHover, centrePreview, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
-import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, planeFor, planeOf, pointAt, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
+import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
 
 export { pointAt };
 
@@ -175,11 +175,11 @@ export const SAME_LINE = "There is a line between these two points already: a se
 
 function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: DesignDocument; tool: LineTool; drew: boolean; note?: string } {
   const sketch = sketchOf(doc, tool.sketch);
-  const there = pointAt(sketch, at);
+  const there = pointNear(sketch, at);
   const end: LineEnd = there ?? [at[0], at[1]];
   if (tool.from === null) return { doc, tool: { ...tool, from: end }, drew: false };
   const [fx, fy] = whereIs(sketch, tool.from);
-  if (fx === at[0] && fy === at[1]) return { doc, tool, drew: false };
+  if ((fx === at[0] && fy === at[1]) || there === tool.from) return { doc, tool, drew: false };
   const from = tool.from;
   if (there !== null && sketch.curves.some((c) => c.kind === "line" && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
   const drawn = drawLine(doc, tool.sketch, tool.from, end);
@@ -193,8 +193,11 @@ const SAME_ROW = "A rectangle needs a width and a height: click the opposite cor
 function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY): { doc: DesignDocument; tool: RectangleTool; drew: boolean; note?: string } {
   sketchOf(doc, tool.sketch);
   if (tool.corner === null) return { doc, tool: { ...tool, corner: [at[0], at[1]] }, drew: false };
-  if (tool.corner[0] === at[0] || tool.corner[1] === at[1]) return { doc, tool, drew: false, note: SAME_ROW };
-  return { doc: drawRectangle(doc, tool.sketch, tool.corner, at).doc, tool: { ...tool, corner: null }, drew: true };
+  if (flat(tool.corner, at)) return { doc, tool, drew: false, note: SAME_ROW };
+  const drawn = drawRectangle(doc, tool.sketch, tool.corner, at).doc;
+  // Every side a line already there (the same rectangle twice): nothing drawn, as the line tool says for one side.
+  if (drawn === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
+  return { doc: drawn, tool: { ...tool, corner: null }, drew: true };
 }
 
 /**
