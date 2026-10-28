@@ -17,7 +17,8 @@
 //   also refuses crossing infill).
 // - `checkLayers`: layers go up and never back down, every layer height
 //   (and the first layer's, from the bed at z 0) within decision 7's
-//   limits, 0.04–1.0 mm, and every wall closed: each unbroken run of a wall
+//   limits, 0.04–1.0 mm (each allowed STILL of rounding, since a height is
+//   the difference of two Z values read from text), and every wall closed: each unbroken run of a wall
 //   feature ends where it started, within `closeWithin`.
 //
 // Geometry here is plain floating point with strict tests (a travel only
@@ -203,7 +204,9 @@ export function checkLayers(r: Replay, closeWithin: number): CheckProblem[] {
     const first = layer.moves.find((m) => m.kind === "extrude")!;
     const h = layer.z - below;
     if (h < 0) out.push({ check: "layer-order", line: first.line, text: `a layer at z ${layer.z} under the one before at ${below}` });
-    else if (!(h >= MIN_LAYER && h <= MAX_LAYER)) out.push({ check: "layer-height", line: first.line, text: `layer at z ${layer.z} is ${h.toFixed(4)} mm high, outside ${MIN_LAYER}–${MAX_LAYER} mm` });
+    // Heights come from subtracting two Z values read from text (0.12 − 0.08 is 0.03999999999999999), so
+    // each limit is allowed STILL of rounding, far below any real difference in layer height.
+    else if (!(h >= MIN_LAYER - STILL && h <= MAX_LAYER + STILL)) out.push({ check: "layer-height", line: first.line, text: `layer at z ${layer.z} is ${h.toFixed(4)} mm high, outside ${MIN_LAYER}–${MAX_LAYER} mm` });
     below = Math.max(below, layer.z);
     // Runs of wall: consecutive extrusions of a wall feature, broken by anything else.
     let run: Move[] = [];

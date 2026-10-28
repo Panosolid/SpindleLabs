@@ -4,7 +4,7 @@
 // report it, and each limit is tried at 0.9× and 1.1×.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { replay } from "../src/gcode.ts";
+import { replay, STILL } from "../src/gcode.ts";
 import { checkLayers, checkPrinter, checkTravel, checkVolume, crosses, extremes, layersOf, MAX_LAYER, MIN_LAYER, type Printer } from "../src/gcode-checks.ts";
 
 const A = Math.PI * 0.875 ** 2; // 1.75 mm filament's cross-section, mm²
@@ -204,6 +204,37 @@ test("layers: decision 7's limits at 0.9× and 1.1×, and a layer going back dow
   // A layer printed under the one before.
   const down = replay(box({ heights: [0.2, 0.2], extra: [";TYPE:Solid infill", "G0 Z0.3 F600", "G1 E0.8", "G1 X120 Y120 E0.1 F3000"] }));
   assert.deepEqual(checkLayers(down, 0.01).map((p) => p.check), ["layer-order"]);
+});
+
+/** Layers `first`, first + h, first + 2h… written as Z with `decimals` places, as slicers write them: one 1 mm line each. */
+function stack(h: number, layers: number, decimals: number, first = h): string {
+  const L = ["G90", "M83", ";TYPE:Sparse infill"];
+  for (let k = 0; k < layers; k++) {
+    L.push(`G0 Z${(first + k * h).toFixed(decimals)} F600`, `G1 X${(k + 1) % 2} Y0 E0.05 F600`);
+  }
+  return L.join("\n");
+}
+
+test("regression: layers exactly at 0.04 mm and 1.0 mm, Z written rounded, are not refused", () => {
+  // Found by the slicer walls work: 0.12 − 0.08 is 0.03999999999999999 in floating point, so before the
+  // rounding allowance 201 of 500 layers of a 0.04 mm print were reported as too thin; 8.3 − 7.3 is
+  // 1.0000000000000009, so 1 mm layers from a 0.3 mm first layer were reported as too thick.
+  assert.equal(0.12 - 0.08 < MIN_LAYER, true);
+  assert.equal(8.3 - 7.3 > MAX_LAYER, true);
+  for (const decimals of [2, 3, 5]) {
+    assert.deepEqual(checkLayers(replay(stack(MIN_LAYER, 500, decimals)), 0.01), [], `0.04 mm, ${decimals} places`);
+    assert.deepEqual(checkLayers(replay(stack(MAX_LAYER, 200, decimals, 0.3)), 0.01), [], `1.0 mm, ${decimals} places`);
+  }
+  // 0.1 mm layers up to 260 mm (most of them a hair under 0.1 once subtracted).
+  assert.deepEqual(checkLayers(replay(stack(0.1, 2600, 2)), 0.01), []);
+});
+
+test("the rounding allowance is STILL: a layer STILL × 0.9 past a limit passes, STILL × 1.1 is refused", () => {
+  const two = (h: number) => checkLayers(replay(["G90", "M83", ";TYPE:Sparse infill", "G0 Z0.2 F600", "G1 X1 E0.05", `G0 Z${(0.2 + h).toFixed(12)}`, "G1 X0 E0.05"].join("\n")), 0.01).map((p) => p.check);
+  assert.deepEqual(two(MIN_LAYER - 0.9 * STILL), []);
+  assert.deepEqual(two(MIN_LAYER - 1.1 * STILL), ["layer-height"]);
+  assert.deepEqual(two(MAX_LAYER + 0.9 * STILL), []);
+  assert.deepEqual(two(MAX_LAYER + 1.1 * STILL), ["layer-height"]);
 });
 
 test("walls: a wall missing a side is open; closing within closeWithin at 0.9× passes and 1.1× fails", () => {
