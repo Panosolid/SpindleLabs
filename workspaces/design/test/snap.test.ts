@@ -91,7 +91,7 @@ test("hand-worked: a column from one point and a row from another meet, closing 
 });
 
 test("lined up with one point's column and row both is that point, by its own name", () => {
-  const targets: SnapTargets = { points: [{ at: [0, 0], kind: "endpoint" }], columns: [[0, 0]], rows: [[0, 0]], own: [] };
+  const targets: SnapTargets = { points: [{ at: [0, 0], kind: "endpoint" }], columns: [[0, 0]], rows: [[0, 0]], own: [], curves: [] };
   // (8, 8) is √128 ≈ 11.3 from (0, 0), out of the 10 mm reach, but 8 off its column and its row.
   assert.deepEqual(snapPointer([8, 8], [10, 10], targets, 1), { kind: "endpoint", at: [0, 0] });
 });
@@ -99,24 +99,24 @@ test("lined up with one point's column and row both is that point, by its own na
 test("the reach's boundary: 0.9 × SNAP_PIXELS snaps, 1.1 × does not, for points, columns and rows", () => {
   const pixel = 0.25; // reach 2.5 mm
   const reach = SNAP_PIXELS * pixel;
-  const point: SnapTargets = { points: [{ at: [0, 0], kind: "endpoint" }], columns: [], rows: [], own: [] };
+  const point: SnapTargets = { points: [{ at: [0, 0], kind: "endpoint" }], columns: [], rows: [], own: [], curves: [] };
   // Along (0.6, 0.8), a unit direction (0.36 + 0.64 = 1): the pointer is 0.9 and 1.1 reaches from the point.
   assert.equal(snapPointer([0.6 * 0.9 * reach, 0.8 * 0.9 * reach], [5, 5], point, pixel).kind, "endpoint");
   assert.equal(snapPointer([0.6 * 1.1 * reach, 0.8 * 1.1 * reach], [5, 5], point, pixel).kind, "grid");
-  const column: SnapTargets = { points: [], columns: [[0, 0]], rows: [], own: [] };
+  const column: SnapTargets = { points: [], columns: [[0, 0]], rows: [], own: [], curves: [] };
   assert.equal(snapPointer([0.9 * reach, 40], [5, 40], column, pixel).kind, "aligned");
   assert.equal(snapPointer([1.1 * reach, 40], [5, 40], column, pixel).kind, "grid");
-  const row: SnapTargets = { points: [], columns: [], rows: [[0, 0]], own: [] };
+  const row: SnapTargets = { points: [], columns: [], rows: [[0, 0]], own: [], curves: [] };
   assert.equal(snapPointer([40, -0.9 * reach], [40, 0], row, pixel).kind, "aligned");
   assert.equal(snapPointer([40, -1.1 * reach], [40, 0], row, pixel).kind, "grid");
 });
 
 test("exactly at the reach still snaps, to a point, a column and a row", () => {
   // Pixel 0.5: reach 5 mm. (3, 4) from the point is √25 = 5 exactly; 5 off the column and the row exactly.
-  const point: SnapTargets = { points: [{ at: [0, 0], kind: "endpoint" }], columns: [], rows: [], own: [] };
+  const point: SnapTargets = { points: [{ at: [0, 0], kind: "endpoint" }], columns: [], rows: [], own: [], curves: [] };
   assert.equal(snapPointer([3, 4], [10, 10], point, 0.5).kind, "endpoint");
-  assert.equal(snapPointer([5, 40], [10, 40], { points: [], columns: [[0, 0]], rows: [], own: [] }, 0.5).kind, "aligned");
-  assert.equal(snapPointer([40, 5], [40, 10], { points: [], columns: [], rows: [[0, 0]], own: [] }, 0.5).kind, "aligned");
+  assert.equal(snapPointer([5, 40], [10, 40], { points: [], columns: [[0, 0]], rows: [], own: [], curves: [] }, 0.5).kind, "aligned");
+  assert.equal(snapPointer([40, 5], [40, 10], { points: [], columns: [], rows: [[0, 0]], own: [], curves: [] }, 0.5).kind, "aligned");
 });
 
 test("an unknown or nonsense pixel size snaps to the grid only", () => {

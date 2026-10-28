@@ -4,7 +4,9 @@
 // name, Create ▾ (U0f, the Fusion layout of @fission/ui tool-group.ts),
 // a menu listing every tool with its key (the three arcs under an Arc row
 // that opens a menu of its own), and a big Finish Sketch stands at the
-// right. Modify and Inspect groups join as their tools
+// right, with the Snap button before it (on, pressed, by default: off,
+// points go exactly where you click, as holding Ctrl or Cmd does for one
+// click; snap.ts `snapsNow`). Modify and Inspect groups join as their tools
 // arrive (trim and offset: step 52); none is shown before it has a
 // tool. The workspace drives it; the toolbar only shows what it is given
 // and reports clicks. Styles: src/styles/sketchbar.css.
@@ -20,6 +22,8 @@ export interface SketchToolbarEvents {
   tool(kind: ToolKind): void;
   /** Finish Sketch: back to modelling, the camera at the home view. */
   finish(): void;
+  /** The Snap button pressed: snapping turned on (true) or off. */
+  snap(on: boolean): void;
 }
 
 /** One row of the Create menu: the tool's name and the key that chooses it (none for a tool without one). */
@@ -53,6 +57,12 @@ export function createMenuRows(): MenuEntry[] {
   return entries;
 }
 
+/** The Snap button's tooltip, on and off. */
+export const SNAP_TITLE = {
+  on: "Snapping is on: points snap to nearby corners, edges, midpoints and centres, or line up with them. Click to turn it off. Hold Ctrl (Cmd on a Mac) to place one point without snapping.",
+  off: "Snapping is off: points go exactly where you click. Click to turn it on again.",
+} as const;
+
 /** Finish Sketch's tooltip. */
 export const FINISH_TITLE = "Finish Sketch: back to modelling, with the camera at the home view. The sketch stays as drawn.";
 
@@ -73,6 +83,8 @@ export function menuMove(at: number, key: string, count: number): number | null 
 export interface SketchToolbar {
   /** Shows the sketch's toolbar with this tool pressed. */
   show(tool: ToolKind): void;
+  /** The Snap button pressed (snapping on) or not. */
+  showSnap(on: boolean): void;
   /** The tool in use: its button pressed and its menu row ticked. */
   showTool(kind: ToolKind): void;
   /** Takes the sketch's toolbar away (the menu too). */
@@ -243,8 +255,20 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   });
   finishGroup.append(finish);
 
+  // Snap: a toggle, pressed while snapping is on; its words say which.
+  const snapGroup = group("sketchbar-snap", "Snapping");
+  const snap = button("Snap on", "sketch-snap");
+  snap.addEventListener("click", () => on.snap(snap.getAttribute("aria-pressed") !== "true"));
+  snapGroup.append(snap);
+  const showSnap = (on: boolean) => {
+    snap.setAttribute("aria-pressed", String(on));
+    snap.textContent = on ? "Snap on" : "Snap off";
+    snap.title = on ? SNAP_TITLE.on : SNAP_TITLE.off;
+  };
+  showSnap(true);
+
   slot.prepend(create);
-  slot.append(finishGroup);
+  slot.append(snapGroup, finishGroup);
 
   /** A press anywhere but the menu and its button closes the menu. */
   const outside = (e: Event) => {
@@ -310,12 +334,13 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   return {
     show(tool) {
       showTool(tool);
-      create.hidden = finishGroup.hidden = false;
+      create.hidden = snapGroup.hidden = finishGroup.hidden = false;
     },
+    showSnap,
     showTool,
     hide() {
       closeMenu();
-      create.hidden = finishGroup.hidden = true;
+      create.hidden = snapGroup.hidden = finishGroup.hidden = true;
     },
     get menuOpen() {
       return !menu.hidden;
