@@ -682,7 +682,7 @@ test("Design says the project changed when it writes the part; placeholders neve
       assert.equal(changes.get(ctx), 1);
       assert.deepEqual(ctx.project.workspaces.design, { version: 3, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
       const before = ctx.project.workspaces.design;
-      const width = ctx.properties.querySelector("input") as HTMLInputElement;
+      const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";
       width.dispatchEvent(new (ctx.properties.ownerDocument.defaultView as unknown as typeof globalThis).Event("input"));
       assert.notEqual(ctx.project.workspaces.design, before, "the edit wrote a new document");

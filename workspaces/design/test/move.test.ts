@@ -13,7 +13,8 @@ import { changedMove, insertMove, moveMotions, movedSpec, moveSummary, moveValue
 import { bodyFeatures } from "../src/browser.ts";
 import { deleteItem, hideBody, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
 import { canEditFeature } from "../src/feature-edit.ts";
-import { itemMenu, MOVE_EDIT_OFF } from "../src/timeline-bar.ts";
+import { itemMenu } from "../src/timeline-bar.ts";
+import { openAction } from "../src/timeline-menu.ts";
 
 const v = (o: Partial<MoveValues>): MoveValues => ({ ...NO_MOVE, ...o });
 /** Box 1 (40 × 30 × 20) and Cylinder 1 (⌀40 × 20): feature-1 and feature-2, the counter at 3. */
@@ -100,7 +101,9 @@ test("the timeline treats a Move as an item that makes no body", () => {
   assert.deepEqual(bodyFeatures(doc).map((f) => f.id), ["feature-1", "feature-2"], "two bodies, not three");
   assert.equal(partFeature(doc)?.id, "feature-2", "the part is the last body, not the Move");
   assert.equal(canEditFeature(item(doc, id)), false);
-  assert.equal(itemMenu(doc, id).find((e) => e.action === "edit")?.off, MOVE_EDIT_OFF, "Edit feature is off, saying why, until the Move panel");
+  // Edit feature is on (35e2b): it opens the Move panel on the Move's numbers, and so does a double-click.
+  assert.equal(itemMenu(doc, id).find((e) => e.action === "edit")?.off, null);
+  assert.equal(openAction(doc, id), "edit");
   assert.throws(() => hideBody(doc, id, true), { message: "Move 1 is a move, which has no body of its own to hide" });
   // It builds while its body does; greyed by it when it is suppressed (Q3).
   assert.equal(builds(doc, item(doc, id)), true);
