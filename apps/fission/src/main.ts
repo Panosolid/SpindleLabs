@@ -181,7 +181,8 @@ useGraph(ctx.graph, ctx.changeNotes);
 // stand in a result in another workspace before any workspace makes one;
 // the main view's camera, to check navigation (SF3a); split view's second
 // view, to check its camera and to break its "no 3D view" on purpose; how
-// many bodies the kernel holds (the monkey tester's leak check).
+// many bodies the kernel holds (the monkey tester's leak check); the
+// kernel's WebAssembly memory and the viewport's counts (the soak test's).
 if (new URLSearchParams(location.search).has("test-hooks"))
   Object.assign(window, {
     fissionTest: {
@@ -194,6 +195,8 @@ if (new URLSearchParams(location.search).has("test-hooks"))
       camera: () => viewer.main.cameraPose(),
       splitView: () => split?.view ?? null,
       bodyCount: () => kernel.call("body_count"),
+      wasmBytes: () => kernel.call("wasm_bytes"),
+      gpu: () => viewer.memoryCounts(),
     },
   });
 
@@ -373,7 +376,8 @@ function mountSplitPane(id: WorkspaceId) {
     // as its observer was registered first), or, while the pane shows no 3D
     // view (Image's 2D view, a placeholder), when a 3D workspace comes in.
     const settled = new ResizeObserver(([entry]) => {
-      if (!entry || entry.contentRect.width === 0 || split?.view !== view) return;
+      if (split?.view !== view) return settled.disconnect(); // closed before it settled: let the view go
+      if (!entry || entry.contentRect.width === 0) return;
       settled.disconnect();
       split.settled = true;
       frameSplit();
