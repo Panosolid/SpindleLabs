@@ -183,7 +183,8 @@ useGraph(ctx.graph, ctx.changeNotes);
 // the main view's camera, to check navigation (SF3a); split view's second
 // view, to check its camera and to break its "no 3D view" on purpose; how
 // many bodies the kernel holds (the monkey tester's leak check); the
-// kernel's WebAssembly memory and the viewport's counts (the soak test's).
+// kernel's WebAssembly memory and the viewport's counts (the soak test's);
+// any kernel call, to run the kernel out of memory (e2e/kernel-restart.mjs).
 if (new URLSearchParams(location.search).has("test-hooks"))
   Object.assign(window, {
     fissionTest: {
@@ -197,6 +198,7 @@ if (new URLSearchParams(location.search).has("test-hooks"))
       splitView: () => split?.view ?? null,
       bodyCount: () => kernel.call("body_count"),
       wasmBytes: () => kernel.call("wasm_bytes"),
+      kernelCall: (op: Parameters<typeof kernel.call>[0], ...args: unknown[]) => (kernel.call as (op: string, ...a: unknown[]) => Promise<unknown>)(op, ...args),
       gpu: () => viewer.memoryCounts(),
     },
   });
