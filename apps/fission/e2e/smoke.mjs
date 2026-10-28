@@ -843,7 +843,7 @@ try {
     assert.equal(f.size, 684);
     assert.equal(f.tris.length, 12);
     assert.equal(stlVolume(f.tris), 24000);
-    assert.equal(await text("action-note"), "");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
   });
 
   await check("a selected body offers Download STL from the action registry, and it saves the same file", async () => {
@@ -859,7 +859,7 @@ try {
     assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.size, 684);
     assert.equal(stlVolume(f.tris), 24000); // 40 × 30 × 20, exact in single precision
-    assert.equal(await text("action-note"), "");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.body.dataset.selection === "");
     assert.deepEqual(await verbs(), []);
@@ -923,7 +923,7 @@ try {
     // Only the red X axis line is left (a few dozen pixels).
     assert.ok((await amber()) < 1000, `nothing amber once the overlay is cleared (${await amber()} px)`);
     await downloadStl();
-    assert.equal(await text("action-note"), ""); // the warning goes once the part fits again
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl."); // the warning goes once the part fits again
   });
 
   await check("DESIGN ▾ names Design and lists the ten workspaces, Design first and marked, the eight not built yet greyed with Coming soon", async () => {
