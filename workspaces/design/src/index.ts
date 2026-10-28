@@ -7,7 +7,8 @@ export { bodyFeatures, bodyRows, browserTree, rowReference, rowReferences, type 
 export { parameterRows, propertiesPanel, SIZE_KEYS, type ParameterRow, type Verb, type PropertiesPanel, type SizeKey } from "./properties.ts";
 export { toolbarGroups, type ToolButton, type ToolGroup } from "./toolbar.ts";
 export { buildSpec, specFor } from "./spec.ts";
-export { builds, buildingItems, changePreset, greyedBy, greyedItems, curvePoints, idNumber, keptOf, type KeptShape, insertAt, insertItem, insertPreset, isSketchExtrude, isSketchItem, lastFeature, partFeature, migrateDesignV1, migrateDesignV2, partDocument, partOf, shapeOf, profileLabel, readDesignDocument, SKETCH_PLANES, specOf, withPart, withRuledNames, type DesignDocument, type Marker, type PartKind, type PartSizes, type ReadyProfile, type Sketch, type SketchArcCurve, type SketchCircleCurve, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+export { changedMove, insertMove, MOVE_STEP, moveMotions, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
+export { builds, buildingItems, changePreset, greyedBy, greyedItems, curvePoints, idNumber, keptOf, type KeptShape, insertAt, insertItem, insertPreset, isMoveItem, isSketchExtrude, isSketchItem, lastFeature, makesBody, MOVE_PARAMS, partFeature, migrateDesignV1, migrateDesignV2, partDocument, partOf, shapeOf, profileLabel, readDesignDocument, SKETCH_PLANES, specOf, withPart, withRuledNames, type DesignDocument, type Marker, type PartKind, type PartSizes, type ReadyProfile, type Sketch, type SketchArcCurve, type SketchCircleCurve, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 export { drawnFrame, drawnOnFace, faceFeature, facePlane, frameNow, isFacePlane, isFaceSketch, squared, turned, type PlaneCause, type PlaneWarning, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 export { addFaceSketch, addSketch, askOutline, curvesOf, deleteCurve, drawArc, drawCircle, drawLine, drawRectangle, movePoint, movePointOnto, pinNewPoints, planeOf, pointAt, projectEdges, PROJECTED_POINT, SKETCH_STEPS, sketchCurves, sketchItem, sketchLines, sketchOutline, sketchSide, unproject, type EdgeToProject, type LineEnd } from "./sketch.ts";
 export { edgeName, edgeNamed, edgeShape, madeKind, madePoints, MIN_LENGTH, profileCurves, PROJECT_AGAIN, PROJECTED_OPEN, projectedOpen, PROJECT_HELD, PROJECT_NOTHING, PROJECT_UNNAMED, projectAfter, projectionWords, projectPick, REFUSED, type EdgeRefusal, type EdgeShape, type HeldCause, type ProjectionWarning, type SketchProjection } from "./projection.ts";
@@ -19,7 +20,7 @@ export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, f
 export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
-export { featureNames, nameBody, outlineCurves, pieceWays, twiceArea, type BodyNames, type PieceWays } from "./naming.ts";
+export { featureNames, nameBody, outlineCurves, pieceWays, shapeSpec, twiceArea, type BodyNames, type PieceWays } from "./naming.ts";
 export { pickChange, type SelectionChange } from "./picking.ts";
 export { droppedNote, highlightOf, NAME_SHARED, panelFocus, referenceLabel, selectionRows, survivors, type PanelFocus } from "./selection.ts";
 export { bodyOf, findInScene, joinBodies, resolveInScene, sceneHit, sceneReference, shownBodies, type Found, type Scene, type ShownBody } from "./scene.ts";

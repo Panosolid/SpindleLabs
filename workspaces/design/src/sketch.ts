@@ -13,7 +13,7 @@ import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, Ske
 import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { curvePoints, insertAt, insertItem, isSketchItem, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 import { SAME_PLACE } from "./snap.ts";
@@ -113,7 +113,7 @@ export function addSketch(doc: DesignDocument, plane: SketchPlane = "XY"): { doc
 export function addFaceSketch(doc: DesignDocument, face: { plane: string; feature: string }, drawn: SketchPlacement): { doc: DesignDocument; id: string } {
   if (!isFacePlane(face.plane) || faceFeature(face.plane) !== face.feature) throw new Error(`${shown(face.plane)} is not a face of ${shown(face.feature)}`);
   const on = doc.timeline.features.find((f) => f.id === face.feature);
-  if (!on || isSketchItem(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
+  if (!on || !makesBody(on)) throw new Error(`there is no solid item ${shown(face.feature)} to sketch on`);
   if (doc.timeline.features.indexOf(on) >= insertAt(doc)) throw new Error(`${on.provenance.self.label} comes after the rollback marker, so a sketch put in at the marker can't be on it`);
   const frame = squared(drawn.plane);
   if (frame === null || (drawn.side !== 1 && drawn.side !== -1)) throw new Error("a sketch on a face needs a frame and a side of 1 or -1");
@@ -436,7 +436,7 @@ export function projectEdges(doc: DesignDocument, sketchId: string, edges: reado
   };
   for (const e of edges) {
     const on = features.findIndex((f) => f.id === e.feature);
-    if (on < 0 || on > at || isSketchItem(features[on])) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
+    if (on < 0 || on > at || !makesBody(features[on])) throw new Error(`${shown(e.feature)} is not a solid item before ${sketchItem(doc, sketchId).provenance.self.label} in the timeline, so its edges can't be projected into it`);
     if (projected.some((p) => p.feature === e.feature && p.edge === e.edge)) continue;
     const [id, after] = take(next, "projection");
     next = after;

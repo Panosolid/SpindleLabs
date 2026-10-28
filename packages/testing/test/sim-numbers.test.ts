@@ -97,26 +97,31 @@ test("the kernel counter sorts every body_build answer and passes each on unchan
 test("the waiting moves: one list of landed steps, each move its own op, drawn as itself", () => {
   // Golden models and session moves read the same list (landed.ts), so a step turns both on at once.
   assert.equal(GOLDEN_LANDED, LANDED);
-  assert.equal(LANDED.size, 0, "a step landed: its waiting moves now need the model (see WAITING_MOVES)");
-  assert.deepEqual(WAITING_MOVES.map((m) => [m.op, m.from]), [["add-combine", "35"], ["set-combine", "35"], ["add-extrude-into", "39"], ["set-extrude-operation", "39"]]);
+  // 35e2 landed (Move): the model and Design answer its moves. A step landing turns its moves on here too.
+  assert.deepEqual([...LANDED], ["35e2"], "a step landed: its waiting moves now need the model (see WAITING_MOVES)");
+  assert.deepEqual(WAITING_MOVES.map((m) => [m.op, m.from]), [["add-move", "35e2"], ["set-move", "35e2"], ["add-combine", "35"], ["set-combine", "35"], ["add-extrude-into", "39"], ["set-extrude-operation", "39"]]);
   const r = seeded(5n);
   for (const m of WAITING_MOVES) {
     assert.ok(m.weight > 0 && m.does.length > 20 && m.model.length > 20, m.op);
     for (let i = 0; i < 50; i++) {
       const op = m.draw(r) as Record<string, unknown>;
       assert.equal(op.op, m.op);
-      for (const [key, v] of Object.entries(op)) if (typeof v === "number" && key !== "distance") assert.ok(v >= 0 && v < 1, `${m.op}.${key} = ${v} is a fraction`);
+      // Picks are fractions; a distance and a Move's turn (whole degrees) are sizes.
+      for (const [key, v] of Object.entries(op)) if (typeof v === "number" && key !== "distance" && key !== "turnZ") assert.ok(v >= 0 && v < 1, `${m.op}.${key} = ${v} is a fraction`);
     }
   }
 });
 
 test("with nothing landed every seed draws exactly the steps it drew before the waiting moves were written", () => {
   // sha256 of JSON.stringify(randomSession(12345n, 300)), taken from main before step 30d (and 2,000 seeds of
-  // 200 steps compared there, all equal): the nightly's and the regressions' seeds still replay.
-  assert.equal(createHash("sha256").update(JSON.stringify(randomSession(12345n, 300))).digest("hex").slice(0, 16), "2c6779fbc5fd64b4");
+  // 200 steps compared there, all equal): a session written down before a step landed still replays with nothing landed.
+  const none = new Set<string>();
+  assert.equal(createHash("sha256").update(JSON.stringify(randomSession(12345n, 300, none))).digest("hex").slice(0, 16), "2c6779fbc5fd64b4");
   const waiting = new Set(WAITING_MOVES.map((m) => m.op as string));
-  for (let s = 1n; s <= 200n; s++) for (const op of randomSession(s, 300)) assert.ok(!waiting.has(op.op), `seed ${s} drew ${op.op}`);
-  assert.deepEqual(randomSession(9n, 100, new Set()), randomSession(9n, 100));
+  for (let s = 1n; s <= 200n; s++) for (const op of randomSession(s, 300, none)) assert.ok(!waiting.has(op.op), `seed ${s} drew ${op.op}`);
+  // With 35e2 landed (today's list) the sessions draw its moves.
+  const today = randomSession(9n, 300);
+  assert.ok(today.some((op) => op.op === "add-move") && today.some((op) => op.op === "set-move"), JSON.stringify(today.map((op) => op.op)));
 });
 
 test("a landed step's moves are drawn as often as their weights say, and only that step's", () => {
@@ -137,12 +142,14 @@ test("a landed step's moves are drawn as often as their weights say, and only th
   assert.ok(Math.abs((c35["set-combine"] / 40_000) * 100 - (3 / 130) * 100) < 0.5, `${c35["set-combine"]}`);
   assert.equal(c35["add-extrude-into"], undefined);
   assert.equal(c35["set-extrude-operation"], undefined);
+  assert.equal(c35["add-move"], undefined);
   const both = count(new Set(["35", "39"]));
-  for (const m of WAITING_MOVES) assert.ok(both[m.op] > 0, m.op);
+  for (const m of WAITING_MOVES) assert.equal(both[m.op] > 0, m.from !== "35e2", m.op);
 });
 
 test("a landed move the model doesn't know yet stops the session with words naming its step, never passing quietly", async () => {
-  for (const m of WAITING_MOVES) {
+  // Today's landed steps' moves the model knows (35e2: timeline-session.test.ts runs them).
+  for (const m of WAITING_MOVES.filter((w) => !LANDED.has(w.from))) {
     const r = seeded(3n);
     const steps: SessionOp[] = [{ op: "add-preset", kind: "box", sizes: [10, 20, 30] }, m.draw(r)];
     await assert.rejects(

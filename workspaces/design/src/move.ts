@@ -1,0 +1,107 @@
+// Move (step 35e2, Ben 2026-10-28, pulled forward for the demo): a timeline
+// item that moves and turns bodies, Fusion's Move/Copy without the copy.
+// It holds the bodies it moves as `dependsOn` and its numbers as
+// MOVE_PARAMS: each body is turned about the line through the pivot along
+// X, then Y, then Z (degrees, counter-clockwise looking down the axis),
+// then shifted by (x, y, z) mm. It makes no body of its own; from its place
+// in the timeline on, each body it moves is where it put it (rebuild.ts),
+// so editing, suppressing, deleting or reordering it works like any item.
+// `inserted` and `changedMove` are the document changes, pure functions;
+// `moveMotions` what the kernel is asked to do.
+
+import type { BodySpec, Feature, Motion } from "@fission/core";
+import { freshName, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
+
+/** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm). */
+export type MoveValues = Record<MoveParam, number>;
+
+/** No move: nothing shifted or turned, about the origin. */
+export const NO_MOVE: MoveValues = { x: 0, y: 0, z: 0, turnX: 0, turnY: 0, turnZ: 0, pivotX: 0, pivotY: 0, pivotZ: 0 };
+
+/** The undo step a new Move is recorded as. */
+export const MOVE_STEP = "Move bodies";
+
+/** The words a Move's summary and the timeline row say: "Move Box 1 by (10, 0, 0) mm, turned 90° about Z". */
+export function moveSummary(labels: readonly string[], v: MoveValues): string {
+  const what = labels.length === 1 ? labels[0] : `${labels.length} bodies`;
+  const shift = v.x !== 0 || v.y !== 0 || v.z !== 0 ? ` by (${v.x}, ${v.y}, ${v.z}) mm` : "";
+  const turns = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] !== 0 ? [`${v[`turn${a}`]}° about ${a}`] : []));
+  const turned = turns.length > 0 ? `${shift ? "," : ""} turned ${turns.join(", then ")}` : "";
+  return `Move ${what}${shift}${turned}${shift || turned ? "" : " (not moved yet)"}`;
+}
+
+/** A Move's numbers, read from its intent (checked when the file was read). */
+export function moveValues(f: Feature): MoveValues {
+  if (!isMoveItem(f)) throw new Error(`${f.provenance.self.label} is not a move`);
+  return Object.fromEntries(MOVE_PARAMS.map((k) => [k, f.intent.parameters[k] as number])) as MoveValues;
+}
+
+const DEGREES = Math.PI / 180;
+
+/**
+ * What the kernel is asked to do to each body a Move moves: a turn about
+ * each axis that is turned, X, Y then Z, about the pivot, then the shift
+ * when there is one. Nothing turned or shifted is left out, so a Move of
+ * nothing asks for nothing.
+ */
+export function moveMotions(v: MoveValues): Motion[] {
+  const pivot: [number, number, number] = [v.pivotX, v.pivotY, v.pivotZ];
+  const axes = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] } as const;
+  const turns: Motion[] = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] === 0 ? [] : [{ turn: { pivot, axis: [...axes[a]], angle: v[`turn${a}`] * DEGREES } }]));
+  return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [...turns, { move: [v.x, v.y, v.z] }];
+}
+
+/** `spec` moved by `motions` too: a moved body's list grows (the kernel takes a shape inside one `moved` only); nothing to do gives `spec` itself. */
+export function movedSpec(spec: BodySpec, motions: readonly Motion[]): BodySpec {
+  if (motions.length === 0) return spec;
+  if ("moved" in spec) return { moved: { body: spec.moved.body, moves: [...spec.moved.moves, ...motions] } };
+  return { moved: { body: spec, moves: [...motions] } };
+}
+
+/** `values` checked: every one a finite number. */
+function checked(values: MoveValues): MoveValues {
+  for (const k of MOVE_PARAMS) if (typeof values[k] !== "number" || !Number.isFinite(values[k])) throw new Error(`a move needs ${k} as a number, not ${shown(values[k])}`);
+  return Object.fromEntries(MOVE_PARAMS.map((k) => [k, values[k]])) as MoveValues;
+}
+
+/** Each body's item for a Move: refused unless every one makes a body and is in range before the marker, each once. */
+function bodiesFor(doc: DesignDocument, bodies: readonly string[]): Feature[] {
+  if (bodies.length === 0) throw new Error("pick at least one body to move");
+  const end = insertAt(doc);
+  return bodies.map((id, i) => {
+    if (bodies.indexOf(id) !== i) throw new Error(`${shown(id)} is picked twice`);
+    const at = doc.timeline.features.findIndex((f) => f.id === id);
+    const f = doc.timeline.features[at];
+    if (f === undefined || !makesBody(f)) throw new Error(`${shown(id)} is not a body in the design`);
+    if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a move put in at the marker can't move it`);
+    return f;
+  });
+}
+
+/** The design with a new Move of `bodies` by `values` put in at the marker ("Move 1", its id from the counter), and its id. */
+export function insertMove(doc: DesignDocument, bodies: readonly string[], values: MoveValues): { doc: DesignDocument; id: string } {
+  const items = bodiesFor(doc, bodies);
+  const v = checked(values);
+  const id = `feature-${doc.nextId}`;
+  const label = freshName("Move", doc.timeline.features.filter(isMoveItem).length, takenNames(doc));
+  const labels = items.map((f) => f.provenance.self.label);
+  const feature: Feature = {
+    id,
+    intent: { type: "move", parameters: { ...v }, summary: moveSummary(labels, v) },
+    provenance: { self: { workspace: "design", id, label }, from: items.map((f) => ({ workspace: "design", id: f.id, label: f.provenance.self.label })) },
+    dependsOn: items.map((f) => f.id),
+    suppressed: false,
+  };
+  return { id, doc: { ...doc, nextId: doc.nextId + 1, timeline: insertItem(doc, feature) } };
+}
+
+/** The design with Move `id` at these numbers instead: the same item, its place, flags and bodies kept; the design itself when nothing changes. */
+export function changedMove(doc: DesignDocument, id: string, values: MoveValues): DesignDocument {
+  const old = doc.timeline.features.find((f) => f.id === id);
+  if (!old || !isMoveItem(old)) throw new Error(`there is no move ${shown(id)} in the design`);
+  const v = checked(values);
+  if (MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k])) return doc;
+  const labels = old.dependsOn.map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
+  const feature: Feature = { ...old, intent: { ...old.intent, parameters: { ...v }, summary: moveSummary(labels, v) } };
+  return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
+}

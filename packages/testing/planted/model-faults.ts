@@ -288,6 +288,18 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "outcome differs from the model",
   },
+  "move-shift-then-turn": {
+    what: "a Move shifts its bodies first and turns them about the pivot after",
+    edits: [{ file: "workspaces/design/src/move.ts", find: "  return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [...turns, { move: [v.x, v.y, v.z] }];", replace: "  return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [{ move: [v.x, v.y, v.z] }, ...turns];" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "move-not-held": {
+    what: "a Move builds its moved bodies but leaves the timeline's bodies where they were",
+    edits: [{ file: REBUILD, find: "  for (const [id, r] of moved) done[id] = r;", replace: "" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
 };
 
 const FACE = "workspaces/design/src/face-sketch.ts";

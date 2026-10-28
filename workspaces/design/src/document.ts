@@ -209,7 +209,7 @@ export function presetKinds(doc: Pick<DesignDocument, "profiles">): (f: Feature)
   const profiles = new Map<unknown, ShapeKind>();
   for (const p of doc.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p.kind);
   return (f) => {
-    if (isSketchItem(f) || isSketchExtrude(f)) return null;
+    if (!makesBody(f) || isSketchExtrude(f)) return null;
     if (isPrimitive(f.intent.type as ShapeKind)) return f.intent.type as ShapeKind;
     return f.intent.type === "extrude" ? (profiles.get(f.intent.parameters.profile) ?? null) : null;
   };
@@ -318,7 +318,7 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
  */
 export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const old = doc.timeline.features.find((f) => f.id === id);
-  if (!old || isSketchItem(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
+  if (!old || !makesBody(old) || isSketchExtrude(old)) throw new Error(`there is no preset ${shown(id)} in the design`);
   let nextId = doc.nextId;
   const oldProfile = old.dependsOn.find((p) => doc.profiles.some((x) => x.id === p));
   const oldKind = presetKinds(doc)(old);
@@ -355,6 +355,20 @@ export const isSketchExtrude = (f: Feature) => f.intent.type === "extrude" && Ob
 
 /** A sketch's timeline item: it places the sketch in the build order and names its plane; it builds no solid. */
 export const isSketchItem = (f: Feature) => f.intent.type === "sketch";
+
+/**
+ * A Move (step 35e2): moves and turns the bodies it depends on (`dependsOn`,
+ * each a body made before it) from its place in the timeline on; it makes
+ * no body of its own. Its numbers are `MOVE_PARAMS` (move.ts).
+ */
+export const isMoveItem = (f: Feature) => f.intent.type === "move";
+
+/** Whether an item makes a body of its own: anything but a sketch or a Move. */
+export const makesBody = (f: Feature) => !isSketchItem(f) && !isMoveItem(f);
+
+/** A Move's numbers, all in every Move: the shift (mm), the turns about X, Y and Z (degrees, in that order) and the point they turn about (mm). */
+export const MOVE_PARAMS = ["x", "y", "z", "turnX", "turnY", "turnZ", "pivotX", "pivotY", "pivotZ"] as const;
+export type MoveParam = (typeof MOVE_PARAMS)[number];
 
 /**
  * A value from a file, for a message: text as it is, anything else by
@@ -579,7 +593,7 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   if (face.side !== 1 && face.side !== -1) throw new Error(`${at}'s side must be 1 or -1, not ${shown(face.side)}`);
   if (Object.hasOwn(face, "held")) checkPlane(face.held, `${at}'s held plane`);
   const there = byId.get(feature);
-  if (there !== undefined && (there.at > byId.get(f.id)!.at || isSketchItem(there.item))) throw new Error(`${at} is on a face of ${shown(feature)}, which is not a solid item before it in the timeline`);
+  if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at} is on a face of ${shown(feature)}, which is not a solid item before it in the timeline`);
   if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} is on a face of ${feature} but does not depend on it`);
 }
 
@@ -614,7 +628,7 @@ function checkPins(f: Feature, content: Sketch, byId: ReadonlyMap<string, { item
     const feature = pin.feature;
     if (typeof feature !== "string" || feature.length === 0) throw new Error(`${at}'s pin on ${pin.point} names no feature`);
     const there = byId.get(feature);
-    if (there !== undefined && (there.at > byId.get(f.id)!.at || isSketchItem(there.item))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at}'s pin on ${pin.point} is on ${shown(feature)}, which is not a solid item before it in the timeline`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} has a point pinned to ${feature} but does not depend on it`);
   }
 }
@@ -643,7 +657,7 @@ function checkProjections(f: Feature, content: Sketch, byId: ReadonlyMap<string,
     const name = `${at}'s projection ${p.id}`;
     if (typeof p.feature !== "string" || p.feature.length === 0) throw new Error(`${name} names no feature`);
     const there = byId.get(p.feature);
-    if (there !== undefined && (there.at > byId.get(f.id)!.at || isSketchItem(there.item))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
+    if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${name} is of ${shown(p.feature)}, which is not a solid item before it in the timeline`);
     if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(p.feature)) throw new Error(`${at} projects an edge of ${p.feature} but does not depend on it`);
     if (typeof p.edge !== "string" || p.edge.length === 0 || p.edge.includes("/")) throw new Error(`${name} has no edge name`);
     if (edges.has(`${p.feature}/${p.edge}`)) throw new Error(`${at} projects the edge ${p.edge} of ${p.feature} twice`);
@@ -775,6 +789,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
   const kindOf = presetKinds(doc);
   const base = (f: Feature): string => {
     if (isSketchItem(f)) return "Sketch";
+    if (isMoveItem(f)) return "Move";
     if (isSketchExtrude(f)) return "Extrude";
     const kind = kindOf(f);
     return kind === null ? "Item" : SHAPE_LABELS[kind];
@@ -804,6 +819,29 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
  * rather than failing later. Version 1 is migrated to version 2, and
  * version 2 to version 3 (migrateDesignV2), first.
  */
+/**
+ * A Move, checked (step 35e2): every one of its numbers (`MOVE_PARAMS`) a
+ * finite number and nothing else; at least one body, each once, each an
+ * item before it that makes a body (a Move moves bodies, never a sketch or
+ * another Move).
+ */
+function checkMove(f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+  const at = `Design move ${f.id}`;
+  const p = f.intent.parameters;
+  for (const key of MOVE_PARAMS) if (!isFiniteNumber(p[key])) throw new Error(`${at}: ${key} ${shown(p[key])} is not a number`);
+  for (const key of Object.keys(p)) if (!(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
+  if (!Array.isArray(f.dependsOn) || f.dependsOn.length === 0) throw new Error(`${at} moves no body`);
+  const once = new Set<unknown>();
+  for (const id of f.dependsOn as unknown[]) {
+    const there = byId.get(id as string);
+    // A body deleted since is allowed, as an extrude's deleted sketch is: the rebuild fails the move naming it (the id's counter check is below).
+    const deleted = typeof id === "string" && there === undefined && ID_SHAPE.test(id);
+    if (!deleted && (typeof id !== "string" || there === undefined || there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at} moves ${shown(id)}, which is not a body made before it in the timeline`);
+    if (once.has(id)) throw new Error(`${at} moves ${id} twice`);
+    once.add(id);
+  }
+}
+
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
   // Counted before migrating, which spreads every id of a version 1 file.
@@ -898,7 +936,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
     const once = new Set<string>();
     for (const id of hidden) {
       const at = byId.get(id as string);
-      if (typeof id !== "string" || !at || isSketchItem(at.item)) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature in the timeline`);
+      if (typeof id !== "string" || !at || !makesBody(at.item)) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature in the timeline`);
       if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
       once.add(id);
     }
@@ -911,7 +949,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
     ...d.sketches.flatMap((s) => [...s.points.map((p) => p.id), ...s.curves.map((c) => c.id), ...(s.projected ?? []).map((p) => p.id)]),
   ];
   // A kept shape holds a sketch's old ids (some may still be in the sketch): never repeated by a new id, so the counter is above them too.
-  const kept = Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]);
+  // So does a move's deleted body, so no new body takes its id and is moved by it.
+  const kept = [...Object.values(d.kept ?? {}).flatMap((k) => [...k.points.map((p) => p.id), ...k.curves.map((c) => c.id)]), ...d.timeline.features.filter(isMoveItem).flatMap((f) => f.dependsOn)];
   for (const id of kept) {
     const n = idNumber(id);
     if (n !== null && n >= d.nextId!) throw new Error(`Design data's nextId ${d.nextId} is not above ${id}, so a new id could repeat it`);
@@ -928,7 +967,9 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Whether any of them builds doesn't matter: a design with no body opens as one (24f4).
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
-  for (const f of d.timeline.features) if (!isSketchItem(f)) shapeWith(f, (id) => profiles.get(id));
+  for (const f of d.timeline.features) if (makesBody(f)) shapeWith(f, (id) => profiles.get(id));
+  // A Move's numbers and bodies (step 35e2).
+  for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(f, byId);
   return withShortNames(withRuledNames(d as DesignDocument));
 }
 
@@ -948,6 +989,7 @@ export function sketchInputs(f: Feature, content: Pick<Sketch, "pins" | "project
 function inputsOf(document: DesignDocument, f: Feature): Feature[] {
   const features = document.timeline.features;
   if (isSketchItem(f)) return sketchInputs(f, document.sketches.find((s) => s.id === f.id)).flatMap((id) => features.find((x) => x.id === id) ?? []);
+  if (isMoveItem(f)) return f.dependsOn.flatMap((id) => features.find((x) => x.id === id) ?? []);
   const sketch = isSketchExtrude(f) ? features.find((x) => x.id === f.intent.parameters.sketch && isSketchItem(x)) : undefined;
   return sketch === undefined ? [] : [sketch];
 }
@@ -981,6 +1023,8 @@ export function builds(document: DesignDocument, f: Feature): boolean {
   if (at < 0 || f.suppressed) return false;
   if (marker === "start" || (marker !== undefined && at > features.findIndex((x) => x.id === marker))) return false;
   if (greyedBy(document, f) !== null) return false;
+  // A Move builds when every body it moves does.
+  if (isMoveItem(f)) return inputsOf(document, f).every((x) => builds(document, x));
   if (isSketchItem(f) || !isSketchExtrude(f)) return true;
   const [sketch] = inputsOf(document, f);
   // A deleted sketch: the extrude builds from its kept shape, if it has one (24d2).
@@ -1008,14 +1052,15 @@ function walk(document: DesignDocument): { building: Set<Feature>; greyed: Map<F
   for (const f of open) {
     // A sketch: its face's feature, then each feature a pin (27c) or a projection (27d) names, as `inputsOf` (one lookup each, audit S2).
     const sketch = isSketchExtrude(f) ? sketches.get(f.intent.parameters.sketch) : undefined;
-    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
+    const inputs = isSketchItem(f) ? sketchInputs(f, contents.get(f.id)).flatMap((id) => byId.get(id) ?? []) : isMoveItem(f) ? f.dependsOn.flatMap((id) => byId.get(id) ?? []) : sketch === undefined ? [] : [sketch];
     const input = inputs[0];
     let by: string | null = null;
     for (const x of inputs) if ((by = x.suppressed ? x.id : (greyed.get(x) ?? null)) !== null) break;
     if (by !== null) greyed.set(f, by);
     // A sketch builds, on a face followed or held (26c); an extrude when its sketch does (a sketch on an origin plane
     // whenever it is in range and on, wherever it is), or from its kept shape when it is gone.
-    else if (!isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
+    // A Move when every body it moves builds (step 35e2).
+    else if (isMoveItem(f) ? inputs.every((x) => building.has(x)) : !isSketchExtrude(f) || (input === undefined ? keptOf(document, f) !== undefined : building.has(input) || (!isFacePlane(input.intent.parameters.plane) && open.has(input)))) building.add(f);
   }
   return { building, greyed };
 }
@@ -1043,7 +1088,7 @@ export function greyedItems(document: DesignDocument): Map<Feature, string> {
  */
 export function partFeature(document: DesignDocument): Feature | null {
   const { features } = document.timeline;
-  for (let i = features.length - 1; i >= 0; i--) if (!isSketchItem(features[i]) && builds(document, features[i])) return features[i];
+  for (let i = features.length - 1; i >= 0; i--) if (makesBody(features[i]) && builds(document, features[i])) return features[i];
   return null;
 }
 

@@ -1,6 +1,6 @@
 // One run for `run.ts`, in a process of its own so the planted source is
 // loaded fresh: Design's seeded timeline sessions on the real kernel
-// (12 seeds × 150 steps, as journeys/timeline.journey.ts runs them) until
+// (12 seeds × 150 steps, 4 to 15, as journeys/timeline.journey.ts runs them) until
 // one fails. Prints one line of JSON: the failing check, seed and message,
 // or `{"check":null}` when every session passed ("threw: …" when
 // the plant made Design throw rather than fail a check). Needs the WASM build.
@@ -11,7 +11,7 @@ import { failureOf, randomSession } from "../src/timeline-session.ts";
 
 const STEPS = 150;
 let out: { check: string | null; seed?: string; message?: string } = { check: null };
-for (let seed = 1n; seed <= 12n; seed++) {
+for (let seed = 4n; seed <= 15n; seed++) {
   const subject = designSubject(nodeKernel());
   try {
     const failure = await failureOf(() => subject, randomSession(seed, STEPS), edgeMatches);

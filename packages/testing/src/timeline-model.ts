@@ -104,7 +104,11 @@ export type ModelItem =
   | { id: string; kind: "box"; width: number; depth: number; height: number; suppressed: boolean }
   | { id: string; kind: "cylinder"; diameter: number; height: number; suppressed: boolean }
   /** `centreZ`: its centre's height, its radius when added, so it rests on the floor, and kept when its diameter changes (Ben, 2026-10-28: never snapped back). */
-  | { id: string; kind: "sphere"; diameter: number; centreZ: number; suppressed: boolean };
+  | { id: string; kind: "sphere"; diameter: number; centreZ: number; suppressed: boolean }
+  /** A Move (35e2): `bodies` turned `turnZ` degrees about the upright line through `pivot`, then shifted by `shift` (mm); it makes no body. */
+  | { id: string; kind: "move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point; suppressed: boolean };
+
+type MoveItem = Extract<ModelItem, { kind: "move" }>;
 
 /** An extrude's last shape: its sketch's shape and curve ids just before the sketch was lost, and the height it lay at when that was a face sketch (26e). */
 export interface Kept {
@@ -222,6 +226,9 @@ export type ConcreteOp =
   | { op: "reorder"; item: string; to: number }
   | { op: "suppress"; item: string; on: boolean }
   | { op: "marker"; at: Marker }
+  /** 35e2: a Move of built bodies before where it goes in, and a Move's numbers changed. */
+  | { op: "add-move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point }
+  | { op: "set-move"; item: string; shift: Vec3; turnZ: number; pivot: Point }
   | { op: "undo" }
   | { op: "redo" };
 
@@ -259,7 +266,9 @@ export type ModelFault =
   | "suppress-fails-dependents"
   | "greyed-warns"
   | "lost-plane-not-held"
-  | "face-sketch-unbound";
+  | "face-sketch-unbound"
+  | "move-shift-then-turn"
+  | "move-not-held";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -290,6 +299,8 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "greyed-warns",
   "lost-plane-not-held",
   "face-sketch-unbound",
+  "move-shift-then-turn",
+  "move-not-held",
 ];
 
 /** "item-3/side:curve-5": a face name as one string, for maps and messages. */
@@ -308,7 +319,8 @@ export function edgeName(a: FaceName, b: FaceName, ordered: boolean): EdgeName {
 export const edgeKey = (n: EdgeName): string => `${n.feature}/${facePart(n.faces[0])}${n.ordered ? ">" : "+"}${facePart(n.faces[1])}`;
 
 /** The ids an item reads: an extrude its sketch, a sketch on a face that face's feature (26e). */
-export const dependsOn = (item: ModelItem): string[] => (item.kind === "extrude" ? [item.sketch] : item.kind === "sketch" && item.on ? [item.on.feature] : []);
+export const dependsOn = (item: ModelItem): string[] =>
+  item.kind === "extrude" ? [item.sketch] : item.kind === "sketch" && item.on ? [item.on.feature] : item.kind === "move" ? [...item.bodies] : [];
 
 export const emptyDoc = (): ModelDoc => ({ nextId: 1, items: [], marker: null });
 
@@ -571,6 +583,7 @@ const greyedBy = (input: ItemResult | undefined, id: string): string | null => (
 
 function build(item: ModelItem, byId: Map<string, ModelItem>, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>): ItemResult {
   if (item.kind === "sketch") return placeSketch(item, done, faults);
+  if (item.kind === "move") return moveBodies(item, done, faults);
   if (item.kind !== "extrude") return { status: "built", body: presetBody(item, faults) };
   const sketch = byId.get(item.sketch);
   if (sketch === undefined) return lost(item, "deleted-input", faults);
@@ -598,6 +611,55 @@ function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, f
   // Planted bug: the kept shape is built, but nothing says so.
   return faults.has("warning-dropped") ? { status: "built", body } : { status: "built", body, warning: { cause, input: item.sketch } };
 }
+
+/**
+ * A Move's result (35e2): greyed while a body it moves is suppressed or
+ * greyed (Q3); failed naming the first body that is deleted or not built;
+ * else built, with no body of its own, and every body it moves replaced in
+ * `done` by that body moved, so everything after it finds the body where
+ * the Move put it. All or none.
+ */
+function moveBodies(item: MoveItem, done: Record<string, ItemResult>, faults: ReadonlySet<ModelFault>): ItemResult {
+  for (const id of item.bodies) {
+    const by = greyedBy(done[id], id);
+    if (by !== null) return { status: "greyed", by };
+  }
+  for (const id of item.bodies) {
+    const r = done[id];
+    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id };
+    if (r.status !== "built" || r.body === undefined) return { status: "failed", cause: "failed-input", input: id };
+  }
+  // Planted bug ("move-not-held"): the Move builds but its bodies stay where they were.
+  if (!faults.has("move-not-held"))
+    for (const id of item.bodies) {
+      const r = done[id] as Extract<ItemResult, { status: "built" }>;
+      done[id] = { ...r, body: moved(r.body!, item, faults) };
+    }
+  return { status: "built" };
+}
+
+/**
+ * A body moved as a Move moves it: each point turned `turnZ` degrees
+ * counter-clockwise (seen from above) about the upright line through the
+ * pivot, then shifted. A turn about Z keeps every face's facing up or down,
+ * so tops stay tops (26e's face sketches); volumes, areas and lengths stay.
+ */
+function moved(body: ModelBody, m: MoveItem, faults: ReadonlySet<ModelFault>): ModelBody {
+  const a = (m.turnZ * Math.PI) / 180;
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  const [px, py] = m.pivot;
+  const turn = (p: Vec3): Vec3 => [px + c * (p[0] - px) - s * (p[1] - py), py + s * (p[0] - px) + c * (p[1] - py), p[2]];
+  const shift = (p: Vec3): Vec3 => [p[0] + m.shift[0], p[1] + m.shift[1], p[2] + m.shift[2]];
+  // Planted bug ("move-shift-then-turn"): shifted first, then turned about the pivot.
+  const at = (p: Vec3): Vec3 => (faults.has("move-shift-then-turn") ? turn(shift(p)) : shift(turn(p)));
+  return { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: at(e.centroid) })) };
+}
+
+/** What the kernel is asked to do for a Move, as Design asks it (move.ts `moveMotions`): the turn when there is one, then the shift when there is one. */
+const motionsOf = (m: MoveItem): unknown[] => [
+  ...(m.turnZ !== 0 ? [["turn", m.pivot[0], m.pivot[1], m.turnZ]] : []),
+  ...(m.shift.some((x) => x !== 0) ? [["move", ...m.shift]] : []),
+];
 
 /** A body moved up by `z` (an extrude of a sketch on a face, 26e): every face's and edge's centroid; volumes, areas and lengths stay. */
 function lifted(body: ModelBody, z: number | undefined): ModelBody {
@@ -695,9 +757,23 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
   const byId = new Map(doc.items.map((i) => [i.id, i]));
   const solid = (s: ModelShape) =>
     JSON.stringify(s.kind === "polygon" ? { kind: s.kind, corners: [...s.corners].map((c) => [...c]).sort((a, b) => a[0] - b[0] || a[1] - b[1]) } : s);
+  // 35e2: each body as it is so far, its own key and the Moves' motions since, all in one list as Design asks the kernel.
+  const chain = new Map<string, { spec: string; shape: string; motions: unknown[] }>();
   for (const id of r.order) {
     const res = r.results[id];
     const item = byId.get(id);
+    if (item?.kind === "move" && res.status === "built") {
+      // Each body it moves is built moved, under a key of its own; the body before is still held by the Move.
+      for (const b of item.bodies) {
+        const was = chain.get(b);
+        const add = motionsOf(item);
+        if (was === undefined || add.length === 0) continue;
+        const now = { ...was, motions: [...was.motions, ...add] };
+        chain.set(b, now);
+        out.set(`${id}:${b}`, { spec: JSON.stringify(["moved", now.spec, now.motions]), shape: JSON.stringify(["moved", now.shape, now.motions]) });
+      }
+      continue;
+    }
     if (res.status !== "built" || res.body === undefined || item === undefined) continue;
     if (item.kind === "extrude") {
       const from = res.warning ? item.kept : (byId.get(item.sketch) as SketchItem | undefined);
@@ -713,6 +789,8 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
       const { id: _, suppressed: __, ...sizes } = item;
       out.set(id, { spec: JSON.stringify(sizes), shape: JSON.stringify(sizes) });
     }
+    const k = out.get(id);
+    if (k !== undefined) chain.set(id, { ...k, motions: [] });
   }
   return out;
 }
@@ -748,6 +826,8 @@ export function sizeKeys(item: ModelItem): SizeKey[] {
       return ["diameter", "height"];
     case "sphere":
       return ["diameter"];
+    case "move":
+      return [];
     case "sketch":
       return item.shape.kind === "circle" ? ["radius"] : item.shape.kind === "slot" ? ["length", "radius"] : [];
   }
@@ -912,6 +992,17 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
     case "marker":
       doc.marker = op.at;
       return { kind: "done", ids: [] };
+    case "add-move": {
+      const id = newId(doc, "item", faults);
+      insert(doc, { id, kind: "move", bodies: [...op.bodies], shift: [...op.shift], turnZ: op.turnZ, pivot: [...op.pivot], suppressed: false });
+      return { kind: "done", ids: [id] };
+    }
+    case "set-move": {
+      const item = find(doc, op.item);
+      if (item.kind !== "move") throw new Error(`${op.item} is not a move`);
+      [item.shift, item.turnZ, item.pivot] = [[...op.shift], op.turnZ, [...op.pivot]];
+      return { kind: "done", ids: [] };
+    }
   }
 }
 

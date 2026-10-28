@@ -28,11 +28,12 @@
 // nothing suppressed and no marker, as the naming model's `settle` does.
 
 import { KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { buildingItems, isSketchExtrude, isSketchItem, keptOf, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
+import { moveMotions, movedSpec, moveValues } from "./move.ts";
 import { resolveReference, sharedBy } from "./references.ts";
 import { planeOf, sketchCurves } from "./sketch.ts";
 
@@ -76,6 +77,8 @@ export type FeatureResult =
       /** Step 27d: each projection that found its edge, where its points are now (and a circle's radius), and why the others are held. */
       projected?: { id: string; points: { point: string; at: SketchXY }[]; radius?: number }[];
       projections?: ProjectionWarning;
+      /** A Move's (35e2): the bodies it moved, as they were before it, kept so the next rebuild needn't build them again. */
+      holds?: BodyHandle[];
     }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others (Q3; from 26e an extrude of a suppressed sketch too): off, with no warning, until it is unsuppressed. */
@@ -470,7 +473,8 @@ export async function rebuildTimeline(doc: DesignDocument, cache: BodyCache, cal
 }
 
 /** The bodies a rebuild's results hold. */
-const handlesOf = (results: Record<string, FeatureResult>): BodyHandle[] => Object.values(results).flatMap((r) => (r.status === "built" && r.body !== undefined ? [r.body] : []));
+const handlesOf = (results: Record<string, FeatureResult>): BodyHandle[] =>
+  Object.values(results).flatMap((r) => (r.status === "built" ? [...(r.body !== undefined ? [r.body] : []), ...(r.holds ?? [])] : []));
 
 /** `rebuildTimeline` without freeing anything: every result, its bodies in `cache` with whatever else is there. */
 async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls): Promise<TimelineBuild> {
@@ -504,7 +508,7 @@ const words = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls, index: DocIndex): void {
   const building = buildingItems(doc);
   for (const f of doc.timeline.features) {
-    if (isSketchItem(f) || !building.has(f)) continue;
+    if (!makesBody(f) || !building.has(f)) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
@@ -678,6 +682,7 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
 async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, cache: BodyCache, kernel: KernelCalls, index: DocIndex): Promise<FeatureResult> {
   try {
     if (isSketchItem(f)) return await placeSketch(f, done, cache, index);
+    if (isMoveItem(f)) return await moveBodies(f, done, cache);
     if (!isSketchExtrude(f)) {
       const spec = specOf(doc, f);
       return { status: "built", body: await cache.body(spec), spec };
@@ -699,6 +704,45 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
   } catch (e) {
     return { status: "failed", cause: "error", message: words(e) };
   }
+}
+
+/**
+ * A Move's result (step 35e2): greyed while a body it moves is suppressed
+ * or greyed (Q3), failed naming the first that isn't built; else every
+ * body it moves is built moved (`movedSpec`), and its result in `done`
+ * becomes that moved body, so everything after the Move (a sketch on its
+ * face, the view, the STL) finds it where the Move put it. All or none: a
+ * body the kernel refuses to move (out past model space) leaves every body
+ * where it was and fails the Move with the kernel's words. The Move holds
+ * the bodies as they were (`holds`), so the next rebuild finds them built.
+ */
+async function moveBodies(f: Feature, done: Record<string, FeatureResult>, cache: BodyCache): Promise<FeatureResult> {
+  for (const id of f.dependsOn) {
+    const r = done[id];
+    if (r?.status === "suppressed") return { status: "greyed", by: id };
+    if (r?.status === "greyed") return { status: "greyed", by: r.by };
+  }
+  const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
+  const motions = moveMotions(moveValues(f));
+  const from: [string, Extract<FeatureResult, { status: "built" }> & { body: BodyHandle; spec: BodySpec }][] = [];
+  for (const id of f.dependsOn) {
+    const r = done[id];
+    if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
+    if (r.status !== "built" || r.body === undefined || r.spec === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
+    from.push([id, { ...r, body: r.body, spec: r.spec }]);
+  }
+  // Built only once every body is there, so a Move that fails builds nothing.
+  const moved: [string, Extract<FeatureResult, { status: "built" }>][] = [];
+  for (const [id, r] of from) {
+    const spec = movedSpec(r.spec, motions);
+    moved.push([id, { ...r, spec, body: spec === r.spec ? r.body : await cache.body(spec) }]);
+  }
+  const holds = f.dependsOn.flatMap((id) => {
+    const r = done[id];
+    return r?.status === "built" && r.body !== undefined ? [r.body] : [];
+  });
+  for (const [id, r] of moved) done[id] = r;
+  return { status: "built", holds };
 }
 
 /** What an extrude of a sketch is built from, and the warning when that is its kept shape. */

@@ -498,3 +498,52 @@ test("a face sketch with nothing held stays where it was drawn; a sketch held th
   assert.deepEqual(results(m)["item-2"], { status: "built", lift: 12 });
   assert.equal((m.doc.items[1] as { on: { held?: number } }).on.held, undefined);
 });
+
+test("a Move (35e2) by hand: turned about Z through its pivot, then shifted; greyed, failed and rebuilt as the rules say", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-move", bodies: ["item-1"], shift: [0, 0, 5], turnZ: 90, pivot: [10, 0] });
+  let r = results(m);
+  // The Move makes no body; the box is where it put it, its names, areas and volume kept.
+  assert.deepEqual(r["item-2"], { status: "built" });
+  const box = bodyOf(r["item-1"]);
+  assert.equal(box.volume, 40 * 30 * 20);
+  // Top centre (20, 15, 20): from the pivot (10, 0) it is (10, 15); a quarter turn counter-clockwise takes (a, b) to
+  // (−b, a), so (−15, 10), back from the pivot (−5, 10); then up 5: (−5, 10, 25).
+  const top = face(box, "item-1/top");
+  assert.ok([-5, 10, 25].every((x, k) => near(top.centroid[k], x)), `${top.centroid}`);
+  assert.equal(top.area, 40 * 30);
+  // Right centre (40, 15, 10): (30, 15) from the pivot, turned (−15, 30), so (−5, 30), up 5: (−5, 30, 15).
+  const right = face(box, "item-1/right");
+  assert.ok([-5, 30, 15].every((x, k) => near(right.centroid[k], x)), `${right.centroid}`);
+  // A sketch on its top after the Move lies at the moved height, 25.
+  run(m, { op: "add-face-sketch", shape: { kind: "circle", centre: [0, 0], radius: 3 }, face: { feature: "item-1", role: "top" } });
+  assert.equal((results(m)["item-3"] as { lift?: number }).lift, 25);
+  // Suppressing the box greys the Move (Q3); deleting it fails the Move naming it.
+  run(m, { op: "suppress", item: "item-1", on: true });
+  assert.deepEqual(results(m)["item-2"], { status: "greyed", by: "item-1" });
+  run(m, { op: "suppress", item: "item-1", on: false }, { op: "delete-item", item: "item-3" }, { op: "delete-item", item: "item-1" });
+  r = results(m);
+  assert.deepEqual(r["item-2"], { status: "failed", cause: "deleted-input", input: "item-1" });
+  // The box can't go after its Move, nor the Move before the box.
+  run(m, { op: "undo" });
+  assert.deepEqual(run(m, { op: "reorder", item: "item-1", to: 1 }), [{ kind: "refused", cause: "after-dependent" }]);
+});
+
+test("what a Move must rebuild: one body per body it moves, nothing when it's taken away, and moves of moves in one list", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "sphere", sizes: [10] });
+  const keys = () => [...bodyKeys(m.doc, rebuild(m.doc)).values()];
+  const step = (op: ConcreteOp) => {
+    const before = keys();
+    run(m, op);
+    return buildBounds(before, keys());
+  };
+  // Moving both bodies builds both moved; the bodies as they were stay held (by the Move), so nothing else.
+  assert.deepEqual(step({ op: "add-move", bodies: ["item-1", "item-2"], shift: [10, 0, 0], turnZ: 0, pivot: [0, 0] }), { least: 2, most: 2 });
+  // A second Move of the box: the box moved by both, one body.
+  assert.deepEqual(step({ op: "add-move", bodies: ["item-1"], shift: [0, 0, 0], turnZ: 180, pivot: [0, 0] }), { least: 1, most: 1 });
+  // Suppressing the first Move: the box is turned only (a new body), the sphere back as it was (held): 1.
+  assert.deepEqual(step({ op: "suppress", item: "item-3", on: true }), { least: 1, most: 1 });
+  // A Move of nothing changes nothing: no body.
+  assert.deepEqual(step({ op: "set-move", item: "item-4", shift: [0, 0, 0], turnZ: 0, pivot: [5, 5] }), { least: 0, most: 0 });
+});

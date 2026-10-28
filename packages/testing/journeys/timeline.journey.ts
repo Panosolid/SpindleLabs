@@ -550,7 +550,9 @@ async function designSession(seed: bigint, steps: number, faults: DesignFault[] 
   }
 }
 
-const SEEDS = process.env.FISSION_SEED ? [BigInt(process.env.FISSION_SEED)] : Array.from({ length: 12 }, (_, k) => BigInt(k + 1));
+// Seeds 4 to 15 from 35e2: with Moves drawn too, seed 15 is the first to save a design with nothing built and to
+// extrude a sketch whose face is gone (all of 1 to 30 pass).
+const SEEDS = process.env.FISSION_SEED ? [BigInt(process.env.FISSION_SEED)] : Array.from({ length: 12 }, (_, k) => BigInt(k + 4));
 const STEPS = Number(process.env.FISSION_TIMELINE_STEPS ?? 150);
 
 test("seeded sessions: Design's timeline on the real kernel passes runSession for 12 seeds × 150 steps against the model, reaching every outcome and warning, and frees every body", async () => {
@@ -568,7 +570,7 @@ test("seeded sessions: Design's timeline on the real kernel passes runSession fo
   }
   if (process.env.FISSION_SEED) return;
   const wanted = [
-    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref"].map((o) => `op:${o}`),
+    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref", "add-move", "set-move"].map((o) => `op:${o}`),
     // 26e: built on a suppressed item is greyed (Q3), so a session's extrudes never fail (hand-worked above).
     ...["built", "suppressed", "greyed", "rolled-back"].map((x) => `status:${x}`),
     // 26e: sketches on a face followed, held when their face goes, and extrudes of held ones saying their source is lost.
