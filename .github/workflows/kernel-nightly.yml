@@ -276,6 +276,9 @@ jobs:
           echo $code >"$out/exit-code.txt"
           # Counts only (no mutant names): 0 all caught, 2 some missed, 3 some timed out, 124/130 cut off.
           echo "exit code $code; caught $(grep -c . "$out/caught.txt" 2>/dev/null || echo 0), missed $(grep -c . "$out/missed.txt" 2>/dev/null || echo 0)"
+          # Anything else (4: the unmutated tests failed; 1: cargo mutants
+          # itself failed) makes the shard red, and collect files an issue.
+          case $code in 0 | 2 | 3 | 124 | 130) ;; *) exit 1 ;; esac
       - name: Save the results to kernel-results
         if: always()
         env:
@@ -302,6 +305,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+          # Each job's result: a red one with no failure folder files an issue too.
+          JOBS: ${{ toJSON(needs) }}
         run: |
           export BRANCH=$REF
           r="$RUNNER_TEMP/results"

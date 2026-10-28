@@ -225,6 +225,9 @@ jobs:
           COMMIT: ${{ github.sha }}
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
+          # Each job's result: a red one with no failure folder (a fuzzer that
+          # crashed or ran out of time) files an issue too.
+          JOBS: ${{ toJSON(needs) }}
         # Copied out first: the script switches this checkout to test-results.
         run: |
           cp .github/scripts/collect-fuzz.sh .github/scripts/file_issues.py .github/scripts/sim_numbers.py "$RUNNER_TEMP/"
