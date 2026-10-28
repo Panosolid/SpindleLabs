@@ -2051,6 +2051,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     unmount() {
       putAwayByRestore = ctx.history.restoring();
       if (!putAwayByRestore) editingSketch = null;
+      // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the
+      // workspace away may have taken that sketch out, so it is dropped as a tool change drops it (app sweep 2026-10-28).
+      toolChanges++;
+      moves++;
       sleep();
       void bodies.close();
       viewport.showSketches([]);

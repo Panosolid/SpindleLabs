@@ -85,10 +85,16 @@ function click(m, at) {
     if (from[0] === at[0] || from[1] === at[1]) return null; // on the first corner's row or column
     const c = [from, [at[0], from[1]], at, [from[0], at[1]]];
     m.pending = null;
-    return draw(STEP.rectangle, () => c.forEach((p, i) => m.lines.push({ a: p, b: c[(i + 1) % 4] })));
+    // A side a line already joins is that line, not a second on top (app sweep 2026-10-28); all four there: nothing drawn.
+    const joined = (a, b) => m.lines.some((l) => (key(l.a) === key(a) && key(l.b) === key(b)) || (key(l.a) === key(b) && key(l.b) === key(a)));
+    const sides = c.map((p, i) => ({ a: p, b: c[(i + 1) % 4] })).filter((l) => !joined(l.a, l.b));
+    if (sides.length === 0) return null;
+    return draw(STEP.rectangle, () => m.lines.push(...sides));
   }
   const radius = Math.sqrt((at[0] - from[0]) ** 2 + (at[1] - from[1]) ** 2);
   if (radius === 0) return null;
+  // The same circle there already (its centre a point, the same radius) draws nothing, and the centre stays (SAME_CIRCLE).
+  if (m.circles.some((c) => key(c.centre) === key(from) && c.radius === radius)) return null;
   m.pending = null;
   return draw(STEP.circle, () => m.circles.push({ centre: from, radius }));
 }
@@ -179,16 +185,14 @@ async function foldBrowser(page) {
  * can't be waited for, and the app hands a click to the tool that is
  * current when the kernel's snap comes back, not the one current when it
  * was clicked; so a key or an undo after such a click waits a moment
- * first, as a person always does. An undo always waits that moment: a
- * hover answered after Undo redraws the sketch as it was before it (the
- * known bug HOVER_REDRAWS_AFTER_UNDO, pinned in sketch-tool.mjs). (Both
- * found by this test; reported, not fixed here: the click handling is the
- * tool threads' code.)
+ * first, as a person always does. (Found by this test; reported, not fixed
+ * here: the click handling is the tool threads' code.) An undo no longer
+ * waits otherwise: a hover answered after Undo used to redraw the sketch
+ * as it was before it, fixed in the app sweep of 2026-10-28.
  */
 async function randomStep(page, m, r) {
   const roll = r();
-  const undoing = roll >= 0.18 && roll < 0.26 && m.undo.length > 0;
-  if ((roll < 0.26 && m.unseen) || undoing) await page.waitForTimeout(300);
+  if (roll < 0.26 && m.unseen) await page.waitForTimeout(300);
   m.unseen = false;
   if (roll < 0.12) {
     const tool = ["line", "rectangle", "circle"][Math.floor(r() * 3)];

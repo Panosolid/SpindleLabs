@@ -178,6 +178,7 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
     button.setAttribute("aria-expanded", "true");
     place();
     doc.addEventListener("pointerdown", outside, true);
+    doc.defaultView?.addEventListener("resize", place); // turned sideways or the window resized: placed again, never left off the screen
     if (focusFirst) usable()[0]?.focus();
   }
   function close(refocus = false) {
@@ -186,6 +187,7 @@ export function menuButton(doc: Document, options: MenuButtonOptions): MenuButto
     isOpen = false;
     button.setAttribute("aria-expanded", "false");
     doc.removeEventListener("pointerdown", outside, true);
+    doc.defaultView?.removeEventListener("resize", place);
     if (refocus) button.focus();
   }
   function outside(e: Event) {

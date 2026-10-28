@@ -32,6 +32,14 @@ export type KernelRequest = {
 
 export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure };
 
+/**
+ * What every call answers when the kernel's own file (the .wasm) didn't
+ * download or compile, in the words the app uses for a worker that didn't
+ * load, never the browser's ("Failed to fetch", a 404's text): app sweep
+ * 2026-10-28, finding 7.
+ */
+export const KERNEL_NOT_DOWNLOADED = "The geometry kernel didn't start (its file didn't download). Reload the page to try again.";
+
 const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
 
 /**
