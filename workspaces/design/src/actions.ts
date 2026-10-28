@@ -186,7 +186,8 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         for (const f of features) files.push(await ctx.kernel.call("export_stl", await featureSpec(ctx.kernel, doc, f), kindOf(f)));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
-        save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`);
+        const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;
+        save(one ? files[0].bytes : joinStl(files.map((f) => f.bytes), name), file);
         // Mark the bodies that warned on screen too: every face of one moves in single precision.
         const warned = features.filter((_, i) => files[i].warning);
         if (warned.length > 0)
@@ -194,7 +195,8 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         else ctx.viewport.clearOverlay(STL_OVERLAY);
         // Which body, when there are several: its browser row's number.
         const place = (f: Feature) => `Body ${order.indexOf(f) + 1}`;
-        const message = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : [])).join(" ");
+        const warnings = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : []));
+        const message = [`Exported ${file}.`, ...warnings].join(" "); // the person sees that it happened, and what the file is called
         return { message, bad: warned.length > 0 };
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };

@@ -1,7 +1,7 @@
 {
   "name": "SpindleLabs",
   "short_name": "SpindleLabs",
-  "description": "Free parametric CAD that works in your browser, online or off.",
+  "description": "Free parametric CAD that works in your browser.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

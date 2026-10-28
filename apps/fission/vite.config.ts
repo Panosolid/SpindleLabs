@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import { licencesPlugin } from "./licences.mjs";
+import { OFFLINE_MODE } from "./offline.config.mjs";
 import { offlinePlugin } from "./offline.mjs";
 
 // The kernel's own licence (it comes with each kernel release) beside the app as
@@ -16,9 +17,10 @@ const kernelLicence = {
 export default defineConfig({
   // Relative paths so the built site works from any URL, including GitHub Pages.
   base: "./",
+  define: { __OFFLINE_MODE__: JSON.stringify(OFFLINE_MODE) },
   // The kernel worker imports the wasm-bindgen ES module.
   worker: { format: "es", plugins: () => [licencesPlugin({ emit: false })] },
   // third-party-licences.txt beside the app, checked against what is bundled (audit L2).
-  // sw.js, written last from every file of the build (offline mode, offline.mjs).
+  // sw.js, written last: the offline worker, or the clean-up worker while offline mode is off (offline.mjs).
   plugins: [licencesPlugin({ emit: true }), kernelLicence, offlinePlugin()],
 });
