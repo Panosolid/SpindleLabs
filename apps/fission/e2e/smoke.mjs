@@ -838,7 +838,7 @@ try {
     const f = await downloadStl();
     // 12 triangles: 84 + 12 × 50 = 684 bytes. Corners 0/40, 0/30, 0/20 are
     // exact in single precision, so the volume is exactly 40 × 30 × 20.
-    assert.equal(f.name, "fission-box.stl");
+    assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.header, "SpindleLabs STL:");
     assert.equal(f.size, 684);
     assert.equal(f.tris.length, 12);
@@ -856,7 +856,7 @@ try {
     assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"]]);
     assert.equal(await page.isVisible("#selection-actions"), true);
     const f = await downloadStl("#selection-actions [data-action='design.download-stl']");
-    assert.equal(f.name, "fission-box.stl");
+    assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.size, 684);
     assert.equal(stlVolume(f.tris), 24000); // 40 × 30 × 20, exact in single precision
     assert.equal(await text("action-note"), "");
@@ -879,7 +879,7 @@ try {
     assert.ok(Number.isInteger(n) && n >= 3, `${f.tris.length} triangles`);
     const expected = (n / 2) * 400 * Math.sin((2 * Math.PI) / n) * 20;
     assert.ok(Math.abs(stlVolume(f.tris) - expected) <= 1e-6 * expected, `${stlVolume(f.tris)} vs ${expected}`);
-    assert.equal(f.name, "fission-cylinder.stl");
+    assert.equal(f.name, "spindlelabs-cylinder.stl");
   });
 
   await check("a part too big for single precision is exported with a warning", async () => {

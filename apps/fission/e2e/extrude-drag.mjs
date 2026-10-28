@@ -13,7 +13,7 @@
 // with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch, untilBodies } from "./browser.mjs";
-import { sheetsClearFor } from "./start.mjs";
+import { closePanels, sheetsClearFor } from "./start.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
@@ -203,6 +203,7 @@ try {
       const page = await fresh(width, touch);
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await press("#extrude");
+      if (touch) await closePanels(page, true); // the Properties sheet opens by itself for Extrude's box; put away, the view is clear to tap and drag in
       // Both sketches, then the box's six flat faces (UX1c).
       await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces", panelState);
       // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.
@@ -308,6 +309,7 @@ try {
       const page = await fresh(width, touch);
       const before = await undoTitle(page);
       await (touch ? page.tap("#extrude") : page.click("#extrude"));
+      if (touch) await closePanels(page, true); // as above
       await until(page, () => document.querySelector("#extrude-panel")?.dataset.previewVolume !== "", null, "a preview");
       await until(page, () => document.querySelector("#viewport").dataset.arrow, null, "the arrow");
       await dragArrow(page, 60, touch);

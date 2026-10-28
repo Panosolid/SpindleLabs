@@ -342,6 +342,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     facts() {
       if (inspecting.none()) return;
       fold?.reveal();
+      ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
       ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
