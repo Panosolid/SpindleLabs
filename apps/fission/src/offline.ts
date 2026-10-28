@@ -9,6 +9,11 @@
 // frame-guard.ts, which stops a framed page first.
 import "./styles/app-update.css";
 
+/** Offline mode's switch, from offline.config.mjs (set in vite.config.ts). Off: nothing is kept for offline use, and an earlier install is removed. */
+declare const __OFFLINE_MODE__: boolean;
+
+const PREFIX = "spindlelabs-"; // the caches sw.js makes
+
 type Shown = "ready" | "elsewhere";
 
 const WORDS: Record<Shown, string> = {
@@ -33,8 +38,38 @@ function showNotice(kind: Shown, reload: () => void) {
   document.body.append(box);
 }
 
+/**
+ * Offline mode is off: remove what an earlier build left in this browser,
+ * the service worker and its caches, so the live site is what opens. A page
+ * that came from that worker is reloaded once (sessionStorage stops a loop)
+ * to get the live copy. (A browser that still has the old worker is also
+ * handed the clean-up worker as sw.js, offline.mjs, which does the same.)
+ */
+async function removeOffline() {
+  const sw = navigator.serviceWorker;
+  const wasControlled = sw.controller !== null;
+  try {
+    for (const reg of await sw.getRegistrations()) await reg.unregister();
+    for (const key of await caches.keys()) if (key.startsWith(PREFIX)) await caches.delete(key);
+  } catch {
+    return; // blocked or private mode: nothing was kept
+  }
+  try {
+    if (wasControlled && !sessionStorage.getItem("spindlelabs.offline-removed")) {
+      sessionStorage.setItem("spindlelabs.offline-removed", "1");
+      location.reload();
+    }
+  } catch {
+    // no sessionStorage: leave the page as it is rather than risk a reload loop
+  }
+}
+
 export function startOffline() {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+  if (!__OFFLINE_MODE__) {
+    void removeOffline();
+    return;
+  }
   const sw = navigator.serviceWorker;
   let updating = false; // this tab pressed Reload
   const hadController = sw.controller !== null;
