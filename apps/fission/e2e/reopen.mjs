@@ -257,6 +257,41 @@ try {
     }
   });
 
+  await check("a second tab started while the first is still opening the project opens it too", async () => {
+    // Real-use hunt A3: two tabs started together (a restored session, a bookmark clicked twice). The second
+    // found the first one's opening mark, took it for a freeze on the last visit and started a new project.
+    const { context, page } = await fresh(1280);
+    try {
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      const id = await page.evaluate(() => document.body.dataset.projectId);
+      await page.close({ runBeforeUnload: true });
+      // Tab 1: the kernel's answers held, so it is still opening the box when tab 2 starts.
+      const first = await context.newPage();
+      await first.addInitScript({ content: `sessionStorage.setItem("hold-kernel", "1"); (${kernelValve})();` });
+      await first.goto(url + "?test-hooks#design");
+      await first.waitForFunction(([key, id]) => localStorage.getItem(key) === id, [OPENING_KEY, id]);
+      const second = await context.newPage();
+      second.on("pageerror", (e) => errors.push(e.message));
+      await second.goto(url);
+      await second.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³", null, { timeout: 10_000 });
+      assert.equal(await second.evaluate(() => document.body.dataset.projectId), id, "tab 2 opened the box");
+      assert.equal(await status(second), "");
+      await first.waitForFunction(() => document.querySelector("#file-status").textContent === "Opening the last project…"); // tab 1 still opening
+      await first.evaluate(() => window.releaseKernel());
+      await first.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      await first.waitForFunction((key) => localStorage.getItem(key) === null, OPENING_KEY, { timeout: 10_000 });
+      // Both closed; the next visit opens the box, with no word of a freeze.
+      await first.close({ runBeforeUnload: true });
+      await second.close({ runBeforeUnload: true });
+      const next = await context.newPage();
+      await next.goto(url);
+      await next.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      assert.equal(await status(next), "");
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const width of [1280, 375]) {
     await check(`${width} px: a last project slow to open offers Start fresh instead, which keeps it for the next visit`, async () => {
       const { context, page } = await freshValved(width);
