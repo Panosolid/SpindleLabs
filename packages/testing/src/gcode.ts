@@ -83,6 +83,10 @@ export interface Move {
   /** Feed rate, mm/min. */
   feed: number;
   seconds: number;
+  /** The feature the slicer said it was printing (its last `;TYPE:` or `;FEATURE:` comment), if any. */
+  feature?: string;
+  /** Filament still pulled back when the move starts (mm), or a firmware retraction (G10) not yet primed. */
+  retracted: boolean;
   /** For an arc: its centre and which way it turns; the path is the arc, not the straight line. */
   arc?: { centre: { x: number; y: number }; clockwise: boolean; sweep: number };
 }
@@ -214,10 +218,14 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
   let feed = 0;
   let retracted = 0;
   let noFeedReported = false;
+  let feature: string | undefined;
+  let firmwareRetracted = false;
 
   const lines = text.split(/\r\n|\n|\r/);
   for (let i = 0; i < lines.length; i++) {
     const n = i + 1;
+    const said = /;\s*(?:TYPE|FEATURE)\s*:\s*(.*\S)/i.exec(lines[i]);
+    if (said) feature = said[1];
     const parsed = parseLine(lines[i], n);
     if (parsed === null) continue;
     out.problems.push(...parsed.problems);
@@ -278,6 +286,7 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
           length = Math.hypot(target.x - pos.x, target.y - pos.y, target.z - pos.z);
         }
         const sideways = Math.hypot(target.x - pos.x, target.y - pos.y) >= STILL;
+        const wasRetracted = retracted > 0 || firmwareRetracted;
         let kind: MoveKind;
         let volume = 0;
         if (de < 0) {
@@ -303,7 +312,7 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
           }
         }
         if (length >= STILL || de !== 0) {
-          out.moves.push({ line: n, kind, from: pos, to: target, e: de, volume, length, feed, seconds, ...(arc ? { arc } : {}) });
+          out.moves.push({ line: n, kind, from: pos, to: target, e: de, volume, length, feed, seconds, retracted: wasRetracted, ...(feature !== undefined ? { feature } : {}), ...(arc ? { arc } : {}) });
         }
         out.volume += volume;
         out.filament += de;
@@ -346,9 +355,11 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
       }
       case "G10":
         out.firmwareRetracts.push({ line: n, kind: "retract" });
+        firmwareRetracted = true;
         break;
       case "G11":
         out.firmwareRetracts.push({ line: n, kind: "prime" });
+        firmwareRetracted = false;
         break;
       case "G4": // dwell: time, no movement
         out.seconds += (words.get("P") ?? 0) / 1000 + (words.get("S") ?? 0);
