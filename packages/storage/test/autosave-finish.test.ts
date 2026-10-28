@@ -236,3 +236,29 @@ test("finish after changes that end where the store already is writes nothing", 
   assert.deepEqual(h.asked, [20]);
   assert.equal(j.items.size, 0);
 });
+
+test("finish back at the stored state while a save of another state is in flight stores the state left (worked by hand)", async () => {
+  // App sweep 2026-10-28, finding 14. 20 is stored. An edit to 30 is saved at t = 2000 and that save is still running
+  // when the user undoes back to 20 and opens another project (finish). The project left is 20, the text last
+  // written, but the store is about to hold 30: so 20 must be journalled and stored after the flight, giving the
+  // asks 20, 30, 20 with 20 held last, and the journal empty once that lands. Skipping because 20 was the text
+  // last written leaves the store at 30, a state the user undid.
+  const h = heldStore();
+  const j = memoryJournal();
+  const { autosave, edit, replace, clock } = page(h.store, j.journal);
+  edit(20);
+  await clock.advance(1000);
+  await h.finishOne();
+  edit(30);
+  await clock.advance(1000);
+  assert.deepEqual(h.asked, [20, 30], "30 in flight");
+  edit(20);
+  autosave.finish();
+  replace(99);
+  assert.equal(textOf(j.items.get(unsavedKey("p"))), projectToJson(part(20)), "20 journalled at once");
+  while (h.waiting.length > 0) await h.finishOne();
+  await settle();
+  assert.deepEqual(h.asked, [20, 30, 20]);
+  assert.equal(h.stored.at(-1), 20, "the store holds the state the user left");
+  assert.equal(j.items.size, 0, "the journal entry goes once 20 is stored");
+});

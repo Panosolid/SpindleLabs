@@ -264,7 +264,9 @@ export function startAutosave(
       }
       stop();
       if (text === null) return;
-      if (text === written) return stored(v, writtenAt);
+      // The store holds it already, unless a save of another state is running: that one lands after, so this
+      // state is stored again behind it (app sweep 2026-10-28, finding 14).
+      if (text === written && !inFlight) return stored(v, writtenAt);
       if (journal) {
         try {
           journal.setItem(key, journalEntry(text, at)); // kept now, should the page go before the store's save
