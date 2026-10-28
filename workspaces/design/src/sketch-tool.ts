@@ -22,8 +22,9 @@
 
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
 import { greyedItems, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
-import { centreClick, centreHover, centrePreview, type CentreArcTool } from "./centre-arc.ts";
-import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, planeFor, planeOf, pointAt, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
+import { arcThere, centreClick, centreHover, centrePreview, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
+import { SAME_PLACE } from "./snap.ts";
+import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
 
 export { pointAt };
 
@@ -200,11 +201,11 @@ export const SAME_LINE = "There is a line between these two points already: a se
 
 function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: DesignDocument; tool: LineTool; drew: boolean; note?: string } {
   const sketch = sketchOf(doc, tool.sketch);
-  const there = pointAt(sketch, at);
+  const there = pointNear(sketch, at);
   const end: LineEnd = there ?? [at[0], at[1]];
   if (tool.from === null) return { doc, tool: { ...tool, from: end }, drew: false };
   const [fx, fy] = whereIs(sketch, tool.from);
-  if (fx === at[0] && fy === at[1]) return { doc, tool, drew: false };
+  if ((fx === at[0] && fy === at[1]) || there === tool.from) return { doc, tool, drew: false };
   const from = tool.from;
   if (there !== null && sketch.curves.some((c) => c.kind === "line" && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
   const drawn = drawLine(doc, tool.sketch, tool.from, end);
@@ -218,8 +219,11 @@ const SAME_ROW = "A rectangle needs a width and a height: click the opposite cor
 function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY): { doc: DesignDocument; tool: RectangleTool; drew: boolean; note?: string } {
   sketchOf(doc, tool.sketch);
   if (tool.corner === null) return { doc, tool: { ...tool, corner: [at[0], at[1]] }, drew: false };
-  if (tool.corner[0] === at[0] || tool.corner[1] === at[1]) return { doc, tool, drew: false, note: SAME_ROW };
-  return { doc: drawRectangle(doc, tool.sketch, tool.corner, at).doc, tool: { ...tool, corner: null }, drew: true };
+  if (flat(tool.corner, at)) return { doc, tool, drew: false, note: SAME_ROW };
+  const drawn = drawRectangle(doc, tool.sketch, tool.corner, at).doc;
+  // Every side a line already there (the same rectangle twice): nothing drawn, as the line tool says for one side.
+  if (drawn === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
+  return { doc: drawn, tool: { ...tool, corner: null }, drew: true };
 }
 
 /**
@@ -237,10 +241,19 @@ export const NO_RADIUS = "A circle needs a radius: click a point on the circle a
 export const GRID_ATE_RADIUS = "The grid pulled that point onto the circle's centre, so it has no radius: click further out, make the grid smaller, or turn off Snap to grid.";
 
 /**
+ * Why a circle on one already there draws nothing: the same centre point
+ * and a radius within SAME_PLACE of its radius, the circles projection.ts
+ * judges the same (`onCurve`). Two circles on top of each other make no
+ * outline the kernel can tell apart.
+ */
+export const SAME_CIRCLE = "There is a circle this size round this centre already: a second one on top of it would break the outline.";
+
+/**
  * A circle's two clicks: the centre (an existing point there is shared),
  * then a point on the circle. The radius is the distance between the two
  * snapped clicks (`distance`); the second click is not kept as a point.
- * A second click on the centre draws nothing and says why.
+ * A second click on the centre, or a circle on one already there
+ * (`SAME_CIRCLE`), draws nothing and says why.
  */
 function circleClick(doc: DesignDocument, tool: CircleTool, at: SketchXY): { doc: DesignDocument; tool: CircleTool; drew: boolean; note?: string } {
   const sketch = sketchOf(doc, tool.sketch);
@@ -248,6 +261,7 @@ function circleClick(doc: DesignDocument, tool: CircleTool, at: SketchXY): { doc
   const radius = distance(tool.centre, at);
   if (radius === 0) return { doc, tool, drew: false, note: NO_RADIUS };
   const centre: LineEnd = pointAt(sketch, tool.centre) ?? tool.centre;
+  if (typeof centre === "string" && sketch.curves.some((c) => c.kind === "circle" && c.centre === centre && Math.abs(c.radius - radius) <= SAME_PLACE)) return { doc, tool, drew: false, note: SAME_CIRCLE };
   return { doc: drawCircle(doc, tool.sketch, centre, radius).doc, tool: { ...tool, centre: null }, drew: true };
 }
 
@@ -319,9 +333,9 @@ const ONE_LINE = "An arc needs to bend: click a point it passes through off the 
  * (`arcThrough`), one undo step. Ends landing on existing points share
  * them (an arc closing a chain of lines); the centre shares a point only
  * if one is exactly there, else it is a new one (usually off the grid);
- * the third click is not kept. An end on the start, or a third click that
- * makes no bend (on an end, or in line with both), draws nothing and says
- * why.
+ * the third click is not kept. An end on the start, a third click that
+ * makes no bend (on an end, or in line with both), or an arc on top of one
+ * already there (`arcThere`) draws nothing and says why.
  */
 function arcClick(doc: DesignDocument, tool: ArcTool, at: SketchXY): { doc: DesignDocument; tool: ArcTool; drew: boolean; note?: string } {
   const sketch = sketchOf(doc, tool.sketch);
@@ -333,7 +347,9 @@ function arcClick(doc: DesignDocument, tool: ArcTool, at: SketchXY): { doc: Desi
   const arc = arcThrough(tool.start, tool.end, at);
   if (!arc) return { doc, tool, drew: false, note: ONE_LINE };
   const share = (p: SketchXY): LineEnd => pointAt(sketch, p) ?? p;
-  const drawn = drawArc(doc, tool.sketch, share(arc.start), share(arc.end), share(arc.centre));
+  const ends = [share(arc.start), share(arc.end), share(arc.centre)] as const;
+  if (arcThere(sketch, ...ends)) return { doc, tool, drew: false, note: SAME_ARC };
+  const drawn = drawArc(doc, tool.sketch, ...ends);
   return { doc: drawn.doc, tool: { ...tool, start: null, end: null }, drew: true };
 }
 
@@ -415,7 +431,9 @@ const NO_TURN = "A tangent arc needs to turn: click off the line it leaves along
  * chains: ending on a new point the tool carries on from it, leaving
  * along the arc just drawn; ending on a point the sketch already had
  * ends the chain. A first click that is not a free end, an end on the
- * start, or one straight ahead or behind draws nothing and says why.
+ * start, or one straight ahead or behind draws nothing and says why. (It
+ * can't land on an arc already there: an arc on top of one ending at its
+ * start would make that start no free end.)
  */
 function tangentClick(doc: DesignDocument, tool: TangentTool, at: SketchXY): { doc: DesignDocument; tool: TangentTool; drew: boolean; note?: string } {
   const sketch = sketchOf(doc, tool.sketch);

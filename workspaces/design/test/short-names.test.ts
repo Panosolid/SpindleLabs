@@ -203,3 +203,118 @@ test("only Design's copies of a renamed preset's old name follow; another worksp
   ]);
   assert.equal(now.timeline.features[1].intent.summary, "Sketch 1 on a face of Box 1");
 });
+
+// ---- A file's names follow the rename rules (app sweep 2026-10-28, finding 17) ----
+// Before: names from a file were taken as they were, so two items could
+// share one (ignoring case), and a name could be empty, 5,000 characters
+// long or hold a line break, none of which Rename allows. A name that is
+// not text is refused (document.test.ts); the rest are repaired as the
+// file opens, the first item keeping a name two share, and every copy of a
+// repaired name (another item's `from`) following it.
+import { NAME_LIMIT } from "../src/timeline-edits.ts";
+
+/** Box 1 (feature-1), Sketch 1 on its top (from Box 1), Extrude 1 of it, and Box 2 (feature-6), saved and read back with names given. */
+function namedFile(labels: Record<string, unknown>): DesignDocument {
+  const s = addFaceSketch(partDocument("box", 40, 30, 20), { plane: "face:feature-1/top", feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
+  let doc = extrudeSketch(drawCircle(s.doc, s.id, [20, 15], 5).doc, s.id, 8).doc;
+  doc = insertPreset(doc, "box", 10, 10, 10).doc;
+  const d = JSON.parse(JSON.stringify(doc));
+  for (const f of d.timeline.features) if (Object.hasOwn(labels, f.id)) f.provenance.self.label = labels[f.id];
+  for (const f of d.timeline.features) for (const o of f.provenance.from) if (Object.hasOwn(labels, o.id)) o.label = labels[o.id];
+  return readDesignDocument(d);
+}
+
+test("the file the name tests change has these items and names", () => {
+  const doc = namedFile({});
+  assert.deepEqual(doc.timeline.features.map((f) => f.id), ["feature-1", "sketch-2", "feature-5", "feature-6"]);
+  assert.deepEqual(names(doc), ["Box 1", "Sketch 1", "Extrude 1", "Box 2"]);
+});
+
+test("hand-worked: two items of one name, ignoring case, open with the second named apart: '(2)' after it", () => {
+  // Box 2 saved as "box 1": nameKey("box 1") = nameKey("Box 1"), taken by the first item, which keeps it;
+  // "box 1 (2)" is free, so the second item gets it.
+  assert.deepEqual(names(namedFile({ "feature-6": "box 1" })), ["Box 1", "Sketch 1", "Extrude 1", "box 1 (2)"]);
+  // Three items of one name: the second "(2)", the third "(3)", since "(2)" is then taken.
+  assert.deepEqual(names(namedFile({ "sketch-2": "Part", "feature-5": "PART", "feature-6": "part" })), ["Box 1", "Part", "PART (2)", "part (3)"]);
+  // "(2)" already some item's: the next number.
+  assert.deepEqual(names(namedFile({ "feature-1": "Part", "sketch-2": "Part (2)", "feature-6": "part" })), ["Part", "Part (2)", "Extrude 1", "part (3)"]);
+  // Composed and decomposed Café are one name (finding 18).
+  assert.deepEqual(names(namedFile({ "feature-1": "Café", "feature-6": "Café" })), ["Café", "Sketch 1", "Extrude 1", "Café (2)"]);
+});
+
+test("hand-worked: an empty name opens as the next free name of its kind", () => {
+  // Box 2 saved as "": it is the second box, so freshName gives 1 + 1 = Box 2, free.
+  assert.deepEqual(names(namedFile({ "feature-6": "" })), ["Box 1", "Sketch 1", "Extrude 1", "Box 2"]);
+  // Only spaces is empty too; Box 1 emptied while Box 2 keeps its name: the first box, 0 + 1 = Box 1.
+  assert.deepEqual(names(namedFile({ "feature-1": "   " })), ["Box 1", "Sketch 1", "Extrude 1", "Box 2"]);
+  // An empty sketch and extrude: Sketch 1 and Extrude 1 are free again once their own names are gone.
+  assert.deepEqual(names(namedFile({ "sketch-2": "", "feature-5": "" })), ["Box 1", "Sketch 1", "Extrude 1", "Box 2"]);
+  // Box 1 empty and Box 2 named "Box 1": Box 1 is taken, so the first box is Box 2... which is free, since Box 2 is named Box 1.
+  assert.deepEqual(names(namedFile({ "feature-1": "", "feature-6": "Box 1" })), ["Box 2", "Sketch 1", "Extrude 1", "Box 1"]);
+});
+
+test("the 40-character limit on open: 0.9× and 40 kept, 41, 1.1× and 5,000 cut to 40; characters, not code units", () => {
+  assert.equal(NAME_LIMIT, 40);
+  const opened = (label: string) => names(namedFile({ "feature-6": label }))[3];
+  // 0.9 × 40 = 36 and 40 stay as they are.
+  assert.equal(opened("n".repeat(36)), "n".repeat(36));
+  assert.equal(opened("n".repeat(40)), "n".repeat(40));
+  // 41, 1.1 × 40 = 44 and the sweep's 5,000 are cut to their first 40.
+  for (const n of [41, 44, 5000]) assert.equal(opened("n".repeat(n)), "n".repeat(40), `${n}`);
+  // "🔩" is two code units but one character: 41 cut to 40 of them (80 code units), never half of one.
+  assert.equal(opened("🔩".repeat(41)), "🔩".repeat(40));
+  // A space where the cut falls is dropped, as Rename drops the spaces round a name: 39 n, a space, then more.
+  assert.equal(opened(`${"n".repeat(39)} tail`), "n".repeat(39));
+  // Cut, then two alike: the second's base is cut to 36 so " (2)" fits in 40.
+  assert.deepEqual(names(namedFile({ "feature-1": "n".repeat(50), "feature-6": "N".repeat(45) })), ["n".repeat(40), "Sketch 1", "Extrude 1", `${"N".repeat(36)} (2)`]);
+});
+
+test("a line break, tab or other control character in a name opens as a space; the spaces round it go", () => {
+  assert.deepEqual(names(namedFile({ "feature-6": "Top\nplate" })), ["Box 1", "Sketch 1", "Extrude 1", "Top plate"]);
+  assert.deepEqual(names(namedFile({ "feature-6": "\tTop\r\n\u0007plate\n" })), ["Box 1", "Sketch 1", "Extrude 1", "Top plate"]);
+  // Nothing but control characters is an empty name.
+  assert.deepEqual(names(namedFile({ "feature-6": "\n\t" })), ["Box 1", "Sketch 1", "Extrude 1", "Box 2"]);
+});
+
+test("a repaired name's copies follow it: the sketch on Box 1's face names it as it opened", () => {
+  const doc = namedFile({ "feature-1": " Base\n" , "feature-6": "base" });
+  assert.deepEqual(names(doc), ["Base", "Sketch 1", "Extrude 1", "base (2)"]);
+  assert.deepEqual(doc.timeline.features[1].provenance.from, [{ workspace: "design", id: "feature-1", label: "Base" }]);
+});
+
+test("names the rules allow open exactly as saved, and a repaired file reads back as it opened (self-consistency)", () => {
+  const fine = namedFile({ "feature-1": "  ", "feature-6": "BOX 2" });
+  assert.deepEqual(names(fine), ["Box 1", "Sketch 1", "Extrude 1", "BOX 2"]);
+  for (const labels of [{}, { "feature-6": "box 1" }, { "feature-1": "x".repeat(5000), "feature-6": "X".repeat(5000) }, { "sketch-2": "a\nb", "feature-5": "A B" }]) {
+    const once = namedFile(labels);
+    assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(once))), once, JSON.stringify(labels).slice(0, 60));
+    // And every name obeys Rename's rules.
+    const keys = names(once).map(nameKey);
+    assert.equal(new Set(keys).size, keys.length);
+    for (const n of names(once)) assert.ok(n === n.trim() && n !== "" && [...n].length <= NAME_LIMIT && !/\p{Cc}/u.test(n), JSON.stringify(n));
+  }
+});
+
+test("5,000 boxes of one name, or with none, open in a moment, numbered in order (audit S2's limit)", () => {
+  const boxes = (label: string) => {
+    const one = partDocument("box", 1, 1, 1).timeline.features[0];
+    const features = Array.from({ length: 5_000 }, (_, k) => ({ ...one, id: `feature-${k + 1}`, provenance: { self: { workspace: "design", id: `feature-${k + 1}`, label }, from: [] } }));
+    return { version: 3, nextId: 5_001, profiles: [], sketches: [], timeline: { features } };
+  };
+  for (const [label, first, last] of [["Part", "Part", "Part (5000)"], ["", "Box 1", "Box 5000"]]) {
+    const start = performance.now();
+    const doc = readDesignDocument(boxes(label));
+    const ms = performance.now() - start;
+    // All one name: the first keeps it and the k-th is "Part (k)". None: the k-th box is the k-th, so Box k.
+    assert.deepEqual([names(doc)[0], names(doc)[1], names(doc)[4_999]], [first, label === "" ? "Box 2" : "Part (2)", last]);
+    assert.ok(ms < 2_000, `${JSON.stringify(label)}: ${ms.toFixed(0)} ms`);
+  }
+});
+
+test("a name that is not text is refused, naming its item: there is nothing to repair it from (finding 17)", () => {
+  // Before: a number opened as the item's name, shown as "42", and takenNames skipped it.
+  for (const [bad, said] of [[42, "42"], [null, "null"], [true, "true"], [["Box 1"], "a list"], [{}, "an object"]] as const)
+    assert.throws(() => namedFile({ "feature-6": bad }), { message: `Design feature feature-6's name must be text, not ${said}` });
+  // A missing name too.
+  assert.throws(() => namedFile({ "feature-6": undefined }), { message: "Design feature feature-6's name must be text, not undefined" });
+});

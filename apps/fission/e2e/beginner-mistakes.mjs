@@ -203,7 +203,8 @@ try {
     await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "Body 2 hidden");
     await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-export-stl")]);
     await until(page, () => /hidden/.test(document.getElementById("action-note")?.textContent ?? ""), null, "the note");
-    assert.equal(await text(page, "#action-note"), "Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");
+    // After the export's own words (the file it saved).
+    assert.equal(await text(page, "#action-note"), "Exported spindlelabs-box.stl. Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");
     await page.context().close();
   });
 } finally {

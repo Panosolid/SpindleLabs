@@ -1,0 +1,10 @@
+/* The assistant open (body.assistant-narrow, set by main.ts while the panel is open) in a narrow window (sweep bug 10): the panel takes a 320 px column, so on a window under 884 px (a sideways
+   phone, a half-width desktop window) the view is left under 564 px, too narrow for the floating browser (240 px) and the floating
+   Properties (300 px) side by side: Properties lay over the browser's rows. While the assistant is open there the browser steps aside
+   (as the phone's sheets are one at a time); closing the assistant brings it back. The view's bar wraps onto two rows in the narrow
+   view, so Properties stops 88 px above the view's bottom (it was 56 for one row) and never lies over it. Wider windows and split
+   view are untouched. */
+@media (min-width: 641px) and (max-width: 883px) {
+  .assistant-narrow #workspace:not([data-split="on"]) #browser:not(#none) { display: none; }
+  .assistant-narrow #workspace:not([data-split="on"]) #properties.properties-fold:not([data-folded]) { max-height: calc(100% - 112px - 88px); }
+}
