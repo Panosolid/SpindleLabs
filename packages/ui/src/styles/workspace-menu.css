@@ -6,6 +6,11 @@
 .workspace-menu .menu-button-item[aria-current="true"]:not(#none) { box-shadow: inset 2px 0 0 #4aa8ff; color: #e6e8eb; font-weight: 600; }
 .workspace-menu .menu-button-item[data-soon]:not(#none) { color: #8a919c; }
 .workspace-menu .menu-button-note { font-size: 12px; color: #8a919c; }
+/* Wide screens (UX2): the button a raised pill, so it reads as the place to switch. */
+@media (min-width: 641px) {
+  .workspace-menu .menu-button-toggle:not(#none) { padding: 5px 14px; background: var(--look-float-raised); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
+  .workspace-menu .menu-button-toggle:not(#none):hover { border-color: var(--look-accent); }
+}
 /* At phone width the longest name, MANUFACTURE ▾, must fit whole between
    File ▾ and Menu in CI's wide DejaVu Sans too (it ran 23 px into Menu):
    no extra letter spacing, slimmer sides and 13 px capitals. */

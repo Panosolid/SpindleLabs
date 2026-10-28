@@ -6,7 +6,7 @@
 // and keeps typing going, so a 10 mm square typed side by side closes
 // exactly on its first corner as four undo steps; a click with the
 // length locked lands at that length; a bad size shows why and locks
-// nothing; Escape in a box empties it without ending the line, and a
+// nothing, and Enter on it places nothing; Escape in a box empties it without ending the line, and a
 // second Escape ends it; letters typed in a box never reach the tool keys.
 // The rectangle's Width and Height the same way. At 375 px with taps: the
 // boxes whole on screen, a line typed by length and angle. Screenshots
@@ -189,6 +189,13 @@ await check("1280 px: a click with the length locked, a bad size, an angle too b
   await page.keyboard.type("r");
   assert.equal(await page.inputValue("#typed-length"), "1..r");
   assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "true");
+  // Enter on the red box places nothing (it used to draw to the pointer, the sketch hunt's typed-5) and keeps the keys there.
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  assert.equal(await data(page, "sketchPoints"), "0,0 9,12", "Enter on a red box drew nothing");
+  assert.equal(await focused(page), "typed-length");
+  assert.equal(await page.inputValue("#typed-length"), "1..r");
+  if (shots) await page.screenshot({ path: `${shots}/typed-enter-red-1280.png` });
   // Escape in a box empties it and leaves it, the line still going; a second Escape ends the line.
   await page.keyboard.press("Escape");
   assert.equal(await page.inputValue("#typed-length"), "");

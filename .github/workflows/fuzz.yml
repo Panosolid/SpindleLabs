@@ -117,7 +117,9 @@ jobs:
         run: |
           [ -f "$OUT/oracle.jsonl" ] || exit 0
           pip install -q cadquery-ocp mpmath
-          if ! python3 sketch_extrude.py "$OUT/oracle.jsonl" "$OUT/disagreements.txt"; then
+          # The oracle is private kernel code: its errors (a traceback names its
+          # files and lines) go to a file of the runner's, never this public log.
+          if ! python3 sketch_extrude.py "$OUT/oracle.jsonl" "$OUT/disagreements.txt" 2>"$RUNNER_TEMP/oracle-errors.txt"; then
             mkdir -p "$OUT/seed-oracle-${{ github.run_id }}"
             mv "$OUT/disagreements.txt" "$OUT/seed-oracle-${{ github.run_id }}/oracle-disagreements.txt"
             exit 1
@@ -130,7 +132,7 @@ jobs:
           PLANTED: ${{ runner.temp }}/planted
         run: |
           FISSION_STEP_FAULT=1 FISSION_FUZZ_SECONDS=60 FISSION_FUZZ_OUT="$PLANTED" npm run sessions -w @fission/testing
-          cd k/prototypes/oracle && python3 sketch_extrude.py "$PLANTED/oracle.jsonl" "$PLANTED/disagreements.txt" --planted
+          cd k/prototypes/oracle && python3 sketch_extrude.py "$PLANTED/oracle.jsonl" "$PLANTED/disagreements.txt" --planted 2>>"$RUNNER_TEMP/oracle-errors.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

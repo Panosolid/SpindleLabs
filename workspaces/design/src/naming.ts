@@ -28,7 +28,7 @@
 // holding ":", "/", "+" or ">" can never make two names read the same;
 // the counter's ids ("line-4") are unchanged by it.
 
-import type { BodySpec, BodyView, Outline } from "@fission/core";
+import type { BodySpec, BodyView, Outline, ShapeSpec } from "@fission/core";
 import type { CurveIds } from "./rebuild.ts";
 
 /** Each face's and edge's name on one body, by kernel index; null where none can be given. */
@@ -187,6 +187,9 @@ export function indexOf(names: BodyNames, kind: "face" | "edge", part: string): 
   return (kind === "face" ? names.faces : names.edges).indexOf(part);
 }
 
+/** The shape a spec builds, the moves round it taken off (step 35e2): what its faces are named from. */
+export const shapeSpec = (spec: BodySpec): ShapeSpec => ("moved" in spec ? spec.moved.body : spec);
+
 /**
  * The names of the body feature `featureId` built: from `spec`, the spec it
  * was built from (so the outline's pieces are the ones the kernel
@@ -198,8 +201,10 @@ export function indexOf(names: BodyNames, kind: "face" | "edge", part: string): 
  * names a body it built (scene.ts `shownBodies`).
  */
 export function featureNames(featureId: string, built: { spec: BodySpec; curves?: CurveIds }, view: BodyView): BodyNames {
-  if (!("extrude" in built.spec)) return nameBody(featureId, view, () => null);
-  const { profile, flip } = built.spec.extrude;
+  // A moved body's faces are its shape's, wherever it is (step 35e2).
+  const shape = shapeSpec(built.spec);
+  if (!("extrude" in shape)) return nameBody(featureId, view, () => null);
+  const { profile, flip } = shape.extrude;
   return nameBody(featureId, view, outlineCurves(profile, built.curves), pieceWays(profile, flip === true));
 }
 

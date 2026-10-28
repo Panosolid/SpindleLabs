@@ -15,7 +15,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { MODEL_FAULTS, type ModelFault } from "../src/timeline-model.ts";
 import { close, failureOf, MATCH_REL, modelSubject, randomSession, runSession, shrinkSession, TimelineFailure, type SessionCounts, type SessionOp, type TimelineSubject } from "../src/timeline-session.ts";
 
-const SEEDS = process.env.FISSION_SEED ? [BigInt(process.env.FISSION_SEED)] : Array.from({ length: 12 }, (_, k) => BigInt(k + 1));
+// 24 seeds from 35e2: with Moves drawn too, a reference lost on a built feature first happens at seed 18.
+const SEEDS = process.env.FISSION_SEED ? [BigInt(process.env.FISSION_SEED)] : Array.from({ length: 24 }, (_, k) => BigInt(k + 1));
 const STEPS = Number(process.env.FISSION_TIMELINE_STEPS ?? 150);
 
 /** Runs a session; on failure, the message carries the seed and the shrunk steps to save. */
@@ -52,7 +53,7 @@ test("seeded sessions on the model pass, and reach every kind of outcome", async
   for (const seed of SEEDS) for (const [k, v] of Object.entries(await session(() => modelSubject(), seed))) total[k] = (total[k] ?? 0) + v;
   if (process.env.FISSION_SEED) return; // one seed alone needn't reach everything
   const wanted = [
-    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref"].map((o) => `op:${o}`),
+    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref", "add-move", "set-move"].map((o) => `op:${o}`),
     "unchanged:undo",
     "unchanged:redo",
     "refused:before-dependency",
@@ -102,10 +103,9 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "end-edges-named-start": "two edges share a name",
   "lost-sketch-fails": "the rebuild differs from the model",
   "kept-not-forgotten": "the rebuild differs from the model",
-  // From 26e the first session that catches it (seed 4) saves while the kept extrude is greyed under a suppressed sketch,
-  // so the save changes nothing shown and the model catches it once the extrude shows; the save check's own catch is
-  // the test after the loop.
-  "save-drops-kept": "the rebuild differs from the model",
+  // From 35e2 the first session that catches it (seed 1) saves while a kept extrude shows; the model's own catch, a
+  // save while the kept extrude is greyed under a suppressed sketch and so changes nothing shown, is the test after the loop.
+  "save-drops-kept": "save and open changed the rebuild",
   "warning-dropped": "the rebuild differs from the model",
   "full-replay": "an edit rebuilt bodies that didn't change",
   "body-kept-by-item": "an edit kept a body whose shape changed",
@@ -113,11 +113,14 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "greyed-warns": "the rebuild differs from the model",
   "lost-plane-not-held": "the rebuild differs from the model",
   "face-sketch-unbound": "outcome differs from the model",
+  "move-shift-then-turn": "the rebuild differs from the model",
+  "move-not-held": "the rebuild differs from the model",
 };
 
 /** The first seed whose session the planted bug fails, and how. */
 async function firstFailure(make: () => TimelineSubject): Promise<{ seed: bigint; failure: TimelineFailure } | null> {
-  for (const seed of Array.from({ length: 12 }, (_, k) => BigInt(k + 1))) {
+  // 24 seeds from 35e2: the rarest catches (a reference falling back, a lost plane not held) come at seeds 18 and 19.
+  for (const seed of Array.from({ length: 24 }, (_, k) => BigInt(k + 1))) {
     const failure = await failureOf(make, randomSession(seed, 150));
     if (failure) return { seed, failure };
   }
@@ -131,8 +134,8 @@ for (const fault of MODEL_FAULTS)
     assert.equal(found.failure.check, CAUGHT_BY[fault], found.failure.message);
   });
 
-test("dropped kept shapes are caught by the save check too, when one is shown as it saves (seed 6)", async () => {
-  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(6n, 150)))?.check, "save and open changed the rebuild");
+test("dropped kept shapes are caught by the model too, when the save changes nothing shown (seed 3)", async () => {
+  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(3n, 150)))?.check, "the rebuild differs from the model");
 });
 
 test("without a rebuild from scratch, a stale cache is still caught by the model", async () => {

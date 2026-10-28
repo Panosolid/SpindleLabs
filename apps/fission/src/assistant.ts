@@ -122,20 +122,6 @@ export function viewOf(host: Pick<AssistantHost, "project" | "design">): AIView 
 const USED: Record<string, string[]> = { sphere: ["shape", "width"], cylinder: ["shape", "width", "height"] };
 const usedBy = (shape: unknown) => USED[String(shape)] ?? ["shape", "width", "depth", "height"];
 
-/**
- * The part before and after accepted `commands`, as Design's run makes it:
- * each command's sizes over the part's, and a size none names keeps the
- * panel's (`keeps`). When Accept adds a body there is no part before it.
- */
-export function partAfter(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown> } {
-  const before: Record<string, unknown> = view.adds === null ? { ...(view.setup[0] ?? {}) } : {};
-  const after: Record<string, unknown> = { ...view.keeps, ...(view.setup[0] ?? {}) };
-  for (const c of commands) if (c.op === "set_part") Object.assign(after, c);
-  delete before.op;
-  delete after.op;
-  return { before, after };
-}
-
 /** The preview's rows: each size the shape after uses that differs from before ("—" when there was none), in the panel's order. */
 export function previewRows(before: Record<string, unknown>, after: Record<string, unknown>): { parameter: string; before: unknown; after: unknown }[] {
   return usedBy(after.shape).flatMap((parameter) => (before[parameter] === after[parameter] ? [] : [{ parameter, before: before[parameter], after: after[parameter] }]));
@@ -144,30 +130,62 @@ export function previewRows(before: Record<string, unknown>, after: Record<strin
 /** A row of the preview: a size before and after, or a sketch started ("sketch", nothing before). */
 export type PreviewRow = { parameter: string; before: unknown; after: unknown };
 
+/** The sizes a set_part can name, as the panel's boxes hold them. */
+const SIZES = ["width", "depth", "height"] as const;
+
 /**
  * What accepting `commands` does, for the preview and its undo step's name
- * (AI7a): the part's rows and name when a set_part changes it, then a row
- * and a name for each sketch started, where it goes in the view's words.
- * `adds` is the view's "a new body as item 4, …" only when a set_part
- * comes before any sketch: a sketch put in first moves the marker, so the
- * item number would be a guess.
+ * (AI7a), in the order Design's run does them (sweep 2026-10-28: the
+ * preview said a set_part after an extrude changed the box in place, and
+ * Accept added a body). The part is followed through the answer as the
+ * run leaves it: a set_part changes it in place while it is a ready-made
+ * shape, else adds a new body (`withPart`), which is the part after it; an
+ * extrude makes its new body the part and puts its distance in the height
+ * box, so a size a later set_part leaves out keeps that. Each command gets
+ * its rows and its name where it comes. `adds` is the view's "a new body as
+ * item 4, …" for a set_part that adds before anything else is put in the
+ * timeline; after a sketch or an extrude the item number would be a guess,
+ * so it is "at the timeline marker". `before` and `after` are the part
+ * before the first set_part and after the last.
  */
 export function previewOf(view: AIView, commands: readonly Command[]): { before: Record<string, unknown>; after: Record<string, unknown>; rows: PreviewRow[]; label: string; adds: string | null } {
-  const { before, after } = partAfter(view, commands);
-  const parts = commands.findIndex((c) => c.op === "set_part");
-  const rows: PreviewRow[] = parts < 0 ? [] : previewRows(before, after);
-  const labels = rows.length > 0 ? [`${view.adds === null ? "" : "new "}${describePart(after)}`] : [];
+  const setup: Record<string, unknown> = { ...(view.setup[0] ?? {}) };
+  delete setup.op;
+  // The part as the run finds it: a preset's sizes, "other" (an extruded sketch, or no body: a set_part adds one), or none at all (a fresh design).
+  let part: Record<string, unknown> | "other" | null = view.setup.length > 0 ? setup : view.adds !== null ? "other" : null;
+  const panel: Record<string, unknown> = { ...view.keeps, ...setup };
+  let putIn = false;
+  let adds: string | null = null;
+  let before: Record<string, unknown> | undefined;
+  let after: Record<string, unknown> = { ...panel };
+  const rows: PreviewRow[] = [];
+  const labels: string[] = [];
   for (const c of commands) {
+    if (c.op === "set_part") {
+      for (const key of SIZES) if (typeof c[key] === "number") panel[key] = c[key];
+      const was: Record<string, unknown> = typeof part === "object" && part !== null ? part : {};
+      after = { ...panel, shape: c.shape };
+      before ??= was;
+      const changed = previewRows(was, after);
+      rows.push(...changed);
+      if (changed.length > 0) labels.push(`${part === "other" ? "new " : ""}${describePart(after)}`);
+      if (part === "other") adds ??= putIn || view.adds === null ? "a new body at the timeline marker" : view.adds;
+      part = after;
+      continue;
+    }
     // A drawing (AI7b): its own row, in the order sent, after the sketch it goes in.
     if (DRAW_OPS.includes(c.op)) {
       rows.push({ parameter: c.op.replace("draw_", ""), before: undefined, after: drawWords(c) });
       labels.push(drawWords(c));
       continue;
     }
-    // An extrude (AI7c): a row for the body it adds.
+    // An extrude (AI7c): a row for the body it adds, which is the part after it.
     if (c.op === EXTRUDE_OP) {
       rows.push({ parameter: "extrude", before: undefined, after: extrudeWords(c).replace(/^extrude /, "") });
       labels.push(extrudeWords(c));
+      part = "other";
+      putIn = true;
+      if (typeof c.distance === "number") panel.height = Math.abs(c.distance);
       continue;
     }
     // A rename (AI7d): a row for the name it gives.
@@ -181,11 +199,10 @@ export function previewOf(view: AIView, commands: readonly Command[]): { before:
     const where = (view.choiceWords && Object.hasOwn(view.choiceWords, on) ? view.choiceWords[on] : undefined) ?? on;
     rows.push({ parameter: "sketch", before: undefined, after: `new, on ${where}` });
     labels.push(`new sketch on ${where}`);
+    putIn = true;
   }
-  const sketchFirst = commands.findIndex((c) => c.op === "create_sketch");
-  const adds = parts < 0 || view.adds === null ? null : sketchFirst >= 0 && sketchFirst < parts ? "a new body at the timeline marker" : view.adds;
   // With no change at all, the part's own name, as before AI7a ("No change" is shown and Accept is off).
-  return { before, after, rows, label: labels.length > 0 ? labels.join(", then ") : describePart(after), adds };
+  return { before: before ?? { ...setup }, after, rows, label: labels.length > 0 ? labels.join(", then ") : describePart(after), adds };
 }
 
 /** "box 50 × 30 × 20 mm", "cylinder ⌀25 × 60 mm", "sphere ⌀30 mm": the undo step's name. */
@@ -378,14 +395,27 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     status.textContent = s ? SHORT[s.kind] : "off";
     status.closest("button")!.title = s ? `The AI assistant: ${info!.title}${away ? " (sends requests to the provider)" : " (stays on your machine)"}.` : "The optional AI assistant. No AI provider is active: nothing is sent anywhere.";
     const here = workspace === "design";
-    $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here;
-    $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here;
-    $("ai-ask-note").textContent = !here ? "The assistant can change Design's part; other workspaces get their AI features when they are built." : !s ? "Choose a provider in Settings below to ask." : "";
+    // Offline (offline mode): a provider that sends requests away can't be reached, so Ask is off and says why.
+    const offline = !navigator.onLine;
+    const cut = offline && away;
+    $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here || cut;
+    $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here || cut;
+    $("ai-ask-note").textContent = !here
+      ? "The assistant can change Design's part; other workspaces get their AI features when they are built."
+      : !s
+        ? "Choose a provider in Settings below to ask."
+        : cut
+          ? `You're offline: ${info!.title} needs an internet connection. Everything else in SpindleLabs works offline.`
+          : offline && s.kind === "in-browser"
+            ? "You're offline: the in-browser model works only if it was downloaded here before."
+            : "";
     const features = workspace === "community" ? [] : AI_FEATURES[workspace];
     const title = workspaceTitle;
     $("ai-features").innerHTML = `${features.length ? `<h3>Planned in ${escape(title)}</h3>${list(features)}` : ""}<h3>Planned across the project</h3>${list(AI_FEATURES.suite)}`;
   }
   let workspaceTitle = "Design";
+  addEventListener("online", () => render());
+  addEventListener("offline", () => render());
 
   function save(next: ProviderSettings | null) {
     settings = next;
@@ -625,7 +655,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     } catch (e) {
       say((e as Error).message, true);
     } finally {
-      button.disabled = !settings || workspace !== "design";
+      button.disabled = !settings || workspace !== "design" || (!navigator.onLine && sendsAway(settings)); // as render() leaves it
     }
   });
 

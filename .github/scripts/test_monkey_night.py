@@ -86,6 +86,45 @@ class Night(unittest.TestCase):
         failed, files = self.night("regression monkey-x.json: FAIL at action 3: a: b\nseed 1: pass (2000 actions)\n", first=1, count=1)
         self.assertEqual(failed, 0)
 
+    def test_a_failing_self_test_is_a_failure(self):
+        # monkey.mjs checks itself before the seeds (Save beside a stray
+        # download) and counts a failure there in "monkey: N failed"; both
+        # seeds passing must not make the night read clean.
+        log = ("self-test save beside a stray download: FAIL: Save gave 12 bytes that aren't a project\n"
+               "seed 5: pass (2000 actions)\nseed 6: pass (2000 actions)\nmonkey: 1 failed\n")
+        failed, files = self.night(log, first=5)
+        self.assertEqual(failed, 1)
+        # By hand: 2 sessions, 0 failed seeds, 1 failed self-test, so "1 FAILED".
+        self.assertEqual(files["report.txt"],
+                         "Monkey, seeds 5-6: 2 session(s) of 2000 actions in Chromium; 1 FAILED\n"
+                         "self-test save beside a stray download: FAIL: Save gave 12 bytes that aren't a project\n"
+                         "seed 5: pass (2000 actions)\n"
+                         "seed 6: pass (2000 actions)\n")
+        report = files["seed-monkey-self-test/monkey-report.txt"].splitlines()
+        self.assertEqual(report[1],
+                         "failure: self-test save beside a stray download: Save gave 12 bytes that aren't a project | the self-test; "
+                         "replay: cd apps/fission && npm run build && FISSION_SEED=5 MONKEY_STEPS=1 node e2e/monkey.mjs")
+        self.assertEqual(list(kinds_of({"monkey-report.txt": files["seed-monkey-self-test/monkey-report.txt"]})),
+                         ["monkey self-test save beside a stray download: Save gave # bytes that aren't a project"])
+        # A passing self-test is no failure.
+        failed, files = self.night("self-test save beside a stray download: pass\nseed 5: pass (2000 actions)\nmonkey: all passed\n",
+                                   first=5, count=1)
+        self.assertEqual((failed, sorted(files)), (0, ["report.txt"]))
+
+    def test_a_failure_the_lines_miss_is_a_failure(self):
+        # The monkey's own count is the last word: "monkey: 2 failed" with
+        # only one FAIL line in the log (a new check printing some other way)
+        # leaves one failure unexplained, and that is a failure too.
+        log = "seed 5: FAIL at action 3: a: b\nseed 6: pass (2000 actions)\nmonkey: 2 failed\n"
+        failed, files = self.night(log, first=5)
+        self.assertEqual(failed, 2)
+        self.assertIn("failure: the monkey counted 2 failed but its log shows 1 FAIL line(s)",
+                      files["seed-monkey-unexplained/monkey-report.txt"])
+        # The count agreeing: nothing extra.
+        failed, files = self.night(LOG, saved=[20261026])
+        self.assertEqual(failed, 1)
+        self.assertNotIn("seed-monkey-unexplained/monkey-report.txt", files)
+
     def test_the_kind_takes_numbers_out(self):
         _, files = self.night(LOG, saved=[20261026])
         kinds = kinds_of({"monkey-report.txt": files["seed-monkey-20261026/monkey-report.txt"]})

@@ -173,7 +173,7 @@ add_run() {
     }' >>summary.txt
   fi
   if [ -f journeys/latest.txt ]; then
-    { echo ""; echo "Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, or the slowest walk more than 15% over):"; sed 's/^/  /' journeys/latest.txt; echo "journeys/flags.txt lists every FLAG line so far."; } >>summary.txt
+    { echo ""; echo "Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):"; sed 's/^/  /' journeys/latest.txt; echo "journeys/flags.txt lists every FLAG line so far."; } >>summary.txt
   fi
   if [ -f golden/latest.txt ]; then
     { echo ""; echo "Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):"; sed 's/^/  /' golden/latest.txt; echo "golden/log.txt has one line per night."; } >>summary.txt

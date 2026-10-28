@@ -82,6 +82,164 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   await context.close();
 }
 
+// Sweep bugs 9, 15, 16 (2026-10-28): the AI sheet and Properties are one at a time and a tap on the view closes either; a sketch started
+// sideways and turned upright still shows its plane prompt; Escape with Menu open closes Menu only.
+{
+  const { page, context } = await open(375, 667);
+  const sheetsOpen = () => page.evaluate(() => ({ assistant: !document.getElementById("assistant").hidden, properties: document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", browser: document.getElementById("browser-toggle").getAttribute("aria-expanded") === "true" }));
+  await page.tap("#menu-toggle");
+  await page.tap("#assistant-toggle");
+  await page.waitForSelector("#assistant", { state: "visible" });
+  await page.tap("#properties-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: false, properties: true, browser: false }, "9: opening Properties closes the AI sheet");
+  await page.tap("#menu-toggle");
+  await page.tap("#assistant-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: true, properties: false, browser: false }, "9: opening the AI sheet closes Properties");
+  await page.tap("#browser-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: false, properties: false, browser: true }, "9: opening the Browser closes the AI sheet");
+  await page.tap("#menu-toggle");
+  await page.tap("#assistant-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: true, properties: false, browser: false }, "9: opening the AI sheet closes the Browser");
+  if (shots) await page.screenshot({ path: `${shots}/phone-ai-sheet-375.png` });
+  const top = await page.$eval("#assistant", (e) => e.getBoundingClientRect().top);
+  await page.touchscreen.tap(187, Math.max(120, top / 2 + 40));
+  assert.deepEqual(await sheetsOpen(), { assistant: false, properties: false, browser: false }, "9: a tap on the view puts the AI sheet away");
+  assert.equal(await page.getAttribute("#assistant-toggle", "aria-pressed"), "false", "9: the AI button says it is off");
+  await context.close();
+}
+{
+  const context = await browser.newContext({ viewport: { width: 667, height: 375 }, hasTouch: true });
+  const page = await context.newPage();
+  await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(url);
+  await startWithBox(page, true);
+  await page.tap("#create-sketch");
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.waitForTimeout(400);
+  const s = await page.evaluate(() => {
+    const b = document.getElementById("sketch-plane-XY");
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { sheet: document.getElementById("properties-toggle").getAttribute("aria-expanded"), shown: r.width > 0 && r.height > 0, hittable: hit === b || b.contains(hit) };
+  });
+  assert.deepEqual(s, { sheet: "true", shown: true, hittable: true }, `15: a sketch started sideways and turned upright shows its plane prompt ${JSON.stringify(s)}`);
+  await page.setViewportSize({ width: 667, height: 375 });
+  await page.waitForTimeout(200);
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.waitForTimeout(200);
+  assert.equal(await page.isVisible("#sketch-plane-XY"), true, "15: and again after turning back and forth");
+  // 16: Menu open over the prompt, Escape: Menu closes, the prompt stays.
+  await page.tap("#menu-toggle");
+  assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "true");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "false", "16: Escape closes Menu");
+  assert.equal(await page.isVisible("#sketch-prompt"), true, "16: and does not also cancel the plane prompt");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isVisible("#sketch-prompt"), false, "16: a second Escape cancels the prompt as before");
+  await context.close();
+}
+
+// Sweep bugs 9, 15, 16 (2026-10-28): the AI sheet and Properties are one at a time and a tap on the view closes either; a sketch started
+// sideways and turned upright still shows its plane prompt; Escape with Menu open closes Menu only.
+{
+  const { page, context } = await open(375, 667);
+  const sheetsOpen = () => page.evaluate(() => ({ assistant: !document.getElementById("assistant").hidden, properties: document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", browser: document.getElementById("browser-toggle").getAttribute("aria-expanded") === "true" }));
+  await page.tap("#menu-toggle");
+  await page.tap("#assistant-toggle");
+  await page.waitForSelector("#assistant", { state: "visible" });
+  await page.tap("#properties-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: false, properties: true, browser: false }, "9: opening Properties closes the AI sheet");
+  await page.tap("#menu-toggle");
+  await page.tap("#assistant-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: true, properties: false, browser: false }, "9: opening the AI sheet closes Properties");
+  await page.tap("#browser-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: false, properties: false, browser: true }, "9: opening the Browser closes the AI sheet");
+  await page.tap("#menu-toggle");
+  await page.tap("#assistant-toggle");
+  assert.deepEqual(await sheetsOpen(), { assistant: true, properties: false, browser: false }, "9: opening the AI sheet closes the Browser");
+  if (shots) await page.screenshot({ path: `${shots}/phone-ai-sheet-375.png` });
+  const top = await page.$eval("#assistant", (e) => e.getBoundingClientRect().top);
+  await page.touchscreen.tap(187, Math.max(120, top / 2 + 40));
+  assert.deepEqual(await sheetsOpen(), { assistant: false, properties: false, browser: false }, "9: a tap on the view puts the AI sheet away");
+  assert.equal(await page.getAttribute("#assistant-toggle", "aria-pressed"), "false", "9: the AI button says it is off");
+  await context.close();
+}
+{
+  const context = await browser.newContext({ viewport: { width: 667, height: 375 }, hasTouch: true });
+  const page = await context.newPage();
+  await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(url);
+  await startWithBox(page, true);
+  await page.tap("#create-sketch");
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.waitForTimeout(400);
+  const s = await page.evaluate(() => {
+    const b = document.getElementById("sketch-plane-XY");
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { sheet: document.getElementById("properties-toggle").getAttribute("aria-expanded"), shown: r.width > 0 && r.height > 0, hittable: hit === b || b.contains(hit) };
+  });
+  assert.deepEqual(s, { sheet: "true", shown: true, hittable: true }, `15: a sketch started sideways and turned upright shows its plane prompt ${JSON.stringify(s)}`);
+  // 16: Menu open over the prompt, Escape: Menu closes, the prompt stays.
+  await page.tap("#menu-toggle");
+  assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "true");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "false", "16: Escape closes Menu");
+  assert.equal(await page.isVisible("#sketch-prompt"), true, "16: and does not also cancel the plane prompt");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isVisible("#sketch-prompt"), false, "16: a second Escape cancels the prompt as before");
+  await context.close();
+}
+
+// The clean look on a phone (UX2b, after Life360): Browser and Properties are
+// pill buttons floating over the view's top (the row they took went back to
+// the view), Undo and Redo round 48 px buttons, the view buttons 44 px to tap
+// (Apple's 44 pt), and every sheet has a grab handle.
+async function phoneLook(page) {
+  return page.evaluate(() => {
+    const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
+    const style = (sel) => getComputedStyle(document.querySelector(sel));
+    const toggles = [...document.querySelectorAll("#panel-toggles button")].filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect());
+    const handle = getComputedStyle(document.querySelector("#browser"), "::before");
+    return {
+      toolbarBottom: rect("#toolbar").bottom,
+      viewTop: rect("#viewport").top,
+      toggles: toggles.map((r) => ({ top: r.top, height: r.height })),
+      undo: { w: rect("#undo").width, h: rect("#undo").height, radius: parseFloat(style("#undo").borderTopLeftRadius) },
+      navHeights: [...document.querySelectorAll("#view-controls button")].map((b) => b.getBoundingClientRect().height),
+      handle: { content: handle.content, w: parseFloat(handle.width), h: parseFloat(handle.height) },
+    };
+  });
+}
+function checkPhoneLook(m) {
+  assert.ok(Math.abs(m.viewTop - m.toolbarBottom) <= 1, `the view starts right under the toolbar (${m.viewTop} vs ${m.toolbarBottom})`);
+  assert.ok(m.toggles.length === 2 && m.toggles.every((t) => t.top >= m.viewTop && t.height >= 44), `Browser and Properties float over the view, 44 px or more (${JSON.stringify(m.toggles)})`);
+  // Round: a 48 × 48 button with corners of at least half its side, 24 px.
+  assert.ok(m.undo.w === 48 && m.undo.h === 48 && m.undo.radius >= 24, `Undo is a round 48 px button (${JSON.stringify(m.undo)})`);
+  assert.ok(m.navHeights.length > 0 && m.navHeights.every((h) => h >= 44), `the view buttons are 44 px or more (${m.navHeights})`);
+  assert.ok(m.handle.content === '""' && m.handle.w === 40 && m.handle.h === 5, `a sheet has its 40 × 5 grab handle (${JSON.stringify(m.handle)})`);
+}
+{
+  const { page, context } = await open(375, 667);
+  checkPhoneLook(await phoneLook(page));
+  if (shots) await page.screenshot({ path: `${shots}/phone-look-375.png` });
+  // It can fail: without the phone rules the toggles take a row above the view and no sheet has a handle;
+  // with the old buttons Undo is a 44 px square and the view buttons 30 px.
+  await page.evaluate(() => document.body.classList.remove("phone-sheet"));
+  await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /the view starts right under the toolbar|float over the view/);
+  await page.evaluate(() => document.body.classList.add("phone-sheet"));
+  const old = await page.addStyleTag({ content: ".undo-redo.docked button#undo:not(#none), .undo-redo.docked button#redo:not(#none) { width: 44px; height: 44px; border-radius: 4px; }" });
+  await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /Undo is a round 48 px button/);
+  await old.evaluate((el) => el.remove());
+  const slim = await page.addStyleTag({ content: ".view-controls button.nav-button:not(#no-such-id):not(#none) { height: 30px; min-width: 30px; }" });
+  await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /view buttons are 44 px/);
+  await slim.evaluate((el) => el.remove());
+  checkPhoneLook(await phoneLook(page));
+  await context.close();
+}
+
 // Rules off, the old layout: Properties stacked under the view and the page scrolled.
 {
   const { page, context } = await open(375, 667, false);
