@@ -147,6 +147,8 @@ export function startAutosave(
     }
   })();
 
+  /** A journal entry's time: now, but never before this tab's last known stored state (a clock set back must not make its own entry look older than its own save). */
+  const stamp = () => new Date(Math.max(now().getTime(), base?.getTime() ?? -Infinity, writtenAt?.getTime() ?? -Infinity));
   const report = (s: AutosaveStatus) => {
     if (!stopped) onStatus(s);
   };
@@ -255,7 +257,7 @@ export function startAutosave(
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
-          journal.setItem(key, journalEntry(projectToJson(project()), now()));
+          journal.setItem(key, journalEntry(projectToJson(project()), stamp()));
           journalVersion = version;
           kept = true;
         } catch {
@@ -273,7 +275,7 @@ export function startAutosave(
     finish() {
       if (stopped) return;
       const v = version;
-      const at = now();
+      const at = stamp();
       let text: string | null = null;
       if (storedVersion !== v) {
         try {
