@@ -12,7 +12,10 @@ same first line, then 'failure: <check>: <message> | <where>; replay: ...',
 the line file_issues.py reads) next to the shrunk list as actions.json.
 A seed the log never reports (the job ran out of time, or the tester
 crashed) is a failure of its own: a night that tested nothing must not read
-as clean.
+as clean. So is the monkey's own self-test failing ("self-test <name>: FAIL:
+<message>", before the seeds; folder seed-monkey-self-test), and so is a
+"monkey: N failed" summary counting more failures than the log has FAIL
+lines (folder seed-monkey-unexplained): the monkey's count is the last word.
 
 Exit code: 1 when any seed failed or went unreported, else 0."""
 
@@ -22,6 +25,10 @@ import shutil
 import sys
 
 LINE = re.compile(r"^seed (\d+): (pass \((\d+) actions.*\)|FAIL at action (\d+): (.*))$")
+SELF_TEST = re.compile(r"^(self-test .+?): FAIL: (.*)$")
+SUMMARY = re.compile(r"^monkey: (\d+) failed$")
+# Every failure monkey.mjs counts prints one unindented "<name>: FAIL" line.
+ANY_FAIL = re.compile(r"^\S.*?: FAIL\b")
 
 
 def parse(log):
@@ -39,16 +46,40 @@ def parse(log):
     return seen
 
 
+def others(log):
+    """[(folder, report line, failure text, where)] for the failures that
+    aren't a seed's: each failing self-test, then any the monkey counted but
+    printed no FAIL line for."""
+    lines = log.splitlines()
+    found = [("self-test", m.group(0), f"{m.group(1)}: {m.group(2)}", "the self-test")
+             for m in (SELF_TEST.match(line.strip()) for line in lines) if m]
+    shown = sum(1 for line in lines if ANY_FAIL.match(line))
+    counted = max([int(m.group(1)) for m in (SUMMARY.match(line.strip()) for line in lines) if m], default=0)
+    if counted > shown:
+        text = f"the monkey counted {counted} failed but its log shows {shown} FAIL line(s)"
+        found.append(("unexplained", f"FAIL: {text}", text, "the monkey's summary"))
+    return found
+
+
 def write(log, results, out, first, count, steps):
     """Writes the report and failure folders; returns the number of failed seeds."""
     seeds = list(range(first, first + count))
     seen = parse(log)
     failed = [s for s in seeds if s not in seen or not seen[s][0]]
+    extra = others(log)
+    total = len(failed) + len(extra)
     head = (f"Monkey, seeds {first}-{first + count - 1}: {count} session(s) of {steps} actions in Chromium; "
-            + (f"{len(failed)} FAILED" if failed else "every check passed after every action"))
+            + (f"{total} FAILED" if total else "every check passed after every action"))
     replay = "cd apps/fission && npm run build && FISSION_SEED={seed} MONKEY_STEPS={steps} node e2e/monkey.mjs"
     lines = [head]
     os.makedirs(out, exist_ok=True)
+    for name, line, text, where in extra:
+        # The self-test runs before any seed: one short session replays it.
+        lines.append(line)
+        folder = os.path.join(out, f"seed-monkey-{name}")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "monkey-report.txt"), "w") as f:
+            f.write(f"{head}\nfailure: {text} | {where}; replay: {replay.format(seed=first, steps=1)}\n")
     for seed in seeds:
         if seed not in seen:
             text = "no result: the session never finished (job out of time, or the tester crashed)"
@@ -69,7 +100,7 @@ def write(log, results, out, first, count, steps):
             shutil.copy(saved, os.path.join(folder, "actions.json"))
     with open(os.path.join(out, "report.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
-    return len(failed)
+    return total
 
 
 def main(argv):
