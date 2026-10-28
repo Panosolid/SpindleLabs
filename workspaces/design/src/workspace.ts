@@ -44,7 +44,7 @@ import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
 import { rounding, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
-import { aimOf, anchorOf, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
+import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, type SketchTool, type ToolKind } from "./sketch-tool.ts";
@@ -596,7 +596,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return update(`Change shape to ${SHAPE_LABELS[kind] ?? kind}`);
   }
 
-  /** Why the panel's sizes for `kind` can't be taken (the first shown box that isn't more than 0 mm), or null. */
+  /** Why the panel's sizes for `kind` can't be taken (the first shown box that isn't from 0.001 mm to 1 km), or null. */
   function refusedSize(kind: PartKind): string | null {
     for (const r of parameterRows(kind)) {
       if (!r.shown) continue;
@@ -605,6 +605,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const v = Number(text);
       if (text.trim() === "" || !Number.isFinite(v)) return `Type the ${label} in mm.`;
       if (v <= 0) return `The ${label} must be more than 0 mm.`;
+      // Under 0.001 mm or over 1 km: the sketch boxes' and the AI's one rule (typed-entry.ts), in the box's own name (app sweep 2026-10-28).
+      const refused = lengthRefused(v);
+      if (refused !== null) return `The ${label}${refused.slice("A length".length)}`;
     }
     return null;
   }
@@ -626,7 +629,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // no file can hold ("Infinity" where the box takes it as typed; hunt 26g: it took the size, its undo step couldn't
     // be saved, and nothing said so), and an empty box, 0 or below (Ben's Fusion answer 8: -5 and 0 are not accepted;
     // hunt 26h: they went to the kernel and the failed part was recorded and saved). Leaving the box puts the last
-    // size back (`restoreRefused`). The kernel judges the rest (under 0.001 mm, over its largest size).
+    // size back (`restoreRefused`). Under 0.001 mm or over 1 km is refused there too (`lengthRefused`); the kernel judges the rest.
     if (next === undefined && loaded === undefined) {
       const refused = refusedSize(kind);
       if (refused !== null) return panel.showError(refused);
