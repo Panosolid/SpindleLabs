@@ -7,21 +7,27 @@
 // then the project saved, emptied by New and opened again, and New once
 // more. Two things are checked:
 // - The design, every cycle (soak-model.mjs): the exported STL's triangles,
-//   volume and height range and the kernel's bodies match the model worked
-//   from the sizes the seed chose; Redo after Undo gives back the same
+//   volume and height range, each body's volume in Properties and the
+//   Browser's bodies match the model worked from the sizes the seed chose
+//   (every body is a box); Redo after Undo gives back the same
 //   design; the file opened again gives the same design; and every
 //   SOAK_EVERY cycles a fresh page (a from-scratch rebuild) opens the file
 //   and gets the same design, and saves the same file.
 // - Memory, every SOAK_EVERY cycles: the JavaScript heap after a forced
-//   garbage collection, DOM nodes, event listeners, the kernel's bodies and
+//   garbage collection, DOM nodes (counted here, see domNodes), event
+//   listeners, the kernel's bodies and
 //   WebAssembly memory, and the viewport's geometries, textures, shader
 //   programs and scene objects (`?test-hooks`). Each cycle ends where the
 //   first began (an empty design, wide screen), so nothing should grow:
 //   `judgeSoak` (soak-judge.mjs) fails a reading still climbing after the
 //   warm-up. Before the first reading the page visits every workspace and
 //   the phone width once, so first-visit caches count as warm-up.
-// SOAK_CYCLES (default 40) sets the length, SOAK_REPORT=<file> writes the
-// readings as JSON, SOAK_DIST serves another build than dist (the plants,
+// Each cycle prints what it did, so a failure says what led to it.
+// SOAK_CYCLES (default 40) sets the length, SOAK_EVERY (default 5) how often
+// it reads, SOAK_SCREEN=wide or phone keeps every cycle at that size,
+// SOAK_REPORT=<file> writes the readings as JSON, SOAK_DEBUG=1 prints which
+// nodes changed between readings, SOAK_SHOT=<png> takes a screenshot when a
+// cycle can't go on, SOAK_DIST serves another build than dist (the plants,
 // soak-plants.mjs, build there) and SOAK_PORT its port. Chromium only (the
 // heap and DOM counts come from the DevTools protocol).
 // Run with `node e2e/soak.mjs` (after `npm run build`).
@@ -44,6 +50,8 @@ const PORT = Number(process.env.SOAK_PORT ?? 4181);
 const URL = `http://localhost:${PORT}/?test-hooks`;
 const WIDE = { width: 1280, height: 800 };
 const PHONE = { width: 375, height: 667 };
+/** SOAK_SCREEN=wide or phone keeps every cycle at that size (to tell which one a problem needs); the seed still picks the rest. */
+const SCREEN = { wide: WIDE, phone: PHONE }[process.env.SOAK_SCREEN] ?? null;
 /** The workspaces a cycle may visit and come back from. */
 const OTHERS = ["render", "simulate", "manufacture", "laser", "slice", "circuit", "vector", "image", "layout"];
 
@@ -70,6 +78,7 @@ const context = await browser.newContext({ viewport: WIDE, acceptDownloads: true
 const page = await openApp(context, "the page");
 const cdp = await context.newCDPSession(page);
 await cdp.send("Performance.enable");
+await cdp.send("DOM.enable");
 
 const until = (p, fn, arg) => p.waitForFunction(fn, arg);
 const saveFile = join(tmpdir(), `soak-${process.pid}.spindle`);
@@ -140,9 +149,12 @@ async function visit(id) {
 /** One cycle, from an empty design back to one; `random` the seeded generator. Throws when the app can't be driven; design mismatches go to `problems`. */
 async function cycle(i, random) {
   const between = (lo, hi, step = 1) => lo + step * Math.floor(random() * ((hi - lo) / step + 1));
-  const screen = random() < 0.4 ? PHONE : WIDE;
+  // Cycle 1 is at a wide screen and cycle 2 at a phone's width, both doing everything, so the warm-up has seen it all.
+  const pick = i === 1 ? WIDE : i === 2 ? PHONE : random() < 0.4 ? PHONE : WIDE;
+  const screen = SCREEN ?? pick;
   await page.setViewportSize(screen);
   const at = screen === PHONE ? "phone" : "wide";
+  const did = [at];
   const bodies = [];
   let items = 0;
 
@@ -159,6 +171,7 @@ async function cycle(i, random) {
   await untilShown(page, 1);
   bodies.push({ w, d, h, z: 0 });
   items += 2;
+  did.push(`extrude ${w}×${d}×${h}`);
 
   // The Box preset (40 × 30 × 20) beside it, its width typed: W × 30 × 20.
   const W = between(41, 60);
@@ -170,6 +183,7 @@ async function cycle(i, random) {
   await until(page, (x) => document.querySelector("#width")?.value === x, String(W));
   bodies.push({ w: W, d: 30, h: 20, z: 0 });
   items += 1;
+  did.push(`box ${W}`);
 
   // Most cycles lift the box by Move: picked by its Bodies row, Modify ▾'s Move, z typed, OK.
   if (i <= 2 || random() < 0.7) {
@@ -183,6 +197,7 @@ async function cycle(i, random) {
     await until(page, () => document.getElementById("move-panel")?.hidden === true);
     bodies[1].z = dz;
     items += 1;
+    did.push(`move ${dz}`);
   }
   const built = await state(page);
   // Each body's own volume, as Properties shows it with its Bodies row picked.
@@ -204,8 +219,14 @@ async function cycle(i, random) {
   fail(i, sameState(built, await state(page), `${at}, after ${k} Undos and ${k} Redos`));
 
   // Another workspace and back; split view opened and closed (wide screens only: there is no split view on a phone).
-  if (i <= 2 || random() < 0.6) await visit(OTHERS[Math.floor(random() * OTHERS.length)]);
+  did.push(`undo ${k}`);
+  if (i <= 2 || random() < 0.6) {
+    const id = OTHERS[Math.floor(random() * OTHERS.length)];
+    await visit(id);
+    did.push(id);
+  }
   if (screen === WIDE && (i <= 2 || random() < 0.5)) {
+    did.push("split");
     await page.click("#split-toggle");
     await until(page, () => !!document.body.dataset.split);
     await page.click("#split-close");
@@ -234,6 +255,7 @@ async function cycle(i, random) {
   }
   await emptyDesign(page);
   await page.setViewportSize(WIDE);
+  console.log(`cycle ${i}: ${did.join(", ")}`);
 }
 
 /** The first place two JSON values differ, as a path and both values. */
@@ -248,6 +270,49 @@ function firstDifference(a, b, path = "") {
   return `${path || "the file"}: ${JSON.stringify(a)?.slice(0, 120)} became ${JSON.stringify(b)?.slice(0, 120)}`;
 }
 
+/**
+ * DOM nodes the app holds: every node in the page (elements, text,
+ * comments) plus every node of a detached tree that JavaScript still holds
+ * (DevTools' detached-nodes list: the leaks this test found were there).
+ * Chromium's own count (`Nodes`) also counts text the browser's typing
+ * history keeps: each Undo step of a number box someone typed in holds the
+ * box's old text once the app sets its value (a heap snapshot on
+ * 2026-10-29: one blink::UndoStep and one Text more per width typed, none
+ * when the value was set without typing), up to Chromium's 1,000 steps, so
+ * it is kept in the readings but not judged.
+ */
+async function domNodes() {
+  const inPage = await page.evaluate(() => {
+    const walk = document.createTreeWalker(document, NodeFilter.SHOW_ALL);
+    let n = 0;
+    while (walk.nextNode()) n++;
+    return n;
+  });
+  const { detachedNodes } = await cdp.send("DOM.getDetachedDomNodes");
+  if (process.env.SOAK_DEBUG) await printCensus(detachedNodes);
+  return inPage + detachedNodes.reduce((s, d) => s + d.retainedNodeIds.length, 0);
+}
+
+/** SOAK_DEBUG: the page's nodes by name and nearest id, and the detached trees by their root, printed where they differ from the last reading. */
+let lastCensus = {};
+async function printCensus(detachedNodes) {
+  const census = await page.evaluate(() => {
+    const m = {};
+    const walk = document.createTreeWalker(document, NodeFilter.SHOW_ALL);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const key = `${n.nodeName} in ${(n.nodeType === 1 ? n : n.parentNode)?.closest?.("[id]")?.id}`;
+      m[key] = (m[key] ?? 0) + 1;
+    }
+    return m;
+  });
+  for (const d of detachedNodes) {
+    const key = `detached ${d.treeNode.nodeName} ${JSON.stringify(d.treeNode.attributes).slice(0, 80)}`;
+    census[key] = (census[key] ?? 0) + d.retainedNodeIds.length;
+  }
+  for (const key of new Set([...Object.keys(lastCensus), ...Object.keys(census)])) if ((lastCensus[key] ?? 0) !== (census[key] ?? 0)) console.log(`  ${key}: ${lastCensus[key] ?? 0} -> ${census[key] ?? 0}`);
+  lastCensus = census;
+}
+
 /** What the page holds now, after a forced garbage collection. */
 async function reading(cycleNo) {
   await page.waitForTimeout(300); // let rebuilds and the autosave settle
@@ -258,7 +323,7 @@ async function reading(cycleNo) {
     const t = window.fissionTest;
     return { bodies: await t.bodyCount(), wasm: await t.wasmBytes(), ...t.gpu() };
   });
-  return { cycle: cycleNo, heap: metrics.JSHeapUsedSize, nodes: metrics.Nodes, listeners: metrics.JSEventListeners, documents: metrics.Documents, ...hooks };
+  return { cycle: cycleNo, heap: metrics.JSHeapUsedSize, nodes: await domNodes(), chromiumNodes: metrics.Nodes, listeners: metrics.JSEventListeners, documents: metrics.Documents, ...hooks };
 }
 
 const t0 = Date.now();
