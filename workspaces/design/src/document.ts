@@ -729,6 +729,81 @@ function checkItemParts(f: Feature): void {
 }
 
 /**
+ * The most characters a name may have (U0e2): a browser row shows about
+ * 30 before its "…" and the bar's tooltip has it whole; a name is for
+ * telling items apart, and the description says the rest. Each character
+ * is counted once, however many code units it takes.
+ */
+export const NAME_LIMIT = 40;
+
+/**
+ * A file's names held to Rename's rules (app sweep 2026-10-28, finding 17),
+ * so an opened design is one Rename could have made: each control
+ * character run becomes a space and the spaces round a name go; a name
+ * over NAME_LIMIT characters keeps its first NAME_LIMIT; a name another
+ * item before it has (`nameKey`) gets " (2)", " (3)"… after it, the first
+ * free one, cut to fit; and an empty name is its kind's next free name
+ * ("Box 2", `freshName`), never one a named item has. Every copy of a
+ * changed name follows it (`relabelled`). The document itself when every
+ * name keeps to the rules. (Names that are not text are refused before
+ * this, by checkItemParts.)
+ */
+export function withRuledNames(doc: DesignDocument): DesignDocument {
+  const features = doc.timeline.features;
+  const cleaned = features.map((f) => {
+    const spaced = f.provenance.self.label.replace(/\p{Cc}+/gu, " ").trim();
+    const chars = [...spaced];
+    return chars.length > NAME_LIMIT ? chars.slice(0, NAME_LIMIT).join("").trimEnd() : spaced;
+  });
+  // Every name now in the file, so a name made below repeats none of them, the later items' too.
+  const used = new Set(cleaned.filter((n) => n !== "").map(nameKey));
+  const kept = new Set<string>();
+  // Where each repeated name's numbers carry on from, so 5,000 items of one name open in a moment (audit S2).
+  const nextNumber = new Map<string, number>();
+  const names = cleaned.map((name) => {
+    if (name === "") return name;
+    const key = nameKey(name);
+    if (!kept.has(key)) {
+      kept.add(key);
+      return name;
+    }
+    for (let n = nextNumber.get(key) ?? 2; ; n++) {
+      const suffix = ` (${n})`;
+      const tried = `${[...name].slice(0, NAME_LIMIT - suffix.length).join("").trimEnd()}${suffix}`;
+      if (used.has(nameKey(tried)) || kept.has(nameKey(tried))) continue;
+      nextNumber.set(key, n + 1);
+      kept.add(nameKey(tried));
+      used.add(nameKey(tried));
+      return tried;
+    }
+  });
+  const kindOf = presetKinds(doc);
+  const base = (f: Feature): string => {
+    if (isSketchItem(f)) return "Sketch";
+    if (isSketchExtrude(f)) return "Extrude";
+    const kind = kindOf(f);
+    return kind === null ? "Item" : SHAPE_LABELS[kind];
+  };
+  // Counted in one pass, so a big file with every name empty opens in a moment (audit S2).
+  const counts = new Map<string, number>();
+  for (const [i, f] of features.entries()) {
+    const kind = base(f);
+    const before = counts.get(kind) ?? 0;
+    counts.set(kind, before + 1);
+    if (names[i] !== "") continue;
+    names[i] = freshName(kind, before, kept);
+    kept.add(nameKey(names[i]));
+  }
+  // Each changed name and its copies, in one pass (as `relabelled` does for one).
+  const changed = new Map<string, string>();
+  for (const [i, f] of features.entries()) if (names[i] !== f.provenance.self.label) changed.set(f.id, names[i]);
+  if (changed.size === 0) return doc;
+  const renamedTo = (o: Feature["provenance"]["self"]) => (o.workspace === "design" && changed.has(o.id) ? { ...o, label: changed.get(o.id)! } : o);
+  const out = features.map((f) => ({ ...f, provenance: { ...f.provenance, self: changed.has(f.id) ? { ...f.provenance.self, label: changed.get(f.id)! } : f.provenance.self, from: f.provenance.from.map(renamedTo) } }));
+  return { ...doc, timeline: { ...doc.timeline, features: out } };
+}
+
+/**
  * Design's part of a loaded project, checked all the way down to the
  * numbers the panel shows, so a bad file is refused when it is opened
  * rather than failing later. Version 1 is migrated to version 2, and
@@ -860,7 +935,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
   for (const f of d.timeline.features) if (!isSketchItem(f)) shapeWith(f, (id) => profiles.get(id));
-  return withShortNames(d as DesignDocument);
+  return withShortNames(withRuledNames(d as DesignDocument));
 }
 
 /**
