@@ -1,5 +1,5 @@
 // The top bar's File ▾ (U0f2a), at its left as in Fusion: New, Open…,
-// Save, then the exports. Open and Save are the shell's (the whole
+// Save (and Save As…), then the exports. Open, Save and Save As are the shell's (the whole
 // project as a file); New and the exports are the workspace's on screen
 // (Design: Start fresh, after asking, and Export STL), read each time the
 // menu opens, so an entry that would do nothing is off and says why. A
@@ -22,6 +22,8 @@ export interface FileMenuParts {
   /** The shell's Open… and Save. */
   open: FileMenuEntry;
   save: FileMenuEntry;
+  /** Save As…, listed after Save when given: it asks for a name and place again. */
+  saveAs?: FileMenuEntry;
   /** The name of what is on screen ("Slice", "Community"), for the words of an entry that is off there. */
   where(): string;
   /** The entries of the workspace on screen, or null when it has none. */
@@ -60,7 +62,7 @@ export function fileSections(parts: FileMenuParts): MenuSection[] {
   });
   const newEntry = entries?.new ?? { id: NEW_ID, label: "New", title: "", off: noNew(where), run() {} };
   const exports = entries?.exports?.length ? entries.exports : [{ id: EXPORT_STL_ID, label: "Export STL", title: "", off: noExport(where), run() {} }];
-  return [{ items: [item(newEntry, "new"), item(parts.open, "open", true), item(parts.save, "save", true)] }, { items: exports.map((e) => item(e, "export")) }];
+  return [{ items: [item(newEntry, "new"), item(parts.open, "open", true), item(parts.save, "save", true), ...(parts.saveAs ? [item(parts.saveAs, "save", true)] : [])] }, { items: exports.map((e) => item(e, "export")) }];
 }
 
 /** File ▾ in `doc`: a menu button with the id `file-menu`. */

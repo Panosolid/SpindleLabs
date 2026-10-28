@@ -61,6 +61,33 @@ FRAGMENTS = "changelog.d"
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9._-]*\.md")
 BUMP_RE = re.compile(r"fix|none|step (0|[1-9]\d*)")
 
+# The changelog is public; the geometry kernel is private. A public entry
+# says WHAT changed for the user, never HOW the kernel does it. These are the
+# high-signal tells of kernel internals leaking into an entry: a Rust source
+# file (the public app is TypeScript, so a ".rs" name is always the kernel's),
+# the private source trees, and the internal names a reader could search on.
+# Kept tight so a plain user-facing entry never trips it.
+LEAKS = [
+    (re.compile(r"\b[\w./-]*\.rs\b"), "a kernel source file name"),
+    (re.compile(r"\bprototypes/"), "a private source path"),
+    (re.compile(r"\bkernel/(?:src|tests)\b"), "a private kernel source path"),
+    (re.compile(r"\bfacts[ _-]?model\b", re.I), "an internal algorithm name"),
+    (re.compile(r"\bfacts table\b", re.I), "an internal data-structure name"),
+    (re.compile(r"\bspade\b", re.I), "a third-party library the kernel is built on"),
+]
+
+
+def leaks(where, text):
+    """Problems where `text` (a fragment's content) describes kernel internals
+    instead of what changed for the user, one sentence each."""
+    found = []
+    for pattern, what in LEAKS:
+        m = pattern.search(text)
+        if m:
+            found.append(f"{where}: {m.group(0)!r} is {what}; the public changelog says what changed "
+                         "for the user, never how the kernel works — drop the kernel-internal detail")
+    return found
+
 
 class Fragment:
     """One pull request's entry: its file name, bump ('fix', 'none' or
@@ -246,6 +273,8 @@ def check(root):
     problems = check_changelog(changelog)
     fragments, bad = read_fragments(root)
     problems += bad
+    for f in fragments.values():
+        problems += leaks(f"{FRAGMENTS}/{f.name}", f.text)
     if os.path.exists(os.path.join(root, "VERSION")):
         problems.append("VERSION is gone: the version is worked out from CHANGELOG.md and changelog.d/ "
                         "(.github/scripts/changelog.py version)")
@@ -290,6 +319,8 @@ def check_pr(diff, base_file, head_file):
     fragment = [p for p in status if p.startswith(FRAGMENTS + "/") and p.endswith(".md")]
     added = [p for p in fragment if status[p] == "A"]
     deleted = [p for p in fragment if status[p] == "D"]
+    for p in added:
+        problems += leaks(p, head_file(p))
     for p in fragment:
         if status[p] not in ("A", "D"):
             problems.append(f"{p} is already on main, so its entry is fixed; add a new fragment instead of changing it")

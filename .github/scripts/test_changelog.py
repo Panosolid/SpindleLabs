@@ -201,11 +201,51 @@ class RandomMergeOrders(unittest.TestCase):
                 self.assertEqual(numbered_text(folded, fragments[k:]), text)
 
 
+class LeakGuard(unittest.TestCase):
+    def test_a_plain_entry_is_clean(self):
+        # A normal user-facing entry names no kernel internals.
+        self.assertEqual(changelog.leaks("changelog.d/x.md",
+                         "none\n\n- Extrude any flat face of a body, no sketch needed."), [])
+
+    def test_a_rust_file_name_is_a_leak(self):
+        # The public app is TypeScript, so any ".rs" file named in an entry is
+        # the private kernel's; the guard must catch it and name the rule.
+        problems = changelog.leaks("changelog.d/x.md", "fix\n\n- Fixed a crash in tessellate.rs.")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("tessellate.rs", problems[0])
+        self.assertIn("never how the kernel works", problems[0])
+
+    def test_private_paths_and_internal_names_are_leaks(self):
+        for text, tell in [
+            ("none\n\n- Checked against prototypes/boolean/facts_model.py.", "prototypes/"),
+            ("none\n\n- A change in kernel/src somewhere.", "kernel/src"),
+            ("none\n\n- The facts table is now exact.", "facts table"),
+            ("none\n\n- Fixed in the facts_model.", "facts_model"),
+            ("none\n\n- A bug in spade no longer crashes arcs.", "spade"),
+        ]:
+            problems = changelog.leaks("changelog.d/x.md", text)
+            self.assertTrue(problems, f"{tell!r} should be caught")
+
+    def test_the_guard_catches_a_leaky_added_fragment_in_a_pr(self):
+        # Same as a real PR: a clean entry passes, the same entry with a kernel
+        # file name added fails with the leak message (a deliberate break).
+        clean = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster.\n")
+        self.assertEqual(clean, [])
+        leaky = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster (section.rs).\n")
+        self.assertEqual(len(leaky), 1)
+        self.assertIn("section.rs", leaky[0])
+
+
 class CheckPr(unittest.TestCase):
     BASE = {"CHANGELOG.md": START, "changelog.d/old.md": "fix\n\n- Old fix.\n"}
 
     def run_check(self, diff, head):
         files = dict(self.BASE, **head)
+        # An added fragment always has content on the head; default a clean one
+        # for the tests that don't care about its text.
+        for s, p in diff:
+            if s == "A" and p.startswith("changelog.d/") and p.endswith(".md") and p not in files:
+                files[p] = "none\n\n- A change.\n"
         return check_pr(diff, lambda p: self.BASE[p], lambda p: files[p])
 
     def test_one_new_fragment(self):
