@@ -22,6 +22,8 @@ export interface KernelOps {
   body_free: { args: [body: BodyHandle]; result: void };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
+  /** The size of the kernel's WebAssembly memory in bytes (it only ever grows): the soak test checks it levels off. */
+  wasm_bytes: { args: []; result: number };
 }
 
 export type KernelRequest = {

@@ -8,7 +8,7 @@ import type { SketchXY } from "@fission/core";
 import { partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawArc, drawCircle, drawRectangle, pointNear, SKETCH_STEPS, sketchCurves, sketchLines } from "../src/sketch.ts";
 import { SAME_PLACE } from "../src/snap.ts";
-import { arcSegments, CIRCLE_SEGMENTS, circleSegments, clickAt, curveCount, DEFAULT_GRID, drawStep, ORIGIN_PLANES, originPlanes, PLANE_VIEWS, previewLine, previewSegments, SAME_LINE, SKETCH_TOOLS, sketchDrawings, startTool, toolBusy, type CircleTool, type LineTool, type RectangleTool, type SketchTool } from "../src/sketch-tool.ts";
+import { arcSegments, CIRCLE_SEGMENTS, circleSegments, clickAt, curveCount, DEFAULT_GRID, drawStep, ORIGIN_PLANES, originPlanes, PLANE_VIEWS, previewLine, previewSegments, SAME_CIRCLE, SAME_LINE, SKETCH_TOOLS, sketchDrawings, startTool, toolBusy, type CircleTool, type LineTool, type RectangleTool, type SketchTool } from "../src/sketch-tool.ts";
 import { DESIGN_SHORTCUTS, sketchToolKey } from "../src/shortcuts.ts";
 
 function fresh() {
@@ -402,6 +402,7 @@ test("seeded sessions of random clicks, Escapes and tool switches match a model 
   let circles = 0;
   let refused = 0;
   let shared = 0;
+  let sameCircles = 0;
   const next = { line: "rectangle", rectangle: "circle", circle: "line" } as const;
   for (const seed of [1, 2, 3, 4, 5]) {
     const random = rng(seed);
@@ -448,7 +449,15 @@ test("seeded sessions of random clicks, Escapes and tool switches match a model 
         else if (centre !== key) {
           // The model's radius: the distance between the two clicks, worked out from the keys alone.
           const [cx, cy] = centre.split(",").map(Number);
-          rounds.push(`${centre} r${Math.sqrt((at[0] - cx) ** 2 + (at[1] - cy) ** 2)}`);
+          const round = `${centre} r${Math.sqrt((at[0] - cx) ** 2 + (at[1] - cy) ** 2)}`;
+          if (rounds.includes(round)) {
+            // That circle is there already: nothing drawn, the centre stays down.
+            assert.equal(r.note, SAME_CIRCLE);
+            sameCircles++;
+            tool = r.tool;
+            continue;
+          }
+          rounds.push(round);
           points.add(centre);
           centre = null;
           circles++;
@@ -486,6 +495,7 @@ test("seeded sessions of random clicks, Escapes and tool switches match a model 
   assert.ok(circles >= 100, `the sessions drew ${circles} circles`);
   assert.ok(refused >= 20, `the sessions tried ${refused} lines on top of another`);
   assert.ok(shared >= 20, `the sessions' rectangles shared ${shared} sides with lines already there`);
+  assert.ok(sameCircles >= 10, `the sessions tried ${sameCircles} circles on top of another`);
 });
 
 test("hand-worked: arcs drawn as segments, a quarter turn in 16 like a quarter of a drawn circle (23a)", () => {

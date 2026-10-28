@@ -94,6 +94,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     setView: () => null,
     fitSelection: () => null,
     lookAt: (plane, side = 1) => (looks.push({ plane, side }), null),
+    editedScreenPoints: () => [],
     setOverlay() {},
     clearOverlay() {},
     showSelection: (h) => void (highlight = h),
