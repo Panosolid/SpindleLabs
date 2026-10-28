@@ -6,8 +6,10 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { OFFLINE_MODE } from "./offline.config.mjs";
 
 const TEMPLATE = fileURLToPath(new URL("./sw.js", import.meta.url));
+const KILL_SWITCH = fileURLToPath(new URL("./sw-off.js", import.meta.url));
 /** The name of the list of on-demand chunks the build leaves beside the app (read here, never served as a page). */
 export const ON_DEMAND = "on-demand.json";
 
@@ -47,6 +49,11 @@ export function serviceWorkerSource(info) {
   return `self.__SPINDLELABS_BUILD__ = ${JSON.stringify(info)};\n${readFileSync(TEMPLATE, "utf8")}`;
 }
 
+/** Writes the clean-up worker (sw-off.js) as sw.js, for when offline mode is off. */
+export function writeKillSwitch(dir) {
+  writeFileSync(join(dir, "sw.js"), readFileSync(KILL_SWITCH, "utf8"));
+}
+
 /** Writes sw.js into the built folder `dir`; returns its build info. */
 export function writeServiceWorker(dir) {
   const files = {};
@@ -68,8 +75,13 @@ export function onDemandChunks(bundle) {
   return chunks.filter((c) => c.isDynamicEntry && !c.isEntry && !statically.has(c.fileName)).map((c) => c.fileName);
 }
 
-/** The Vite plugin: lists the on-demand chunks, then writes sw.js once the whole build (workers too) is on disk. */
-export function offlinePlugin() {
+/**
+ * The Vite plugin. With offline mode on: the manifest link in index.html,
+ * the on-demand chunks listed, and sw.js written once the whole build
+ * (workers too) is on disk. Off: the app is not installable, and sw.js is
+ * the clean-up worker that removes an earlier install.
+ */
+export function offlinePlugin(enabled = OFFLINE_MODE) {
   let outDir = "";
   return {
     name: "spindlelabs-offline",
@@ -77,11 +89,16 @@ export function offlinePlugin() {
     configResolved(config) {
       outDir = join(config.root, config.build.outDir);
     },
+    transformIndexHtml() {
+      return enabled ? [{ tag: "link", attrs: { rel: "manifest", href: "./manifest.webmanifest" }, injectTo: "head" }] : [];
+    },
     generateBundle(_options, bundle) {
+      if (!enabled) return;
       this.emitFile({ type: "asset", fileName: ON_DEMAND, source: JSON.stringify(onDemandChunks(bundle)) });
     },
     closeBundle() {
-      writeServiceWorker(outDir);
+      if (enabled) writeServiceWorker(outDir);
+      else writeKillSwitch(outDir);
     },
   };
 }
