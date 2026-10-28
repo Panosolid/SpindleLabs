@@ -36,8 +36,9 @@ Commands (ROOT defaults to the repository root):
                     test_changelog.py)
   pr BASE HEAD      what a pull request did to the changelog files, from git
                     (CI's kernel job on pull requests): it adds exactly one
-                    fragment, or folds; it never edits a merged fragment or
-                    writes a version heading itself
+                    fragment, or folds (writing just what fold writes); it
+                    never edits a merged fragment or writes a version
+                    heading itself
   show [ROOT]       the whole changelog, numbered (needs main's full history:
                     git fetch --unshallow origin main)
   version [ROOT]    just the current version
@@ -286,6 +287,29 @@ def check(root):
     return problems
 
 
+def fold_problem(base_changelog, head_changelog, folded):
+    """None when head_changelog is what fold writes from base_changelog with
+    the fragments `folded`, else the problem. The merge order isn't in a
+    pull request's shallow clone, so it is read from where fold put each
+    entry (the oldest lowest), and each new heading's date from the heading
+    above the entry; everything else must match fold byte for byte."""
+    preamble, sections = parse_changelog(base_changelog)
+    head_sections = parse_changelog(head_changelog)[1]
+    for f in folded:
+        f.date = next((s.date for s in head_sections if f.text in s.raw), "0000-00-00")
+    try:
+        want = number(sections, sorted(folded, key=lambda f: -head_changelog.find(f.text)))
+    except ValueError as e:
+        return str(e)
+    if render(preamble, want) == head_changelog:
+        return None
+    for got, exp in zip(head_sections, want):
+        if (got.version, got.date) != (exp.version, exp.date):
+            return (f"CHANGELOG.md isn't what fold writes from main's: it has the heading {heading(got.version, got.date)[3:]} "
+                    f"where fold writes {heading(exp.version, exp.date)[3:]}; run changelog.py fold on a fresh main")
+    return "CHANGELOG.md isn't what fold writes from main's (an entry or a heading changed by hand); run changelog.py fold on a fresh main"
+
+
 def check_pr(diff, base_file, head_file):
     """What a pull request did to the changelog files. diff: (status, path)
     pairs from git diff --name-status --no-renames BASE HEAD; base_file(path)
@@ -309,6 +333,7 @@ def check_pr(diff, base_file, head_file):
         if new:
             problems.append(f"CHANGELOG.md gains the heading {heading(new[0].version, new[0].date)[3:]}: don't write "
                             f"version headings, add {FRAGMENTS}/<name>.md (the numbers are given at merge time)")
+    folded = []
     for p in deleted:
         if head_changelog is None:
             problems.append(f"{p} is deleted but CHANGELOG.md isn't changed: only a fold deletes fragments")
@@ -316,6 +341,13 @@ def check_pr(diff, base_file, head_file):
         f, _ = parse_fragment(p.split("/", 1)[1], base_file(p))
         if f is not None and f.text not in head_changelog:
             problems.append(f"{p} is deleted but its entry isn't in CHANGELOG.md: only a fold deletes fragments")
+        elif f is not None:
+            folded.append(f)
+    # A fold writes headings, so it must write exactly fold's.
+    if deleted and not problems and head_changelog is not None:
+        problem = fold_problem(base_file("CHANGELOG.md"), head_changelog, folded)
+        if problem:
+            problems.append(problem)
     if deleted and added:
         problems.append("a fold only folds: add this pull request's own fragment in a pull request of its own")
     elif not deleted and len(added) != 1:

@@ -22,9 +22,9 @@ function stale(tool: ComingTool): string | null {
   return null;
 }
 
-test("hand-checked: Modify ▾ lists Move/Rotate, Duplicate, Mirror, Combine, Chamfer, Fillet, Shell and Draft, each off, saying what it will do", () => {
+test("hand-checked: Modify ▾ lists Duplicate, Mirror, Combine, Chamfer, Fillet, Shell and Draft, each off, saying what it will do", () => {
   const items = comingItems("Modify");
-  assert.deepEqual(items.map((i) => i.label), ["Move/Rotate", "Duplicate body", "Mirror body", "Combine", "Chamfer", "Fillet", "Shell", "Draft"]);
+  assert.deepEqual(items.map((i) => i.label), ["Duplicate body", "Mirror body", "Combine", "Chamfer", "Fillet", "Shell", "Draft"]);
   const fillet = items.find((i) => i.id === "coming-fillet")!;
   assert.equal(fillet.off, "Fillet is coming soon: it will round the edges you pick.");
   assert.equal(fillet.note, "Coming soon");
@@ -46,7 +46,7 @@ test("every coming tool is off with the note, its tooltip a sentence naming it, 
   assert.equal(new Set(ids).size, ids.length, "ids are unique");
   const labels = COMING_SOON.map((t) => t.label);
   assert.equal(new Set(labels).size, labels.length, "labels are unique");
-  for (const real of ["Create sketch", "Extrude", "Body facts"]) assert.ok(!labels.includes(real), `${real} works today: never a placeholder`);
+  for (const real of ["Create sketch", "Extrude", "Body facts", "Move", "Move/Rotate"]) assert.ok(!labels.includes(real), `${real} works today: never a placeholder`);
 });
 
 test("every coming tool waits on a step still to do (none outlives its tool)", () => {

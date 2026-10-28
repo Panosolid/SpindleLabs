@@ -14,6 +14,30 @@ import ci_mode  # noqa: E402
 from ci_mode import decide, docs_only, is_docs, read_group_files, touches_ui  # noqa: E402
 
 WORKFLOWS = os.path.join(os.path.dirname(HERE), "workflows")
+ROOT = os.path.dirname(os.path.dirname(HERE))
+CODE = (".ts", ".tsx", ".mjs", ".cjs", ".js", ".py", ".sh", ".yml", ".yaml", ".json", ".toml", ".html")
+# ci_mode itself and these tests name docs paths without reading them.
+NOT_READERS = {".github/scripts/ci_mode.py", ".github/scripts/test_ci_mode.py"}
+SKIP_DIRS = {".git", "node_modules", "target", "dist", "docs", "changelog.d"}
+
+
+def docs_paths_in_code(root):
+    """(file, path) for every docs/ path in quotes (or after ../) in a code
+    file under root, and (file, "docs") for a "docs" folder in quotes."""
+    found = []
+    for top, dirs, names in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        for name in sorted(names):
+            where = os.path.relpath(os.path.join(top, name), root).replace(os.sep, "/")
+            if not name.endswith(CODE) or where in NOT_READERS:
+                continue
+            try:
+                text = open(os.path.join(top, name), encoding="utf-8").read()
+            except (UnicodeDecodeError, OSError):
+                continue
+            found += [(where, m) for m in re.findall(r"""[\"'`](?:\.\.?/)*(docs/[A-Za-z0-9_./-]+)""", text)]
+            found += [(where, "docs") for _ in re.findall(r"""[\"'](?:\.\.?/)*docs/?[\"']""", text)]
+    return found
 QUEUE = [dict(type="deletion"), dict(type="required_status_checks"), dict(type="merge_queue")]
 NO_QUEUE = QUEUE[:-1]
 
@@ -52,9 +76,9 @@ class Mode(unittest.TestCase):
 
 class Docs(unittest.TestCase):
     def test_worked_by_hand(self):
-        # A roadmap edit with its changelog and version: every file is writing
-        # no code reads, so docs only, in the pull request's run and the queue's.
-        roadmap = ["docs/roadmap.md", "docs/progress/booleans.md", "changelog.d/x1-roadmap.md"]
+        # A notes edit with its changelog: every file is writing no code
+        # reads, so docs only, in the pull request's run and the queue's.
+        roadmap = ["docs/integration.md", "docs/progress/booleans.md", "changelog.d/x1-roadmap.md"]
         self.assertEqual(decide("pull_request", QUEUE, roadmap), (False, False, True))
         self.assertEqual(decide("merge_group", None, roadmap), (True, True, True))
         # A package's CLAUDE.md starts with packages/ (so `ui` says yes) but is
@@ -68,7 +92,7 @@ class Docs(unittest.TestCase):
             self.assertEqual(decide(event, QUEUE, roadmap)[2], False, event)
 
     def test_docs_files(self):
-        for f in ("docs/roadmap.md", "docs/progress/cad.md", "docs/a/b/picture.png", "CHANGELOG.md", "README.md",
+        for f in ("docs/integration.md", "docs/progress/booleans.md", "docs/a/b/picture.png", "CHANGELOG.md", "README.md",
                   "VERSION", "changelog.d/ev4faw-version-bot.md", "changelog.d/README.txt", "CLAUDE.md",
                   "kernel/CLAUDE.md", "workspaces/image/CLAUDE.md", "training/CLAUDE.md"):
             self.assertTrue(is_docs(f), f)
@@ -81,13 +105,48 @@ class Docs(unittest.TestCase):
                   "VERSION.txt", "kernel/VERSION", "changelog.d", "kernel/changelog.d/a.md",
                   "changelog.d/../kernel/a.rs", "tests/baseline.json", "package.json", "package-lock.json",
                   ".github/workflows/ci.yml", ".github/scripts/ci_mode.py", "apps/fission/e2e/helpers.mjs",
-                  "kernel/src/boolean.rs", "docs/../kernel/src/a.rs", "../docs/a.md", "/docs/a.md", ""):
+                  "kernel/src/boolean.rs", "docs/../kernel/src/a.rs", "../docs/a.md", "/docs/a.md", "",
+                  # Read by a test (coming-soon.test.ts), so the app job must run.
+                  "docs/roadmap.md", "docs/progress/cad.md"):
             self.assertFalse(is_docs(f), f)
 
+    def test_a_docs_file_a_test_reads_is_code(self):
+        # By hand: coming-soon.test.ts fails once a Coming soon tool's step is
+        # ticked in docs/progress/cad.md (or vanishes from docs/roadmap.md), so
+        # a pull request that only ticks a step there must still run npm test,
+        # or main breaks on the next code change.
+        self.assertEqual(decide("pull_request", QUEUE, ["docs/progress/cad.md", "changelog.d/x.md"]), (False, False, False))
+        self.assertEqual(decide("merge_group", None, ["docs/roadmap.md"]), (True, True, False))
+
+    def test_every_docs_path_the_code_reads_is_code(self):
+        # Kept from going stale: every quoted docs/ path in the repo's code,
+        # tests, scripts and workflows (not its writing) must not count as
+        # docs, and a "docs" folder joined in pieces needs a look by hand.
+        found = docs_paths_in_code(ROOT)
+        self.assertIn(("workspaces/design/test/coming-soon.test.ts", "docs/roadmap.md"), found)
+        for where, path in found:
+            with self.subTest(file=where, path=path):
+                self.assertNotEqual(path, "docs", f"{where} joins the docs folder in pieces: list what it reads in ci_mode.READ_BY_CODE")
+                self.assertFalse(is_docs(path), f"{where} reads {path}: add it to ci_mode.READ_BY_CODE")
+
+    def test_the_docs_path_scan_can_fail(self):
+        # A planted reader in a scratch repo: each form is found.
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "apps/x"))
+            os.makedirs(os.path.join(tmp, "docs"))
+            with open(os.path.join(tmp, "apps/x/a.test.ts"), "w") as f:
+                f.write('readFileSync(new URL("../../docs/integration.md", repo));\njoin(root, "docs", "ai.md");\n// see docs/x.md\n')
+            with open(os.path.join(tmp, "docs/notes.md"), "w") as f:
+                f.write('`docs/roadmap.md`\n')
+            found = docs_paths_in_code(tmp)
+        # The comment without quotes and the writing under docs/ are not readers.
+        self.assertEqual(found, [("apps/x/a.test.ts", "docs/integration.md"), ("apps/x/a.test.ts", "docs")])
+        self.assertTrue(is_docs("docs/integration.md"))
+
     def test_any_other_file_or_doubt_means_no(self):
-        self.assertTrue(ci_mode.docs_only(["docs/roadmap.md"]))
-        self.assertFalse(ci_mode.docs_only(["docs/roadmap.md", "tests/baseline.json"]))
-        self.assertFalse(ci_mode.docs_only(["package.json", "docs/roadmap.md"]))
+        self.assertTrue(ci_mode.docs_only(["docs/integration.md"]))
+        self.assertFalse(ci_mode.docs_only(["docs/integration.md", "tests/baseline.json"]))
+        self.assertFalse(ci_mode.docs_only(["package.json", "docs/integration.md"]))
         # No files (an empty diff) and unlisted files: test in full.
         self.assertFalse(ci_mode.docs_only([]))
         self.assertFalse(ci_mode.docs_only(None))
@@ -104,11 +163,12 @@ class Docs(unittest.TestCase):
     def test_the_docs_tests_can_fail(self):
         # Planted breaks, each the mistake a near-miss case above is there to
         # catch: the slash after docs dropped, any .md taken as docs, the
-        # emptiness check dropped. Each must make test_docs_files or
+        # emptiness check dropped, the files a test reads forgotten. Each must make test_docs_files or
         # test_any_other_file_or_doubt_means_no fail.
         plants = [
             ("DOCS_PREFIXES", ("docs",)),
             ("DOCS_NAME", ".md"),
+            ("READ_BY_CODE", ()),
         ]
         for name, value in plants:
             with self.subTest(plant=name), mock.patch.object(ci_mode, name, value):
