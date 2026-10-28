@@ -13,6 +13,7 @@ import { extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, ZERO_DISTANCE } from "./ext
 import { NAME_LIMIT, renameItem } from "./timeline-edits.ts";
 import { addSketch, drawCircle, drawLine, drawRectangle } from "./sketch.ts";
 import { freshDesign } from "./start-fresh.ts";
+import { lengthRefused } from "./typed-entry.ts";
 
 export const SHAPES: readonly ShapeKind[] = ["box", "cylinder", "sphere", "l-bracket", "plate", "slot", "star"];
 
@@ -138,11 +139,17 @@ export function drawingFor(doc: DesignDocument, sketchId: string, command: Comma
   const sketch = doc.sketches.find((x) => x.id === sketchId);
   if (!sketch) throw new Error(`there is no sketch ${sketchId} to draw in`);
   const at = (x: number, y: number) => sketch.points.find((p) => p.x === x && p.y === y)?.id ?? ([x, y] as const);
+  // A size the tool's typed box would refuse is refused here too (sweep 2026-10-28: 1e300 reached the view as NaN), before the preview (`check`).
+  const sized = (v: number, what: (v: number) => string) => {
+    const refused = lengthRefused(v);
+    if (refused !== null) throw new Error(`${what(v)} can't be drawn: ${refused[0].toLowerCase()}${refused.slice(1)}`);
+    return v;
+  };
   switch (command.op) {
     case "draw_circle":
-      return drawCircle(doc, sketchId, [n("x"), n("y")], (command.diameter as number) / 2).doc;
+      return drawCircle(doc, sketchId, [n("x"), n("y")], sized(command.diameter as number, (v) => `A circle ⌀${v} mm`) / 2).doc;
     case "draw_rectangle": {
-      const [w, h] = [command.width as number, command.height as number];
+      const [w, h] = [sized(command.width as number, (v) => `A rectangle's width of ${v} mm`), sized(command.height as number, (v) => `A rectangle's height of ${v} mm`)];
       return drawRectangle(doc, sketchId, [n("x") - w / 2, n("y") - h / 2], [n("x") + w / 2, n("y") + h / 2]).doc;
     }
     case "draw_line":
