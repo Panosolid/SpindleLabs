@@ -4,7 +4,8 @@
 // in it, then a padlock while its text is a size it accepts. The boxes
 // only show and report; the workspace decides what the locks do.
 // Keys inside a box: Tab and Shift+Tab go round the boxes, Enter places
-// the point, Escape empties the boxes and leaves them (a second Escape,
+// the point (not while a box holds text it refused: the keys go there),
+// Escape empties the boxes and leaves them (a second Escape,
 // outside, ends the line as before). Styles: src/styles/typed-entry.css.
 
 import { readAngle, readLength, readSweep, shownValue, type Locks, type Reading, type TypedField } from "./typed-entry.ts";
@@ -13,7 +14,7 @@ import { keepInside } from "./pointer-hint.ts";
 export interface TypedBoxEvents {
   /** The locks changed (a box's text now reads as a size, or no longer does). */
   locks(locks: Locks): void;
-  /** Enter in a box: place the point with the locks. */
+  /** Enter in a box, every box's text a size or empty: place the point with the locks. */
   enter(): void;
   /** Escape in a box: the boxes were emptied and left. */
   escape(): void;
@@ -65,6 +66,14 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
       if ("value" in r) out[f] = r.value;
     }
     return out;
+  };
+  /** The first shown box whose text is not empty and reads as no size (shown red), or null. */
+  const refused = (): HTMLInputElement | null => {
+    for (const f of fields) {
+      const input = boxes.get(f)!.input;
+      if (input.value.trim() !== "" && "error" in read(f, input.value)) return input;
+    }
+    return null;
   };
   /** Shows each box's padlock or its reason, from its text now. */
   function mark(f: TypedField) {
@@ -125,7 +134,13 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
       } else if (e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
-        on.enter();
+        // A box whose text it refused (red, its reason showing) locks nothing, so placing now would draw to
+        // the pointer, not the size typed: Enter places nothing and takes the keys to that box to mend it.
+        const bad = refused();
+        if (bad) {
+          bad.focus();
+          bad.select();
+        } else on.enter();
       } else if (e.key === "Escape") {
         // Handled here, never by the shell's Escape (which would also end the line).
         e.preventDefault();
