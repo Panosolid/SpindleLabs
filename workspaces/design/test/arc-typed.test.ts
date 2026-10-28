@@ -18,6 +18,7 @@ import { FIELD_LABELS, typedBoxes } from "../src/typed-boxes.ts";
 import { hintOf, pointerHint } from "../src/pointer-hint.ts";
 import * as entry from "../src/typed-entry.ts";
 import { randomEpisode, rng, runArcSession, runEpisode } from "./arc-typed-session.ts";
+import { NO_TURN } from "../src/centre-arc.ts";
 
 function fresh(kind: SketchTool["kind"]) {
   const s = addSketch(partDocument("box", 40, 30, 20));
@@ -240,19 +241,36 @@ test("a click behind a typed angle places nothing, for the arcs as for lines", (
   assert.equal(aimOf(doc, { kind: "centre", sketch: id, centre: [0, 0], start: null, swept: 0 }, [0, 0], { radius: 5 }), null);
 });
 
-test("the smallest arc angle at the largest coordinates still moves the end off the start", () => {
+test("the smallest arc angle at the largest coordinates draws nothing: its ends are under 0.001 mm apart", () => {
   // The worst case the boxes allow: a 0.001 mm radius (MIN_TYPED) at
   // 1,000,000 mm (MAX_TYPED) from the origin, 0.001° round. The end moves
-  // 0.001 × 0.001 × π/180 ≈ 1.7e-8 mm, while doubles near 1e6 are 1.2e-10
-  // apart, so it never rounds back onto the start: a typed arc angle can't
-  // reach centre-arc.ts's "no turn" note (the outline check judges pieces
-  // under 1 µm, as for any arc).
+  // 0.001 × 0.001 × π/180 ≈ 1.7e-8 mm off the start: far under the
+  // modeller's smallest piece, 0.001 mm, which used to refuse the whole
+  // outline later ("has its ends … mm apart"). The tool now refuses it at
+  // the click (centre-arc.ts MIN_CHORD), says why, and keeps the start.
   const { doc, tool } = fresh("centre");
   const r = run(doc, tool, [{ click: [1e6, 1e6] }, { click: [1e6 + 1, 1e6], locks: { radius: 0.001, angle: 0 } }, { hover: [1e6 + 1, 1e6 + 1] }, { click: [1e6 + 1, 1e6 + 1], locks: { sweep: 0.001 } }]);
-  assert.equal(r.drew, 1);
-  const arc = lastArc(r.doc);
-  assert.notDeepEqual(arc.start, arc.end);
-  assert.ok(Math.abs(arc.end[1] - arc.start[1] - 0.001 * (0.001 * Math.PI) / 180) < 1e-9, `${arc.end[1] - arc.start[1]}`);
+  assert.equal(r.drew, 0);
+  assert.equal(r.note, NO_TURN);
+  assert.deepEqual((r.tool as CentreArcTool).start, [1e6 + 0.001, 1e6]);
+});
+
+test("a typed arc angle at the largest coordinates: ends 0.0011 mm apart draw, 0.0009 mm apart don't (MIN_CHORD 1.1× and 0.9×)", () => {
+  // Radius 0.001 mm at (1e6, 1e6): the chord of a sweep θ is 2·r·sin(θ/2), so
+  // 0.0011 mm is θ = 2·asin(0.55) ≈ 66.73° and 0.0009 mm is 2·asin(0.45) ≈ 53.49°.
+  // Doubles near 1e6 are 1.2e-10 apart, far under the 1e-4 mm either side.
+  const at = (deg: number) => {
+    const { doc, tool } = fresh("centre");
+    return run(doc, tool, [{ click: [1e6, 1e6] }, { click: [1e6 + 1, 1e6], locks: { radius: 0.001, angle: 0 } }, { hover: [1e6 + 1, 1e6 + 1] }, { click: [1e6 + 1, 1e6 + 1], locks: { sweep: deg } }]);
+  };
+  const deg = (chord: number) => (2 * Math.asin(chord / 0.002) * 180) / Math.PI;
+  const wide = at(deg(0.0011));
+  assert.equal(wide.drew, 1);
+  const arc = lastArc(wide.doc);
+  assert.ok(Math.abs(Math.hypot(arc.end[0] - arc.start[0], arc.end[1] - arc.start[1]) - 0.0011) < 1e-9);
+  const narrow = at(deg(0.0009));
+  assert.equal(narrow.drew, 0);
+  assert.equal(narrow.note, NO_TURN);
 });
 
 test("seeded: 4,000 arcs, each point clicked or typed, against a plain model", () => {
