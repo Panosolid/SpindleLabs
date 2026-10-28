@@ -10,7 +10,9 @@
 #       ci/$LABEL/$HEAD_SHA/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/JOB/
 #       (RESULTS_WRITE key) and prints nothing but the folder's name; with
 #       RESULTS_PATH set, under $RESULTS_PATH/JOB/ instead (random testing's
-#       and fuzzing's jobs: their collect job reads them from there)
+#       and fuzzing's jobs: their collect job reads them from there); files
+#       over 50 MB stay behind, and a failed push says why in words only
+#       (RESULTS_REPO: another repo to push to, for the tests)
 #   kernel_ci.sh run NAME LOGDIR COMMAND...
 #       runs COMMAND with all its output in LOGDIR/NAME.log and prints only
 #       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code
@@ -41,20 +43,29 @@ status)
 save)
   job=$2 dir=$3
   work=$(mktemp -d)
-  git clone -q --depth 1 "https://x-access-token:$RESULTS_WRITE@github.com/Panosolid/kernel-results.git" "$work/r" 2>/dev/null
+  git clone -q --depth 1 "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/Panosolid/kernel-results.git}" "$work/r" 2>/dev/null
   dest="${RESULTS_PATH:-ci/$LABEL/$HEAD_SHA/$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}}/$job"
   mkdir -p "$work/r/$dest"
-  cp -R "$dir"/. "$work/r/$dest/" 2>/dev/null || true
+  # GitHub refuses a push with a file over 100 MB, so files over 50 MB stay
+  # behind (the release check's three 1.3 GB answer files made every save
+  # of the checks fail, 2026-10-28); the line says how many.
+  (cd "$dir" && find . -type f -size +50M) >"$work/big"
+  tar -C "$dir" -cf - -X "$work/big" . 2>/dev/null | tar -C "$work/r/$dest" -xf - 2>/dev/null || true
+  big=$(wc -l <"$work/big" | tr -d ' ')
+  left=""
+  [ "$big" = 0 ] || left=" ($big over 50 MB left out)"
   cd "$work/r"
   git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com add -A >/dev/null
   git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com commit -qm "kernel-ci $LABEL $HEAD_SHA $job" >/dev/null
   # Several jobs save at once: rebase onto whatever landed meanwhile.
   for _ in 1 2 3 4 5 6; do
-    git push -q origin HEAD:main 2>/dev/null && { echo "saved $job"; exit 0; }
+    git push -q origin HEAD:main 2>"$work/push" && { echo "saved $job$left"; exit 0; }
     sleep $((RANDOM % 5 + 1))
     git pull -q --rebase origin main 2>/dev/null || true
   done
-  echo "could not save $job"; exit 1
+  # Why, in words only: the push's own message can name private files.
+  why=$(grep -oE 'GH001|exceeds|rejected|non-fast-forward|denied|403|timed out|Could not resolve' "$work/push" | sort -u | paste -sd, - || true)
+  echo "could not save $job (${why:-no reason given})"; exit 1
   ;;
 run)
   name=$2 dir=$3
