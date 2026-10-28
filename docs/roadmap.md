@@ -2,6 +2,45 @@
 
 Every step of the plan, done and to do, as detailed as it needs to be: this file is read only when a session needs it. The next couple of steps (now 18) live in `CLAUDE.md` instead, which every session reads; each item is in one file only, and items move into CLAUDE.md as work reaches them and back here once done. Mark items [x] when done.
 
+## Headline features (launch-critical; read this before any Slice, Simulate, AI or Design step)
+
+Owner's decision, 2026-10-28: these are what SpindleLabs is known for, so they cannot slip quietly. Our positioning: **the CAD that knows your printer**. The goal the plan is built to make literally true, in the owner's words:
+
+> "I'm building a 3D printing slicer into my CAD app. While you design, you can toggle on where supports are needed and where it's weak, hit a button to watch a time-lapse of it printing, then slice and send it to your printer, or at least get the print file, in one go."
+
+Rules for every thread:
+- If your step is listed under "Needs" below, or moves one of H1–H5 forward, say so in your pull request and tick the H substep here when it lands. If a step of yours would delay one of these, or quietly shrink one (a "for now" that removes part of the promise), stop and tell the coordinator; never cut or postpone one without the owner's word.
+- Launch (owner's rule): the public launch comes once fillets (44–46) and the slicer work. "The slicer works" means H1a, H2a–H2c and H3a–H3b are done and a real print from SpindleLabs has come off the owner's printer. Any "one more feature first" delay after that gets called out.
+- Every number shown to the user (time, weight, strength, support area) is checked automatically against a hand-worked value and, where one exists, an outside tool (PrusaSlicer for slicing, Simulate's stress study for strength). An estimate always says it is an estimate.
+- Printer-aware corrections (a hole grown for the plastic's shrink, P10) go into the print file only and are listed openly in the preview ("3 holes grown by 0.15 mm for PLA"); they never change the model.
+- Order: H1a after Combine (35f); H2 and H3 as soon as the engine's pieces and the app bridge exist (they store nothing in the project, so they need no plate and can come before 52); the plate (P1) and the full Slice workspace stay after 52; H4 after H2a; H5 after 54 and 45. Never ahead of a primary roadmap kernel step for usage or pull request slots.
+
+- [ ] H1. **Print check toggle while you design.** One toggle in Design paints the part: red where supports will be needed, orange where a wall is too thin for the nozzle, and a marker on the weakest spot. It updates live as you model, in the build direction as modelled (Z up) until a plate gives the real orientation (P1).
+  - [ ] H1a. Overhangs that need supports, found by angle on the display mesh (the angle from the printer profile, 45° by default), painted through the shared overlays (I16), with the area in mm² in the properties panel. Needs: Combine (35f) landed; nothing new in the kernel. Hand-worked: a 45° ramp is on the boundary, 0.9× and 1.1× of the angle either side; a T shape's arms are red underneath and nowhere else; a sphere's lower cap below the angle's ring, its height worked out by hand. Design area slot.
+  - [ ] H1b. Walls too thin for the nozzle (narrower than one line width), from the engine's walls (H2a), shown on the faces they come from.
+  - [ ] H1c. The weakest spot, from H4a, shown as a marker with "weakest here (estimate)". With no load given it uses the thinnest cross-section along the build direction.
+- [ ] H2. **Print preview button: watch it print.** One button in Design (and later in Slice) shows the part exactly as it will print: every layer, the walls, infill and supports in their own colours, the print time and filament weight, and a time-lapse of the nozzle laying it down.
+  - [ ] H2a. The engine in the app: the slicing engine's release build ships like the kernel's (the kernel's Release workflow, a check like `check_kernel_build.py`), runs in the worker, and slices the selected bodies with the owner's printer's default profile (P1S, 0.4 mm nozzle, PLA). Nothing is saved into the project (choices, not results), so this needs no plate. Needs: the engine's layers, walls, infill and G-code (the engine halves of P2–P4 and P6) and its supports (P5).
+  - [ ] H2b. The preview: a layer slider in the shared viewport, colours per kind of line, supports shown, time and weight; the layers drawn from the G-code the printer would get, never from a separate drawing.
+  - [ ] H2c. The time-lapse: plays the real G-code through the replayer (`packages/testing`'s, P0a) with a nozzle, play/pause, speed 1× to 1,000×, scrub; checked by replaying a hand-worked part (a 20 mm cube's first layer, every move worked out) and by the replayer's own checks passing on everything shown. Browser checks at 1280 and 375 px.
+  - [ ] H2d. Weak spots and too-thin walls (H1b, H1c) shown in the preview too, at their layer.
+- [ ] H3. **Slice and send in one go.** One "Print" button: it slices, shows a confirmation (printer, filament and AMS slots, time, weight, any printer-aware corrections; the shared confirmation screen, I15) and then sends. The file is always there as the fallback.
+  - [ ] H3a. The print file, guaranteed: the Bambu `.gcode.3mf` (P6) for the P1S/P2S, checked against a file Bambu Studio writes for the same part, downloaded in one tap; it works from the printer's SD card or Bambu Studio. Gate: a real test print on the owner's printer (a 20 mm cube and a part with a hole, measured with calipers), before H3b.
+  - [ ] H3b. Hand-off to Bambu Connect (Bambu's own free desktop app, Windows and macOS, which is Bambu's supported way for outside software to send a print since its 2025 authorisation change): the app saves the file and opens it in Bambu Connect with Bambu's documented `bambu-connect://import-file` link, so sending is one more click there. The link needs the file's full path on the computer, which a web page cannot see: the user tells us their downloads folder once (or the H3c helper supplies it), and the button falls back to the plain download when that is not set. Tested in the browser with the link caught by the test; checked by hand on the owner's computer once.
+  - [ ] H3c. Direct send, the best possible: an optional, free, open-source helper ("SpindleLabs Print Link", a small app on the user's computer) that the web app talks to on the same machine. For printers in Bambu's LAN mode with Developer mode on (which Bambu supports for outside tools, at the cost of Bambu Handy and the cloud), it uploads the file to the printer and starts it, then reports progress and AMS state back to the app. The user pairs it once with a code; it accepts jobs only from SpindleLabs, only after the confirmation, and never moves the printer otherwise. A browser alone cannot do this: web pages may not open the printer's own connections. Later through the same helper: Klipper (Moonraker) and OctoPrint printers.
+  - [ ] H3d. Phone: the file, and "send to my computer's helper" when one is paired; tested at 375 px.
+- [ ] H4. **Strength check button (an estimate, and says so).** Pick where the part is held and where it is pushed or hung from, type the load in plain words (kg or N), and see the safety factor at the weakest cross-section, green, amber or red, with the reason in a sentence ("the neck here is 4 × 3 mm; layers split before the plastic breaks").
+  - [ ] H4a. The estimate from exact cross-sections of the body along the part (beam bending and tension at each section), with the plastic's strength from the material library (I3) and a lower strength across layers than along them for printed parts, both numbers shown with where they come from. Hand-worked tests: a rectangular bar as a cantilever (stress = 6FL / bh²) and a round rod (32FL / πd³), worked in the comments, 0.9×/1.1× around each colour boundary. Needs: H2a's sections at first (on the mesh), exact sections from the kernel once booleans' plane sections are trusted.
+  - [ ] H4b. "Stronger if printed on its side": compares the build directions the plate allows (P1's lay-flat) and suggests the best, never moves the part by itself.
+  - [ ] H4c. Checked against Simulate's stress study (S3) once it exists, as its outside oracle, and against real prints: printed test hooks loaded until they break, the estimate on the safe side every time.
+- [ ] H5. **AI that builds simple parts, fast.** "A wall hook for a 20 mm rail" gives a real, editable timeline (sketches, extrudes, holes, fillets with the sizes as parameters), previewed and accepted as one undo step. Big things ("design me a drone") are refused honestly.
+  - [ ] H5a. Fast now: an own-API-key provider (AI1) is offered as the fast choice, with the time per answer measured in the eval and shown next to each provider; the local in-browser model stays the private choice.
+  - [ ] H5b. Part-building commands: holes (54), fillets (45), user parameters (55) and value edits (AI7e) offered to the AI, with a multi-step plan previewed as one change; eval cases for ten everyday parts (hook, bracket, spacer, box with lid, knob…), each judged on the finished part's sizes.
+  - [ ] H5c. Our own small model trained only on our commands (A11–A13), with a speed target: a simple part in under 10 seconds on a typical school laptop, measured in the eval; until it meets it, the fast choice stays the recommended one.
+  - [ ] H5d. "Make it printable": the AI reads H1 and H4's results and proposes fixes (a fillet under an overhang, a thicker neck) as previewed commands.
+
+## All steps
+
 Renumbering of 2026-10-24 (owner's ask: "it makes no sense going 32, 33, 40"; the numbers run in build order again, every substep under its own step). Steps 1–33 and 37 keep their numbers; 38 keeps only its first substep (38a); old 38b–38f, 39b, 40a and the kernel half of 51 became steps or substeps of their own where they are built, so everything from 58 moves up by 4. Older pull requests, threads, the CHANGELOG and memories use the old numbers; the renumbering of 2026-10-23 (PR #272) and of 2026-10-17 (PR #81) came before this one.
 
 | Old | New | Step |
@@ -275,6 +314,7 @@ Simulate workspace (starts after CAD step 40, booleans and full topological nami
 - [ ] S2. Tetrahedral meshing from the exact geometry (shares step 85)
 - [ ] S3. Static stress: stress, displacement, safety factor in the viewport
 - [ ] S4. Thermal and modal studies
+- The quick strength check in Design (H4, a headline feature, top of this file) comes first and is labelled an estimate; S3's stress study becomes its outside oracle (H4c).
 
 Manufacture workspace (starts after CAD step 40, booleans and full topological naming)
 - [ ] M1. Setups, stock, work coordinates; a tool library shared across projects
@@ -297,7 +337,8 @@ Slice workspace (3D printing; starts right after CAD step 52, ahead of Render or
 - [ ] P11. Settings stick to faces through edits: painted supports, seams, per-face settings and AMS colours are tied to each face's stable name (24, then 40), so changing the design keeps them, where other slicers lose them on re-import; a face that splits or vanishes warns, never guesses
 - [ ] P12. Printing feedback while designing: the print time and weight chip, overhangs and walls too thin for the nozzle shown live in Design as the part is modelled
 - [ ] P13. Calibration that feeds the design: print a small test piece, type in what you measure, and the printer and filament's shrink and fit allowances flow back into every hole and fit in the project (through P10)
-- [ ] P14. Later: tree supports, variable-width walls (Arachne), adaptive layer heights, seam placement, ironing, several plates per project; sending a job to a printer only much later and only behind the confirmation screen (I15)
+- [ ] P14. Later: tree supports, variable-width walls (Arachne), adaptive layer heights, seam placement, ironing, several plates per project. (Sending to a printer moved up into the headline features: H3, owner's decision 2026-10-28.)
+- Headline features built from these steps (top of this file, launch-critical): the print check toggle in Design (H1, from P5 and P12), the print preview with its time-lapse (H2, from P2–P6 and the P0 replayer) and slice and send in one go (H3, from P6 and I15). They need no plate, so they come before P1; see their own lines for what each needs.
 
 Circuit workspace (PCB / electronics; starts after CAD step 79: full topological naming at 40, assemblies and joints at 78–79)
 - [ ] E1. Schematic capture and a component library
@@ -432,6 +473,7 @@ AI assistant (owner's spec "AI assistant — architecture and placeholders"; opt
 - [ ] A11. Training data generator (in `training/` for now, ready to move to a repository of its own): random valid commands from every CommandSpec list, each one built on the kernel and kept only if it is valid; English from templates and paraphrases; a hand-written held-out eval set. Owner's choice (2026-10-17): build it now, ahead of step 24, for a LoRA fine-tune. Template generator for Design's commands done in AI5a (docs/progress/ai.md); paraphrases next
 - [ ] A12. LoRA fine-tune of a small open base model (with a licence that allows free redistribution); free tiers first, about 100 US dollars cap until it ships
 - [ ] A13. Ship "SpindleLabs model" as a provider (in-browser and Ollama formats), with the training switch off by default; it becomes the default only if it beats the base model; retrained as A8 adds commands
+- AI that builds simple parts, fast, is a headline feature (H5, top of this file): A7, A10–A13 and AI7 serve it, with its speed target measured in the eval.
 - [ ] A14. Later, optional, a learning project: train a small model from scratch on SpindleLabs commands (the owner wants to try making our own). Never shipped unless it beats the fine-tuned model on the same evaluations
 - Report back to the owner when A1–A6 and A9 land: built vs placeholdered, test status, decisions needed
 
