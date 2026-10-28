@@ -1,4 +1,4 @@
-// Shapes of the values the WASM kernel returns (see kernel/src/lib.rs).
+// Shapes of the values the WASM kernel returns.
 
 export interface DisplayMesh {
   positions: number[];
@@ -62,7 +62,7 @@ export interface BodyView {
 }
 
 /**
- * A face's role (FaceRoleOut in kernel/src/lib.rs): an extrude's "start" and
+ * A face's role: an extrude's "start" and
  * "end" caps and the "side" of piece `piece` of profile loop `boundary` (0 the
  * outer loop; numbered as the profile was given, so through Outline.pieces a
  * side names the sketch curve it came from); a box's "bottom", "top",
@@ -76,7 +76,7 @@ export interface FaceRole {
 }
 
 /**
- * A profile in the form the kernel takes (ProfileIn in kernel/src/lib.rs):
+ * A profile in the form the kernel takes:
  * loops of corners [x0, y0, x1, y1, …] with one bulge per corner (0
  * straight, ±1 a half circle; tan of a quarter of the arc's turn), or circles.
  */
@@ -95,20 +95,20 @@ export interface Outline {
   pieces?: OutlinePiece[];
 }
 
-/** A piece of an outline's source (PieceOut in kernel/src/lib.rs). */
+/** A piece of an outline's source. */
 export interface OutlinePiece {
   curve: "line" | "arc" | "circle";
   index: number;
   reversed: boolean;
 }
 
-/** A straight sketch line from a to b, in the sketch plane's x and y (mm); LineIn in kernel/src/lib.rs. */
+/** A straight sketch line from a to b, in the sketch plane's x and y (mm). */
 export interface SketchLine {
   a: [number, number];
   b: [number, number];
 }
 
-/** A sketch circle round `centre` with radius `radius`, in the sketch plane's x and y (mm); CircleIn in kernel/src/lib.rs. */
+/** A sketch circle round `centre` with radius `radius`, in the sketch plane's x and y (mm). */
 export interface SketchCircle {
   centre: [number, number];
   radius: number;
@@ -116,7 +116,7 @@ export interface SketchCircle {
 
 /**
  * A sketch arc from `start` to `end`, counter-clockwise round `centre`, in
- * the sketch plane's x and y (mm); ArcIn in kernel/src/lib.rs. The centre
+ * the sketch plane's x and y (mm). The centre
  * must be midway between the ends (within the kernel's LINEAR).
  */
 export interface SketchArc {
@@ -126,8 +126,7 @@ export interface SketchArc {
 }
 
 /**
- * What a sketch's lines, circles and arcs make (SketchOutlineOut in
- * kernel/src/lib.rs): the one closed outline, ready for make_extrude (a
+ * What a sketch's lines, circles and arcs make: the one closed outline, ready for make_extrude (a
  * path, or a circle when the sketch is one circle), or why there is none
  * yet, in words.
  */
@@ -141,16 +140,30 @@ export type SketchOutline =
    */
   | { open: string; invalid?: KernelInput[] };
 
-/** What to build, as the kernel's BodySpec (kernel/src/lib.rs). */
-export type BodySpec =
+/** A shape to build, as the kernel takes it. */
+export type ShapeSpec =
   | { box: { width: number; depth: number; height: number } }
   | { cylinder: { radius: number; height: number } }
   | { sphere: { radius: number } }
   | { extrude: { profile: Outline; distance: number; frame?: Frame; flip?: boolean } };
 
 /**
- * Where a sketch's plane is, for an extrude built on it (step 26b,
- * kernel/src/ops/place.rs): world origin, x axis and normal, the axes unit
+ * What to build, as the kernel takes it: a shape, or a shape moved and
+ * turned after it is built (`moves` in order; the shape can't itself be
+ * moved, so a spec is at most two deep). The kernel takes at most 1000
+ * moves, and refuses one that isn't finite naming it ("move 2: …").
+ */
+export type BodySpec = ShapeSpec | { moved: { body: ShapeSpec; moves: Motion[] } };
+
+/**
+ * One move of a moved body: a shift (mm), or a turn of `angle` radians,
+ * counter-clockwise looking down `axis` (not zero; needn't be unit), about
+ * the line through `pivot`.
+ */
+export type Motion = { move: [number, number, number] } | { turn: { pivot: [number, number, number]; axis: [number, number, number]; angle: number } };
+
+/**
+ * Where a sketch's plane is, for an extrude built on it (step 26b): world origin, x axis and normal, the axes unit
  * and square to each other within 64 ulps (FRAME_SQUARE; anything else is
  * refused, naming "origin", "x" or "normal"). Its y axis is normal × x, so
  * sketch (u, v) is world origin + u·x + v·y and the extrude goes along the
@@ -172,10 +185,10 @@ export interface StlFile {
   warning: string | null;
 }
 
-/** A body the kernel keeps between calls (kernel/src/store.rs): a whole number from 1, never reused. Free it with body_free. */
+/** A body the kernel keeps between calls: a whole number from 1, never reused. Free it with body_free. */
 export type BodyHandle = number;
 
-/** What kind of failure a kernel call had (ErrorKind in kernel/src/api_error.rs). */
+/** What kind of failure a kernel call had. */
 export type KernelErrorKind =
   /** The kernel refuses an input; the user's to fix. */
   | "invalid-input"
@@ -191,7 +204,7 @@ export type KernelErrorKind =
   | "internal";
 
 /**
- * Which input a failure is about (Input in kernel/src/ops/mod.rs), so the app
+ * Which input a failure is about, so the app
  * can point at it without reading the message. Indices count from 0, as the
  * app's lists do; a profile loop's `boundary` is 0 for the outer loop and k
  * for hole k − 1, numbered as FaceRole numbers them.

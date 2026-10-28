@@ -66,7 +66,7 @@ export const CHAPTERS: Chapter[] = [
     terms: [
       { term: "CAD", meaning: "Computer-aided design: drawing real objects on a computer with exact sizes, so they can be made." },
       { term: "CNC", meaning: "A machine that cuts material away with a spinning tool, following a path the computer gives it." },
-      { term: "project", meaning: "Everything you made, in every part of the app, kept together in one .spindlelabs.json file." },
+      { term: "project", meaning: "Everything you made, in every part of the app, kept together in one .spindle file." },
     ],
     scene: "hero",
     tint: "#2747ff",
@@ -145,7 +145,7 @@ export const CHAPTERS: Chapter[] = [
     title: "Undo and your project file",
     status: "built",
     text: [
-      "The whole project is one file, a .spindlelabs.json. Every area of the app keeps its share of the project in it, and SpindleLabs saves it in your browser a moment after each change.",
+      "The whole project is one file, a .spindle file. Every area of the app keeps its share of the project in it, and SpindleLabs saves it in your browser a moment after each change.",
       "Undo works on that whole project: each change you make becomes one step you can take back or do again, whichever area of the app made it.",
     ],
     terms: [],

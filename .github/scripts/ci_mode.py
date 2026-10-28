@@ -15,8 +15,8 @@ run), so the Firefox and WebKit checks are worth running on it. Any doubt
 means yes.
 
 docs: whether every changed file is writing no code or test reads (DOCS
-below: docs/, changelog.d/, CHANGELOG.md, README.md, VERSION and any
-CLAUDE.md), in a pull
+below: docs/ but for READ_BY_CODE, changelog.d/, CHANGELOG.md, README.md,
+VERSION and any CLAUDE.md), in a pull
 request's own run or a merge queue group's (its files: the group's commit
 against main's, so every pull request queued ahead of it counts too). Then
 only the kernel job runs, with just the CI scripts' tests (which check
@@ -52,10 +52,15 @@ def touches_ui(files):
 DOCS_PREFIXES = ("docs/", "changelog.d/")
 DOCS_FILES = ("CHANGELOG.md", "README.md", "VERSION")
 DOCS_NAME = "CLAUDE.md"
+# Under docs/ but read by a test: workspaces/design/test/coming-soon.test.ts
+# fails once a Coming soon tool's step is ticked, so a pull request that only
+# ticks one must run npm test. test_ci_mode.py scans the repo's code for
+# quoted docs/ paths, so a new reader fails there until it is listed here.
+READ_BY_CODE = ("docs/roadmap.md", "docs/progress/cad.md")
 
 
 def is_docs(path):
-    if path.startswith("/") or ".." in path.split("/"):
+    if path.startswith("/") or ".." in path.split("/") or path in READ_BY_CODE:
         return False
     return path.startswith(DOCS_PREFIXES) or path in DOCS_FILES or path.split("/")[-1] == DOCS_NAME
 
@@ -148,7 +153,7 @@ def main():
            "main requires the merge queue, which runs the whole suite before merging")
     summary = f"Mode: {'full' if full else 'quick'} ({why}); Firefox and WebKit: {'yes' if ui else 'no, no app files changed'}."
     if docs:
-        summary = "Mode: docs only (every changed file is under docs/, CHANGELOG.md, README.md, VERSION or a CLAUDE.md): only the CI scripts' tests run."
+        summary = "Mode: docs only (every changed file is notes under docs/, CHANGELOG.md, README.md, VERSION or a CLAUDE.md): only the CI scripts' tests run."
     print(summary)
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
         print(summary, file=f)

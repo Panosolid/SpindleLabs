@@ -38,7 +38,7 @@ export const MONKEY_PLANTS = {
   "bodies-ignore-builds": {
     what: "the Bodies group lists every solid, built or not",
     expect: "Bodies group matches the file",
-    edits: [{ file: "workspaces/design/src/browser.ts", find: "  return document.timeline.features.filter((f) => !isSketchItem(f) && building.has(f));", replace: "  return document.timeline.features.filter((f) => !isSketchItem(f) && (building.has(f) || true));" }],
+    edits: [{ file: "workspaces/design/src/browser.ts", find: "  return document.timeline.features.filter((f) => makesBody(f) && building.has(f));", replace: "  return document.timeline.features.filter((f) => makesBody(f) && (building.has(f) || true));" }],
   },
   "redo-does-nothing": {
     what: "Redo says it redid the step but puts nothing back",

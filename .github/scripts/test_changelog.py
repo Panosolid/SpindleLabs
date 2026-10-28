@@ -183,6 +183,15 @@ class RandomMergeOrders(unittest.TestCase):
                 self.assertEqual(check_changelog(text), [])  # newest first, no repeat, no skip
                 for f in fragments:
                     self.assertEqual(text.count(f.text), 1)
+                # The pull request folding them all passes check_pr: the order
+                # it reads from the entries' places is the one they merged in.
+                files = {"CHANGELOG.md": start}
+                for f in fragments:
+                    first = f.bump if isinstance(f.bump, str) else f"step {f.bump[1]}"
+                    files[f"changelog.d/{f.name}.md"] = f"{first}\n\n{f.text}\n"
+                diff = [("M", "CHANGELOG.md")] + [("D", f"changelog.d/{f.name}.md") for f in fragments]
+                if fragments:
+                    self.assertEqual(check_pr(diff, files.get, dict(files, **{"CHANGELOG.md": text}).get), [])
                 _, sections = parse_changelog(text)
                 expected_version, expected_new = model((0, step, fixes), [f.bump for f in fragments])
                 self.assertEqual(sections[0].version, expected_version)
@@ -192,11 +201,51 @@ class RandomMergeOrders(unittest.TestCase):
                 self.assertEqual(numbered_text(folded, fragments[k:]), text)
 
 
+class LeakGuard(unittest.TestCase):
+    def test_a_plain_entry_is_clean(self):
+        # A normal user-facing entry names no kernel internals.
+        self.assertEqual(changelog.leaks("changelog.d/x.md",
+                         "none\n\n- Extrude any flat face of a body, no sketch needed."), [])
+
+    def test_a_rust_file_name_is_a_leak(self):
+        # The public app is TypeScript, so any ".rs" file named in an entry is
+        # the private kernel's; the guard must catch it and name the rule.
+        problems = changelog.leaks("changelog.d/x.md", "fix\n\n- Fixed a crash in tessellate.rs.")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("tessellate.rs", problems[0])
+        self.assertIn("never how the kernel works", problems[0])
+
+    def test_private_paths_and_internal_names_are_leaks(self):
+        for text, tell in [
+            ("none\n\n- Checked against prototypes/boolean/facts_model.py.", "prototypes/"),
+            ("none\n\n- A change in kernel/src somewhere.", "kernel/src"),
+            ("none\n\n- The facts table is now exact.", "facts table"),
+            ("none\n\n- Fixed in the facts_model.", "facts_model"),
+            ("none\n\n- A bug in spade no longer crashes arcs.", "spade"),
+        ]:
+            problems = changelog.leaks("changelog.d/x.md", text)
+            self.assertTrue(problems, f"{tell!r} should be caught")
+
+    def test_the_guard_catches_a_leaky_added_fragment_in_a_pr(self):
+        # Same as a real PR: a clean entry passes, the same entry with a kernel
+        # file name added fails with the leak message (a deliberate break).
+        clean = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster.\n")
+        self.assertEqual(clean, [])
+        leaky = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster (section.rs).\n")
+        self.assertEqual(len(leaky), 1)
+        self.assertIn("section.rs", leaky[0])
+
+
 class CheckPr(unittest.TestCase):
     BASE = {"CHANGELOG.md": START, "changelog.d/old.md": "fix\n\n- Old fix.\n"}
 
     def run_check(self, diff, head):
         files = dict(self.BASE, **head)
+        # An added fragment always has content on the head; default a clean one
+        # for the tests that don't care about its text.
+        for s, p in diff:
+            if s == "A" and p.startswith("changelog.d/") and p.endswith(".md") and p not in files:
+                files[p] = "none\n\n- A change.\n"
         return check_pr(diff, lambda p: self.BASE[p], lambda p: files[p])
 
     def test_one_new_fragment(self):
@@ -237,6 +286,40 @@ class CheckPr(unittest.TestCase):
     def test_fold(self):
         head = START.replace("## 0.32.21", "## 0.32.22 (2026-10-28)\n\n- Old fix.\n\n## 0.32.21")
         self.assertEqual(self.run_check([("M", "CHANGELOG.md"), ("D", "changelog.d/old.md")], {"CHANGELOG.md": head}), [])
+
+    def test_fold_writing_its_own_heading(self):
+        # A fold of the one fix fragment from 0.32.21 can only give 0.32.22;
+        # deleting a fragment used to switch the heading check off, so any
+        # number passed.
+        head = START.replace("## 0.32.21", "## 0.40.0 (2026-10-28)\n\n- Old fix.\n\n## 0.32.21")
+        problems = self.run_check([("M", "CHANGELOG.md"), ("D", "changelog.d/old.md")], {"CHANGELOG.md": head})
+        self.assertEqual(problems, ["CHANGELOG.md isn't what fold writes from main's: it has the heading 0.40.0 (2026-10-28) "
+                                    "where fold writes 0.32.22 (2026-10-28); run changelog.py fold on a fresh main"])
+        # The right fold with one more heading written by hand on top.
+        head = START.replace("## 0.32.21", "## 0.32.23 (2026-10-28)\n\n- Mine.\n\n## 0.32.22 (2026-10-28)\n\n- Old fix.\n\n## 0.32.21")
+        problems = self.run_check([("M", "CHANGELOG.md"), ("D", "changelog.d/old.md")], {"CHANGELOG.md": head})
+        self.assertEqual(len(problems), 1)
+        self.assertIn("it has the heading 0.32.23 (2026-10-28) where fold writes 0.32.22 (2026-10-28)", problems[0])
+
+    def test_fold_of_two_in_their_order(self):
+        # Worked by hand from 0.32.21: the entries' places say the order they
+        # merged in (the oldest lowest). The fix, then step 33: 0.32.22 for
+        # the fix, then 0.33.0 for the step, newest first.
+        base = dict(self.BASE, **{"changelog.d/step.md": "step 33\n\n- Step.\n"})
+        diff = [("M", "CHANGELOG.md"), ("D", "changelog.d/old.md"), ("D", "changelog.d/step.md")]
+        good = START.replace("## 0.32.21", "## 0.33.0 (2026-10-28)\n\n- Step.\n\n## 0.32.22 (2026-10-27)\n\n- Old fix.\n\n## 0.32.21")
+        self.assertEqual(check_pr(diff, base.get, dict(base, **{"CHANGELOG.md": good}).get), [])
+        # Swapped numbers: with the step below (older), it gives 0.33.0 and
+        # the fix after it 0.33.1, so 0.32.22 on top is wrong.
+        bad = START.replace("## 0.32.21", "## 0.33.0 (2026-10-28)\n\n- Old fix.\n\n## 0.32.22 (2026-10-27)\n\n- Step.\n\n## 0.32.21")
+        problems = check_pr(diff, base.get, dict(base, **{"CHANGELOG.md": bad}).get)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("it has the heading 0.33.0 (2026-10-28) where fold writes 0.33.1 (2026-10-28)", problems[0])
+        # A none entry joins the newest heading, at its top.
+        base = dict(self.BASE, **{"changelog.d/old.md": "none\n\n- Old note.\n"})
+        good = START.replace("- Old entry.", "- Old note.\n- Old entry.")
+        diff = [("M", "CHANGELOG.md"), ("D", "changelog.d/old.md")]
+        self.assertEqual(check_pr(diff, base.get, dict(base, **{"CHANGELOG.md": good}).get), [])
 
     def test_fold_losing_an_entry(self):
         problems = self.run_check([("M", "CHANGELOG.md"), ("D", "changelog.d/old.md")], {})

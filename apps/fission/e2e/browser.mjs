@@ -26,8 +26,8 @@ export async function untilBodies(page, n, what = `${n} bodies in the kernel`, t
   }
 }
 
-/** Launches the chosen browser. */
-export function launch() {
+/** Launches the chosen browser; `args`, command-line switches for Chromium (e2e/kernel-restart.mjs caps WebAssembly memory). */
+export function launch(args = []) {
   // E2E_CHROMIUM runs the Chromium checks on another build, for example CI's
   // (Playwright's own, "Chrome for Testing", a newer Chrome than a sandbox
   // may have); otherwise a sandbox's preinstalled Chromium, else Playwright's.
@@ -41,6 +41,7 @@ export function launch() {
   // and Mesa's software GL.
   if (browserName === "firefox") options.firefoxUserPrefs = { "webgl.force-enabled": true, "webgl.disabled": false, "webgl.enable-webgl2": true };
   if (process.env.E2E_HEADED) options.headless = false;
+  if (browserName === "chromium" && args.length) options.args = args;
   return ENGINES[browserName].launch(options).then(underTestCSP);
 }
 
@@ -52,18 +53,22 @@ export function launch() {
  * the real policy there (the kernel's WebAssembly, what it refuses).
  * WebKit's bypassCSP ignores a policy given in a <meta> tag, so there the
  * app's page is served with that tag taken out instead.
+ *
+ * They block the app's service worker too (offline mode) unless given
+ * `serviceWorkers: "allow"`: requests it answers never reach page.route,
+ * which many checks use. e2e/offline.mjs allows it and checks it.
  */
 function underTestCSP(browser) {
   const newContext = browser.newContext.bind(browser);
   const newPage = browser.newPage.bind(browser);
   browser.newContext = async (options = {}) => {
-    const context = await newContext({ bypassCSP: true, ...options });
+    const context = await newContext({ bypassCSP: true, serviceWorkers: "block", ...options });
     if (context && options.bypassCSP !== false && STRIP_META_CSP) await stripMetaCSP(context);
     if (context) await slowKernel(context);
     return context;
   };
   browser.newPage = async (options = {}) => {
-    const page = await newPage({ bypassCSP: true, ...options });
+    const page = await newPage({ bypassCSP: true, serviceWorkers: "block", ...options });
     if (options.bypassCSP !== false && STRIP_META_CSP) await stripMetaCSP(page.context());
     await slowKernel(page.context());
     return page;

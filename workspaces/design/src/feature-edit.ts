@@ -11,7 +11,7 @@
 // These are pure document functions; workspace.ts drives the panel.
 
 import { KernelError, type BodySpec, type Feature, type KernelCalls } from "@fission/core";
-import { changePreset, isSketchExtrude, isSketchItem, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
+import { changePreset, isSketchExtrude, makesBody, shapeOf, shown, specOf, type DesignDocument, type PartKind, type PartSizes } from "./document.ts";
 import { featureSpec, isFlipped, setExtrudeDistance, setExtrudeFlip } from "./extrude.ts";
 import type { Outline } from "./profiles.ts";
 import { parameterRows, SIZE_KEYS, type SizeKey } from "./properties.ts";
@@ -34,8 +34,8 @@ function featureIn(doc: DesignDocument, id: string): Feature {
   return f;
 }
 
-/** Whether item `id` has sizes to edit: every solid feature (a preset or an extrude of a sketch); a sketch is edited with Edit Sketch (25a3). */
-export const canEditFeature = (f: Feature) => !isSketchItem(f);
+/** Whether item `id` has sizes to edit: every solid feature (a preset or an extrude of a sketch); a sketch is edited with Edit Sketch (25a3), a Move with its own panel (35e2b). */
+export const canEditFeature = (f: Feature) => makesBody(f);
 
 /** Item `id`'s sizes as the panel shows them: the boxes its shape uses (parameterRows), with the values it has now. */
 export function editableFeature(doc: DesignDocument, id: string): EditableFeature {

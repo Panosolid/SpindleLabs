@@ -26,6 +26,8 @@ Next: P0a, from `main`, once CAD step 52 is done (owner's decision: Slice starts
 
 8. **Stand out through the design, not raw slicer features (owner's question, 2026-10-22).** Other slicers only get triangles; we have the exact shape and each feature's intent. P9 to P13 are what no STL-fed slicer can do: true arcs, holes sized for shrink, face settings that survive edits, printing feedback while designing, and calibration that feeds back into the design. Every slice is also checked by the P0 replayer before it can be saved.
 
+9. **Headline features come first, and sending to the printer moves up (owner's decision, 2026-10-28; changes decision 3).** The print check toggle (H1), the print preview with its time-lapse (H2) and slice and send in one go (H3), in the "Headline features" section at the top of `docs/roadmap.md`, are launch-critical. They store nothing in the project, so they are built before the plate (P1) as soon as the engine's pieces they need exist. Decision 3's "file only" stays true for the first release of H3 (the file is always offered and always works), but sending is no longer "much later": once a real test print on the owner's printer passes, H3b hands the file to Bambu Connect and H3c sends it directly through the optional helper, both only after the confirmation screen (I15). Why direct sending needs a helper: since Bambu's 2025 authorisation change, outside software sends through Bambu Connect, or straight to a printer in LAN mode with Developer mode on; a web page cannot open the printer's own connections, so a small program on the user's computer does that part.
+
 ## Steps and substeps
 
 Substeps for P0 are below; each later step is split into substeps by the thread that starts it, before its first commit.
@@ -34,3 +36,12 @@ Substeps for P0 are below; each later step is split into substeps by the thread 
 - [ ] P0a. G-code reader and replayer in TypeScript (`packages/testing`): moves, extrusion (absolute and relative E), retraction, temperatures; works out the plastic volume laid down, the time, and every move's path. Hand-worked: a 10 mm square of one line at 0.2 mm layer and 0.4 mm width is 4 × 10 × 0.2 × 0.4 = 3.2 mm³ (minus the corner overlaps, worked out in the test); a deliberately wrong E amount must fail.
 - [ ] P0b. The checks: volume within a stated allowance of the part's volume (walls plus infill fraction), nothing outside the bed or printer limits, no travel crossing a wall without retracting, every layer closed. Each check with a planted fault that it must catch.
 - [ ] P0c. PrusaSlicer oracle (`prototypes/oracle/`, CI only, never shipped): slices the same parts with the same settings and compares layer count, per-layer outline area and filament use. Hand-worked parts: a 20 mm cube, a 20 mm × 20 mm cylinder, a bridge, a 45° overhang ramp.
+
+## Headline features (H1–H3 in `docs/roadmap.md`)
+
+Which P pieces each headline substep needs, so a thread starting one of these P steps knows it is on the critical path to launch:
+- H1a (overhang toggle in Design): P5's overhang rule only, on Design's display mesh; after Combine (35f). Design area.
+- H2a (engine in the app): the engine halves of P2, P3, P4, P6 and P5's supports, plus a release build shipped like the kernel's. "Everything else" area for the app side.
+- H2b, H2c (preview, time-lapse): the P0 replayer (`packages/testing`), the shared viewport.
+- H3a (the print file): P6's Bambu `.gcode.3mf`, matched against a Bambu Studio file, then the first real test print on the owner's printer.
+- H3b, H3c (Bambu Connect, the helper): I15's confirmation screen; the helper is its own small open-source program, planned in its own substeps by the thread that starts it (pairing, the printer's LAN connection, refusing anything not confirmed in the app, a fake printer for CI).

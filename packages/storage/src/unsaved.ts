@@ -9,6 +9,14 @@
 // or a newer one; one still here on the next visit holds the newest state
 // of its project, and `recoverUnsaved` puts it in the store before the app
 // lists or opens anything.
+//
+// Two tabs share the journal and the store (app sweep 2026-10-28, finding
+// 1): an entry left by a tab closed before its save finished could be put
+// back over newer work another tab stored since. So each entry starts with
+// the time it was written ("@<ms>" and a newline), the store's save time is
+// when the state it holds was read (store.ts), and an entry older than the
+// stored project is skipped. An entry from before entries had a time is the
+// file text alone, and is put back as it always was.
 
 import { projectFromJson, type DataReader } from "@fission/core";
 import type { MarkStorage } from "./reopen.ts";
@@ -25,11 +33,27 @@ export interface JournalStorage extends MarkStorage {
   key(index: number): string | null;
 }
 
+/**
+ * The journal entry holding `text`, the file text of the project as it was at `written`. `kept` marks one the last
+ * visit's recovery couldn't store ("@<ms>!"): it is put back whatever the store holds, and no tab saves over it.
+ */
+export const journalEntry = (text: string, written: Date, kept = false) => `@${written.getTime()}${kept ? "!" : ""}\n${text}`;
+
+/** An entry's file text and the time it was written (null for an entry from before entries had one). */
+export function readJournalEntry(entry: string): { text: string; written: Date | null; kept: boolean } {
+  const head = /^@(\d{1,15})(!?)\n/.exec(entry); // 15 digits: every time a Date can hold until the year 33658
+  return head
+    ? { text: entry.slice(head[0].length), written: new Date(Number(head[1])), kept: head[2] === "!" }
+    : { text: entry, written: null, kept: false };
+}
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Puts every journal entry in `store`, through `projectFromJson` as an
- * opened file would be, and removes each one stored. Never throws: returns
+ * opened file would be, and removes each one stored. An entry older than
+ * the project the store holds (another tab stored newer work after it was
+ * written) is removed without being put back. Never throws: returns
  * a message for each entry that couldn't be put back. An entry that doesn't
  * read as a project is removed (the store keeps its project as it was); one
  * the store refuses is kept, so the next visit tries again.
@@ -46,6 +70,13 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
   } catch {
     return problems; // storage off: there is no journal to read
   }
+  if (keys.length === 0) return problems;
+  const modified = new Map<string, Date>();
+  try {
+    for (const s of await store.list()) if (!s.problem) modified.set(s.id, s.modified);
+  } catch {
+    // the store can't list: every entry is put back, as one it doesn't hold would be
+  }
   for (const k of keys) {
     const id = k.slice(UNSAVED_PREFIX.length);
     let text: string | null;
@@ -56,6 +87,14 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
       continue;
     }
     if (text === null) continue; // another tab put it back meanwhile
+    const entry = readJournalEntry(text);
+    const holds = modified.get(id);
+    // Strictly older only: written the same millisecond, no one can tell which came first, and keeping a change beats losing one.
+    if (!entry.kept && entry.written !== null && holds !== undefined && entry.written.getTime() < holds.getTime()) {
+      remove(journal, k);
+      continue;
+    }
+    text = entry.text;
     let project;
     try {
       project = projectFromJson(text, readers);
@@ -65,9 +104,14 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
       continue;
     }
     try {
-      await store.save(id, project);
+      await store.save(id, project, entry.written ?? undefined); // the state as of when the entry was written
     } catch (e) {
       problems.push(`unsaved changes from your last visit couldn't be stored (${message(e)}); they are kept in this browser for the next visit`);
+      try {
+        journal.setItem(k, journalEntry(entry.text, entry.written ?? new Date(0), true)); // so no tab saves over them meanwhile
+      } catch {
+        // storage off or full: kept as it was
+      }
       continue;
     }
     remove(journal, k);

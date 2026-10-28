@@ -3,9 +3,9 @@
 // view runs the full width (from U0b the properties float over its right side and fold away), the timeline is a thin
 // row along the very bottom under the view's own buttons (each item in build
 // order, the rollback marker between two, rolled-back items greyed, a
-// suppressed one crossed out), the browser's rows float as compact blocks
-// with the view showing between them and their words readable over a white
-// or black view, the browser folds away, and the view bar's
+// suppressed one crossed out), the browser is one rounded card (UX2; its
+// rows were compact blocks with the view between them, SF3d) whose words
+// stay readable over a white or black view, the browser folds away, and the view bar's
 // Full screen button goes in and out of full screen. Each layout check is
 // also run on the page with the old layout forced back by a style, and must
 // fail there. Split view keeps its browser columns; a workspace with no
@@ -111,32 +111,34 @@ const browserBlocks = (page) =>
       return { text: el.textContent, leaf: el.classList.contains("tree-row"), color: s.color, background: s.backgroundColor, events: s.pointerEvents, x: r.x, y: r.y, w: r.width, h: r.height, right: r.right };
     });
     const p = panel.getBoundingClientRect();
-    return { panel: { background: getComputedStyle(panel).backgroundColor, x: p.x, y: p.y, w: p.width, right: p.right }, blocks };
+    const ps = getComputedStyle(panel);
+    return { panel: { background: ps.backgroundColor, radius: parseFloat(ps.borderTopLeftRadius), shadow: ps.boxShadow, events: ps.pointerEvents, x: p.x, y: p.y, w: p.width, h: p.height, right: p.right }, blocks };
   });
 
+/** What a block's words sit on: its own backdrop over the card's over the view. */
+const behind = (b, panel, view) => over(rgba(b.background), over(rgba(panel.background), view));
+
 /** Every block's words readable over a white and over a black view (the part and the background can be either, in time). */
-function checkReadable({ blocks }) {
+function checkReadable({ panel, blocks }) {
   for (const b of blocks)
     for (const [name, view] of [["white", WHITE], ["black", BLACK]]) {
-      const c = contrast(rgba(b.color).slice(0, 3), over(rgba(b.background), view));
+      const c = contrast(rgba(b.color).slice(0, 3), behind(b, panel, view));
       assert.ok(c >= READABLE, `"${b.text}" over a ${name} view: contrast ${c.toFixed(2)} is under ${READABLE}`);
     }
 }
 
-/** Floating rows: no panel backdrop, each block its own backdrop and clickable, rows sized to their words, the view clickable between them. */
-async function checkFloatingRows(page, { panel, blocks }) {
-  assert.equal(rgba(panel.background)[3], 0, `the panel has no backdrop of its own (${panel.background})`);
-  for (const b of blocks) {
-    assert.ok(rgba(b.background)[3] > 0, `"${b.text}" has a backdrop of its own`);
-    assert.equal(b.events, "auto", `"${b.text}" takes clicks`);
-  }
+/** The card (UX2, the owner's ask 2026-10-28): one rounded panel with a near-opaque backdrop and a shadow, taking the clicks over its box; its rows run its width. */
+async function checkCard(page, { panel, blocks }) {
+  assert.ok(rgba(panel.background)[3] >= 0.9, `the card has a near-opaque backdrop of its own (${panel.background})`);
+  assert.ok(panel.radius >= 12, `the card's corners are rounded (${panel.radius} px)`);
+  assert.notEqual(panel.shadow, "none", "the card casts a shadow");
+  for (const b of blocks) assert.equal(b.events, "auto", `"${b.text}" takes clicks`);
   const body = blocks.find((b) => b.text === "Body 1");
-  assert.ok(body.w < panel.w / 2, `the Body 1 row is sized to its words (${body.w} of ${panel.w} px)`);
-  // Past the row's ⋯ too (U0a: a Body row has its feature's menu), which takes clicks though it shows only under the mouse.
-  const lineEnd = Math.max(...blocks.filter((b) => Math.abs(b.y - body.y) < 2).map((b) => b.right));
-  const gap = { x: lineEnd + 20, y: body.y + body.h / 2 };
-  assert.ok(gap.x < panel.right, "that spot is inside the panel's box");
-  assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, gap), "CANVAS", "beside a short row, the view takes the click");
+  assert.ok(body.w >= panel.w / 2, `the Body 1 row runs across the card (${body.w} of ${panel.w} px)`);
+  // Inside the card under its last row the card takes the click, not the view.
+  const last = Math.max(...blocks.map((b) => b.y + b.h));
+  const spot = { x: panel.x + panel.w / 2, y: Math.min(last + 3, panel.y + panel.h - 2) };
+  assert.equal(await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest("#browser")), spot), true, "inside the card, the card takes the click");
 }
 
 /** The timeline row: the very bottom of the window, full width, thin, under the view and its buttons. */
@@ -565,31 +567,36 @@ try {
     assert.deepEqual(over([0, 0, 0, 0.5], WHITE), [127.5, 127.5, 127.5]);
   });
 
-  await check("the browser's rows float as blocks over the view, readable over white or black", async () => {
+  await check("the browser is one card over the view, its rows readable over white or black", async () => {
     const found = await browserBlocks(page);
-    await checkFloatingRows(page, found);
+    await checkCard(page, found);
     checkReadable(found);
-    // Worked by hand for the Body 1 row (words #e6e9ee on rgba(28, 31, 36, 0.84)) over a white view:
-    // the backdrop is 0.84 × (28, 31, 36) + 0.16 × 255 = (64.32, 66.84, 71.04), luminance
-    // 0.2126 × 0.0518 + 0.7152 × 0.0559 + 0.0722 × 0.0631 = 0.0556; the words' luminance is
-    // 0.2126 × 0.7913 + 0.7152 × 0.8150 + 0.0722 × 0.8550 = 0.8129; (0.8129 + 0.05) / (0.0556 + 0.05) = 8.17.
+    // Worked by hand for the Body 1 row (words #e6e9ee, the row see-through, on the card's
+    // rgba(21, 27, 38, 0.96), look.css) over a white view: the backdrop is
+    // 0.96 × (21, 27, 38) + 0.04 × 255 = (30.36, 36.12, 46.68), linear (0.01325, 0.01775, 0.02807),
+    // luminance 0.2126 × 0.01325 + 0.7152 × 0.01775 + 0.0722 × 0.02807 = 0.01754; the words'
+    // luminance is 0.2126 × 0.7913 + 0.7152 × 0.8150 + 0.0722 × 0.8550 = 0.8129;
+    // (0.8129 + 0.05) / (0.01754 + 0.05) = 12.78.
     const body = found.blocks.find((b) => b.text === "Body 1");
-    const c = contrast(rgba(body.color).slice(0, 3), over(rgba(body.background), WHITE));
-    assert.ok(Math.abs(c - 8.17) < 0.02, `Body 1 over white: ${c.toFixed(3)}`);
+    const c = contrast(rgba(body.color).slice(0, 3), behind(body, found.panel, WHITE));
+    assert.ok(Math.abs(c - 12.78) < 0.02, `Body 1 over white: ${c.toFixed(3)}`);
     if (shots) await page.screenshot({ path: `${shots}/browser-rows-1280.png` });
   });
 
-  await check("the row checks fail on a see-through backdrop and on the old solid panel", async () => {
-    // Backdrops at 0.3: over white the words wash out.
-    const faint = await page.addStyleTag({ content: "#workspace #browser .browser-fold:not(#none) { --browser-block: rgba(28, 31, 36, 0.3); }" });
+  await check("the card checks fail on a see-through card, on square corners and on the old floating blocks", async () => {
+    // The card at 0.3: over white the words wash out.
+    const faint = await page.addStyleTag({ content: "#workspace #browser:not(#none) { background: rgba(21, 27, 38, 0.3); }" });
     const washed = await browserBlocks(page);
     assert.throws(() => checkReadable(washed), /over a white view/);
     await faint.evaluate((el) => el.remove());
-    // The panel's old solid backdrop, taking every click over its box.
-    const solid = await page.addStyleTag({ content: "#workspace #browser:not(#none) { background: rgba(28, 31, 36, 0.92); pointer-events: auto; }" });
-    await assert.rejects(async () => checkFloatingRows(page, await browserBlocks(page)), /the panel has no backdrop of its own/);
-    await solid.evaluate((el) => el.remove());
-    await checkFloatingRows(page, await browserBlocks(page));
+    const square = await page.addStyleTag({ content: "#workspace #browser:not(#none) { border-radius: 6px; }" });
+    await assert.rejects(async () => checkCard(page, await browserBlocks(page)), /corners are rounded/);
+    await square.evaluate((el) => el.remove());
+    // The old floating blocks (SF3d): no card, each row sized to its words.
+    const blocks = await page.addStyleTag({ content: "#workspace #browser:not(#none) { background: none; box-shadow: none; pointer-events: none; } #workspace #browser .tree-row:not(#none) { width: fit-content; }" });
+    await assert.rejects(async () => checkCard(page, await browserBlocks(page)), /near-opaque backdrop of its own/);
+    await blocks.evaluate((el) => el.remove());
+    await checkCard(page, await browserBlocks(page));
   });
 
   await check("a long browser still scrolls with the wheel over its rows", async () => {
