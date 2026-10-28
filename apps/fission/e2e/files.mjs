@@ -112,7 +112,7 @@ try {
         ["plate.dxf", "  0\nSECTION\n", "Couldn't open “plate.dxf”: SpindleLabs can't open DXF drawings yet. Laser will take them as outlines."],
         ["bracket.step", "ISO-10303-21;\n", "Couldn't open “bracket.step”: SpindleLabs can't open STEP models yet. Design will take them as exact solids."],
         ["poster.pdf", "%PDF-1.7\n", "Couldn't open “poster.pdf”: SpindleLabs can't open PDF documents yet. Layout will take them as pages."],
-        ["notes.docx", "PK\x03\x04", "Couldn't open “notes.docx”: SpindleLabs doesn't know this type of file. It opens SpindleLabs projects (.spindlelabs.json), PNG images and JPEG images."],
+        ["notes.docx", "PK\x03\x04", "Couldn't open “notes.docx”: SpindleLabs doesn't know this type of file. It opens SpindleLabs projects (.spindle), PNG images and JPEG images."],
         ["photo.png", "GIF89a", "Couldn't open “photo.png”: it is named like a PNG image, but its contents aren't one (it may be damaged, or renamed from another type)."],
       ];
       for (const [name, content, message] of cases) {
