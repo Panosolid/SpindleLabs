@@ -40,7 +40,7 @@ import { PROJECT_AGAIN, projectedOpen, projectPick } from "./projection.ts";
 import { sketchEdgeTargets } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
-import { rounding, snapOnSketch, withSnap, type Snap } from "./snap.ts";
+import { rounding, SNAP_PIXELS, snapOnSketch, withSnap, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
@@ -1822,8 +1822,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // Undo, Escape or a tool change while the kernel looked: the click was for a sketch that is no longer there.
         if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
       }
-      // A circle's rim snapped onto its centre by the grid says so (a small circle at phone zoom; beginner play-test 2026-10-28).
-      sketchBox.showError(done.note === NO_RADIUS && gridSnap && rounded[0] === snapped[0] && rounded[1] === snapped[1] && (at[0] !== snapped[0] || at[1] !== snapped[1]) ? GRID_ATE_RADIUS : (done.note ?? ""));
+      // A circle's rim the grid rounded onto its centre from further out than a snap's reach (so not a click on the centre)
+      // says the grid did it (a small circle at phone zoom; beginner play-test 2026-10-28).
+      sketchBox.showError(done.note === NO_RADIUS && gridSnap && rounded[0] === snapped[0] && rounded[1] === snapped[1] && pointer.pixel !== undefined && Math.sqrt((at[0] - snapped[0]) ** 2 + (at[1] - snapped[1]) ** 2) > SNAP_PIXELS * pointer.pixel ? GRID_ATE_RADIUS : (done.note ?? ""));
       if (done.tool !== mode.tool && locks === took) unlock(); // the sizes it placed with, not any typed since
       mode.tool = done.tool;
       // What the pointer snaps to now, with the new point and the tool's next step: where a hover answered since the

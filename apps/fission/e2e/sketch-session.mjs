@@ -96,12 +96,11 @@ function click(m, at) {
 
 /**
  * Finish sketch with the panel's button. With a shape half drawn (a first
- * corner or a centre down, or a line's start not yet a point of the
- * sketch) the first press only says so (sketch-tool.ts unfinishedWords),
+ * corner or a centre down; a line's start alone is no shape) the first press only says so (sketch-tool.ts unfinishedWords),
  * and the second goes on without it.
  */
 async function finishSketch(page, m, where) {
-  const unfinished = m.pending !== null && (m.tool !== "line" || !pointsOf(m).has(key(m.pending)));
+  const unfinished = m.pending !== null && m.tool !== "line";
   await page.click("#sketch-finish");
   if (unfinished) {
     await page.waitForFunction(() => /isn't finished/.test(document.getElementById("sketch-grid-error")?.textContent ?? ""), null, { timeout: 10000 }).catch(() => assert.fail(`${where}: no word on the unfinished ${m.tool}`));

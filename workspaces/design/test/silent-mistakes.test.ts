@@ -34,9 +34,10 @@ test("hand-worked: a shape with a click not yet a point of the sketch is unfinis
   assert.equal(unfinishedWords(circle, "Finish sketch"), "The circle isn't finished: click a point on the circle to finish it, or press Finish sketch again to go on without it.");
   const rect = clickAt(s.doc, tool("rectangle"), [0, 0]).tool;
   assert.match(unfinishedWords(rect, "Extrude")!, /^The rectangle isn't finished: click its opposite corner/);
-  // A line's start alone is unfinished; once a line is drawn the chain carries on from a point the sketch has, and nothing is lost.
+  // A line's start alone is only where a line would begin; once a line is drawn the chain carries on from a point the
+  // sketch has. Neither loses anything.
   const start = clickAt(s.doc, tool("line"), [0, 0]);
-  assert.match(unfinishedWords(start.tool, "Extrude")!, /^The line isn't finished: click where it ends/);
+  assert.equal(unfinishedWords(start.tool, "Extrude"), null, "a line's start alone");
   const drawn = clickAt(start.doc, start.tool, [10, 0]);
   assert.equal(drawn.drew, true);
   assert.equal(unfinishedWords(drawn.tool, "Extrude"), null, "a chain going has drawn its lines already");

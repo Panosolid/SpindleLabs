@@ -112,17 +112,16 @@ function pendingClicks(tool: SketchTool): SketchXY[] {
 
 /**
  * Why Extrude or Finish sketch (`verb`) waits for a second press while the
- * tool has clicks that are not yet points of the sketch (a circle's centre,
- * a first corner, a line's start, an arc's ends): pressed once, the shape
- * was dropped without a word (beginner play-test 2026-10-28). Null when
- * nothing would be lost; a chain going has drawn its lines already.
+ * tool has a shape half drawn (a circle's centre, a first corner, an arc's
+ * ends): pressed once, the shape was dropped without a word (beginner
+ * play-test 2026-10-28). Null when nothing would be lost: a line's start
+ * alone is only where a line would begin, and a chain going has drawn its
+ * lines already.
  */
 export function unfinishedWords(tool: SketchTool, verb: string): string | null {
-  if (pendingClicks(tool).length === 0) return null;
+  if (tool.kind === "line" || pendingClicks(tool).length === 0) return null;
   const next = (): [string, string] => {
     switch (tool.kind) {
-      case "line":
-        return ["line", "where it ends"];
       case "rectangle":
         return ["rectangle", "its opposite corner"];
       case "arc":
