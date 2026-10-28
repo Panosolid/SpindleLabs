@@ -1,5 +1,5 @@
 /* The "new version is ready" notice (offline mode, src/offline.ts). */
-.app-update { position: fixed; z-index: 50; left: 50%; bottom: 56px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 8px 8px 14px; background: #262a31; color: #e6e8eb; border: 1px solid #3d434d; border-radius: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
+.app-update { position: fixed; z-index: 50; left: 50%; bottom: 56px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 8px 8px 8px 14px; background: #1e2735; color: #e6e8eb; border: 1px solid #3d434d; border-radius: var(--look-radius-s); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
 .app-update span { flex: 1 1 auto; }
-.app-update button { flex: none; min-height: 32px; padding: 0 14px; border: 1px solid #4b84d6; border-radius: 4px; background: #2f63ad; color: #fff; font: inherit; cursor: pointer; }
+.app-update button { flex: none; min-height: 32px; padding: 0 14px; border: 1px solid #4b84d6; border-radius: var(--look-radius-s); background: #2f63ad; color: #fff; font: inherit; cursor: pointer; }
 .app-update button:disabled { opacity: 0.6; cursor: default; }

@@ -10,7 +10,7 @@ Contents of `packages/core`; the rules are in packages/CLAUDE.md and the root CL
   - `wasm/`: the private kernel's release build, committed (`fission_kernel.js`, its `.wasm`, types, `kernel.json`, `crates.json`, `LICENSE-KERNEL.txt`); only the kernel's Release pull requests change it. To try an unreleased kernel locally, build it over these files from a kernel checkout (the kernel repo's CLAUDE.md) and never commit that.
   - `handshake.ts`: `startKernel` calls the build's `begin` with `kernel.json`'s handshake before any other call and refuses a build that doesn't match it; the worker and `node-kernel.ts`'s `loadKernel` both use it. `test/handshake.test.ts`.
 - `src/model/` (see docs/integration.md), built:
-  - `project.ts`: format version and migrations, `projectToJson`/`projectFromJson`: the .spindlelabs.json file.
+  - `project.ts`: format version and migrations, `projectToJson`/`projectFromJson`: the .spindle file.
   - `representation.ts`: the representation registry (producers, converters, and the file importers: `registerImporter`/`importerFor`, one per format).
   - `actions.ts`: the one action registry: verbs per selection kind and representation; `ctx.actions`.
   - `feature.ts`: intent, provenance, timeline.

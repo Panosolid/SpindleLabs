@@ -39,7 +39,7 @@ export function refuseIfFramed(win: Window): void {
   const main = doc.createElement("main");
   main.id = "framed";
   // Styled here, with the theme's colours, so it reads the same whichever stylesheets loaded.
-  Object.assign(main.style, { font: "16px system-ui, sans-serif", padding: "16px", color: "#e6e8eb", background: "#14161a", minHeight: "100vh", boxSizing: "border-box" });
+  Object.assign(main.style, { font: "16px system-ui, sans-serif", padding: "16px", color: "#e6e8eb", background: "#0f141c", minHeight: "100vh", boxSizing: "border-box" });
   Object.assign(open.style, { color: "#4aa8ff" });
   main.append(note, open);
   doc.body.replaceChildren(main);

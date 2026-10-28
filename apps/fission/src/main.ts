@@ -16,13 +16,14 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
-import { changeNote, fileMenu, iconSvg, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
+import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { sheetDrag } from "./sheet-drag.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -183,7 +184,8 @@ useGraph(ctx.graph, ctx.changeNotes);
 // the main view's camera, to check navigation (SF3a); split view's second
 // view, to check its camera and to break its "no 3D view" on purpose; how
 // many bodies the kernel holds (the monkey tester's leak check); the
-// kernel's WebAssembly memory and the viewport's counts (the soak test's).
+// kernel's WebAssembly memory and the viewport's counts (the soak test's);
+// any kernel call, to run the kernel out of memory (e2e/kernel-restart.mjs).
 if (new URLSearchParams(location.search).has("test-hooks"))
   Object.assign(window, {
     fissionTest: {
@@ -197,6 +199,7 @@ if (new URLSearchParams(location.search).has("test-hooks"))
       splitView: () => split?.view ?? null,
       bodyCount: () => kernel.call("body_count"),
       wasmBytes: () => kernel.call("wasm_bytes"),
+      kernelCall: (op: Parameters<typeof kernel.call>[0], ...args: unknown[]) => (kernel.call as (op: string, ...a: unknown[]) => Promise<unknown>)(op, ...args),
       gpu: () => viewer.memoryCounts(),
     },
   });
@@ -544,15 +547,18 @@ const saveStatus = (s: AutosaveStatus) => {
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 /** False once the browser has shown it can't keep projects: then nothing autosaves, and Save/Open use files. */
 let canKeep = true;
-/** Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is. */
-function keep(id: string, stored = false) {
+/**
+ * Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is,
+ * stored at `storedAt`: a save after another tab stored it since is refused and says so (app sweep, finding 2).
+ */
+function keep(id: string, stored = false, storedAt: Date | null = null) {
   keepOnChange = null;
   autosave?.finish();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored });
+  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt });
   document.body.dataset.projectId = id; // read by the e2e test
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -563,18 +569,19 @@ function keepOnFirstChange() {
 }
 
 // Save and Open: the whole project, every workspace's data, as one
-// .spindlelabs.json file (docs/project-format.md). Opening replaces the project
+// .spindle file (docs/project-format.md). Opening replaces the project
 // only once all of it has read cleanly; a refused file leaves the open
 // project as it was and says why.
 const fileStatus = (message: string) => ($("file-status").textContent = message);
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
-async function save() {
+/** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
+let savedTo: FileHandle | null = null;
+async function save(asNew = false) {
   try {
     await started; // the project shown, not the empty one the app starts with
-    const url = URL.createObjectURL(new Blob([projectToJson(ctx.project)], { type: "application/json" }));
-    const a = Object.assign(document.createElement("a"), { href: url, download: `${ctx.project.name.replace(/[\\/:*?"<>|]/g, "-") || "Untitled"}.spindlelabs.json` });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    const result = await saveFile(document, { suggestedName: ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
+    if (result.status === "failed") return fileStatus(result.message);
+    if (result.status === "saved") savedTo = result.handle;
     fileStatus("");
   } catch (e) {
     fileStatus(e instanceof Error ? e.message : String(e));
@@ -583,10 +590,11 @@ async function save() {
 const SAVE_TITLE = $("save").title;
 withIcon($("save"), "save"); // its word kept as its name, out of sight (styles/app-bar.css)
 $("save").addEventListener("click", () => void save());
+const SAVE_AS_TITLE = "Save As…: save the whole project under a name and in a place you choose";
 // Open takes what a drop or paste takes (X6): every format with an importer,
 // routed by its contents, so a PNG opens in Image and a project as a project.
 $<HTMLInputElement>("open-file").accept = FILE_FORMATS.filter((f) => representations.importerFor(f.format))
-  .flatMap((f) => (f.format === "project" ? [".json"] : f.extensions))
+  .flatMap((f) => (f.format === "project" ? [".spindle", ".json"] : f.extensions))
   .join(",");
 const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFor(f.format)).map((f) => f.many).join(", ")}`;
 // File ▾ (U0f2a), first on the bar as in Fusion: New and the exports are
@@ -595,6 +603,7 @@ const OPEN_TITLE = `Open ${FILE_FORMATS.filter((f) => representations.importerFo
 const file = fileMenu(document, {
   open: { id: "open", label: "Open…", title: OPEN_TITLE, run: () => $("open-file").click() },
   save: { id: "file-save", label: "Save", title: SAVE_TITLE, run: () => void save() },
+  saveAs: { id: "file-save-as", label: "Save As…", title: SAVE_AS_TITLE, run: () => void save(true) },
   where: () => {
     const id = panesInUse().map((p) => pool.showing(p))[0];
     return id ? workspaceTitle(id) : "Community";
@@ -610,6 +619,7 @@ const file = fileMenu(document, {
 $("file-bar").prepend(file.element);
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
+  savedTo = null; // the file belonged to the old project
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -698,7 +708,10 @@ $("open-file").addEventListener("change", async () => {
 // Files from outside (X6): a file dropped anywhere on the app, or pasted
 // (outside a text field), goes through the representation registry: a
 // project opens as Open does, a PNG or JPEG opens in Image, and anything
-// else is refused in the top bar with what will take it and when.
+// else is refused in the top bar with what will take it and when. A file
+// for a workspace not on screen asks first ("Open in Image?"; the owner's
+// ask, 2026-10-28): Cancel opens nothing and leaves you where you were.
+const elsewhere = openElsewhere(document);
 async function receive(files: File[]) {
   await started; // or the project being reopened would replace what this opens
   const heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await f.slice(0, HEAD_BYTES).arrayBuffer()) })));
@@ -706,6 +719,11 @@ async function receive(files: File[]) {
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
   const file = files[0];
+  const target = route.importer.workspace;
+  if (target && pool.showing("main") !== target && pool.showing("split") !== target) {
+    const here = pool.showing("main");
+    if (!(await elsewhere.ask(file.name, formatInfo(route.format).one, workspaceName(target), here ? workspaceName(here) : null))) return;
+  }
   try {
     await route.importer.open(file.name, new Uint8Array(await file.arrayBuffer()));
   } catch (e) {
@@ -885,7 +903,8 @@ for (const slot of ["browser", "properties"] as const) {
   toggle.addEventListener("sheet-close", () => set(false));
 }
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (the plane to sketch on, Edit feature, Extrude's distance and OK: without the sheet open they are out of reach) and closes again, if it opened it, when
+// (the plane to sketch on, Edit feature, Extrude's distance and OK, Move's boxes once a body is picked, so the view stays clear to
+// pick them: without the sheet open they are out of reach) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
   const toggle = $("properties-toggle");
@@ -895,7 +914,7 @@ for (const slot of ["browser", "properties"] as const) {
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#extrude-panel:not([hidden])") !== null;
+    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#extrude-panel:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
     if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
@@ -934,6 +953,11 @@ $("workspace").addEventListener("properties-reveal", () => {
     setAssistant(false);
   });
 }
+// Dragging a sheet down by its handle puts it away too (src/sheet-drag.ts).
+sheetDrag(document, window.matchMedia("(max-width: 640px)"), (sheet) => {
+  if (sheet.id === "assistant") setAssistant(false);
+  else $(`${sheet.id}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+});
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
 const fromHash = (): Page => {
   const id = location.hash.slice(1);
@@ -953,8 +977,11 @@ async function start() {
   const unsaved = await recoverUnsaved(store, local, workspaces);
   if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
   let newest: string | undefined;
+  let newestAt: Date | null = null;
   try {
-    newest = (await store.list())[0]?.id;
+    const top = (await store.list())[0];
+    newest = top?.id;
+    newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
   } catch (e) {
     canKeep = false;
     fileStatus(`Projects can't be kept in this browser (${why(e)}). Use Save to keep your work as a file.`);
@@ -969,7 +996,7 @@ async function start() {
     } else if (newest) {
       guard.opening(newest);
       ctx.project = await store.open(newest);
-      keep(newest, true);
+      keep(newest, true, newestAt);
       saveStatus({ state: "saved" });
       opened = newest;
     } else keep(newId());

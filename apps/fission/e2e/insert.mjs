@@ -8,6 +8,7 @@
 // Shape choice. Each at 1280 px with the mouse and 375 px with taps, with
 // deliberate breaks that fail. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { closePanels, insertPreset, openPanel, switchTo } from "./start.mjs";
@@ -38,6 +39,19 @@ async function fresh(width, touch) {
   await page.waitForSelector("#start-hint", { state: "visible" });
   return page;
 }
+
+const shots = process.env.E2E_SHOTS;
+/** The toolbar's STL: its triangles' corners, in mm. */
+async function stlCorners(page, tap) {
+  const [dl] = await Promise.all([page.waitForEvent("download"), tap ? page.tap("#toolbar [data-op=export_stl]") : page.click("#toolbar [data-op=export_stl]")]);
+  const bytes = readFileSync(await dl.path());
+  const out = [];
+  for (let t = 0; t < bytes.readUInt32LE(80); t++) for (let k = 0; k < 3; k++) out.push([0, 1, 2].map((i) => bytes.readFloatLE(84 + 50 * t + 12 + 12 * k + 4 * i)));
+  return out;
+}
+/** [min, max] of the corners for x, y and z. */
+const bounds = (pts) => [0, 1, 2].map((i) => [Math.min(...pts.map((p) => p[i])), Math.max(...pts.map((p) => p[i]))]);
+const near = (got, want, what) => got.flat().forEach((x, i) => assert.ok(Math.abs(x - want.flat()[i]) <= 1e-4, `${what}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`));
 
 let failed = 0;
 async function check(name, fn) {
@@ -138,6 +152,30 @@ try {
         await press(page, "#undo", tap);
         await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 0, null, "empty again");
         await until(page, () => !document.getElementById("start-hint").hidden, null, "the hint back for the empty design");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    await check(`${at}: a sphere inserted rests on the floor; made bigger, it grows about its centre and goes below (Ben, 2026-10-28)`, async () => {
+      const page = await fresh(width, tap);
+      try {
+        await insertPreset(page, "sphere", tap);
+        // ⌀40: radius 20, lifted by it, so z 0..40 (its poles are mesh corners; the STL rounds to float: 1e-4 mm),
+        // still centred over the origin in x and y (the mesh's sides fall a chord short of ±20, the same each way).
+        await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 1, null, "the sphere");
+        const floor = (b, z, what) => {
+          near([b[2]], [z], what);
+          for (const i of [0, 1]) assert.ok(Math.abs(b[i][0] + b[i][1]) <= 1e-4, `${what}: centred in ${"xy"[i]}: ${JSON.stringify(b)}`);
+        };
+        floor(bounds(await stlCorners(page, tap)), [0, 40], "the sphere on the floor");
+        if (shots) await page.screenshot({ path: `${shots}/sphere-on-floor-${width}.png` });
+        // ⌀60 typed: the centre stays 20 up, radius 30, so z −10..50, never snapped back up.
+        await openPanel(page, "properties", tap);
+        await page.fill("#width", "60");
+        await until(page, () => document.querySelector("#undo").title.startsWith("Undo Change"), null, "the size changed");
+        await closePanels(page, tap);
+        floor(bounds(await stlCorners(page, tap)), [-10, 50], "the bigger sphere, 10 below the floor");
       } finally {
         await page.context().close();
       }

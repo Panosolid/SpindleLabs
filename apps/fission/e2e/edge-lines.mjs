@@ -70,7 +70,7 @@ const L_EDGE = (EDGE[0] + EDGE[1] + EDGE[2]) / 3;
 const CORE = 0.4;
 /** How far a fully covered pixel's channel may be from EDGE. */
 const EDGE_SLACK = 10;
-/** A reference pixel is on a face when every channel is above this (the background is (20, 22, 26), its grid lines under 80). */
+/** A reference pixel is on a face when every channel is above this (the backdrop is a dark blue, every channel under 60, backdrop.ts; its grid lines' red under 80). */
 const FACE = 60;
 
 const sub = (a, b) => a.map((x, i) => x - b[i]);
