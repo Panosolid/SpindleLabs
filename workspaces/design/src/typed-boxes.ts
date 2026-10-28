@@ -24,9 +24,21 @@ export const FIELD_LABELS: Record<TypedField, string> = { length: "Length", angl
 const UNITS: Record<TypedField, string> = { length: "mm", angle: "°", width: "mm", height: "mm", radius: "mm", sweep: "°" };
 const read = (field: TypedField, text: string): Reading => (field === "angle" ? readAngle(text) : field === "sweep" ? readSweep(text) : readLength(text));
 
+/** The boxes sit this far right of and below the point they are given (typed-entry.css translate). */
+const BOX_OFFSET = { x: 18, y: 14 };
+/** How near a point (in pixels) counts as under the boxes: a finger's reach. */
+export const TAP_MARGIN = 22;
+
+/** Whether any of `points` (in the host's pixels) is under `el`, or within `TAP_MARGIN` of it. */
+function coversAny(el: HTMLElement, host: HTMLElement, points: readonly { x: number; y: number }[]): boolean {
+  const b = el.getBoundingClientRect();
+  const h = host.getBoundingClientRect();
+  return points.some((p) => p.x + h.left >= b.left - TAP_MARGIN && p.x + h.left <= b.right + TAP_MARGIN && p.y + h.top >= b.top - TAP_MARGIN && p.y + h.top <= b.bottom + TAP_MARGIN);
+}
+
 export interface TypedBoxes {
   /** Shows these fields (in this order) by the point (x, y) in the host's pixels, each not typed in showing its live value; no fields hides the boxes. */
-  show(fields: readonly TypedField[], live: Locks, x: number, y: number): void;
+  show(fields: readonly TypedField[], live: Locks, x: number, y: number, avoid?: readonly { x: number; y: number }[]): void;
   /** The accepted typed values: what is locked. */
   readonly locks: Locks;
   /** Whether a box has the keys. */
@@ -147,7 +159,7 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
     get focused() {
       return [...boxes.values()].some((b) => b.input === document.activeElement);
     },
-    show(next, live, x, y) {
+    show(next, live, x, y, avoid) {
       if (next.length === 0) return api.hide();
       if (next.join() !== fields.join()) {
         const had = api.focused;
@@ -162,9 +174,21 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
       }
       for (const f of fields) boxes.get(f)!.input.placeholder = live[f] === undefined ? "" : shownValue(live[f]!);
       root.hidden = false;
-      root.style.left = `${Math.round(x)}px`;
-      root.style.top = `${Math.round(y)}px`;
-      keepInside(root, host);
+      const place = (px: number, py: number) => {
+        root.style.left = `${Math.round(px)}px`;
+        root.style.top = `${Math.round(py)}px`;
+        keepInside(root, host);
+      };
+      place(x, y);
+      if (!avoid?.length || !coversAny(root, host, avoid)) return;
+      // A finger's tap on a sketch point (the corner to close on) must not land on the boxes: try beside, above, then the corners of the view.
+      const { width, height } = root.getBoundingClientRect();
+      const { width: hw, height: hh } = host.getBoundingClientRect();
+      for (const [px, py] of [[x - width - 2 * BOX_OFFSET.x, y], [x, y - height - 2 * BOX_OFFSET.y], [0, 0], [hw, 0], [0, hh], [hw, hh]]) {
+        place(px, py);
+        if (!coversAny(root, host, avoid)) return;
+      }
+      place(x, y);
     },
     start(text) {
       if (fields.length === 0) return;

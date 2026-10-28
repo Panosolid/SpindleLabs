@@ -189,6 +189,8 @@ export interface SharedViewport {
    * sees it, the front at the top).
    */
   lookAt(plane: Plane, side?: 1 | -1): Framing | null;
+  /** The edited sketch's points on screen (pixels from the view's top left), so a box can keep clear of them. */
+  editedScreenPoints(): { x: number; y: number }[];
   /** Paints an analysis overlay on the current body (replaces one with the same id). */
   setOverlay(overlay: AnalysisOverlay): void;
   clearOverlay(id: string): void;
