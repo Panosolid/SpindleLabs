@@ -69,6 +69,8 @@ let putAwayByRestore = false;
 let editingSketch: { id: string; grid: number; typed: string; tool: ToolKind } | null = null;
 /** Grid snap on or off (sketch feel SF1; off by default: points go where you click), kept for every sketch until the page reloads. */
 let gridSnap = DEFAULT_GRID_SNAP;
+/** How long (ms) Ctrl or Cmd is held with no other key before the snap under a still pointer goes: long enough for a shortcut's second key. */
+const HELD_SHOW_MS = 150;
 /** The Snap button on the sketch's toolbar: snapping to points, edges and line-ups on (the default) or off, kept for every sketch until the page reloads. */
 let snapOn = true;
 /** The properties' fold a new mount starts with (U0b): the user's pin, kept across Undo, Redo and switching; null until the first mount reads it from storage. */
@@ -1730,12 +1732,29 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let lastMove: { at: SketchXY; pixel: number | undefined; rounded: Promise<SketchXY> } | null = null;
   /** The pointer's last move over the sketch, snapped again when Ctrl or Cmd is pressed or let go with the pointer still. */
   let lastHover: SketchPointer | null = null;
-  /** Ctrl or Cmd pressed or let go: the snap under a still pointer shows the change at once, as Fusion's does. */
+  /** A press of Ctrl or Cmd waiting to show: dropped when another key follows, a shortcut like Ctrl+Z rather than a hold. */
+  let heldShow: ReturnType<typeof setTimeout> | undefined;
+  /** Another key pressed while Ctrl or Cmd is held (a shortcut, not a hold). */
+  let chord = false;
+  /**
+   * Ctrl or Cmd pressed or let go: the snap under a still pointer shows the change, as Fusion's does. A press shows it
+   * after HELD_SHOW_MS unless another key comes first, and a release after another key shows nothing until the pointer
+   * moves, so Ctrl+Z never snaps a hover again just as Undo puts the sketch state away (a hover answered after Undo
+   * would draw the old tool on the new document: sketch-session.mjs, seed 1).
+   */
   const onHeldKey = (e: KeyboardEvent) => {
+    clearTimeout(heldShow);
     const now = e.ctrlKey || e.metaKey;
+    if (now && e.type === "keydown" && e.key !== "Control" && e.key !== "Meta") chord = true;
     if (now === modHeld) return;
     modHeld = now;
-    if (mode.kind === "edit" && lastHover) onSketchPointer(lastHover);
+    const show = () => {
+      if (shown && mode.kind === "edit" && lastHover) onSketchPointer(lastHover);
+    };
+    // Let go after a shortcut: the next pointer move shows the snap, never a hover snapped while the shortcut's change lands.
+    if (now) heldShow = setTimeout(show, HELD_SHOW_MS);
+    else if (!chord) show();
+    if (!now) chord = false;
   };
   /** Clicks are handled one after another, each on the document the last one left. */
   let clicks = Promise.resolve();
@@ -1982,6 +2001,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.element.removeEventListener("pointerdown", onViewportMove);
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
+    clearTimeout(heldShow);
     typed.hide();
     hint.hide();
     sketchBar.closeMenu();

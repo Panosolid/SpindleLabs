@@ -3,7 +3,10 @@
    far right in the accent green of "done". ":not(#none)" lifts a rule over
    the base layout's "#workspace button" while every selector still starts
    with .sketchbar. */
+.sketchbar.sketchbar-finish:not(#none) { margin-left: auto; }
+/* The Snap toggle stands just before Finish Sketch, the pair pushed right together. */
 .sketchbar.sketchbar-snap:not(#none) { margin-left: auto; }
+.sketchbar.sketchbar-snap:not(#none) + .sketchbar.sketchbar-finish:not(#none) { margin-left: 0; }
 /* The Snap toggle (snap.ts snapsNow): lit while snapping is on, plain and dimmed while off. */
 .sketchbar #sketch-snap[aria-pressed="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
 .sketchbar #sketch-snap[aria-pressed="false"]:not(#none) { color: #8a919c; }
