@@ -22,6 +22,7 @@ import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
+import { startOffline } from "./offline.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -968,3 +969,6 @@ ctx.kernel.call("kernel_version").then((v) => {
   $("version").textContent = `kernel v${v}`;
   $("version").parentElement!.title = `SpindleLabs, kernel v${v}`; // where the version shows when the bar has no room for it
 }, () => {}); // a kernel that didn't start says so where the part would be (Design's error line), not as an uncaught error
+
+// Offline mode: the service worker keeps this build for use with no connection, and offers a new one when it ships.
+startOffline();

@@ -89,6 +89,8 @@ function click(m, at) {
   }
   const radius = Math.sqrt((at[0] - from[0]) ** 2 + (at[1] - from[1]) ** 2);
   if (radius === 0) return null;
+  // The same circle there already (its centre a point, the same radius) draws nothing, and the centre stays (SAME_CIRCLE).
+  if (m.circles.some((c) => key(c.centre) === key(from) && c.radius === radius)) return null;
   m.pending = null;
   return draw(STEP.circle, () => m.circles.push({ centre: from, radius }));
 }
