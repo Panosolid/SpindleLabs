@@ -79,6 +79,12 @@ class CiState(unittest.TestCase):
         # and the nightly fuzzing's kernel targets, whatever their name starts with.
         self.assertEqual(ci_state(both + [check("browsers (firefox)", "in_progress", None),
                                           check("kernel (extrude)", conclusion="failure")]), "success")
+        # The phone check (WebKit, on pull requests that change the app)
+        # gates the merge once it has run, and its absence is no gap.
+        self.assertEqual(ci_state(both + [check("phone", conclusion="failure")]), "failure")
+        self.assertEqual(ci_state(both + [check("phone", "in_progress", None)]), "pending")
+        self.assertEqual(ci_state(both + [check("phone", conclusion="skipped")]), "success")
+        self.assertEqual(ci_state(both + [check("phone")]), "success")
         # On a push run the job is skipped, which passes; the coverage
         # report never blocks.
         self.assertEqual(ci_state(both + [check("mutants-in-diff", conclusion="skipped"),

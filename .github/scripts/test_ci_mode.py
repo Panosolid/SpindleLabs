@@ -282,10 +282,10 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("docs", ci["kernel"])
         self.assertRegex(ci["kernel"], r"- run: python3 -m unittest discover -s \.github/scripts\n      - ")
         self.assertIn("run: python3 .github/scripts/check_kernel_build.py", ci["kernel"])
-        for job in ("app", "baseline", "e2e-shard", "e2e-quick", "browsers"):
+        for job in ("app", "baseline", "e2e-shard", "e2e-quick", "browsers", "phone"):
             self.assertIn("needs.mode.outputs.docs != 'true'", ci[job], job)
             self.assertIn("mode", re.search(r"needs: (.*)", ci[job]).group(1), job)
-        for job in ("app", "baseline", "e2e-shard", "browsers"):
+        for job in ("app", "baseline", "e2e-shard", "browsers", "phone"):
             self.assertIn("!cancelled()", ci[job], job)
         self.assertIn('if [ "$DOCS" = true ]; then', ci["e2e"])
         self.assertIn("if: always()", ci["mutants-in-diff"])
