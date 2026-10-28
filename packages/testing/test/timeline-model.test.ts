@@ -102,8 +102,13 @@ test("a slot, a cylinder and a sphere by hand", () => {
   // Sphere ⌀6: 4/3 π 3³ = 36π mm³; each half 2π · 3² = 18π mm², its centroid r/2 = 1.5 from the centre (Archimedes: equal heights, equal areas).
   const sph = bodyOf(r["item-8"]);
   assert.ok(near(sph.volume, 36 * Math.PI) && near(face(sph, "item-8/upper").area, 18 * Math.PI));
-  assert.deepEqual(face(sph, "item-8/upper").centroid, [0, 0, 1.5]);
-  assert.deepEqual(face(sph, "item-8/lower").centroid, [0, 0, -1.5]);
+  // It rests on the floor (Ben, 2026-10-28): its centre r = 3 up, so the halves' centroids at 3 + 1.5 and 3 − 1.5.
+  assert.deepEqual(face(sph, "item-8/upper").centroid, [0, 0, 4.5]);
+  assert.deepEqual(face(sph, "item-8/lower").centroid, [0, 0, 1.5]);
+  // Made ⌀10, it grows about that centre, never snapped back: radius 5 about z = 3, halves at 3 ± 2.5, its bottom at 3 − 5 = −2.
+  run(m, { op: "set-size", item: "item-8", key: "diameter", value: 10 });
+  const big = bodyOf(results(m)["item-8"]);
+  assert.deepEqual([face(big, "item-8/upper").centroid, face(big, "item-8/lower").centroid], [[0, 0, 5.5], [0, 0, 0.5]]);
 });
 
 test("a clockwise rectangle: the same names on the same faces as the counter-clockwise one", () => {

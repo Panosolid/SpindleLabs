@@ -140,12 +140,27 @@ export type SketchOutline =
    */
   | { open: string; invalid?: KernelInput[] };
 
-/** What to build, as the kernel takes it. */
-export type BodySpec =
+/** A shape to build, as the kernel takes it. */
+export type ShapeSpec =
   | { box: { width: number; depth: number; height: number } }
   | { cylinder: { radius: number; height: number } }
   | { sphere: { radius: number } }
   | { extrude: { profile: Outline; distance: number; frame?: Frame; flip?: boolean } };
+
+/**
+ * What to build, as the kernel takes it: a shape, or a shape moved and
+ * turned after it is built (`moves` in order; the shape can't itself be
+ * moved, so a spec is at most two deep). The kernel takes at most 1000
+ * moves, and refuses one that isn't finite naming it ("move 2: …").
+ */
+export type BodySpec = ShapeSpec | { moved: { body: ShapeSpec; moves: Motion[] } };
+
+/**
+ * One move of a moved body: a shift (mm), or a turn of `angle` radians,
+ * counter-clockwise looking down `axis` (not zero; needn't be unit), about
+ * the line through `pivot`.
+ */
+export type Motion = { move: [number, number, number] } | { turn: { pivot: [number, number, number]; axis: [number, number, number]; angle: number } };
 
 /**
  * Where a sketch's plane is, for an extrude built on it (step 26b): world origin, x axis and normal, the axes unit

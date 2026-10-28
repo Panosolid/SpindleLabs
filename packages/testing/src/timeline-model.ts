@@ -103,7 +103,8 @@ export type ModelItem =
   | { id: string; kind: "extrude"; sketch: string; distance: number; suppressed: boolean; kept?: Kept }
   | { id: string; kind: "box"; width: number; depth: number; height: number; suppressed: boolean }
   | { id: string; kind: "cylinder"; diameter: number; height: number; suppressed: boolean }
-  | { id: string; kind: "sphere"; diameter: number; suppressed: boolean };
+  /** `centreZ`: its centre's height, its radius when added, so it rests on the floor, and kept when its diameter changes (Ben, 2026-10-28: never snapped back). */
+  | { id: string; kind: "sphere"; diameter: number; centreZ: number; suppressed: boolean };
 
 /** An extrude's last shape: its sketch's shape and curve ids just before the sketch was lost, and the height it lay at when that was a face sketch (26e). */
 export interface Kept {
@@ -475,7 +476,7 @@ function extrudeEdges(s: ModelShape, sides: readonly FaceName[], start: FaceName
   ];
 }
 
-/** A preset's body. The box has a corner at the origin and the opposite one at (w, d, h); the cylinder and sphere are on the Z axis, the cylinder standing on z = 0, the sphere centred on the origin (kernel/src/ops/primitives.rs). */
+/** A preset's body. The box has a corner at the origin and the opposite one at (w, d, h); the cylinder and sphere are on the Z axis, the cylinder standing on z = 0, the sphere's centre `centreZ` above the origin (the kernel builds it round the origin, kernel/src/ops/primitives.rs, and Design lifts it). */
 function presetBody(item: Extract<ModelItem, { kind: PresetKind }>, faults: ReadonlySet<ModelFault>): ModelBody {
   const f = (role: FaceRole, area: number, centroid: Vec3): ModelFace => ({ name: { feature: item.id, role }, area, centroid });
   const e = (a: FaceRole, b: FaceRole, length: number, centroid: Vec3): ModelEdge => ({ name: edgeName({ feature: item.id, role: a }, { feature: item.id, role: b }, false), length, centroid });
@@ -517,10 +518,11 @@ function presetBody(item: Extract<ModelItem, { kind: PresetKind }>, faults: Read
   // A hemisphere's surface centroid is r/2 from the centre (Archimedes: equal heights, equal areas, so the mean height is half way).
   // Planted bug ("sphere-one-name"): both halves named upper.
   const lower = faults.has("sphere-one-name") ? "upper" : "lower";
+  const z = item.centreZ;
   return {
     volume: (4 / 3) * Math.PI * r ** 3,
-    faces: [f("upper", 2 * Math.PI * r * r, [0, 0, r / 2]), f(lower, 2 * Math.PI * r * r, [0, 0, -r / 2])],
-    edges: [e("upper", lower, rim, [0, 0, 0])],
+    faces: [f("upper", 2 * Math.PI * r * r, [0, 0, z + r / 2]), f(lower, 2 * Math.PI * r * r, [0, 0, z - r / 2])],
+    edges: [e("upper", lower, rim, [0, 0, z])],
   };
 }
 
@@ -848,7 +850,7 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
           ? { id, kind: "box", width: a, depth: b, height: c, suppressed: false }
           : op.kind === "cylinder"
             ? { id, kind: "cylinder", diameter: a, height: b, suppressed: false }
-            : { id, kind: "sphere", diameter: a, suppressed: false };
+            : { id, kind: "sphere", diameter: a, centreZ: a / 2, suppressed: false };
       insert(doc, item);
       return { kind: "done", ids: [id] };
     }

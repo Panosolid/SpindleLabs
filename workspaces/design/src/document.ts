@@ -244,9 +244,14 @@ export function relabelled(features: readonly Feature[], id: string, label: stri
  * the ready-made profile it extrudes (with `profileId`) for a profile shape.
  * Boxes, cylinders and spheres are primitives (a cylinder's or sphere's
  * width is its diameter); other shapes extrude a ready-made profile by the
- * height.
+ * height. Every one rests on the XY floor when made (Ben, 2026-10-28): a
+ * box, cylinder or profile is built standing on it, and a sphere, which
+ * the kernel builds round the origin, keeps its centre's height `centreZ`,
+ * its radius (`centre`; from `changePreset` the old sphere's, so a later
+ * size change grows it about its centre and may take it below the floor:
+ * never snapped back; null for a sphere made before, kept round the origin).
  */
-function presetFeature(id: string, label: string, profileId: string | undefined, kind: ShapeKind, w: number, d: number, h: number): { feature: Feature; profile?: ReadyProfile } {
+function presetFeature(id: string, label: string, profileId: string | undefined, kind: ShapeKind, w: number, d: number, h: number, centre: number | null = w / 2): { feature: Feature; profile?: ReadyProfile } {
   const feature = (intent: Feature["intent"], dependsOn: string[] = [], from: Feature["provenance"]["from"] = []): Feature => ({
     id,
     intent,
@@ -256,7 +261,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
   });
   if (kind === "box") return { feature: feature({ type: "box", parameters: { width: w, depth: d, height: h }, summary: `Box: ${dims(w, d, h)} mm` }) };
   if (kind === "cylinder") return { feature: feature({ type: "cylinder", parameters: { diameter: w, height: h }, summary: `Cylinder: ⌀${dims(w)} × ${h} mm` }) };
-  if (kind === "sphere") return { feature: feature({ type: "sphere", parameters: { diameter: w }, summary: `Sphere: ⌀${w} mm` }) };
+  if (kind === "sphere") return { feature: feature({ type: "sphere", parameters: centre === null ? { diameter: w } : { diameter: w, centreZ: centre }, summary: `Sphere: ⌀${w} mm` }) };
   if (profileId === undefined) throw new Error(`a ${kind} preset needs a profile id`);
   const profile: ReadyProfile = { id: profileId, kind, width: w, depth: d, plane: XY_PLANE };
   return {
@@ -318,7 +323,8 @@ export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w
   const oldProfile = old.dependsOn.find((p) => doc.profiles.some((x) => x.id === p));
   const oldKind = presetKinds(doc)(old);
   const label = oldKind !== null && oldKind !== kind && isShapeName(old.provenance.self.label, oldKind) ? presetName(doc, kind, id) : old.provenance.self.label;
-  const { feature, profile } = presetFeature(id, label, isPrimitive(kind) ? undefined : (oldProfile ?? `profile-${nextId++}`), kind, w, d, h);
+  const keptCentre = old.intent.type === "sphere" ? (centreOf(old) ?? null) : undefined;
+  const { feature, profile } = presetFeature(id, label, isPrimitive(kind) ? undefined : (oldProfile ?? `profile-${nextId++}`), kind, w, d, h, keptCentre);
   const changed = doc.timeline.features.map((f) => (f === old ? { ...feature, suppressed: old.suppressed } : f));
   const features = label === old.provenance.self.label ? changed : relabelled(changed, id, label);
   const used = new Set(features.flatMap((f) => f.dependsOn));
@@ -363,6 +369,14 @@ const num = (f: Feature, name: string) => {
   return v;
 };
 
+/** A sphere feature's centre height `centreZ` (mm), checked; undefined when it has none (made before 2026-10-28: round the origin). */
+export function centreOf(f: Feature): number | undefined {
+  if (!Object.hasOwn(f.intent.parameters, "centreZ")) return undefined;
+  const z = f.intent.parameters.centreZ;
+  if (!isFiniteNumber(z)) throw new Error(`${f.intent.summary}: centreZ ${shown(z)} is not a number of mm`);
+  return z;
+}
+
 /** The body a feature builds, read from its intent. */
 export function specOf(document: DesignDocument, feature: Feature): BodySpec {
   const p = feature.intent.parameters;
@@ -371,8 +385,11 @@ export function specOf(document: DesignDocument, feature: Feature): BodySpec {
       return { box: { width: num(feature, "width"), depth: num(feature, "depth"), height: num(feature, "height") } };
     case "cylinder":
       return { cylinder: { radius: num(feature, "diameter") / 2, height: num(feature, "height") } };
-    case "sphere":
-      return { sphere: { radius: num(feature, "diameter") / 2 } };
+    case "sphere": {
+      const sphere = { sphere: { radius: num(feature, "diameter") / 2 } };
+      const centre = centreOf(feature);
+      return centre === undefined ? sphere : { moved: { body: sphere, moves: [{ move: [0, 0, centre] }] } };
+    }
     case "extrude": {
       // Its outline comes from the kernel: featureSpec (extrude.ts) builds it.
       if (isSketchExtrude(feature)) throw new Error(`${feature.intent.summary}: an extrude of a sketch is built through featureSpec, which asks the kernel for the outline`);
@@ -415,6 +432,7 @@ function shapeWith(f: Feature, profileOf: (id: unknown) => ReadyProfile | undefi
     case "cylinder":
       return { shape: "cylinder", sizes: { width: num(f, "diameter"), height: num(f, "height") } };
     case "sphere":
+      centreOf(f);
       return { shape: "sphere", sizes: { width: num(f, "diameter") } };
     case "extrude": {
       if (isSketchExtrude(f)) return { shape: "sketch-extrude", sizes: { height: num(f, "distance") } };
