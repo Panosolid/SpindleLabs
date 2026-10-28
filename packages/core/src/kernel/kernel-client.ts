@@ -118,6 +118,19 @@ export class KernelClient implements KernelCalls {
   private missingListeners = new Set<() => void>();
   /** This worker's files didn't download (told once per worker). */
   private missing = false;
+  /**
+   * The handles this client gave out, each to the worker whose kernel holds
+   * the body and that kernel's own number for it. A fresh kernel numbers its
+   * bodies from 1 again, so the app never sees a kernel's numbers: a handle
+   * from a kernel that was replaced must never reach the new one, where the
+   * same number is another body (real-use hunt E1, 2026-10-28: an old
+   * preview's free removed a body the healed design held). Handles count
+   * on across kernels and are never reused.
+   */
+  private bodies = new Map<BodyHandle, { worker: Worker; body: BodyHandle }>();
+  private nextBody = 1;
+  /** Handles whose kernel was replaced: their bodies are gone, so freeing one is done at once (once), and nothing else is asked of them. */
+  private retired = new Set<BodyHandle>();
 
   constructor() {
     this.start();
@@ -165,6 +178,7 @@ export class KernelClient implements KernelCalls {
     const stopped = new KernelError({ kind: "internal", inputs: [], message: KERNEL_RESTARTED });
     const waiting = [...this.pending.values()];
     this.pending.clear();
+    this.retire();
     this.start();
     waiting.forEach((p) => p.reject(stopped));
     this.restartListeners.forEach((listener) => listener());
@@ -184,10 +198,17 @@ export class KernelClient implements KernelCalls {
     this.pending.clear();
     this.failed = null;
     this.missing = false;
+    this.retire();
     this.start();
     // A missing kernel answers every call at once, so none is normally left waiting; one that is fails as before.
     waiting.forEach((p) => p.reject(new KernelError({ kind: "internal", inputs: [], message: KERNEL_NOT_DOWNLOADED })));
     this.restartListeners.forEach((listener) => listener());
+  }
+
+  /** The kernel is being replaced: every handle it held now names a body that is gone. */
+  private retire() {
+    for (const handle of this.bodies.keys()) this.retired.add(handle);
+    this.bodies.clear();
   }
 
   onMissing(listener: () => void): () => void {
@@ -202,9 +223,35 @@ export class KernelClient implements KernelCalls {
 
   call<K extends keyof KernelOps>(op: K, ...args: KernelOps[K]["args"]): Promise<KernelOps[K]["result"]> {
     if (this.failed) return Promise.reject(this.failed);
+    if (op === "body_build") {
+      const worker = this.worker;
+      return this.send(op, args).then((body) => {
+        const handle = this.nextBody++;
+        // Built by a kernel replaced while it was on its way: the body went with it.
+        if (worker === this.worker) this.bodies.set(handle, { worker, body: body as BodyHandle });
+        else this.retired.add(handle);
+        return handle as KernelOps[K]["result"];
+      });
+    }
+    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free") {
+      const handle = args[0] as BodyHandle;
+      const held = this.bodies.get(handle);
+      if (!held) {
+        // A body that went with its kernel is gone already: freeing it is done. Anything else asked of it is refused, in the kernel's words.
+        if (op === "body_free" && this.retired.delete(handle)) return Promise.resolve() as Promise<KernelOps[K]["result"]>;
+        return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${handle} is not in the kernel (it was freed, or never made)` }));
+      }
+      const sent = this.send(op, [held.body, ...args.slice(1)] as KernelOps[K]["args"]);
+      if (op === "body_free") void sent.then(() => this.bodies.get(handle) === held && this.bodies.delete(handle), () => {});
+      return sent as Promise<KernelOps[K]["result"]>;
+    }
+    return this.send(op, args) as Promise<KernelOps[K]["result"]>;
+  }
+
+  private send<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"]): Promise<unknown> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      this.pending.set(id, { resolve, reject });
       this.worker.postMessage({ id, op, args } as KernelRequest);
     });
   }

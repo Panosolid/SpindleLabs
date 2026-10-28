@@ -479,14 +479,29 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // held twice, and the ones a settle builds that no rebuild keeps are freed once it ends (BodyCache.using).
   const bodies = new BodyCache(kernel);
   // A kernel that trapped is replaced by a fresh one (kernel-client.ts): its bodies are gone, so the design is built
-  // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). Once only
-  // while that build runs: a design that traps the fresh kernel too shows the failure rather than restarting forever.
+  // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). A restart
+  // while that build runs (memory still tight, another call trapping) builds once more when it ends, or the design
+  // stayed red until the next edit (real-use hunt E2); a design that traps every fresh kernel stops after HEALS builds
+  // in a row and shows the failure, rather than restarting forever.
+  const HEALS = 3;
   let healing = false;
+  let again = false;
+  let heals = 0;
+  const heal = () => {
+    healing = true;
+    again = false;
+    heals++;
+    void show(designDoc(), shape).finally(() => {
+      healing = false;
+      if (!again) heals = 0;
+      else if (heals < HEALS) heal();
+      else heals = 0;
+    });
+  };
   const stopHealing = kernel.onRestart?.(() => {
     bodies.forget();
-    if (healing) return;
-    healing = true;
-    void show(designDoc(), shape).finally(() => (healing = false));
+    if (healing) again = true;
+    else heal();
   });
   let rebuilds: Promise<unknown> = Promise.resolve();
   const build = latestOnly((doc: DesignDocument) => {
