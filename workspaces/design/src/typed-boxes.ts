@@ -28,6 +28,8 @@ const read = (field: TypedField, text: string): Reading => (field === "angle" ? 
 const BOX_OFFSET = { x: 18, y: 14 };
 /** How near a point (in pixels) counts as under the boxes: a finger's reach. */
 export const TAP_MARGIN = 22;
+/** A sketch point this near the pointer is the one just placed (pixels). */
+const POINTER_POINT = 16;
 
 /** Whether any of `points` (in the host's pixels) is under `el`, or within `TAP_MARGIN` of it. */
 function coversAny(el: HTMLElement, host: HTMLElement, points: readonly { x: number; y: number }[]): boolean {
@@ -180,13 +182,15 @@ export function typedBoxes(host: HTMLElement, on: TypedBoxEvents): TypedBoxes {
         keepInside(root, host);
       };
       place(x, y);
-      if (!avoid?.length || !coversAny(root, host, avoid)) return;
+      // The point just placed is at the pointer, which the boxes sit beside by design; the others are what a later tap may need.
+      const others = (avoid ?? []).filter((p) => Math.hypot(p.x - x, p.y - y) > POINTER_POINT);
+      if (!others.length || !coversAny(root, host, others)) return;
       // A finger's tap on a sketch point (the corner to close on) must not land on the boxes: try beside, above, then the corners of the view.
       const { width, height } = root.getBoundingClientRect();
       const { width: hw, height: hh } = host.getBoundingClientRect();
       for (const [px, py] of [[x - width - 2 * BOX_OFFSET.x, y], [x, y - height - 2 * BOX_OFFSET.y], [0, 0], [hw, 0], [0, hh], [hw, hh]]) {
         place(px, py);
-        if (!coversAny(root, host, avoid)) return;
+        if (!coversAny(root, host, others)) return;
       }
       place(x, y);
     },

@@ -979,11 +979,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     locks = {};
     typed.clear(keepFocus);
   }
-  /** What the typed boxes keep off: the sketch's points and, on a touch screen, the finger's own point (the corner it just placed, which the next tap may need). */
-  const keepClear = () => {
-    const points = viewport.editedScreenPoints();
-    return globalThis.matchMedia?.("(hover: none)").matches ? [...points, { x: screen.x, y: screen.y }] : points;
-  };
   /** Shows the modelling buttons (true) or the sketch's toolbar in their place (false). */
   function modelling(on: boolean) {
     for (const el of ctx.toolbar.querySelectorAll<HTMLElement>("[data-modelling]")) el.hidden = !on;
@@ -1006,7 +1001,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const anchor = editing && anchorOf(doc, editing.tool);
     if (!editing) return (typed.hide(), hint.hide());
     const width = viewport.element.clientWidth;
-    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, keepClear());
+    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
     if (editing.pointer) hint.show(hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y);
     else hint.hide();
   }
