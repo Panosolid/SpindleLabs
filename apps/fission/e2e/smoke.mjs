@@ -1748,6 +1748,8 @@ try {
       // Back to Design in the first pane and Image beside it.
       await switchTo(wide, "design");
       await wide.waitForFunction(() => document.body.dataset.split === "image");
+      // The status shows "—" until the kernel has answered for the design shown again, so wait for the answer.
+      await wide.waitForFunction(() => document.querySelector("#properties #status")?.textContent !== "—");
       assert.equal(await wide.textContent("#properties #status"), "valid");
 
       // Close split: one view again, its canvas gone, the first view untouched.
