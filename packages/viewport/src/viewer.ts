@@ -7,6 +7,7 @@ import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, 
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
+import { releaseShared } from "./release.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
 import { checkTextureSize, imageSheet, imageZoomRange, topDownDistance } from "./image-sheet.ts";
 import { pixelSize, rayOnPlane, sketchGrid, toWorld } from "./sketch-view.ts";
@@ -749,6 +750,7 @@ export class ViewportView {
     this.cube.element.remove();
     this.bar.element.remove();
     this.legend.remove();
+    releaseShared(this.renderer, [this.host.scene]); // the scene outlives this view: let it forget this renderer
     this.renderer.dispose();
     // Give the WebGL context back now, not when the canvas is collected: a page has 16 at most, and the oldest (the main view's) is the one dropped.
     this.renderer.forceContextLoss();
