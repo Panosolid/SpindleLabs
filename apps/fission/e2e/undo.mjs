@@ -13,7 +13,8 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, closePanels, openPanel, startWithBox, switchTo } from "./start.mjs";
+import { chooseShape, closePanels, openPanel, sheetsClearFor, startWithBox, switchTo } from "./start.mjs";
+import { TOP, screenPoint } from "./sketch-screen.mjs";
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4180/";
@@ -379,6 +380,39 @@ try {
       }
     });
   }
+
+  await check("Undo pressed at once after a sketch click drops the click, with no page error (app sweep 2026-10-28)", async () => {
+    // A new sketch on XY, a click, and Ctrl+Z before the kernel has rounded the click: the undo takes the sketch out,
+    // and the click, still waiting, was for that sketch. On main it went on and threw "there is no sketch sketch-2".
+    // The CPU is slowed 4 times so the kernel's answer comes after the key, as on a slow phone (it threw 5 runs in 5).
+    for (let run = 0; run < 3; run++) {
+      const page = await fresh();
+      const before = errors.length;
+      try {
+        sheetsClearFor(page);
+        await page.click("#create-sketch");
+        await openPanel(page, "properties", false);
+        await page.click("#sketch-plane-XY");
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
+        await closePanels(page, false);
+        await page.waitForTimeout(600);
+        const box = await page.locator("#viewport canvas").boundingBox();
+        const p = screenPoint(box, [10, 10, 0], TOP);
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+        await page.mouse.click(p.x, p.y);
+        await page.keyboard.press("Control+z");
+        await page.waitForTimeout(1500);
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+        assert.deepEqual(errors.slice(before), [], `run ${run}: no page error`);
+        // Undo took the sketch out (Redo would bring it back); the click drew nothing.
+        assert.match(await page.getAttribute("#redo", "title"), /^Redo Create sketch/, `run ${run}`);
+      } finally {
+        errors.length = before;
+        await page.close();
+      }
+    }
+  });
 
   assert.deepEqual(errors, [], "no page errors or console errors");
 } catch (e) {
