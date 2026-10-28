@@ -46,10 +46,16 @@ export function readLength(text: string): Reading {
   const t = text.trim().replace(/\s*mm$/i, "");
   if (!DECIMAL.test(t)) return { error: `"${text.trim()}" isn't a length: type a number of mm, like 25 or 12.5.` };
   const value = Number(t);
-  if (value <= 0) return { error: "A length must be more than 0 mm." };
-  if (value < MIN_TYPED) return { error: `A length must be at least ${MIN_TYPED} mm, the smallest piece the modeller keeps.` };
-  if (value > MAX_TYPED) return { error: `A length can be at most ${MAX_TYPED} mm (1 km), the largest size the modeller works at.` };
-  return { value };
+  const refused = lengthRefused(value);
+  return refused === null ? { value } : { error: refused };
+}
+
+/** Why a length of `value` mm is refused (not more than 0, under MIN_TYPED or over MAX_TYPED), or null: the one rule for a typed length and an AI's drawn sizes (commands.ts `drawingFor`). */
+export function lengthRefused(value: number): string | null {
+  if (!(value > 0)) return "A length must be more than 0 mm.";
+  if (value < MIN_TYPED) return `A length must be at least ${MIN_TYPED} mm, the smallest piece the modeller keeps.`;
+  if (value > MAX_TYPED) return `A length can be at most ${MAX_TYPED} mm (1 km), the largest size the modeller works at.`;
+  return null;
 }
 
 /**
