@@ -12,8 +12,8 @@
 // feature's intent (specOf), so the intent is the source of truth, not a
 // description written next to the geometry.
 
-import type { BodySpec, Feature, Plane, WorkspaceId } from "@fission/core";
-import { workspaceName, XY_PLANE } from "@fission/core";
+import type { BodySpec, Feature, Plane } from "@fission/core";
+import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
@@ -704,31 +704,6 @@ export function withShortNames(doc: DesignDocument): DesignDocument {
 }
 
 /**
- * The parts of a timeline item every view reads as they are (app sweep
- * 2026-10-28, finding 6: an item with no provenance opened, then the
- * browser panel threw naming it and the broken design was kept): its
- * provenance (itself, Design's item with its id, named in text; what it
- * came from, each a workspace this SpindleLabs knows, an id and a name),
- * its dependsOn (a list of ids) and its purpose (text, or left out).
- */
-function checkItemParts(f: Feature): void {
-  const at = `Design feature ${f.id}`;
-  const p: unknown = f.provenance;
-  if (!isRecord(p)) throw new Error(`${at} doesn't say where it came from (its provenance)`);
-  const self = p.self;
-  // Its id there is read by nothing, and a version 1 file's may differ from the item's (sketch.test.ts, mutation-survivors.test.ts), so it need only be text.
-  if (!isRecord(self) || typeof self.id !== "string") throw new Error(`${at}'s provenance doesn't name the item itself`);
-  if (self.workspace !== "design") throw new Error(`${at}'s provenance says it was made in ${shown(self.workspace)}, not Design`);
-  if (typeof self.label !== "string") throw new Error(`${at}'s name must be text, not ${shown(self.label)}`);
-  if (!Array.isArray(p.from)) throw new Error(`${at}'s provenance has no list of what it came from`);
-  for (const [j, o] of p.from.entries())
-    if (!isRecord(o) || typeof o.workspace !== "string" || typeof workspaceName(o.workspace as WorkspaceId) !== "string" || typeof o.id !== "string" || typeof o.label !== "string")
-      throw new Error(`${at}'s provenance: what it came from (entry ${j + 1}) needs a workspace, an id and a name`);
-  if (!Array.isArray(f.dependsOn) || !f.dependsOn.every((id) => typeof id === "string")) throw new Error(`${at} must list the ids it depends on (dependsOn)`);
-  if (Object.hasOwn(f.intent, "purpose") && typeof f.intent.purpose !== "string") throw new Error(`${at}: purpose must be text or left out, not ${shown(f.intent.purpose)}`);
-}
-
-/**
  * The most characters a name may have (U0e2): a browser row shows about
  * 30 before its "…" and the bar's tooltip has it whole; a name is for
  * telling items apart, and the description says the rest. Each character
@@ -745,13 +720,15 @@ export const NAME_LIMIT = 40;
  * free one, cut to fit; and an empty name is its kind's next free name
  * ("Box 2", `freshName`), never one a named item has. Every copy of a
  * changed name follows it (`relabelled`). The document itself when every
- * name keeps to the rules. (Names that are not text are refused before
- * this, by checkItemParts.)
+ * name keeps to the rules. A name that is not text (a number, null) is
+ * refused, naming its item: there is nothing to repair it from.
  */
 export function withRuledNames(doc: DesignDocument): DesignDocument {
   const features = doc.timeline.features;
   const cleaned = features.map((f) => {
-    const spaced = f.provenance.self.label.replace(/\p{Cc}+/gu, " ").trim();
+    const label: unknown = f.provenance?.self?.label;
+    if (typeof label !== "string") throw new Error(`Design feature ${f.id}'s name must be text, not ${shown(label)}`);
+    const spaced = label.replace(/\p{Cc}+/gu, " ").trim();
     const chars = [...spaced];
     return chars.length > NAME_LIMIT ? chars.slice(0, NAME_LIMIT).join("").trimEnd() : spaced;
   });
@@ -799,7 +776,7 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
   for (const [i, f] of features.entries()) if (names[i] !== f.provenance.self.label) changed.set(f.id, names[i]);
   if (changed.size === 0) return doc;
   const renamedTo = (o: Feature["provenance"]["self"]) => (o.workspace === "design" && changed.has(o.id) ? { ...o, label: changed.get(o.id)! } : o);
-  const out = features.map((f) => ({ ...f, provenance: { ...f.provenance, self: changed.has(f.id) ? { ...f.provenance.self, label: changed.get(f.id)! } : f.provenance.self, from: f.provenance.from.map(renamedTo) } }));
+  const out = features.map((f) => ({ ...f, provenance: { ...f.provenance, self: changed.has(f.id) ? { ...f.provenance.self, label: changed.get(f.id)! } : f.provenance.self, from: Array.isArray(f.provenance.from) ? f.provenance.from.map(renamedTo) : f.provenance.from } }));
   return { ...doc, timeline: { ...doc.timeline, features: out } };
 }
 
@@ -832,7 +809,6 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (typeof f?.id !== "string" || typeof intent?.type !== "string" || typeof intent.summary !== "string" || typeof intent.parameters !== "object" || intent.parameters === null)
       throw new Error(`Design feature ${i + 1} has no id or intent`);
     if (typeof f.suppressed !== "boolean") throw new Error(`Design feature ${f.id}: suppressed must be true or false, not ${shown(f.suppressed)}`);
-    checkItemParts(f);
   }
   // Two items with one id are said as that first (timeline hunt, finding 12: a sketch item's id given to another item
   // was refused as "a sketch with no content", sending the reader to the wrong place); every id is checked below.

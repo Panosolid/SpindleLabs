@@ -310,3 +310,11 @@ test("5,000 boxes of one name, or with none, open in a moment, numbered in order
     assert.ok(ms < 2_000, `${JSON.stringify(label)}: ${ms.toFixed(0)} ms`);
   }
 });
+
+test("a name that is not text is refused, naming its item: there is nothing to repair it from (finding 17)", () => {
+  // Before: a number opened as the item's name, shown as "42", and takenNames skipped it.
+  for (const [bad, said] of [[42, "42"], [null, "null"], [true, "true"], [["Box 1"], "a list"], [{}, "an object"]] as const)
+    assert.throws(() => namedFile({ "feature-6": bad }), { message: `Design feature feature-6's name must be text, not ${said}` });
+  // A missing name too.
+  assert.throws(() => namedFile({ "feature-6": undefined }), { message: "Design feature feature-6's name must be text, not undefined" });
+});
