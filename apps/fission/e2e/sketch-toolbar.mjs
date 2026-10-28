@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane } from "./sketch-screen.mjs";
-import { gridSnapOn, openPanel, startWithBox } from "./start.mjs";
+import { gridSnapOn, openPanel, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4193, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4193/?test-hooks";
@@ -98,7 +98,7 @@ await check("picking a plane swaps the modelling buttons for the sketch's toolba
     // While picking a plane the toolbar is still the modelling one.
     assert.equal(await visible(page, "#create-sketch"), true);
     assert.equal(await visible(page, "#finish-sketch"), false);
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await sketching(page, true);
     for (const sel of ["#create-sketch", "#insert", "[data-op=export_stl]"]) assert.equal(await visible(page, sel), false, `${sel} hidden while sketching`);
     for (const sel of ["#sketch-create", "#extrude", "#finish-sketch", ...TOOLS.map((t) => `#sketch-tool-${t}`)]) assert.equal(await visible(page, sel), true, `${sel} shown while sketching`);
@@ -131,7 +131,7 @@ await check("the Create menu: every tool with its key, the tool in use ticked an
   const page = await fresh();
   try {
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await sketching(page, true);
     await settle(page);
     await page.click("#sketch-create");
@@ -203,7 +203,7 @@ await check("Finish Sketch on the toolbar: back to modelling at the home view, n
     const front = await camera(page);
     assert.ok(Math.abs(front.position[0] - HOME_POSITION[0]) > 10, "Front is well away from home");
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await sketching(page, true);
     await settle(page);
     for (const p of [[0, 0], [30, 0], [30, 20], [0, 0]]) await clickPlane(page, p, TOP);
@@ -241,7 +241,7 @@ await check("the panel's Finish sketch goes home too; Cancel at the plane prompt
     await settle(page);
     closeTo((await camera(page)).position, right.position, 1e-6, "Cancel at the prompt keeps the Right view");
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await sketching(page, true);
     await page.click("#sketch-finish");
     await sketching(page, false);
@@ -256,7 +256,7 @@ await check("Undo inside a sketch keeps the sketch's toolbar and its tool; Extru
   const page = await fresh();
   try {
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await sketching(page, true);
     await settle(page);
     await page.click("#sketch-tool-circle");
@@ -286,7 +286,7 @@ await check("at 375 px with taps: all six tools on screen and 44 px tall, the me
   try {
     await page.tap("#create-sketch");
     await openPanel(page, "properties", true); // the plane choice is in the Properties sheet, closed until its toggle (U5)
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await sketching(page, true);
     for (const sel of ["#sketch-create", ...TOOLS.map((t) => `#sketch-tool-${t}`)]) {
       const b = await rect(page, sel);

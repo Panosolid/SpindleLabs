@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { closePanels, startWithBox } from "./start.mjs";
+import { closePanels, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4191, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4191/?test-hooks";
@@ -189,7 +189,7 @@ await check("an orbit stops when the button is let go: no spin after a fast Shif
     // by frame, so longest where frames are slow, and the grid's spacing
     // followed it on the way (1, 10, 100 mm and back).
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketchGrid);
     await settle(page);
     const box = await canvasBox(page);
@@ -287,7 +287,7 @@ await check("Fit and Home after zooming in; Look at turns on in a sketch and loo
     closeTo((await camera(page)).position, home.position, 1e-6, "Home");
 
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
     await page.waitForFunction(() => !document.querySelector("[data-view=look-at]").disabled);
     // Looking straight down, a sideways orbit only spins round Z and dragging down is already at the pole; drag up to tilt.

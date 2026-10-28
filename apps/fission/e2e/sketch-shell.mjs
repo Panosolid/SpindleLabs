@@ -13,7 +13,7 @@ import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { closePanels, gridSnapOn, openPanel, startWithBox, switchTo } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, startWithBox, switchTo, pickPlane } from "./start.mjs";
 
 /** A 20 × 10 RGBA PNG, all mid grey, with no size in mm (Image shows it at 96 DPI). */
 function grey() {
@@ -112,7 +112,7 @@ const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
 async function chain(page, tap = false) {
   await press(page, "#create-sketch", tap);
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  await press(page, "#sketch-plane-XY", tap);
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await gridSnapOn(page);
   await closePanels(page, tap); // phone: the sketch's Properties sheet (U5) covers the view's lower part; closed to draw

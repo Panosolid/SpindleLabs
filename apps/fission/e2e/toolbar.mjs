@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { insertPreset, openPanel } from "./start.mjs";
+import { insertPreset, openPanel, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4240, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4240/";
@@ -290,7 +290,7 @@ try {
       try {
         await press(page, "#create-sketch", tap);
         await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet (U5)
-        await press(page, "#sketch-plane-XY", tap);
+        await pickPlane(page, "XY", tap);
         await page.waitForSelector("#finish-sketch", { state: "visible" });
         assert.deepEqual(await toolbarProblems(page), []);
         const icons = await page.$$eval("#toolbar .sketchbar-create .toolbar-group-tool", (bs) => bs.map((b) => [b.id, b.querySelector("svg.icon").dataset.icon]));

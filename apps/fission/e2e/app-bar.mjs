@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { chooseFile, closePanels, fileItem, insertPreset, openPanel, switchTo } from "./start.mjs";
+import { chooseFile, closePanels, fileItem, insertPreset, openPanel, switchTo, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4241, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4241/";
@@ -256,7 +256,7 @@ try {
         await press(page, "#create-sketch", tap);
         assert.deepEqual(await fileItem(page, "start-fresh"), [true, SKETCHING], "the plane prompt");
         await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-        await press(page, "#sketch-plane-XY", tap);
+        await pickPlane(page, "XY", tap);
         await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
         assert.deepEqual(await fileItem(page, "start-fresh"), [true, SKETCHING], "in the sketch");
         assert.equal((await fileItem(page, "file-export-stl"))[0], false, "the box still exports while sketching");

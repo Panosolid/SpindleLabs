@@ -15,7 +15,7 @@ import { launch } from "./browser.mjs";
 import { withPropertiesFolded } from "./properties.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { chooseFile, closePanels, fileItem, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseFile, closePanels, fileItem, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4205, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4205/";
@@ -101,7 +101,7 @@ async function addSquare(page, { square, distance, volume }, tap) {
   // A 10 × 10 square by the rectangle tool: two opposite corners on the grid.
   await press(page, "#create-sketch", tap);
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  await press(page, "#sketch-plane-XY", tap);
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   // While a sketch is edited File ▾'s New is off, saying why, as the toolbar's Start fresh was hidden then (U0f2a).
   assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: finish or cancel the sketch first."], "New off while sketching");

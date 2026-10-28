@@ -18,7 +18,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { withPropertiesFolded, pinProperties } from "./properties.mjs";
-import { gridSnapOn, openPanel, startWithBox } from "./start.mjs";
+import { gridSnapOn, openPanel, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4232, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4232/";
@@ -110,7 +110,7 @@ try {
     const { context, page } = await fresh(1280);
     // A 10 × 10 square on XY, extruded 10: 1,000 mm³ (the panel shows the last body).
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await gridSnapOn(page);
     await page.click("#sketch-tool-rectangle");
