@@ -4,13 +4,13 @@
    and is at most 420 px wide with a 16 px gutter (393 px iPhone). The text is
    16 px so iOS doesn't zoom the page when it gets focus. */
 .save-name { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding: 12vh 16px 0; background: rgba(8, 10, 14, 0.55); }
-.save-name form { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #1c1f24; border: 1px solid #2a2e35; border-radius: 10px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); color: #e6e8eb; font: 14px system-ui, sans-serif; }
+.save-name form { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: #161d2a; border: 1px solid #232c3b; border-radius: 10px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); color: #e6e8eb; font: 14px system-ui, sans-serif; }
 .save-name form label { font-weight: 600; }
 .save-name .row { display: flex; align-items: center; gap: 6px; }
-.save-name .row input { flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; font: inherit; font-size: 16px; color: inherit; background: #14161a; border: 1px solid #2a2e35; border-radius: 6px; }
+.save-name .row input { flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; font: inherit; font-size: 16px; color: inherit; background: #0f141c; border: 1px solid #232c3b; border-radius: var(--look-radius-s); }
 .save-name .row input:focus { outline: 2px solid #4aa8ff; outline-offset: 0; }
 .save-name .ext { color: #8a919c; font-size: 16px; }
 .save-name .note { margin: 0; color: #8a919c; font-size: 12px; }
 .save-name .buttons { display: flex; justify-content: flex-end; gap: 8px; }
-.save-name .buttons button { min-height: 44px; min-width: 88px; padding: 0 16px; font: inherit; color: #e6e8eb; background: #262a31; border: 1px solid #2a2e35; border-radius: 6px; cursor: pointer; }
+.save-name .buttons button { min-height: 44px; min-width: 88px; padding: 0 16px; font: inherit; color: #e6e8eb; background: #1e2735; border: 1px solid #232c3b; border-radius: var(--look-radius-s); cursor: pointer; }
 .save-name .buttons .ok { background: #2f81d6; border-color: #4aa8ff; color: #fff; }
