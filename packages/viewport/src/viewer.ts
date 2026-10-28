@@ -488,6 +488,16 @@ export class ViewportView {
     return across > 0 && Number.isFinite(across) ? { centre: [0, 0], pixel: across, diagonal } : null;
   }
 
+  /** World points on this view's canvas, in pixels from its top left; null for a point behind the camera or past the far plane. */
+  screenPoints(points: readonly (readonly number[])[]): ({ x: number; y: number } | null)[] {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (this.image || rect.width === 0 || rect.height === 0) return points.map(() => null);
+    return points.map((p) => {
+      const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
+      return v.z >= -1 && v.z <= 1 ? ndcToClient(v, { left: 0, top: 0, width: rect.width, height: rect.height }) : null;
+    });
+  }
+
   /** A number that changes whenever this view's camera or size does (the sketch grid is worked out again only then). */
   cameraState(): string {
     const size = this.renderer.getSize(new THREE.Vector2());
@@ -1195,6 +1205,11 @@ export class Viewer implements SharedViewport {
   /** Look At in the main view. */
   lookAt(plane: Plane, side: 1 | -1 = 1): Framing | null {
     return this.main.lookAt(plane, side);
+  }
+
+  /** The edited sketch's points (line ends, placed points) on screen, in the main view's pixels, for keeping a box clear of them. */
+  editedScreenPoints(): { x: number; y: number }[] {
+    return this.main.screenPoints(this.editedWorld).filter((p): p is { x: number; y: number } => p !== null);
   }
 
   /** Says on the element whether a sketch is being edited with the pointer on it (read by the e2e test). */
