@@ -42,7 +42,7 @@ async function judge({ page, warnings }) {
   await page.waitForTimeout(500);
   assert.deepEqual(warnings, [], "no WebGL context dropped or lost");
   assert.equal(await page.evaluate(() => Boolean(window.mainLost)), false, "the main view keeps its WebGL context");
-  // The box fills the middle of the home view; the background is #14161a.
+  // The box fills the middle of the home view; the backdrop a dark blue gradient (backdrop.ts).
   const middle = await page.evaluate(() => {
     const canvas = document.querySelector("#viewport canvas");
     const gl = canvas.getContext("webgl2");

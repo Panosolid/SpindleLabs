@@ -843,12 +843,12 @@ try {
     const f = await downloadStl();
     // 12 triangles: 84 + 12 × 50 = 684 bytes. Corners 0/40, 0/30, 0/20 are
     // exact in single precision, so the volume is exactly 40 × 30 × 20.
-    assert.equal(f.name, "fission-box.stl");
+    assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.header, "SpindleLabs STL:");
     assert.equal(f.size, 684);
     assert.equal(f.tris.length, 12);
     assert.equal(stlVolume(f.tris), 24000);
-    assert.equal(await text("action-note"), "");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
   });
 
   await check("a selected body offers Download STL from the action registry, and it saves the same file", async () => {
@@ -861,10 +861,10 @@ try {
     assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"]]);
     assert.equal(await page.isVisible("#selection-actions"), true);
     const f = await downloadStl("#selection-actions [data-action='design.download-stl']");
-    assert.equal(f.name, "fission-box.stl");
+    assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.size, 684);
     assert.equal(stlVolume(f.tris), 24000); // 40 × 30 × 20, exact in single precision
-    assert.equal(await text("action-note"), "");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.body.dataset.selection === "");
     assert.deepEqual(await verbs(), []);
@@ -884,7 +884,7 @@ try {
     assert.ok(Number.isInteger(n) && n >= 3, `${f.tris.length} triangles`);
     const expected = (n / 2) * 400 * Math.sin((2 * Math.PI) / n) * 20;
     assert.ok(Math.abs(stlVolume(f.tris) - expected) <= 1e-6 * expected, `${stlVolume(f.tris)} vs ${expected}`);
-    assert.equal(f.name, "fission-cylinder.stl");
+    assert.equal(f.name, "spindlelabs-cylinder.stl");
   });
 
   await check("a part too big for single precision is exported with a warning", async () => {
@@ -928,7 +928,7 @@ try {
     // Only the red X axis line is left (a few dozen pixels).
     assert.ok((await amber()) < 1000, `nothing amber once the overlay is cleared (${await amber()} px)`);
     await downloadStl();
-    assert.equal(await text("action-note"), ""); // the warning goes once the part fits again
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl."); // the warning goes once the part fits again
   });
 
   await check("DESIGN ▾ names Design and lists the ten workspaces, Design first and marked, the eight not built yet greyed with Coming soon", async () => {
@@ -2055,6 +2055,38 @@ try {
       assert.deepEqual(errors, []);
     } finally {
       await bare.close();
+    }
+  });
+
+  await check("a kernel whose .wasm doesn't download says it didn't start, in the app's words, never the browser's (app sweep finding 7)", async () => {
+    // Before: the worker's start (`init()`) failed with nothing listening, the
+    // page got an uncaught error, and each call answered with the browser's
+    // own words ("Failed to fetch", or the 404's), shown under the rows.
+    // The file is refused two ways: the request cut off, and a 404 page.
+    for (const [how, answer] of [["cut off", (r) => r.abort()], ["a 404", (r) => r.fulfill({ status: 404, contentType: "text/plain", body: "Not Found" })]]) {
+      const bare = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+      const errors = [];
+      bare.on("pageerror", (e) => errors.push(e.message));
+      try {
+        await bare.route(/\.wasm$/, answer);
+        await bare.goto(url);
+        await bare.waitForSelector("#start-hint", { state: "visible" });
+        await insertPreset(bare, "box");
+        const words = "The geometry kernel didn't start (its file didn't download). Reload the page to try again.";
+        await bare.waitForFunction((w) => document.querySelector("#error")?.textContent === w, words, { timeout: 10_000 }).catch(async () => {
+          throw new Error(`${how}: the error line says ${JSON.stringify(await bare.textContent("#error"))}`);
+        });
+        await bare.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false");
+        // An edit afterwards gets the same words, and the browser's own are nowhere on the page.
+        await bare.fill("#width", "41");
+        await bare.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false");
+        assert.equal(await bare.textContent("#error"), words, how);
+        const page = await bare.evaluate(() => document.body.innerText);
+        for (const raw of ["Failed to fetch", "404", "WebAssembly", "MIME"]) assert.ok(!page.includes(raw), `${how}: the page shows "${raw}"`);
+        assert.deepEqual(errors, [], how);
+      } finally {
+        await bare.close();
+      }
     }
   });
 

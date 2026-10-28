@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="motion">
   <head>
     <meta charset="UTF-8" />
     <!-- Content Security Policy (audit S10): scripts only from this site (and WebAssembly), no plugins, no <base> or form tricks. connect-src stays open: the AI assistant talks to an address the user types. frame-ancestors can't be set here; src/frame-guard.ts refuses frames instead. -->
@@ -7,6 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SpindleLabs</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <!-- The manifest link (installable app) is added by the build only when offline mode is on (offline.config.mjs). -->
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <meta name="theme-color" content="#1c1f24" />
   </head>
   <body class="phone-short phone-sheet">
     <header id="topbar">

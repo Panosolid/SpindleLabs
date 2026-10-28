@@ -178,6 +178,24 @@ test("hand-worked: a 10 mm square typed side by side closes exactly on its first
   assert.deepEqual(sketchLines(sketch).map((l) => [l.a, l.b]), [[[0, 0], [10, 0]], [[10, 0], [10, 10]], [[10, 10], [0, 10]], [[0, 10], [0, 0]]]);
 });
 
+test("hand-worked: a typed equilateral triangle closes on its first corner though rounding misses it (app sweep 2026-10-28, item 11)", () => {
+  const s = addSketch(partDocument("box", 40, 30, 20));
+  // Start at (0, 0), then 10 at 0°, 120° and 240°. Exactly: (10, 0), (10 + 10·cos 120°, 10·sin 120°) = (5, 5√3), then back by
+  // 10·(cos 240°, sin 240°) = (−5, −5√3) to (0, 0). In doubles cos 120° and sin 240° are not exact, so the last end lands about
+  // 1e-15 mm from (0, 0): far under SAME_PLACE (1e-5 mm, the kernel's 10 nm), so it is the first corner, not a new point there.
+  const r = typeIn(s.doc, startTool("line", s.id), [
+    { p: [0, 0], locks: {} },
+    { p: null, locks: { length: 10, angle: 0 } },
+    { p: null, locks: { length: 10, angle: 120 } },
+    { p: null, locks: { length: 10, angle: 240 } },
+  ]);
+  const sketch = r.doc.sketches.find((x) => x.id === s.id)!;
+  assert.equal(sketch.points.length, 3, `three shared corners, no stray fourth: ${JSON.stringify(sketch.points)}`);
+  assert.equal((r.tool as LineTool).from, null, "landing on the first point ends the chain");
+  const lines = sketch.curves.filter((c) => c.kind === "line") as { start: string; end: string }[];
+  assert.equal(lines[2].end, lines[0].start, "the third side ends on the first side's start");
+});
+
 test("hand-worked: a 3-4-5 triangle, two typed sides and a click to close", () => {
   const s = addSketch(partDocument("box", 40, 30, 20));
   // Length 4 toward a pointer straight right: (4, 0). Length 3 toward a pointer straight up from there: (4, 3).

@@ -6,7 +6,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SketchXY } from "@fission/core";
 import { partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
-import { addSketch, drawArc, drawCircle, drawRectangle, SKETCH_STEPS, sketchCurves, sketchLines } from "../src/sketch.ts";
+import { addSketch, drawArc, drawCircle, drawRectangle, pointNear, SKETCH_STEPS, sketchCurves, sketchLines } from "../src/sketch.ts";
+import { SAME_PLACE } from "../src/snap.ts";
 import { arcSegments, CIRCLE_SEGMENTS, circleSegments, clickAt, curveCount, DEFAULT_GRID, drawStep, ORIGIN_PLANES, originPlanes, PLANE_VIEWS, previewLine, previewSegments, SAME_CIRCLE, SAME_LINE, SKETCH_TOOLS, sketchDrawings, startTool, toolBusy, type CircleTool, type LineTool, type RectangleTool, type SketchTool } from "../src/sketch-tool.ts";
 import { DESIGN_SHORTCUTS, sketchToolKey } from "../src/shortcuts.ts";
 
@@ -152,20 +153,30 @@ test("hand-worked: two rectangle clicks make exactly what five line clicks make"
   assert.equal(drawStep(fresh().tool), SKETCH_STEPS.draw);
 });
 
-test("hand-worked: a second rectangle beside the first shares the two corners it lands on", () => {
+test("hand-worked: a second rectangle beside the first shares the two corners it lands on, and the side between them (app sweep 2026-10-28, item 12)", () => {
   // After the first (counter 11), corners (40, 0) and (70, 30): (40, 0) is
   // point-4 and (40, 30) is point-6, both shared. Sides: point-4 → (70, 0)
   // new point-11, line-12; → (70, 30) new point-13, line-14; → point-6
-  // line-15; point-6 → point-4 line-16. Six points, eight lines, counter 17.
-  // The shared side is drawn a second time (line-16 lies on line-7), as the
-  // line tool would; the kernel then reports more than two ends at a corner.
+  // line-15; point-6 → point-4 is line-7 of the first rectangle already, so
+  // it is shared, not drawn a second time on top (as the line tool's
+  // SAME_LINE refuses: three ends would meet at both corners and break the
+  // outline). Six points, seven lines, counter 16.
   const f = freshRectangle();
   let r = clicks(f.doc, f.tool, [[0, 0], [40, 30], [40, 0], [70, 30]]);
   const sketch = r.doc.sketches[0];
   assert.equal(r.drew, 2);
-  assert.equal(r.doc.nextId, 17);
+  assert.equal(r.doc.nextId, 16);
   assert.deepEqual(sketch.points.map((p) => [p.id, p.x, p.y]).slice(4), [["point-11", 70, 0], ["point-13", 70, 30]]);
-  assert.deepEqual(sketch.curves.slice(4).map((c) => [c.id, c.start, c.end]), [["line-12", "point-4", "point-11"], ["line-14", "point-11", "point-13"], ["line-15", "point-13", "point-6"], ["line-16", "point-6", "point-4"]]);
+  assert.deepEqual(sketch.curves.slice(4).map((c) => [c.id, c.start, c.end]), [["line-12", "point-4", "point-11"], ["line-14", "point-11", "point-13"], ["line-15", "point-13", "point-6"]]);
+  const first = clicks(f.doc, f.tool, [[0, 0], [40, 30]]).doc;
+  assert.deepEqual(drawRectangle(first, f.tool.sketch, [40, 0], [70, 30]).ids, ["line-12", "line-14", "line-15", "line-7"], "the four sides, the shared one by its own id");
+  // The same rectangle again joins only points already joined: nothing is drawn, and the tool says why.
+  const again = clicks(first, f.tool, [[0, 0]]);
+  const same = clickAt(again.doc, again.tool, [40, 30]);
+  assert.equal(same.drew, false);
+  assert.equal(same.doc, again.doc, "the document is unchanged");
+  assert.equal(same.note, SAME_LINE);
+  assert.deepEqual(same.tool.corner, null, "the rectangle is finished with; the next click starts another");
   // Clicked the other way (from the top right corner), the sides still run along x first.
   r = clicks(f.doc, f.tool, [[40, 30], [0, 0]]);
   assert.deepEqual(sketchLines(r.doc.sketches[0]).map((l) => [l.a, l.b]), [[[40, 30], [0, 30]], [[0, 30], [0, 0]], [[0, 0], [40, 0]], [[40, 0], [40, 30]]]);
@@ -390,6 +401,7 @@ test("seeded sessions of random clicks, Escapes and tool switches match a model 
   let rectangles = 0;
   let circles = 0;
   let refused = 0;
+  let shared = 0;
   let sameCircles = 0;
   const next = { line: "rectangle", rectangle: "circle", circle: "line" } as const;
   for (const seed of [1, 2, 3, 4, 5]) {
@@ -455,7 +467,13 @@ test("seeded sessions of random clicks, Escapes and tool switches match a model 
         const [ax, ay] = corner.split(",").map(Number);
         if (ax !== at[0] && ay !== at[1]) {
           const c = [corner, `${at[0]},${ay}`, key, `${ax},${at[1]}`];
-          c.forEach((p, i) => segments.push(`${p} ${c[(i + 1) % 4]}`));
+          // A side a line already joins is that line, never a second on top (app sweep 2026-10-28, item 12); all four: nothing drawn.
+          const sides = c.map((p, i) => `${p} ${c[(i + 1) % 4]}`);
+          const joined = (side: string) => segments.includes(side) || segments.includes(side.split(" ").reverse().join(" "));
+          const fresh = sides.filter((side) => !joined(side));
+          shared += 4 - fresh.length;
+          if (fresh.length === 0) assert.equal(r.note, SAME_LINE);
+          segments.push(...fresh);
           c.forEach((p) => points.add(p));
           corner = null;
           rectangles++;
@@ -476,6 +494,7 @@ test("seeded sessions of random clicks, Escapes and tool switches match a model 
   assert.ok(rectangles >= 100, `the sessions drew ${rectangles} rectangles`);
   assert.ok(circles >= 100, `the sessions drew ${circles} circles`);
   assert.ok(refused >= 20, `the sessions tried ${refused} lines on top of another`);
+  assert.ok(shared >= 20, `the sessions' rectangles shared ${shared} sides with lines already there`);
   assert.ok(sameCircles >= 10, `the sessions tried ${sameCircles} circles on top of another`);
 });
 
@@ -525,4 +544,36 @@ test("drawings show arcs after lines and circles, and the status counts them (23
   assert.equal(curveCount(sketch(lone)), "1 arc");
   const withLines = clicks(lone, fresh2.tool, [[20, 0], [30, 0], [30, 10]]).doc;
   assert.equal(curveCount(sketch(withLines)), "2 lines and 1 arc");
+});
+
+test("a line end within SAME_PLACE of a point already there is that point: 0.9× shares it, 1.1× is a new point (app sweep 2026-10-28, item 11)", () => {
+  const f = fresh();
+  const base = clicks(f.doc, f.tool, [[0, 0], [10, 0]]).doc;
+  const sketch = base.sketches[0];
+  // (10, 0) is point-4. Along a slant (3-4-5, so the offset is exactly 0.9·SAME_PLACE away): shared; 1.1·SAME_PLACE: no point there.
+  const off = (k: number): SketchXY => [10 + 0.6 * k * SAME_PLACE, 0.8 * k * SAME_PLACE];
+  assert.equal(pointNear(sketch, off(0.9)), "point-4");
+  assert.equal(pointNear(sketch, off(1.1)), null);
+  assert.equal(pointNear(sketch, [10, 0]), "point-4", "exactly there");
+  // Of two points both within reach, the nearer: a point at (10 + 1.5e-5, 0) is 0.5e-5 from (10 + 1e-5, 0), 1e-5 from point-4.
+  const two = clicks(base, startTool("line", f.tool.sketch), [[10 + 1.5e-5, 0], [10 + 1.5e-5, 5]]).doc.sketches[0];
+  assert.equal(pointNear(two, [10 + 1e-5, 0]), two.points.find((p) => p.x === 10 + 1.5e-5)!.id);
+  // The line tool: a chain ending 0.9·SAME_PLACE from its start closes on it; a click that near its last point draws nothing.
+  const chain = clicks(f.doc, f.tool, [[0, 0], [10, 0], [10, 10], [0.9 * SAME_PLACE, 0]]);
+  assert.equal(chain.doc.sketches[0].points.length, 3);
+  assert.equal(chain.tool.from, null, "closed");
+  const near = clickAt(base, { kind: "line", sketch: f.tool.sketch, from: "point-4" } as LineTool, off(0.9));
+  assert.equal(near.drew, false);
+  assert.equal(near.doc, base);
+});
+
+test("a rectangle within 2·SAME_PLACE of one row or column is refused, 0.9× and 1.1× (two corners that near could be one point)", () => {
+  const f = freshRectangle();
+  const id = f.tool.sketch;
+  assert.throws(() => drawRectangle(f.doc, id, [0, 0], [10, 1.8 * SAME_PLACE]), /are on one row$/);
+  assert.throws(() => drawRectangle(f.doc, id, [0, 0], [1.8 * SAME_PLACE, 10]), /are on one column$/);
+  assert.equal(drawRectangle(f.doc, id, [0, 0], [10, 2.2 * SAME_PLACE]).ids.length, 4);
+  const down = clickAt(f.doc, f.tool, [0, 0]);
+  assert.match(clickAt(down.doc, down.tool, [10, 1.8 * SAME_PLACE]).note ?? "", /^A rectangle needs a width and a height/);
+  assert.equal(clickAt(down.doc, down.tool, [10, 2.2 * SAME_PLACE]).drew, true);
 });

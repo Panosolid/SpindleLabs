@@ -22,6 +22,7 @@ import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
+import { startOffline } from "./offline.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -486,6 +487,9 @@ function closeSplit() {
   $("topbar-actions").addEventListener("click", () => setMenu(false)); // after the chosen button's own handler
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || toggle.getAttribute("aria-expanded") !== "true") return;
+    // Menu's Escape is its own, as every menu's is (menu-button.ts): the shortcut table below never also cancels the sketch's plane prompt.
+    e.preventDefault();
+    e.stopImmediatePropagation();
     setMenu(false);
     toggle.focus();
   });
@@ -847,11 +851,19 @@ withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
 // One assistant panel for every workspace, beside the viewport.
-$("assistant-toggle").addEventListener("click", () => {
+const setAssistant = (open: boolean) => {
   const panel = $("assistant");
-  panel.hidden = !panel.hidden;
-  $("assistant-toggle").setAttribute("aria-pressed", String(!panel.hidden));
-  if (!panel.hidden) assistant.opened();
+  if (!!panel.hidden !== open) return;
+  panel.hidden = !open;
+  $("assistant-toggle").setAttribute("aria-pressed", String(open));
+  document.body.classList.toggle("assistant-narrow", open); // styles/assistant-narrow.css
+  if (open) assistant.opened();
+};
+$("assistant-toggle").addEventListener("click", () => {
+  const open = !!$("assistant").hidden;
+  // At phone width the panel is a sheet over the view like the other two (styles/phone-sheet.css): one at a time.
+  if (open && window.matchMedia("(max-width: 640px)").matches) for (const slot of ["browser", "properties"]) $(`${slot}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+  setAssistant(open);
 });
 // At phone width the browser and properties fold away behind two toggles
 // (theme.css hides a closed one there); wider screens hide the toggles and
@@ -867,22 +879,24 @@ for (const slot of ["browser", "properties"] as const) {
     const open = toggle.getAttribute("aria-expanded") !== "true";
     // At phone width each opens as a sheet over the view (styles/phone-sheet.css): one at a time.
     if (open) for (const other of ["browser", "properties"] as const) if (other !== slot) $(`${other}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+    if (open && window.matchMedia("(max-width: 640px)").matches) setAssistant(false);
     set(open);
   });
   toggle.addEventListener("sheet-close", () => set(false));
 }
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (the plane to sketch on, Edit feature; not Extrude's box, the view's arrow is its main control) and closes again, if it opened it, when
+// (the plane to sketch on, Edit feature, Extrude's distance and OK: without the sheet open they are out of reach) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
   const toggle = $("properties-toggle");
   const phone = window.matchMedia("(max-width: 640px)");
   let wanted = false;
   let opened = false;
-  new MutationObserver(() => {
+  // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
+  const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null;
-    if (now === wanted) return;
+    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#extrude-panel:not([hidden])") !== null;
+    if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
     if (now && phone.matches && !open) {
@@ -899,8 +913,15 @@ for (const slot of ["browser", "properties"] as const) {
       toggle.click();
       opened = false;
     } else if (!now) opened = false;
-  }).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
+  };
+  phone.addEventListener("change", () => phone.matches && update(true));
+  new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
 }
+// Body facts (Inspect ▾) shows the numbers in the Properties sheet, which at phone width stays shut unless asked (demo rehearsal 10-28).
+$("workspace").addEventListener("properties-reveal", () => {
+  const toggle = $("properties-toggle");
+  if (window.matchMedia("(max-width: 640px)").matches && toggle.getAttribute("aria-expanded") !== "true") toggle.click();
+});
 // A press in the view outside a sheet puts the sheet away (a tap on the part beside it is the way out; the toggles still work).
 {
   const phone = window.matchMedia("(max-width: 640px)");
@@ -910,6 +931,7 @@ for (const slot of ["browser", "properties"] as const) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
     }
+    setAssistant(false);
   });
 }
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
@@ -968,3 +990,6 @@ ctx.kernel.call("kernel_version").then((v) => {
   $("version").textContent = `kernel v${v}`;
   $("version").parentElement!.title = `SpindleLabs, kernel v${v}`; // where the version shows when the bar has no room for it
 }, () => {}); // a kernel that didn't start says so where the part would be (Design's error line), not as an uncaught error
+
+// Offline mode: the service worker keeps this build for use with no connection, and offers a new one when it ships.
+startOffline();

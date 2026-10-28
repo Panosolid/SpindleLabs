@@ -75,6 +75,61 @@ for (const [width, height] of [[320, 568], [375, 667], [414, 896]]) {
   console.log("ok - 667 × 375: the desktop grid keeps the browser and Properties open over the view's sides, nothing wider than the screen, the page never scrolls");
 }
 
+// Sweep bug 10 (2026-10-28): with the AI panel open beside the view (sideways phone, narrow window) the Properties panel must not cover
+// the browser's rows, and the view's bar must stay inside the 3D view, clear of the AI panel's Ask button.
+for (const [width, height, touch] of [[667, 375, true], [700, 800, false]]) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch });
+  const page = await context.newPage();
+  await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(url);
+  await startWithBox(page, touch);
+  await (touch ? page.tap("#assistant-toggle") : page.click("#assistant-toggle"));
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const v = document.getElementById("viewport").getBoundingClientRect();
+    const B = document.getElementById("browser").getBoundingClientRect();
+    const covered = [...document.querySelectorAll("#browser button, #browser summary")].filter((e) => {
+      const b = e.getBoundingClientRect();
+      if (!b.width || !b.height || b.bottom > B.bottom || b.top < B.top) return false;
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return hit && hit.closest("#properties");
+    }).map((e) => e.textContent.trim().slice(0, 14) || e.getAttribute("aria-label"));
+    const outside = [...document.querySelectorAll("#view-controls button")].filter((b) => { const q = b.getBoundingClientRect(); return q.width && (q.right > v.right + 1 || q.left < v.left - 1); }).map((b) => b.getAttribute("aria-label") || b.textContent.trim());
+    const barCovered = [...document.querySelectorAll("#view-controls button")].filter((e) => { const q = e.getBoundingClientRect(); const h = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2); return q.width && !(h === e || e.contains(h)); }).map((e) => e.getAttribute("aria-label") || e.textContent.trim());
+    const ask = document.getElementById("ai-ask-button");
+    ask.scrollIntoView({ block: "nearest" });
+    const ab = ask.getBoundingClientRect();
+    const hit = document.elementFromPoint(ab.left + ab.width / 2, ab.top + ab.height / 2);
+    return { covered, outside, barCovered, askHittable: hit === ask || ask.contains(hit), askUnder: hit?.getAttribute("aria-label") || hit?.id };
+  });
+  assert.deepEqual(r.covered, [], `10: ${width}x${height} with the AI panel open, Properties covers browser rows ${JSON.stringify(r)}`);
+  assert.deepEqual(r.outside, [], `10: ${width}x${height} the view's bar overflows the view ${JSON.stringify(r)}`);
+  assert.deepEqual(r.barCovered, [], `10: ${width}x${height} Properties covers the view's bar ${JSON.stringify(r)}`);
+  assert.equal(r.askHittable, true, `10: ${width}x${height} the view's bar lies over Ask ${JSON.stringify(r)}`);
+  if (shots) await page.screenshot({ path: `${shots}/phone-ai-open-${width}x${height}.png` });
+  await context.close();
+  console.log(`ok - ${width} × ${height}: with the AI panel open the browser rows are clear, the view's bar stays in the view and Ask is tappable`);
+}
+
+// Sweep bug 22 (2026-10-28): the guide's Close button is on the screen at every phone width down to 320 px.
+for (const width of [320, 340, 375]) {
+  const context = await browser.newContext({ viewport: { width, height: 568 }, hasTouch: true });
+  const page = await context.newPage();
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`${url}?guide`);
+  await page.waitForSelector("dialog[open]");
+  await page.waitForTimeout(300);
+  const c = await page.evaluate(() => { const b = document.querySelector("dialog[open] .guide-close").getBoundingClientRect(); return { left: b.left, right: b.right }; });
+  if (shots && (width === 320 || width === 375)) await page.screenshot({ path: `${shots}/guide-close-${width}.png` });
+  assert.ok(c.left >= 0 && c.right <= width, `22: ${width} px: the guide's Close is at ${c.left}–${c.right}`);
+  await page.tap(".guide-close");
+  await page.waitForTimeout(200);
+  assert.equal(await page.$("dialog[open]"), null, `22: ${width} px: a tap on Close closes the guide`);
+  await context.close();
+}
+console.log("ok - the guide's Close is on the screen at 320, 340 and 375 px");
+
 assert.deepEqual(errors, [], "console errors");
 console.log("ok - no errors in the console");
 await browser.close();

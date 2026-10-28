@@ -138,3 +138,23 @@ test("setLabel renames the button and its menu, keeping an icon; a note shows at
   assert.deepEqual([a.getAttribute("aria-current"), b.getAttribute("aria-current")], [null, "true"]);
   window.happyDOM.close();
 });
+
+test("sweep bug 21: a menu left open is placed again when the window changes size, and not after it closes", () => {
+  const { m, window } = made(() => [{ items: [{ id: "insert-box", label: "Box", run: () => {} }] }]);
+  const rect = (r: { left: number; top: number; right: number; bottom: number; width: number; height: number }) => () => ({ ...r, x: r.left, y: r.top, toJSON: () => r });
+  // A button at x 300 to 340 of a 375 px window; the menu is 200 x 100. Hand-worked: left = min(300, 375 - 200 - 4) = 171.
+  m.button.getBoundingClientRect = rect({ left: 300, top: 10, right: 340, bottom: 40, width: 40, height: 30 }) as never;
+  m.menu.getBoundingClientRect = rect({ left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100 }) as never;
+  window.happyDOM.setViewport({ width: 375, height: 667 });
+  m.button.click();
+  assert.equal(m.menu.style.left, "171px");
+  // The window turns sideways to 667 wide: the button is now at x 500, the menu fits at min(500, 667 - 200 - 4 = 463), so it follows.
+  m.button.getBoundingClientRect = rect({ left: 500, top: 10, right: 540, bottom: 40, width: 40, height: 30 }) as never;
+  window.happyDOM.setViewport({ width: 667, height: 375 });
+  assert.equal(m.menu.style.left, "463px");
+  // Closed, a resize leaves the menu alone.
+  m.close();
+  m.button.getBoundingClientRect = rect({ left: 10, top: 10, right: 50, bottom: 40, width: 40, height: 30 }) as never;
+  window.happyDOM.setViewport({ width: 375, height: 667 });
+  assert.equal(m.menu.style.left, "463px");
+});
