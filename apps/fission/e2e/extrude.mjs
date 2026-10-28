@@ -97,6 +97,7 @@ const extrudeStatus = (page, want) => until(page, (w) => document.querySelector(
  */
 async function extrudeEnter(page) {
   await until(page, () => document.querySelector("#extrude-ok")?.disabled === false, null, "Extrude's OK on");
+  assert.match((await page.getAttribute("#extrude-ok", "title")) ?? "", /Enter/, "OK's tooltip names Enter");
   await page.press("#extrude-distance", "Enter");
 }
 
