@@ -105,6 +105,13 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
         if (row.id === "move-pivot") (pivotTyped = true), showSummary();
         on.typed(typed());
       });
+      // A box left empty shows 0 as soon as the focus leaves it (Ben, 2026-10-28): it counts as 0 meanwhile (readMoveBoxes).
+      input.addEventListener("blur", () => {
+        if (input.value.trim() !== "" || !open) return;
+        input.value = "0";
+        if (row.id === "move-pivot") showSummary();
+        on.typed(typed());
+      });
       // Enter in a box is OK, as in any dialog.
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !ok.disabled) on.ok(typed());

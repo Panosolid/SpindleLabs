@@ -5,8 +5,8 @@
 // where the box was turns to background, and back on Escape); OK records
 // one undo step, "Move bodies", and the exported STL is where the Move put
 // it, worked by hand; Edit feature on the Move reopens its numbers, and the
-// change is one step "Edit Move 1"; a box that isn't a number and a move out
-// past model space are refused, recording nothing. At 1280 px with a mouse
+// change is one step "Edit Move 1"; an empty box counts as 0 and keeps the
+// preview up; a move out past model space is refused, recording nothing. At 1280 px with a mouse
 // and at 375 px with taps; at 393 × 852 (Ben's iPhone) Move with nothing
 // picked leaves the view clear (a hint over it says what to do), and once a body is picked the Properties
 // sheet with the panel covers at most 40% of the view (Ben's rule: one tap
@@ -205,12 +205,14 @@ try {
         await opened(page);
         let p = await panel(page);
         assert.deepEqual([p.title, p.bodies, p.pick, p.boxes.z, p.boxes.pivotX, p.boxes.pivotY, p.boxes.pivotZ, p.pivot], ["Edit Move 1", "Body: Box 1", false, "5", "20", "15", "10", "Pivot (20, 15, 10) mm"], "its own numbers");
-        // A box that isn't a number: said, nothing recorded.
+        // A box cleared counts as 0 (Ben, 2026-10-28): no error, and the preview's handles stay up at the moved pivot (20, 15, 15).
         const steps = await undoTitle(page);
         await type(page, "y", "");
-        await press(page, "#move-ok", tap);
-        await until(page, () => !document.getElementById("move-error").hidden, null, "the error");
-        assert.equal((await panel(page)).error, "Type the Y distance in mm.");
+        await until(page, () => document.getElementById("viewport").dataset.moveCentre === "20,15,15", null, "the handles still up with Y empty");
+        assert.equal((await panel(page)).error, null);
+        // Going on to another box fills the empty one with 0 (Ben, 2026-10-28).
+        await page.focus("#move-z");
+        assert.equal((await panel(page)).boxes.y, "0", "the emptied box shows 0 once left");
         // Out past model space (100 km = 1e8 mm): the kernel's words, nothing recorded, the panel still open.
         await type(page, "y", "0");
         await type(page, "x", "200000000");

@@ -211,13 +211,17 @@ export const MOVE_BOX_WORDS: Record<MoveParam, string> = {
   pivotZ: "pivot's Z in mm",
 };
 
-/** The panel's boxes read as a Move's numbers, or the first box that isn't a number (an empty box among them). */
+/**
+ * The panel's boxes read as a Move's numbers, or the first box that isn't a
+ * number. An empty box counts as 0 (Ben, 2026-10-28: as Extrude does, so the
+ * preview and the handles stay up while a box is cleared to type in it).
+ */
 export function readMoveBoxes(typed: Partial<Record<MoveParam, string>>): { values: MoveValues } | { bad: MoveParam } {
   const values = {} as MoveValues;
   for (const k of MOVE_PARAMS) {
-    const text = typed[k] ?? "";
-    const n = Number(text);
-    if (text.trim() === "" || !Number.isFinite(n)) return { bad: k };
+    const text = (typed[k] ?? "").trim();
+    const n = text === "" ? 0 : Number(text);
+    if (!Number.isFinite(n)) return { bad: k };
     values[k] = n;
   }
   return { values };
