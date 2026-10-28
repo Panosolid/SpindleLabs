@@ -996,7 +996,7 @@ async function start() {
     } else keep(newId());
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
-    keep(newId());
+    keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)
     fileStatus(`Couldn't open the last project (${why(e)}), so a new one was started. The old one is still kept in this browser.`);
   }
   show(fromHash());

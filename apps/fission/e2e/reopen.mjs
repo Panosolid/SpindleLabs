@@ -219,6 +219,44 @@ try {
     });
   }
 
+  await check("a kept project the app can't open is tried again on a plain reload, and not stored over until the new one changes", async () => {
+    // Real-use hunt A1: the new project started in its place was stored at once, so one reload, with no
+    // change at all, opened that empty project and the one "still kept in this browser" was never tried again.
+    const { context, page } = await fresh(1280);
+    try {
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      // As a newer build (or one rolled back) left it: format 3, which this build refuses, saved just now.
+      const saved = JSON.parse(readFileSync(resolve(import.meta.dirname, "saved.spindle"), "utf8"));
+      await page.evaluate(async (text) => {
+        const db = await new Promise((ok, no) => Object.assign(indexedDB.open("fission"), { onsuccess: (e) => ok(e.target.result), onerror: no }));
+        const name = db.objectStoreNames[0];
+        const tx = db.transaction(name, "readwrite");
+        tx.objectStore(name).put(text, "project/newer");
+        tx.objectStore(name).put(JSON.stringify({ name: "My bracket", modified: new Date(Date.now() + 60_000).toISOString() }), "summary/newer");
+        await new Promise((ok) => (tx.oncomplete = ok));
+        db.close();
+      }, JSON.stringify({ ...saved, formatVersion: 3, name: "My bracket" }));
+      const kept = await keptProjects(page);
+      assert.ok(kept.includes("project/newer"), JSON.stringify(kept));
+      const refused = /^Couldn't open the last project \(.+\), so a new one was started\. The old one is still kept in this browser\.$/;
+      for (const visit of ["first visit", "a plain reload"]) {
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#file-status").textContent !== "");
+        assert.match(await status(page), refused, visit);
+        await page.waitForSelector("#start-hint", { state: "visible" });
+        await page.waitForTimeout(1500); // past autosave's quiet moment
+        assert.deepEqual(await keptProjects(page), kept, `${visit}: the new, unchanged project is not stored`);
+        assert.equal(await mark(page), null, `${visit}: a refusal with a message is not a freeze`);
+      }
+      // A change keeps the new project, as any new one.
+      await startWithBox(page);
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      assert.equal((await keptProjects(page)).length, kept.length + 1);
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const width of [1280, 375]) {
     await check(`${width} px: a last project slow to open offers Start fresh instead, which keeps it for the next visit`, async () => {
       const { context, page } = await freshValved(width);
