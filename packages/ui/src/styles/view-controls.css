@@ -18,3 +18,9 @@
 }
 /* The clean look (UX2): a pill floating card, theme.css's shared values. */
 .view-controls:not(#none) { padding: 3px 6px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
+/* Phone (UX2b): 44 px round buttons to tap (Apple's 44 pt); wrapped onto two
+   rows the bar is a rounded box rather than a pill. */
+@media (max-width: 640px) {
+  .view-controls:not(#none) { border-radius: 26px; }
+  .view-controls button.nav-button:not(#no-such-id) { min-width: var(--look-target-touch); height: var(--look-target-touch); }
+}

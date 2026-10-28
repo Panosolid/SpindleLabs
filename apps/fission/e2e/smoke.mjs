@@ -1078,12 +1078,13 @@ try {
       );
     assert.deepEqual(await overflow(), []);
     // The viewport keeps the full width and fills the height (U5): from the
-    // panel toggles' bottom to the timeline's top, the page itself never scrolling.
+    // toolbar's bottom to the timeline's top (the panel toggles float over its
+    // top since UX2b), the page itself never scrolling.
     // Properties and the browser are bottom sheets, both closed at the start.
     const box = await page.$eval("#viewport", (el) => el.getBoundingClientRect().toJSON());
     assert.equal(box.width, 375);
-    const [togglesBottom, timelineTop] = await page.evaluate(() => [document.querySelector("#panel-toggles").getBoundingClientRect().bottom, document.querySelector("#timeline").getBoundingClientRect().top]);
-    assert.ok(Math.abs(box.top - togglesBottom) < 1 && Math.abs(box.bottom - timelineTop) < 1, `viewport ${box.top} to ${box.bottom}, between the toggles' bottom ${togglesBottom} and the timeline's top ${timelineTop}`);
+    const [toolbarBottom, timelineTop] = await page.evaluate(() => [document.querySelector("#toolbar").getBoundingClientRect().bottom, document.querySelector("#timeline").getBoundingClientRect().top]);
+    assert.ok(Math.abs(box.top - toolbarBottom) < 1 && Math.abs(box.bottom - timelineTop) < 1, `viewport ${box.top} to ${box.bottom}, between the toolbar's bottom ${toolbarBottom} and the timeline's top ${timelineTop}`);
     assert.ok(box.height > 0.55 * 740, `viewport height ${box.height}: more than the 55% share it had when the panels stacked under it`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true, "the page does not scroll");
     assert.equal(await page.isVisible("#browser"), false);
@@ -1144,13 +1145,16 @@ try {
       await phone.goto(url + "#design");
       await startWithBox(phone, true); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       const rect = (sel) => phone.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
-      const [viewport, cube, buttons, toggles] = await Promise.all(["#viewport", "#viewport .view-cube", "#view-controls", "#panel-toggles"].map(rect));
+      const [viewport, cube, buttons] = await Promise.all(["#viewport", "#viewport .view-cube", "#view-controls"].map(rect));
+      // The toggles are pills floating over the view's top left (UX2b): each one is checked, not their row's box.
+      const pills = await phone.$$eval("#panel-toggles button", (bs) => bs.filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect().toJSON()));
+      assert.equal(pills.length, 2, "Browser and Properties shown");
       const inside = (a, b) => a.left >= b.left && a.right <= b.right && a.top >= b.top && a.bottom <= b.bottom;
       const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
       assert.ok(inside(cube, viewport) && inside(buttons, viewport), "cube and buttons over the viewport");
-      assert.ok(apart(cube, toggles) && apart(buttons, toggles), "neither covers the panel toggles");
+      assert.ok(pills.every((t) => apart(cube, t) && apart(buttons, t)), "neither covers the panel toggles");
       assert.ok(apart(cube, buttons), "the cube and the View buttons do not overlap");
-      assert.ok(toggles.bottom <= viewport.top, "the toggles sit above the viewport");
+      assert.ok(pills.every((t) => inside(t, viewport)), "the toggles float over the viewport (UX2b)");
       // Every View button is whole on screen and at least 24 px tall to tap.
       for (const b of await phone.$$eval("#view-controls button", (els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
         assert.ok(b.left >= 0 && b.right <= 375 && b.height >= 24, JSON.stringify(b));

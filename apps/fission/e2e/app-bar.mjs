@@ -351,7 +351,7 @@ try {
     }
   });
 
-  await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as 44 px icons; AI, Guide and Community behind Menu", async () => {
+  await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as round 48 px icons; AI, Guide and Community behind Menu", async () => {
     const page = await fresh(375, true);
     try {
       assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#workspace-menu"]);
@@ -359,7 +359,7 @@ try {
       assert.equal(await page.evaluate(() => document.getElementById("undo-redo").classList.contains("docked")), true);
       for (const id of ["undo", "redo"]) {
         const b = await rect(page, `#${id}`);
-        assert.deepEqual([b.width, b.height], [44, 44], id);
+        assert.deepEqual([b.width, b.height], [48, 48], id); // round 48 px floating buttons (UX2b)
         assert.equal(await page.$eval(`#${id} svg.icon`, (s) => s.dataset.icon), id);
       }
       await page.tap("#menu-toggle");
