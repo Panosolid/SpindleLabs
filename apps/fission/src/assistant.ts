@@ -395,14 +395,27 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     status.textContent = s ? SHORT[s.kind] : "off";
     status.closest("button")!.title = s ? `The AI assistant: ${info!.title}${away ? " (sends requests to the provider)" : " (stays on your machine)"}.` : "The optional AI assistant. No AI provider is active: nothing is sent anywhere.";
     const here = workspace === "design";
-    $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here;
-    $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here;
-    $("ai-ask-note").textContent = !here ? "The assistant can change Design's part; other workspaces get their AI features when they are built." : !s ? "Choose a provider in Settings below to ask." : "";
+    // Offline (offline mode): a provider that sends requests away can't be reached, so Ask is off and says why.
+    const offline = !navigator.onLine;
+    const cut = offline && away;
+    $<HTMLButtonElement>("ai-ask-button").disabled = !s || !here || cut;
+    $<HTMLTextAreaElement>("ai-prompt").disabled = !s || !here || cut;
+    $("ai-ask-note").textContent = !here
+      ? "The assistant can change Design's part; other workspaces get their AI features when they are built."
+      : !s
+        ? "Choose a provider in Settings below to ask."
+        : cut
+          ? `You're offline: ${info!.title} needs an internet connection. Everything else in SpindleLabs works offline.`
+          : offline && s.kind === "in-browser"
+            ? "You're offline: the in-browser model works only if it was downloaded here before."
+            : "";
     const features = workspace === "community" ? [] : AI_FEATURES[workspace];
     const title = workspaceTitle;
     $("ai-features").innerHTML = `${features.length ? `<h3>Planned in ${escape(title)}</h3>${list(features)}` : ""}<h3>Planned across the project</h3>${list(AI_FEATURES.suite)}`;
   }
   let workspaceTitle = "Design";
+  addEventListener("online", () => render());
+  addEventListener("offline", () => render());
 
   function save(next: ProviderSettings | null) {
     settings = next;
@@ -642,7 +655,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     } catch (e) {
       say((e as Error).message, true);
     } finally {
-      button.disabled = !settings || workspace !== "design";
+      button.disabled = !settings || workspace !== "design" || (!navigator.onLine && sendsAway(settings)); // as render() leaves it
     }
   });
 

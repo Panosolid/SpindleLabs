@@ -92,7 +92,7 @@ test("hand-worked: the confirmed baseline flags above 805 ms and above 3 clicks"
   assert.deepEqual(compareToBaseline(ready, { clicks: 3, slowestMs: 806 }, base), {
     kind: "flag",
     // 806 / 700 = 1.1514…, so 15% over when rounded, and above the 15% line.
-    flags: [{ kind: "time", text: "slowest 0.81 s, baseline 0.70 s (15% over, flag above 15%)" }],
+    flags: [{ kind: "time", text: "slowest 0.81 s, baseline 0.70 s (15% over, flag above 15%, fail above 100%)" }],
   });
   // One click more than 3 is flagged whatever the time.
   assert.deepEqual(compareToBaseline(ready, { clicks: 4, slowestMs: 100 }, base), {
@@ -120,7 +120,7 @@ test("click boundaries: the baseline is OK, one over is flagged, fewer is OK wit
   const both = compareToBaseline(ready, { clicks: 5, slowestMs: 1400 }, base);
   assert.equal(both.kind, "flag");
   assert.deepEqual(both.kind === "flag" && both.flags.map((f) => f.kind), ["clicks", "time"]);
-  assert.equal(baselineLine(ready, null, base, both), "FLAG ready one: 5 clicks, baseline 3 (2 extra); slowest 1.40 s, baseline 0.70 s (100% over, flag above 15%)");
+  assert.equal(baselineLine(ready, null, base, both), "FLAG ready one: 5 clicks, baseline 3 (2 extra); slowest 1.40 s, baseline 0.70 s (100% over, flag above 15%, fail above 100%)");
 });
 
 test("a ready journey with no baseline or not walked is flagged; a pending one stays pending", () => {
@@ -169,7 +169,7 @@ test("hand-worked: a relative baseline judges the slowest walk as a multiple of 
   const absolute = compareToBaseline(ready, measured, { clicks: 4, slowestMs: 1157 });
   assert.deepEqual(absolute.kind === "flag" && absolute.flags.map((f) => f.kind), ["time"]);
   // The seconds flag carries the relative number along, so the nightly summaries collect it before the owner sets the baseline.
-  assert.deepEqual(absolute.kind === "flag" && absolute.flags[0].text, "slowest 1.37 s = 2.11× the fixed workload, baseline 1.16 s (19% over, flag above 15%)");
+  assert.deepEqual(absolute.kind === "flag" && absolute.flags[0].text, "slowest 1.37 s = 2.11× the fixed workload, baseline 1.16 s (19% over, flag above 15%, fail above 100%)");
   // The OK line shows both numbers too.
   assert.equal(
     baselineLine(ready, measured, { clicks: 4, slowestMs: 1157, slowestRelative: 2.1036 }, { kind: "ok" }),
@@ -185,7 +185,7 @@ test("relative margin boundaries: 0.9× of the 15% margin passes, exactly 15% pa
   assert.deepEqual(compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.3 }, base), { kind: "ok" });
   // 2.33 / 2 − 1 = 16.5% over, which prints rounded to 17%.
   const slow = compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.33 }, base);
-  assert.deepEqual(slow, { kind: "flag", flags: [{ kind: "time", text: "slowest 5.00 s = 2.33× the fixed workload, baseline 2.00× (17% over, flag above 15%)" }] });
+  assert.deepEqual(slow, { kind: "flag", flags: [{ kind: "time", text: "slowest 5.00 s = 2.33× the fixed workload, baseline 2.00× (17% over, flag above 15%, fail above 100%)" }] });
   // With a relative baseline the seconds are only shown: 5 s against a 1 s baseline passed above. Without it, 5 s flags.
   assert.equal(compareToBaseline(ready, { clicks: 4, slowestMs: 5000, slowestRelative: 2.27 }, { clicks: 4, slowestMs: 1000 }).kind, "flag");
 });
@@ -219,4 +219,38 @@ test("seeded random measurements agree with a simple baseline model (5 seeds × 
       assert.equal(got.kind, model, `seed ${seed} run ${i}: ${JSON.stringify({ b, m, got })}`);
     }
   }
+});
+
+test("twice the baseline fails: past 15% over only warns ('time'), past 100% over fails ('slower'), 0.9× and 1.1× of each margin", () => {
+  // Baseline 1,000 ms. 0.9 × 100% = 90% over is 1,900 ms: a warning; 1.1 × 100% = 110% over is 2,100 ms: fails.
+  // Exactly twice, 2,000 ms, is not more than 100% over, so it warns. The same in multiples of the fixed workload (baseline 2.0×).
+  const kinds = (c: ReturnType<typeof compareToBaseline>) => (c.kind === "flag" ? c.flags.map((f) => f.kind) : c.kind);
+  assert.deepEqual(kinds(compareToBaseline(ready, { clicks: 4, slowestMs: 1900 }, { clicks: 4, slowestMs: 1000 })), ["time"]);
+  assert.deepEqual(kinds(compareToBaseline(ready, { clicks: 4, slowestMs: 2000 }, { clicks: 4, slowestMs: 1000 })), ["time"]);
+  const twice = compareToBaseline(ready, { clicks: 4, slowestMs: 2100 }, { clicks: 4, slowestMs: 1000 });
+  assert.deepEqual(twice, { kind: "flag", flags: [{ kind: "slower", text: "slowest 2.10 s, baseline 1.00 s (110% over, flag above 15%, fail above 100%)" }] });
+  const base = { clicks: 4, slowestMs: 1, slowestRelative: 2 };
+  assert.deepEqual(kinds(compareToBaseline(ready, { clicks: 4, slowestMs: 9, slowestRelative: 3.8 }, base)), ["time"]);
+  assert.deepEqual(kinds(compareToBaseline(ready, { clicks: 4, slowestMs: 9, slowestRelative: 4.2 }, base)), ["slower"]);
+});
+
+test("hand-worked: main's build walked in turns on the same runner judges the ratio, 15% flags and 30% fails, 0.9× and 1.1× of each", () => {
+  // 1.16 s baseline; a slow runner walks this build in 1.45 s and main's in 1.40 s: 1.45 / 1.40 = 1.0357, 3.6% slower than
+  // main, fine, though 1.45 / 1.16 = 1.25 is 25% over the seconds baseline: a warning only, never a failure.
+  const kinds = (c: ReturnType<typeof compareToBaseline>) => (c.kind === "flag" ? c.flags.map((f) => f.kind) : c.kind);
+  const base = { clicks: 4, slowestMs: 1160 };
+  assert.deepEqual(kinds(compareToBaseline(ready, { clicks: 4, slowestMs: 1450, referenceRatio: 1.0357 }, base)), ["time"]);
+  const ok = { clicks: 4, slowestMs: 1000 };
+  // 0.9 × 15% = 13.5% slower: 1.135, fine; 1.1 × 15% = 16.5%: 1.165, flagged. 0.9 × 30% = 1.27, flagged; 1.1 × 30% = 1.33 fails.
+  assert.deepEqual(compareToBaseline(ready, { ...ok, referenceRatio: 1.135 }, base), { kind: "ok" });
+  assert.deepEqual(kinds(compareToBaseline(ready, { ...ok, referenceRatio: 1.165 }, base)), ["time"]);
+  assert.deepEqual(kinds(compareToBaseline(ready, { ...ok, referenceRatio: 1.27 }, base)), ["time"]);
+  const slower = compareToBaseline(ready, { ...ok, referenceRatio: 1.33 }, base);
+  assert.deepEqual(slower, { kind: "flag", flags: [{ kind: "slower", text: "1.33× main's build walked in turns on the same runner (flag above 15% slower, fail above 30%)" }] });
+  // A real 2× slowdown measured 1.72 in the browser (journeys.mjs's deliberate break): fails.
+  assert.deepEqual(kinds(compareToBaseline(ready, { ...ok, referenceRatio: 1.72 }, base)), ["slower"]);
+  assert.equal(
+    baselineLine(ready, { ...ok, referenceRatio: 1.02 }, base, { kind: "ok" }),
+    "OK ready one: 4 clicks (baseline 4), slowest 1.00 s (baseline 1.16 s), 1.02× main's build on the same runner",
+  );
 });

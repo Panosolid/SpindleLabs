@@ -342,6 +342,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     facts() {
       if (inspecting.none()) return;
       fold?.reveal();
+      ctx.properties?.dispatchEvent(new Event("properties-reveal", { bubbles: true })); // a phone opens its Properties sheet (main.ts)
       ctx.properties?.querySelector("#volume")?.closest("dl")?.scrollIntoView({ block: "nearest" });
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
@@ -1001,7 +1002,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const anchor = editing && anchorOf(doc, editing.tool);
     if (!editing) return (typed.hide(), hint.hide());
     const width = viewport.element.clientWidth;
-    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y);
+    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
     if (editing.pointer) hint.show(hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y);
     else hint.hide();
   }
@@ -2050,6 +2051,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     unmount() {
       putAwayByRestore = ctx.history.restoring();
       if (!putAwayByRestore) editingSketch = null;
+      // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the
+      // workspace away may have taken that sketch out, so it is dropped as a tool change drops it (app sweep 2026-10-28).
+      toolChanges++;
+      moves++;
       sleep();
       void bodies.close();
       viewport.showSketches([]);

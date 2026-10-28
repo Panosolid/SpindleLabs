@@ -22,6 +22,8 @@ export interface KernelOps {
   body_free: { args: [body: BodyHandle]; result: void };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
+  /** The size of the kernel's WebAssembly memory in bytes (it only ever grows): the soak test checks it levels off. */
+  wasm_bytes: { args: []; result: number };
 }
 
 export type KernelRequest = {
@@ -29,6 +31,14 @@ export type KernelRequest = {
 }[keyof KernelOps];
 
 export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure };
+
+/**
+ * What every call answers when the kernel's own file (the .wasm) didn't
+ * download or compile, in the words the app uses for a worker that didn't
+ * load, never the browser's ("Failed to fetch", a 404's text): app sweep
+ * 2026-10-28, finding 7.
+ */
+export const KERNEL_NOT_DOWNLOADED = "The geometry kernel didn't start (its file didn't download). Reload the page to try again.";
 
 const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
 

@@ -135,6 +135,8 @@ export function randomEpisode(r: () => number): Episode | null {
 /** What a failed check says; null when every check passed. */
 export type Failure = { message: string } | null;
 
+/** The modeller's smallest piece in mm: a centre arc whose ends are closer is refused at the click. */
+const SMALLEST = 1e-3;
 const close = (a: SketchXY, b: SketchXY, scale: number) => Math.abs(a[0] - b[0]) <= 1e-9 * scale && Math.abs(a[1] - b[1]) <= 1e-9 * scale;
 const show = (p: SketchXY) => `(${p[0]}, ${p[1]})`;
 
@@ -206,6 +208,14 @@ export function runEpisode(te: Entry, e: Episode): Failure {
     }
     const done = place(e.end);
     if (!done) return fail("end", "no aim");
+    // The model's chord, 2R·|sin(sweep / 2)|: under the modeller's smallest piece (0.001 mm) the ends can't be
+    // told apart and nothing is drawn, the tool still waiting for its end; within rounding of it, either is right.
+    const chord = 2 * far(e.centre, e.model.start) * Math.abs(Math.sin(e.model.sweep / 2));
+    if (Math.abs(chord - SMALLEST) <= 1e-9 * scale) return null;
+    if (chord < SMALLEST) {
+      if (done.drew) return fail("drew", `an arc with its ends ${chord} mm apart, under ${SMALLEST} mm`);
+      return expect(["sweep"], "Place end point");
+    }
     if (!done.drew) return fail("drew", `no arc: ${done.note}`);
     const arc = arcs().at(-1)!;
     if (arc.centre[0] !== e.centre[0] || arc.centre[1] !== e.centre[1]) return fail("centre", `${show(arc.centre)}, clicked at ${show(e.centre)}`);
