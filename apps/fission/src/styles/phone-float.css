@@ -1,0 +1,14 @@
+/* The phone's tool bar over the 3D view (phone-float.ts): along the top of
+   the view, left of the view cube, over the sheets (z-index 15) so Finish
+   stays in reach with Properties open. Finish is the accent green of "done",
+   as the sketch toolbar's Finish Sketch; every control is 44 px tall to tap.
+   Wider screens never show it: the tool's own buttons are in sight there. */
+.phone-float { display: none; }
+@media (max-width: 640px) {
+  .phone-float:not([hidden]) { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 112px); z-index: 16; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; border: 1px solid #353a43; border-radius: 10px; background: rgba(28, 31, 36, 0.92); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+  .phone-float button:not(#none) { min-height: 44px; padding: 0 12px; }
+  .phone-float .phone-float-finish:not(#none) { display: inline-flex; align-items: center; gap: 6px; background: #1f5f3f; border-color: #3ddc97; font-weight: 600; }
+  .phone-float .phone-float-finish:disabled { opacity: 0.45; }
+  .phone-float .phone-float-plane:not(#none) { min-width: 44px; padding: 0 8px; }
+  .phone-float .phone-float-words { flex-basis: 100%; padding: 0 4px; color: #d7dde5; font-size: 14px; }
+}
