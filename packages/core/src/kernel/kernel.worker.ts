@@ -2,14 +2,15 @@
 // { id, op, args }; every reply is { id, ok: true, value } or { id, ok: false, error },
 // the error as plain data (kind, inputs, message), since a thrown Error's own
 // fields don't survive the trip between threads.
-import init, * as kernel from "./wasm/fission_kernel.js";
+import init from "./wasm/fission_kernel.js";
+import { entry as kernel } from "./entry-points.ts";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
 import { KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
-// words, not the browser's; a build that doesn't match its kernel.json keeps
+// words, not the browser's; a build that doesn't take the app's key keeps
 // its own. Handled here once, so a failed start is never an uncaught error
 // before the first call awaits it (app sweep 2026-10-28, finding 7).
 let memory: WebAssembly.Memory | null = null;
