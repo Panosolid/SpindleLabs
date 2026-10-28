@@ -171,3 +171,88 @@ test("a save time that isn't a time is refused before anything is written", asyn
   await assert.rejects(store.save("p", part(41), new Date(NaN)), /a stored project needs a valid save time/);
   assert.equal(widthOf(await store.open("p")), 40);
 });
+
+// Finding 2: two tabs both open on one project. Each tab knows the save
+// time of the stored project it last read or wrote; a save is refused when
+// the store's has changed since (another tab saved), so a stale tab never
+// silently overwrites another tab's saved edit, and it says so.
+
+test("a stale tab's save is refused, and says so, instead of overwriting another tab's saved edit (worked by hand)", async () => {
+  // Stored 40 at t = 0; both tabs open it, knowing save time 0. A changes it
+  // to 45 at t = 0; its save at t = 1000 finds save time 0 as expected and
+  // stores 45 (save time 1000). B, still showing 40, changes it to 25 at
+  // t = 1100; its save at t = 2100 expects save time 0 but finds 1000, so
+  // it is refused: the store keeps 45 and B says another tab changed it.
+  // A's next change still saves (it expects 1000, finds 1000). B leaving
+  // keeps nothing in the journal (a next visit would put 25 back over A's
+  // work) and asks before going instead.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let a = part(40);
+  let b = part(40);
+  const bSaid: string[] = [];
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(store, "p", () => a, () => {}, opts);
+  const tabB = startAutosave(store, "p", () => b, (s) => bSaid.push(s.state === "error" ? s.message : s.state), opts);
+  a = part(45);
+  tabA.changed();
+  await clock.advance(1100);
+  assert.equal(widthOf(await store.open("p")), 45);
+  b = part(25);
+  tabB.changed();
+  await clock.advance(1000);
+  assert.equal(widthOf(await store.open("p")), 45, "B didn't overwrite A's saved edit");
+  assert.equal(bSaid.at(-1), "This project was changed in another tab. Reload to see the newer version.");
+  b = part(26);
+  tabB.changed();
+  await clock.advance(1000);
+  assert.equal(widthOf(await store.open("p")), 45, "nor with its next change");
+  assert.equal(tabB.leaving(), false, "B asks before going");
+  assert.equal(journal.items.size, 0, "B's stale change isn't journalled to be put back over A's");
+  a = part(50);
+  tabA.changed();
+  await clock.advance(1000);
+  assert.equal(widthOf(await store.open("p")), 50, "A carries on saving");
+});
+
+test("a save expecting a save time is refused when the store's differs by a millisecond either way", async () => {
+  // Stored 40 at t = 1000. Expecting 999 or 1001 is refused and the store keeps 40; expecting 1000 stores 41.
+  let t = 1000;
+  const store = projectStore(memoryKeyValue(), [], () => new Date(t));
+  await store.save("p", part(40));
+  t = 2000;
+  for (const expect of [999, 1001]) {
+    await assert.rejects(store.save("p", part(41), undefined, new Date(expect)), /changed in another tab/);
+    assert.equal(widthOf(await store.open("p")), 40);
+  }
+  await store.save("p", part(41), undefined, new Date(1000));
+  assert.equal(widthOf(await store.open("p")), 41);
+});
+
+test("a stale tab finishing (another project opened) stores nothing and leaves nothing to be put back", async () => {
+  // Stored 40 at t = 0, both tabs knowing save time 0. A stores 45 at t = 1000. B changes to 25 at t = 1100 and opens
+  // another project at once (finish): 25 is journalled, then its save after the flight expects 0, finds 1000 and is
+  // refused, so the entry goes too: a next visit reads 45, A's work.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let a = part(40);
+  let b = part(40);
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(store, "p", () => a, () => {}, opts);
+  const tabB = startAutosave(store, "p", () => b, () => {}, opts);
+  a = part(45);
+  tabA.changed();
+  await clock.advance(1100);
+  b = part(25);
+  tabB.changed();
+  tabB.finish();
+  await settle();
+  await settle();
+  assert.equal(journal.items.size, 0);
+  assert.deepEqual(await recoverUnsaved(store, journal, []), []);
+  assert.equal(widthOf(await store.open("p")), 45);
+});

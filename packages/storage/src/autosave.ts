@@ -7,6 +7,11 @@
 //   - A save of text identical to the last one written is skipped.
 //   - A failure is reported with its message and nothing retries on its
 //     own; the next change tries again.
+//   - Given the stored project's save time (`storedAt`), each save expects
+//     the store still to hold that or this autosave's own last save; when
+//     another tab saved since, the save is refused and reported ("This
+//     project was changed in another tab…"), and nothing of this tab's is
+//     journalled to be put back over that tab's work (app sweep, finding 2).
 //   - When the page may be going (hidden, reloaded, closed), `leaving()`
 //     writes the latest state to the unsaved-changes journal at once
 //     (unsaved.ts; localStorage, which is written before the call returns,
@@ -22,7 +27,7 @@
 //     kernel answers), which can come after the edit was stored.
 
 import { projectToJson, type Project } from "@fission/core";
-import type { ProjectStore } from "./store.ts";
+import { ProjectChangedError, type ProjectStore } from "./store.ts";
 import { journalEntry, readJournalEntry, unsavedKey, type JournalStorage } from "./unsaved.ts";
 
 export type AutosaveStatus =
@@ -53,6 +58,13 @@ export interface AutosaveOptions {
   follows?: { onChange(listener: () => void): () => void } | null;
   /** The store already holds `project()` as it is now (it was just opened from there). */
   stored?: boolean;
+  /**
+   * The stored project's save time when it was opened (ProjectSummary's
+   * `modified`): each save expects the store to hold that, or this
+   * autosave's own last save, and is refused when another tab saved since.
+   * Left out, the first save checks nothing.
+   */
+  storedAt?: Date | null;
   /** The clock journal entries are timed on (the store's, so the two compare); tests hand in a fake one. */
   now?: () => Date;
 }
@@ -95,7 +107,7 @@ export function startAutosave(
   id: string,
   project: () => Project,
   onStatus: (status: AutosaveStatus) => void = () => {},
-  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, now = () => new Date() }: AutosaveOptions = {},
+  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date() }: AutosaveOptions = {},
 ): Autosave {
   let timer: unknown = null;
   let inFlight = false;
@@ -103,6 +115,10 @@ export function startAutosave(
   let flight: Promise<void> = Promise.resolve();
   let again = false;
   let stopped = false;
+  /** The save time of the stored project as this autosave last read or wrote it: a save expects the store to hold it still. */
+  let base: Date | undefined = storedAt ?? undefined;
+  /** Another tab stored the project since: this one's changes can't be stored, nor kept to be put back over that. */
+  let conflicted = false;
   /** When the text last written was read (null: not written by this autosave), for the journal's times. */
   let writtenAt: Date | null = null;
   /** The text last written, so an unchanged project is not written again. */
@@ -181,7 +197,7 @@ export function startAutosave(
     inFlight = true;
     let failure: string | null = null;
     try {
-      const saving = store.save(id, JSON.parse(text) as Project, at); // exactly the state checked above
+      const saving = store.save(id, JSON.parse(text) as Project, at, base); // exactly the state checked above
       flight = saving.then(
         () => {},
         () => {},
@@ -189,8 +205,10 @@ export function startAutosave(
       await saving;
       written = text;
       writtenAt = at;
+      base = at;
       stored(v, at);
     } catch (e) {
+      if (e instanceof ProjectChangedError) conflicted = true;
       failure = message(e);
     }
     inFlight = false;
@@ -232,6 +250,8 @@ export function startAutosave(
     changed,
     leaving() {
       if (stopped || storedVersion === version) return true;
+      // Kept in the journal, it would be put back over the other tab's work on the next visit: the page asks instead.
+      if (conflicted) return false;
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
@@ -263,7 +283,7 @@ export function startAutosave(
         }
       }
       stop();
-      if (text === null) return;
+      if (text === null || conflicted) return; // after another tab's save: nothing of this one's can be stored
       // The store holds it already, unless a save of another state is running: that one lands after, so this
       // state is stored again behind it (app sweep 2026-10-28, finding 14).
       if (text === written && !inFlight) return stored(v, writtenAt);
@@ -278,12 +298,21 @@ export function startAutosave(
       const last = text;
       void flight.then(async () => {
         try {
-          await store.save(id, JSON.parse(last) as Project, at);
+          await store.save(id, JSON.parse(last) as Project, at, base);
           written = last;
           writtenAt = at;
           stored(v, at);
-        } catch {
-          // kept in the journal (when it could be written), put back on the next visit
+        } catch (e) {
+          // Kept in the journal (when it could be written), put back on the next visit; unless another tab saved
+          // since, when putting it back would overwrite that tab's work.
+          if (e instanceof ProjectChangedError && journalVersion === v) {
+            try {
+              journal?.removeItem(key);
+              journalVersion = null;
+            } catch {
+              // left in place: storage off, so it can't be read back either
+            }
+          }
         }
       });
     },
