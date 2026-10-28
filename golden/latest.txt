@@ -1,24 +1,24 @@
-tested commit ee5c4a1 on claude/project-thread-33uqcc-t6, 2026-10-27 06:02 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40455051296)
-seed 1793079173, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793079173 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing (after npm run kernel -w @fission/app)
-bracket-two-holes: 50 rebuilds, fastest 2.5 ms, slowest 4.2 ms, OK
-enclosure: 50 rebuilds, fastest 1.7 ms, slowest 4.6 ms, OK
-gear: 50 rebuilds, fastest 15.2 ms, slowest 51.7 ms, OK
-l-bracket: 50 rebuilds, fastest 0.5 ms, slowest 0.9 ms, OK
-stepped-boss: 50 rebuilds, fastest 2.5 ms, slowest 7.5 ms, OK
-thirty-features: 50 rebuilds, fastest 9.9 ms, slowest 19.6 ms, OK
+tested commit 8b21a72 on main, 2026-10-28 22:23 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40760247415)
+seed 1793218222, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793218222 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+bracket-two-holes: 50 rebuilds, fastest 2.7 ms, slowest 4.4 ms, OK
+enclosure: 50 rebuilds, fastest 1.7 ms, slowest 24.5 ms, OK
+gear: 50 rebuilds, fastest 15.9 ms, slowest 45.6 ms, OK
+l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 1.2 ms, OK
+stepped-boss: 50 rebuilds, fastest 2.5 ms, slowest 4.7 ms, OK
+thirty-features: 50 rebuilds, fastest 10.1 ms, slowest 18.0 ms, OK
 | metric | baseline | now | change | |
 | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-| app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0373 | -8.8% |  |
+| app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0395 | -3.4% |  |
 | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-| app.golden_enclosure.relative_time | 0.0284 | 0.024 | -15.5% | better: lower the baseline? |
+| app.golden_enclosure.relative_time | 0.0284 | 0.0236 | -16.9% | better: lower the baseline? |
 | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-| app.golden_gear.relative_time | 0.2412 | 0.2295 | -4.9% |  |
+| app.golden_gear.relative_time | 0.2412 | 0.24 | -0.5% |  |
 | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-| app.golden_l_bracket.relative_time | 0.0065 | 0.0055 | -15.4% | better: lower the baseline? |
+| app.golden_l_bracket.relative_time | 0.0065 | 0.0049 | -24.6% | better: lower the baseline? |
 | app.golden_models.failed_percent | 0 | 0 | - |  |
 | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-| app.golden_stepped_boss.relative_time | 0.039 | 0.0372 | -4.6% |  |
+| app.golden_stepped_boss.relative_time | 0.039 | 0.0339 | -13.1% |  |
 | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-| app.golden_thirty_features.relative_time | 0.1632 | 0.1464 | -10.3% |  |
-0 metric(s) failed, 0 flagged, 2 better.
+| app.golden_thirty_features.relative_time | 0.1632 | 0.1341 | -17.8% | better: lower the baseline? |
+0 metric(s) failed, 0 flagged, 3 better.
 Golden STEP files: 27 bodies read by OpenCascade, 0 disagreement(s)

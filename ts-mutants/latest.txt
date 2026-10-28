@@ -1,8 +1,49 @@
-tested commit 1a31760 on main, 2026-10-27 01:21 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40394590397)
-core: 8 survivors, all explained: true
+tested commit 8b21a72 on main, 2026-10-28 22:23 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40760247415)
+UNEXPLAINED survivor at packages/core/src/model/history.ts:125: packages/core/src/model/history.ts | BooleanLiteral | false => true
+UNEXPLAINED survivor at packages/core/src/model/history.ts:201: packages/core/src/model/history.ts | BooleanLiteral | false => true
+UNEXPLAINED survivor at packages/core/src/model/history.ts:244: packages/core/src/model/history.ts | BooleanLiteral | false => true
+core: 11 survivors, all explained: false
+3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 design: no report (the job stopped before the check)
-storage: 26 survivors, all explained: true
-model: 37 survivors, all explained: true
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:145: packages/storage/src/autosave.ts | BlockStatement | { return null; } => {}
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:155: packages/storage/src/autosave.ts | OptionalChaining | journal?.getItem => journal.getItem
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:176: packages/storage/src/autosave.ts | OptionalChaining | journal?.getItem => journal.getItem
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:156: packages/storage/src/autosave.ts | ConditionalExpression | entry != null => true
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:157: packages/storage/src/autosave.ts | BlockStatement | { return false; } => {}
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:231: packages/storage/src/autosave.ts | BooleanLiteral | false => true
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:173: packages/storage/src/autosave.ts | ConditionalExpression | journalVersion !== null => true
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:175: packages/storage/src/autosave.ts | BlockStatement | { const entry = at === null ? null : journal?.getItem(key); const written = entry == null ? null : readJournalEntry(entry).written; if (written === null || written.getTime() >= at!.getTime()) return; } => {}
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:176: packages/storage/src/autosave.ts | ConditionalExpression | at === null => false
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:177: packages/storage/src/autosave.ts | ConditionalExpression | entry == null => false
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:178: packages/storage/src/autosave.ts | ConditionalExpression | written === null || written.getTime() >= at!.getTime() => false
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:178: packages/storage/src/autosave.ts | ConditionalExpression | written === null => false
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:178: packages/storage/src/autosave.ts | LogicalOperator | written === null || written.getTime() >= at!.getTime() => written === null && written.getTime() >= at!.getTime()
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:178: packages/storage/src/autosave.ts | ConditionalExpression | written.getTime() >= at!.getTime() => false
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:178: packages/storage/src/autosave.ts | EqualityOperator | written.getTime() >= at!.getTime() => written.getTime() > at!.getTime()
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:325: packages/storage/src/autosave.ts | OptionalChaining | journal?.removeItem => journal.removeItem
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:204: packages/storage/src/autosave.ts | ObjectLiteral | { state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload to try again." } => {}
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:204: packages/storage/src/autosave.ts | StringLiteral | "error" => ""
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:204: packages/storage/src/autosave.ts | StringLiteral | "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload to try again." => ""
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:258: packages/storage/src/autosave.ts | ConditionalExpression | timer !== null => true
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:281: packages/storage/src/autosave.ts | ConditionalExpression | timer !== null => true
+UNEXPLAINED survivor at packages/storage/src/autosave.ts:323: packages/storage/src/autosave.ts | ConditionalExpression | journalVersion === v => true
+UNEXPLAINED survivor at packages/storage/src/reopen.ts:76: packages/storage/src/reopen.ts | ConditionalExpression | pending !== null => true
+UNEXPLAINED survivor at packages/storage/src/reopen.ts:83: packages/storage/src/reopen.ts | ConditionalExpression | pending !== null => true
+UNEXPLAINED survivor at packages/storage/src/store.ts:43: packages/storage/src/store.ts | StringLiteral | "ProjectChangedError" => ""
+UNEXPLAINED survivor at packages/storage/src/store.ts:105: packages/storage/src/store.ts | ConditionalExpression | holds.problem !== undefined => false
+UNEXPLAINED survivor at packages/storage/src/unsaved.ts:44: packages/storage/src/unsaved.ts | Regex | /^@(\d{1,15})(!?)\n/ => /@(\d{1,15})(!?)\n/
+UNEXPLAINED survivor at packages/storage/src/unsaved.ts:73: packages/storage/src/unsaved.ts | ConditionalExpression | keys.length === 0 => false
+UNEXPLAINED survivor at packages/storage/src/unsaved.ts:76: packages/storage/src/unsaved.ts | ConditionalExpression | !s.problem => true
+UNEXPLAINED survivor at packages/storage/src/unsaved.ts:107: packages/storage/src/unsaved.ts | LogicalOperator | entry.written ?? undefined => entry.written && undefined
+UNEXPLAINED survivor at packages/storage/src/unsaved.ts:111: packages/storage/src/unsaved.ts | LogicalOperator | entry.written ?? new Date(0) => entry.written && new Date(0)
+explained.json lists a mutant that no longer survives (remove it): packages/storage/src/autosave.ts | ConditionalExpression | journalVersion === null => false
+storage: 56 survivors, all explained: false
+32 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+UNEXPLAINED survivor at packages/core/src/model/files.ts:96: packages/core/src/model/files.ts | EqualityOperator | end < 0 => end <= 0
+UNEXPLAINED survivor at packages/core/src/model/files.ts:100: packages/core/src/model/files.ts | EqualityOperator | end < 0 => end <= 0
+UNEXPLAINED survivor at packages/core/src/model/graph.ts:153: packages/core/src/model/graph.ts | ArrayDeclaration | [] => ["Stryker was here"]
+model: 40 survivors, all explained: false
+3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 svg: 4 survivors, all explained: true
 viewport: no report (the job stopped before the check)
 UNEXPLAINED survivor at packages/ai/src/commands.ts:23: packages/ai/src/commands.ts | Regex | /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn['’]t available)\b/i => /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn[^'’]t supported|not available|isn['’]t available)\b/i
@@ -10,6 +51,8 @@ UNEXPLAINED survivor at packages/ai/src/commands.ts:23: packages/ai/src/commands
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:143: packages/ai/src/hosted.ts | ConditionalExpression | !line.startsWith("data:") => false
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:143: packages/ai/src/hosted.ts | StringLiteral | "data:" => ""
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:145: packages/ai/src/hosted.ts | ConditionalExpression | data === "" => false
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:145: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:220: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:148: packages/ai/src/hosted.ts | BlockStatement | { throw new Error(`the stream has a line that isn't JSON: ${data.slice(0, 80)}`); } => {}
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:149: packages/ai/src/hosted.ts | StringLiteral | `the stream has a line that isn't JSON: ${data.slice(0, 80)}` => ``
@@ -18,14 +61,16 @@ UNEXPLAINED survivor at packages/ai/src/hosted.ts:155: packages/ai/src/hosted.ts
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:155: packages/ai/src/hosted.ts | StringLiteral | "the stream reported an error" => ""
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:172: packages/ai/src/hosted.ts | ConditionalExpression | !line.startsWith("event:") => true
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:172: packages/ai/src/hosted.ts | MethodExpression | line.startsWith("event:") => line.endsWith("event:")
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:175: packages/ai/src/hosted.ts | UpdateOperator | events++ => events--
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:215: packages/ai/src/hosted.ts | UpdateOperator | events++ => events--
-UNEXPLAINED survivor at packages/ai/src/hosted.ts:179: packages/ai/src/hosted.ts | ConditionalExpression | e.type === "content_block_delta" => true
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:177: packages/ai/src/hosted.ts | ConditionalExpression | !e => false
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:179: packages/ai/src/hosted.ts | ConditionalExpression | e.type === "content_block_delta" => true
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:180: packages/ai/src/hosted.ts | ConditionalExpression | typeof delta.partial_json === "string" => true
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:181: packages/ai/src/hosted.ts | ConditionalExpression | typeof delta.text === "string" => true
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:189: packages/ai/src/hosted.ts | StringLiteral | "\n" => ""
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:225: packages/ai/src/hosted.ts | StringLiteral | "\n" => ""
-UNEXPLAINED survivor at packages/ai/src/hosted.ts:191: packages/ai/src/hosted.ts | StringLiteral | "the reply is neither a stream nor JSON" => ""
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:190: packages/ai/src/hosted.ts | BlockStatement | { throw new Error("the reply is neither a stream nor JSON"); } => {}
+UNEXPLAINED survivor at packages/ai/src/hosted.ts:191: packages/ai/src/hosted.ts | StringLiteral | "the reply is neither a stream nor JSON" => ""
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:197: packages/ai/src/hosted.ts | ConditionalExpression | text === "" => true
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta?.content => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)?.[0]?.delta.content
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)?.[0].delta
@@ -33,23 +78,29 @@ UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:220: packages/ai/src/hosted.ts | ConditionalExpression | more !== "" => true
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | ConditionalExpression | text === "" => false
 UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | StringLiteral | "the reply has no answer in it" => ""
+UNEXPLAINED survivor at packages/ai/src/http.ts:99: packages/ai/src/http.ts | Regex | /\r$/ => /\r/
 UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | Regex | /\r$/ => /\r/
 UNEXPLAINED survivor at packages/ai/src/http.ts:101: packages/ai/src/http.ts | ConditionalExpression | !response.body => false
 UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | ConditionalExpression | rest !== "" => true
 UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | StringLiteral | "" => "Stryker was here!"
 UNEXPLAINED survivor at packages/ai/src/local.ts:126: packages/ai/src/local.ts | LogicalOperator | onText && Symbol.asyncIterator in reply => onText || Symbol.asyncIterator in reply
 UNEXPLAINED survivor at packages/ai/src/local.ts:129: packages/ai/src/local.ts | OptionalChaining | chunk.choices[0]?.delta?.content => chunk.choices[0]?.delta.content
+UNEXPLAINED survivor at packages/ai/src/local.ts:130: packages/ai/src/local.ts | ConditionalExpression | more !== "" => true
 UNEXPLAINED survivor at packages/ai/src/local.ts:185: packages/ai/src/local.ts | ConditionalExpression | more !== "" => true
+UNEXPLAINED survivor at packages/ai/src/local.ts:130: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/local.ts:132: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
 UNEXPLAINED survivor at packages/ai/src/local.ts:185: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
 UNEXPLAINED survivor at packages/ai/src/local.ts:132: packages/ai/src/local.ts | ConditionalExpression | text === "" => false
 UNEXPLAINED survivor at packages/ai/src/local.ts:132: packages/ai/src/local.ts | StringLiteral | "the in-browser model gave no answer" => ""
 UNEXPLAINED survivor at packages/ai/src/local.ts:135: packages/ai/src/local.ts | ConditionalExpression | Symbol.asyncIterator in reply => false
 UNEXPLAINED survivor at packages/ai/src/local.ts:135: packages/ai/src/local.ts | StringLiteral | "the in-browser model streamed an answer nobody asked to stream" => ""
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:37: packages/ai/src/ollama.ts | MethodExpression | endpoint.trim() => endpoint
 UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | ConditionalExpression | line.trim() === "" => false
-UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | MethodExpression | line.trim() => line
 UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | StringLiteral | "" => "Stryker was here!"
+UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | MethodExpression | line.trim() => line
 UNEXPLAINED survivor at packages/ai/src/ollama.ts:102: packages/ai/src/ollama.ts | MethodExpression | line.slice(0, 80) => line
 UNEXPLAINED survivor at packages/ai/src/ollama.ts:105: packages/ai/src/ollama.ts | OptionalChaining | piece.message?.content => piece.message.content
 UNEXPLAINED survivor at packages/ai/src/ollama.ts:106: packages/ai/src/ollama.ts | ConditionalExpression | typeof more === "string" => true
-ai: 58 survivors, all explained: false
-46 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+ai: 68 survivors, all explained: false
+56 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
