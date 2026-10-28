@@ -177,9 +177,13 @@ const isPrimitive = (kind: ShapeKind): kind is keyof typeof SHAPE_TYPES => Objec
 /**
  * A name folded for comparing: two items' names must differ, ignoring case
  * ("Box 1" and "box 1" are one name), since messages name items by them
- * (U0e: "Delete Box 1").
+ * (U0e: "Delete Box 1"), and ignoring how its letters are spelled in code
+ * points: "Café" with é as one (U+00E9) or as e and a combining accent
+ * (U+0301) reads the same, so it is one name (NFC, app sweep 2026-10-28,
+ * finding 18). Look-alikes of other kinds (a zero-width space, a
+ * right-to-left mark) stay apart: the owner's call.
  */
-export const nameKey = (name: string): string => name.toLowerCase();
+export const nameKey = (name: string): string => name.toLowerCase().normalize("NFC");
 
 /** Every timeline item's name (`nameKey`), but item `except`'s. */
 export function takenNames(doc: Pick<DesignDocument, "timeline">, except?: string): Set<string> {
@@ -700,6 +704,83 @@ export function withShortNames(doc: DesignDocument): DesignDocument {
 }
 
 /**
+ * The most characters a name may have (U0e2): a browser row shows about
+ * 30 before its "…" and the bar's tooltip has it whole; a name is for
+ * telling items apart, and the description says the rest. Each character
+ * is counted once, however many code units it takes.
+ */
+export const NAME_LIMIT = 40;
+
+/**
+ * A file's names held to Rename's rules (app sweep 2026-10-28, finding 17),
+ * so an opened design is one Rename could have made: each control
+ * character run becomes a space and the spaces round a name go; a name
+ * over NAME_LIMIT characters keeps its first NAME_LIMIT; a name another
+ * item before it has (`nameKey`) gets " (2)", " (3)"… after it, the first
+ * free one, cut to fit; and an empty name is its kind's next free name
+ * ("Box 2", `freshName`), never one a named item has. Every copy of a
+ * changed name follows it (`relabelled`). The document itself when every
+ * name keeps to the rules. A name that is not text (a number, null) is
+ * refused, naming its item: there is nothing to repair it from.
+ */
+export function withRuledNames(doc: DesignDocument): DesignDocument {
+  const features = doc.timeline.features;
+  const cleaned = features.map((f) => {
+    const label: unknown = f.provenance?.self?.label;
+    if (typeof label !== "string") throw new Error(`Design feature ${f.id}'s name must be text, not ${shown(label)}`);
+    const spaced = label.replace(/\p{Cc}+/gu, " ").trim();
+    const chars = [...spaced];
+    return chars.length > NAME_LIMIT ? chars.slice(0, NAME_LIMIT).join("").trimEnd() : spaced;
+  });
+  // Every name now in the file, so a name made below repeats none of them, the later items' too.
+  const used = new Set(cleaned.filter((n) => n !== "").map(nameKey));
+  const kept = new Set<string>();
+  // Where each repeated name's numbers carry on from, so 5,000 items of one name open in a moment (audit S2).
+  const nextNumber = new Map<string, number>();
+  const names = cleaned.map((name) => {
+    if (name === "") return name;
+    const key = nameKey(name);
+    if (!kept.has(key)) {
+      kept.add(key);
+      return name;
+    }
+    for (let n = nextNumber.get(key) ?? 2; ; n++) {
+      const suffix = ` (${n})`;
+      const tried = `${[...name].slice(0, NAME_LIMIT - suffix.length).join("").trimEnd()}${suffix}`;
+      if (used.has(nameKey(tried)) || kept.has(nameKey(tried))) continue;
+      nextNumber.set(key, n + 1);
+      kept.add(nameKey(tried));
+      used.add(nameKey(tried));
+      return tried;
+    }
+  });
+  const kindOf = presetKinds(doc);
+  const base = (f: Feature): string => {
+    if (isSketchItem(f)) return "Sketch";
+    if (isSketchExtrude(f)) return "Extrude";
+    const kind = kindOf(f);
+    return kind === null ? "Item" : SHAPE_LABELS[kind];
+  };
+  // Counted in one pass, so a big file with every name empty opens in a moment (audit S2).
+  const counts = new Map<string, number>();
+  for (const [i, f] of features.entries()) {
+    const kind = base(f);
+    const before = counts.get(kind) ?? 0;
+    counts.set(kind, before + 1);
+    if (names[i] !== "") continue;
+    names[i] = freshName(kind, before, kept);
+    kept.add(nameKey(names[i]));
+  }
+  // Each changed name and its copies, in one pass (as `relabelled` does for one).
+  const changed = new Map<string, string>();
+  for (const [i, f] of features.entries()) if (names[i] !== f.provenance.self.label) changed.set(f.id, names[i]);
+  if (changed.size === 0) return doc;
+  const renamedTo = (o: Feature["provenance"]["self"]) => (o.workspace === "design" && changed.has(o.id) ? { ...o, label: changed.get(o.id)! } : o);
+  const out = features.map((f) => ({ ...f, provenance: { ...f.provenance, self: changed.has(f.id) ? { ...f.provenance.self, label: changed.get(f.id)! } : f.provenance.self, from: Array.isArray(f.provenance.from) ? f.provenance.from.map(renamedTo) : f.provenance.from } }));
+  return { ...doc, timeline: { ...doc.timeline, features: out } };
+}
+
+/**
  * Design's part of a loaded project, checked all the way down to the
  * numbers the panel shows, so a bad file is refused when it is opened
  * rather than failing later. Version 1 is migrated to version 2, and
@@ -712,7 +793,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (Array.isArray(list)) notTooMany(list.length, limit, "Design data has", what);
   const v2 = data.version === 1 ? migrateDesignV1(data) : data;
   const d = (v2.version === 2 ? migrateDesignV2(v2) : v2) as Partial<DesignDocument>;
-  if (d.version !== 3) throw new Error(`Design data version ${shown(d.version)} is not one this SpindleLabs reads (1, 2 or 3)`);
+  // Text quoted, so "3" (text) never reads as the 3 it is not (app sweep, finding 25).
+  if (d.version !== 3) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2 or 3)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -829,7 +911,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const profiles = new Map<unknown, ReadyProfile>();
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
   for (const f of d.timeline.features) if (!isSketchItem(f)) shapeWith(f, (id) => profiles.get(id));
-  return withShortNames(d as DesignDocument);
+  return withShortNames(withRuledNames(d as DesignDocument));
 }
 
 /**

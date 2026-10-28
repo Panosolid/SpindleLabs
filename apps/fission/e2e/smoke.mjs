@@ -2053,6 +2053,38 @@ try {
     }
   });
 
+  await check("a kernel whose .wasm doesn't download says it didn't start, in the app's words, never the browser's (app sweep finding 7)", async () => {
+    // Before: the worker's start (`init()`) failed with nothing listening, the
+    // page got an uncaught error, and each call answered with the browser's
+    // own words ("Failed to fetch", or the 404's), shown under the rows.
+    // The file is refused two ways: the request cut off, and a 404 page.
+    for (const [how, answer] of [["cut off", (r) => r.abort()], ["a 404", (r) => r.fulfill({ status: 404, contentType: "text/plain", body: "Not Found" })]]) {
+      const bare = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+      const errors = [];
+      bare.on("pageerror", (e) => errors.push(e.message));
+      try {
+        await bare.route(/\.wasm$/, answer);
+        await bare.goto(url);
+        await bare.waitForSelector("#start-hint", { state: "visible" });
+        await insertPreset(bare, "box");
+        const words = "The geometry kernel didn't start (its file didn't download). Reload the page to try again.";
+        await bare.waitForFunction((w) => document.querySelector("#error")?.textContent === w, words, { timeout: 10_000 }).catch(async () => {
+          throw new Error(`${how}: the error line says ${JSON.stringify(await bare.textContent("#error"))}`);
+        });
+        await bare.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false");
+        // An edit afterwards gets the same words, and the browser's own are nowhere on the page.
+        await bare.fill("#width", "41");
+        await bare.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false");
+        assert.equal(await bare.textContent("#error"), words, how);
+        const page = await bare.evaluate(() => document.body.innerText);
+        for (const raw of ["Failed to fetch", "404", "WebAssembly", "MIME"]) assert.ok(!page.includes(raw), `${how}: the page shows "${raw}"`);
+        assert.deepEqual(errors, [], how);
+      } finally {
+        await bare.close();
+      }
+    }
+  });
+
   await check("no errors in the browser console", async () => {
     assert.deepEqual(consoleErrors, []);
   });
