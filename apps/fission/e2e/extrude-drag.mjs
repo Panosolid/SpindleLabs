@@ -132,6 +132,8 @@ async function hoverAt(page, p, want) {
 
 /** The arrow's foot and tip on screen, as the main view says. */
 async function arrow(page) {
+  // The panel's preview volume is set before the viewer next draws the arrow, so wait for it rather than read at once.
+  await until(page, () => (document.querySelector("#viewport").dataset.arrow ?? "") !== "", null, "the arrow drawn");
   const said = await view(page, "arrow");
   assert.ok(said, "the arrow is drawn");
   const [foot, tip] = said.split(" ").map((xy) => xy.split(",").map(Number));
