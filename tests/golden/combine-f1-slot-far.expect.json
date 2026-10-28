@@ -1,0 +1,118 @@
+{
+  "model": "combine-f1-slot-far",
+  "what": "Ben's F1 second half with Combine: the slot moved to x 70–80 with Move (35e2) before the Combine, so the far piece (x 80..100) is now the SMALLER one and must still keep Body 1 (Fusion kept Body1 when the bar was edited so). Also exercises Move feeding a Combine. No face of the tool lies in a plane of the target's (35b refuses faces lying on each other until 36a), which is why the parts sit off the origin planes as they do.",
+  "from": "35",
+  "recipe": [
+    {
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+    },
+    {
+      "do": "Create Sketch on the front plane XZ (sketch x is X, sketch y is Z, its normal −Y).",
+      "makes": "sketch-2"
+    },
+    {
+      "do": "Rectangle tool: click (0, 2), then (100, 12) (points 3, 4, 6, 8; lines 5, 7, 9, 10: line 5 the side z = 2, line 7, the second, the side x = 100). Nothing is before it, so nothing is pinned."
+    },
+    {
+      "do": "Extrude the sketch 20, not flipped (along −Y, y 0 to −20): Body 1, the bar x 0..100, y −20..0, z 2..12 (100 × 20 × 10, Ben's bar).",
+      "makes": "feature-11"
+    },
+    {
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-12"
+    },
+    {
+      "do": "Rectangle tool: click (30, −25), then (40, 5): the slot, past both of the bar's long sides (points and lines 13 to 20; seen along Z the bar offers its corners (0 or 100, −20 or 0) and its edges' middles (50, 0), (50, −20), (0, −10), (100, −10), none here)."
+    },
+    {
+      "do": "Extrude the sketch 15 (z 0 to 15, past the bar's bottom z = 2 and top z = 12): Body 2, the slot tool x 30..40, y −25..5, z 0..15.",
+      "makes": "feature-21"
+    },
+    {
+      "do": "Move/Rotate (35e2): Body 2, 40 mm along +X, no turn: the slot tool is now x 70..80.",
+      "makes": "feature-22"
+    },
+    {
+      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off.",
+      "makes": "feature-23"
+    }
+  ],
+  "bodies": [
+    {
+      "body": "Body 1",
+      "item": "feature-23",
+      "volume": {
+        "is": "20*20*10",
+        "why": "the far piece, x 80..100: 20 × 20 × 10 = 4000, now the smaller piece, still Body 1 and body:feature-11: 34a rule 1 (Fusion check F1): walking the bar's faces in the order they were made, its caps and the side z = 2 (line 5) are split, and the first wholly in one piece is the side x = 100 (line 7), so the far piece keeps the bar's id body:feature-11 whatever its size. Size never decides (F1)."
+      },
+      "area": {
+        "is": "2*(20*20 + 20*10 + 20*10)",
+        "why": "a 20 × 20 × 10 box: 2(400 + 200 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            80,
+            -20,
+            2
+          ],
+          [
+            100,
+            0,
+            12
+          ]
+        ],
+        "why": "from the slot's far wall x = 80 to the bar's end"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    },
+    {
+      "body": "Body 3",
+      "item": "feature-23",
+      "volume": {
+        "is": "70*20*10",
+        "why": "the near piece, x 0..70: 70 × 20 × 10 = 14000, the larger, still the new body body:feature-23/piece:1. PREDICTED, check in Fusion: Fusion never reuses a body's number (F2: the tool's left-over piece became Body3), so a new piece after a used-up Body 2 is Body 3; ours today is positional and would say Body 2 (sticky names are a 35e/35f item)."
+      },
+      "area": {
+        "is": "2*(70*20 + 70*10 + 20*10)",
+        "why": "a 70 × 20 × 10 box: 2(1400 + 700 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            0,
+            -20,
+            2
+          ],
+          [
+            70,
+            0,
+            12
+          ]
+        ],
+        "why": "from the bar's start to the slot's near wall x = 70"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    }
+  ],
+  "sketches": [],
+  "pins": []
+}

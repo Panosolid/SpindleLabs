@@ -1,0 +1,111 @@
+{
+  "model": "combine-f5-wider-pocket",
+  "what": "Ben's Fusion check F5 with Combine and a square pocket (a round one is curved, refused until 37/38a): a 60 × 40 × 20 block, a 20 × 20 pocket 10 deep cut by Combine, a sketch on the pocket's floor, then the pocket made wider (20 → 26, floor at the same height). No warning; the floor sketch keeps its face and plane (34a rule 2: only the floor's outline changed). No face of the tool lies in a plane of the target's (35b refuses faces lying on each other until 36a), which is why the parts sit off the origin planes as they do.",
+  "from": "35",
+  "recipe": [
+    {
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+    },
+    {
+      "do": "Create Sketch on the front plane XZ (sketch x is X, sketch y is Z, its normal −Y).",
+      "makes": "sketch-2"
+    },
+    {
+      "do": "Rectangle tool: click (0, −10), then (60, 10) (points 3, 4, 6, 8; lines 5, 7, 9, 10)."
+    },
+    {
+      "do": "Extrude the sketch 40, not flipped (along −Y, y 0 to −40): Body 1, the block x 0..60, y −40..0, z −10..10.",
+      "makes": "feature-11"
+    },
+    {
+      "do": "Create Sketch on the top plane XY (inside the block: z = 0 is its middle).",
+      "makes": "sketch-12"
+    },
+    {
+      "do": "Rectangle tool: click (20, −30), then (40, −10) (points 13, 14, 16, 18 at (20, −30), (40, −30), (40, −10), (20, −10); lines 15, 17, 19, 20; the block seen along Z offers (0 or 60, −40 or 0), (30, 0), (60, −20), (30, −40), (0, −20), none here)."
+    },
+    {
+      "do": "Extrude the sketch 15 (z 0 to 15): Body 2, the pocket tool, its bottom z = 0 inside the block and its top above the block's top z = 10.",
+      "makes": "feature-21"
+    },
+    {
+      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off: a 20 × 20 pocket 10 deep, its floor the tool's start cap at z = 0.",
+      "makes": "feature-22"
+    },
+    {
+      "do": "Create Sketch on the pocket's floor (pick the face at z = 0, facing up).",
+      "makes": "sketch-23"
+    },
+    {
+      "do": "Edit sketch-12: move point 13 from (20, −30) to (17, −33)."
+    },
+    {
+      "do": "Move point 14 from (40, −30) to (43, −33)."
+    },
+    {
+      "do": "Move point 16 from (40, −10) to (43, −7)."
+    },
+    {
+      "do": "Move point 18 from (20, −10) to (17, −7), and finish the sketch: the pocket is now 26 × 26 round the same centre (30, −20), the floor still at z = 0."
+    }
+  ],
+  "bodies": [
+    {
+      "body": "Body 1",
+      "item": "feature-22",
+      "volume": {
+        "is": "60*40*20 - 26*26*10",
+        "why": "the block 48000 less the widened pocket 26 × 26 × 10 = 6760: 41240"
+      },
+      "area": {
+        "is": "2*(60*40 + 60*20 + 40*20) + 4*26*10",
+        "why": "the block's 8800; the pocket takes 26 × 26 off the top and gives it back as the floor, and adds four walls 26 × 10: 8800 + 1040 = 9840"
+      },
+      "topology": {
+        "faces": 11,
+        "edges": 24,
+        "vertices": 16,
+        "why": "the block's 6 faces (the top now a ring) + 4 walls + the floor; edges 12 + 4 round the rim + 4 down the corners + 4 round the floor; vertices 8 + 4 at the rim + 4 at the floor. Euler–Poincaré with 12 loops (the top has two): V − E + F − (L − F) = 16 − 24 + 11 − 1 = 2 = 2(S − G), one shell, no hole through"
+      },
+      "box": {
+        "is": [
+          [
+            0,
+            -40,
+            -10
+          ],
+          [
+            60,
+            0,
+            10
+          ]
+        ],
+        "why": "the block's: the pocket opens on the top inside it"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    }
+  ],
+  "sketches": [
+    {
+      "sketch": "sketch-23",
+      "face": "face:feature-21/start",
+      "plane": {
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "point": [
+          0,
+          0,
+          0
+        ],
+        "why": "the floor is the tool's start cap (role start) on the XY plane, z = 0; as a face of the result it bounds the material below it, so it faces up, +Z. 34a rule 2: it keeps the tool face's name and the sketch keeps its plane while only its outline grows (Fusion F5: no warning)"
+      }
+    }
+  ],
+  "pins": []
+}

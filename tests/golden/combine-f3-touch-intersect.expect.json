@@ -1,0 +1,123 @@
+{
+  "model": "combine-f3-touch-intersect",
+  "what": "Ben's Fusion check F3, second half: Intersect of two boxes that only touch face to face. Fusion: 'Compute Failed', both kept. Two boxes touching face to face always have faces lying on each other, which 35b refuses until 36a with different words, so this waits for 36 to check the right refusal.",
+  "from": "36",
+  "recipe": [
+    {
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+    },
+    {
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-2"
+    },
+    {
+      "do": "Rectangle tool: click (0, 0), then (20, 20) (points 3, 4, 6, 8; lines 5, 7, 9, 10)."
+    },
+    {
+      "do": "Extrude the sketch 10 (z 0 to 10): Body 1.",
+      "makes": "feature-11"
+    },
+    {
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-12"
+    },
+    {
+      "do": "Rectangle tool: click (20, 0), then (40, 20): both clicks land on Body 1's corners (20, 0) and (20, 20) seen along Z; type the corners rather than snap, so nothing is pinned (points and lines 13 to 20)."
+    },
+    {
+      "do": "Extrude the sketch 10 (z 0 to 10): Body 2, touching Body 1 along the whole face x = 20.",
+      "makes": "feature-21"
+    },
+    {
+      "do": "Combine: target Body 1, tool Body 2, Intersect, Keep tools off: no shared volume.",
+      "makes": "feature-22"
+    }
+  ],
+  "bodies": [
+    {
+      "body": "Body 1",
+      "item": "feature-11",
+      "volume": {
+        "is": "20*20*10",
+        "why": "untouched: 20 × 20 × 10 = 4000"
+      },
+      "area": {
+        "is": "2*(20*20 + 20*10 + 20*10)",
+        "why": "a 20 × 20 × 10 box: 2(400 + 200 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            20,
+            20,
+            10
+          ]
+        ],
+        "why": "its own box"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    },
+    {
+      "body": "Body 2",
+      "item": "feature-21",
+      "volume": {
+        "is": "20*20*10",
+        "why": "untouched and still shown: 4000"
+      },
+      "area": {
+        "is": "2*(20*20 + 20*10 + 20*10)",
+        "why": "a 20 × 20 × 10 box: 2(400 + 200 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            20,
+            0,
+            0
+          ],
+          [
+            40,
+            20,
+            10
+          ]
+        ],
+        "why": "its own box"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    }
+  ],
+  "sketches": [],
+  "pins": [],
+  "refused": [
+    {
+      "item": "feature-22",
+      "says": [
+        "unchanged"
+      ],
+      "why": "an Intersect with no shared volume (bodies apart or only touching) fails with words and both bodies stay ('Behaviour questions', F3)"
+    }
+  ]
+}

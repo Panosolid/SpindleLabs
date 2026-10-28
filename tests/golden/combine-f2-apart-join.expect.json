@@ -1,0 +1,114 @@
+{
+  "model": "combine-f2-apart-join",
+  "what": "Ben's Fusion check F2: Combine Join of two 20 × 20 × 10 boxes 10 mm apart. No error, no warning; the target stays Body 1 and the tool's box becomes a new body, Body 3 (Fusion's own words and numbers). Both boxes stand on the XY plane, so their bottoms and tops lie in one plane but 10 mm apart: no face pair is near, so nothing here waits for 36a (35b refuses only faces that overlap on one plane); if 35 refuses this, that refusal is the bug.",
+  "from": "35",
+  "recipe": [
+    {
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+    },
+    {
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-2"
+    },
+    {
+      "do": "Rectangle tool: click (0, 0), then (20, 20) (points 3, 4, 6, 8; lines 5, 7, 9, 10). The first click lands on the origin, which is not a pin."
+    },
+    {
+      "do": "Extrude the sketch 10 (z 0 to 10): Body 1.",
+      "makes": "feature-11"
+    },
+    {
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-12"
+    },
+    {
+      "do": "Rectangle tool: click (30, 0), then (50, 20) (points and lines 13 to 20; Body 1 seen along Z offers (0 or 20, 0 or 20) and (10, 0), (20, 10), (10, 20), (0, 10), none here)."
+    },
+    {
+      "do": "Extrude the sketch 10 (z 0 to 10): Body 2, 10 mm to the right of Body 1.",
+      "makes": "feature-21"
+    },
+    {
+      "do": "Combine: target Body 1, tool Body 2, Join, Keep tools off. The two share no point, so the result is one body per piece (decision 3).",
+      "makes": "feature-22"
+    }
+  ],
+  "bodies": [
+    {
+      "body": "Body 1",
+      "item": "feature-22",
+      "volume": {
+        "is": "20*20*10",
+        "why": "the target, unchanged: 20 × 20 × 10 = 4000, keeping body:feature-11 (34a rule 1: the target's piece keeps its id)"
+      },
+      "area": {
+        "is": "2*(20*20 + 20*10 + 20*10)",
+        "why": "a 20 × 20 × 10 box: 2(400 + 200 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            20,
+            20,
+            10
+          ]
+        ],
+        "why": "the target's own box"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    },
+    {
+      "body": "Body 3",
+      "item": "feature-22",
+      "volume": {
+        "is": "20*20*10",
+        "why": "the tool's piece, unchanged in shape: 4000; a new id body:feature-22/piece:1 (34a rule 1, 'Combine's left-over pieces work the same way (F2)'); Fusion showed exactly Body3 (F2, confirmed with screenshots 2026-10-23), so the name is sticky, never Body 2."
+      },
+      "area": {
+        "is": "2*(20*20 + 20*10 + 20*10)",
+        "why": "a 20 × 20 × 10 box: 2(400 + 200 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            30,
+            0,
+            0
+          ],
+          [
+            50,
+            20,
+            10
+          ]
+        ],
+        "why": "the tool's own box"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    }
+  ],
+  "sketches": [],
+  "pins": []
+}

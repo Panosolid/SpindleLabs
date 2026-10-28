@@ -1,0 +1,123 @@
+{
+  "model": "combine-f3-swallow-cut",
+  "what": "Ben's Fusion check F3: Combine Cut where a 40 × 40 tool swallows a 20 × 20 target (strictly inside it, touching nowhere). Fusion: 'Compute Failed', both bodies kept. Ours: the Combine fails with words on its row and both bodies stay exactly as they were. No face of the tool lies in a plane of the target's (35b refuses faces lying on each other until 36a), which is why the parts sit off the origin planes as they do.",
+  "from": "35",
+  "recipe": [
+    {
+      "do": "Start a new part and delete its ready-made box (feature-1) from the timeline, as the L bracket's make does, so the counter goes on from 2."
+    },
+    {
+      "do": "Create Sketch on the top plane XY.",
+      "makes": "sketch-2"
+    },
+    {
+      "do": "Rectangle tool: click (10, 10), then (30, 30) (points 3, 4, 6, 8; lines 5, 7, 9, 10)."
+    },
+    {
+      "do": "Extrude the sketch 10 (z 0 to 10): Body 1, the target x 10..30, y 10..30, z 0..10.",
+      "makes": "feature-11"
+    },
+    {
+      "do": "Create Sketch on the side plane YZ (sketch x is Y, sketch y is Z, its normal +X).",
+      "makes": "sketch-12"
+    },
+    {
+      "do": "Rectangle tool: click (0, −5), then (40, 15) (points and lines 13 to 20; Body 1 seen along X offers (10 or 30, 0 or 10) and (20, 0), (20, 10), (10, 5), (30, 5), none here)."
+    },
+    {
+      "do": "Extrude the sketch 40, not flipped (along +X, x 0 to 40): Body 2, the tool x 0..40, y 0..40, z −5..15, round the target with 10 mm to spare in x and y and 5 in z.",
+      "makes": "feature-21"
+    },
+    {
+      "do": "Combine: target Body 1, tool Body 2, Cut, Keep tools off: would leave nothing of Body 1.",
+      "makes": "feature-22"
+    }
+  ],
+  "bodies": [
+    {
+      "body": "Body 1",
+      "item": "feature-11",
+      "volume": {
+        "is": "20*20*10",
+        "why": "the target as made, untouched by the failed Combine: 20 × 20 × 10 = 4000"
+      },
+      "area": {
+        "is": "2*(20*20 + 20*10 + 20*10)",
+        "why": "a 20 × 20 × 10 box: 2(400 + 200 + 200)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            10,
+            10,
+            0
+          ],
+          [
+            30,
+            30,
+            10
+          ]
+        ],
+        "why": "its own box"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    },
+    {
+      "body": "Body 2",
+      "item": "feature-21",
+      "volume": {
+        "is": "40*40*20",
+        "why": "the tool as made and still shown (a failed Combine uses nothing up): 40 × 40 × 20 = 32000"
+      },
+      "area": {
+        "is": "2*(40*40 + 40*20 + 40*20)",
+        "why": "a 40 × 40 × 20 box: 2(1600 + 800 + 800)"
+      },
+      "topology": {
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "why": "a box: 8 − 12 + 6 = 2"
+      },
+      "box": {
+        "is": [
+          [
+            0,
+            0,
+            -5
+          ],
+          [
+            40,
+            40,
+            15
+          ]
+        ],
+        "why": "its own box"
+      },
+      "tolerance": {
+        "is": "1e-5",
+        "why": "LINEAR (10 nm): every crossing here is between planes at round numbers, exact, so no intersection measures past LINEAR and nothing may grow (B0 decision 5)"
+      }
+    }
+  ],
+  "sketches": [],
+  "pins": [],
+  "refused": [
+    {
+      "item": "feature-22",
+      "says": [
+        "unchanged"
+      ],
+      "why": "a Cut that would leave nothing fails with words and changes nothing ('Behaviour questions', F3); 35f2a's words end 'your bodies are unchanged'. The rest of the message is 35f's to word; this test holds only the promise."
+    }
+  ]
+}
