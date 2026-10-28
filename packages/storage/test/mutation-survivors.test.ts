@@ -77,9 +77,9 @@ function heldStore(kv = memoryKeyValue()) {
   let asked = 0;
   const store: ProjectStore = {
     ...inner,
-    save: (id, p) => {
+    save: (id, p, read) => {
       asked++;
-      return new Promise<void>((resolve) => waiting.push(() => inner.save(id, p).then(resolve)));
+      return new Promise<void>((resolve) => waiting.push(() => inner.save(id, p, read).then(resolve)));
     },
   };
   return { kv, store, waiting, asked: () => asked, finishOne: async () => (await waiting.shift()!(), settle()) };
@@ -427,7 +427,7 @@ test("following a history change back to the written state after a failed save s
   const inner = projectStore(memoryKeyValue(), []);
   await inner.save("p", part(10));
   let failing = true;
-  const store: ProjectStore = { ...inner, save: (id, p) => (failing ? Promise.reject(new Error("disk full")) : inner.save(id, p)) };
+  const store: ProjectStore = { ...inner, save: (id, p, read) => (failing ? Promise.reject(new Error("disk full")) : inner.save(id, p, read)) };
   let project = part(10);
   const history = fakeHistory();
   const clock = fakeTimers();

@@ -536,15 +536,18 @@ const saveStatus = (s: AutosaveStatus) => {
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 /** False once the browser has shown it can't keep projects: then nothing autosaves, and Save/Open use files. */
 let canKeep = true;
-/** Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is. */
-function keep(id: string, stored = false) {
+/**
+ * Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is,
+ * stored at `storedAt`: a save after another tab stored it since is refused and says so (app sweep, finding 2).
+ */
+function keep(id: string, stored = false, storedAt: Date | null = null) {
   keepOnChange = null;
   autosave?.finish();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored });
+  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt });
   document.body.dataset.projectId = id; // read by the e2e test
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -926,8 +929,11 @@ async function start() {
   const unsaved = await recoverUnsaved(store, local, workspaces);
   if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
   let newest: string | undefined;
+  let newestAt: Date | null = null;
   try {
-    newest = (await store.list())[0]?.id;
+    const top = (await store.list())[0];
+    newest = top?.id;
+    newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
   } catch (e) {
     canKeep = false;
     fileStatus(`Projects can't be kept in this browser (${why(e)}). Use Save to keep your work as a file.`);
@@ -942,7 +948,7 @@ async function start() {
     } else if (newest) {
       guard.opening(newest);
       ctx.project = await store.open(newest);
-      keep(newest, true);
+      keep(newest, true, newestAt);
       saveStatus({ state: "saved" });
       opened = newest;
     } else keep(newId());
