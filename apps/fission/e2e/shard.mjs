@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 export const SECONDS = {
   "smoke.mjs": 60,
   "offline.mjs": 15,
+  "offline-off.mjs": 8,
   "storage.mjs": 2,
   "image.mjs": 23,
   "styles.mjs": 1,

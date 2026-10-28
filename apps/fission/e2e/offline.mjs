@@ -31,8 +31,16 @@ import { launch } from "./browser.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
 import { serviceWorkerSource, writeServiceWorker } from "../offline.mjs";
 
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
+// Offline mode is off in the normal build (offline.config.mjs), so this runs
+// on a build with it on: `npm run e2e:offline` builds one into dist-offline/
+// (E2E_DIST names another). On the normal build it has nothing to check
+// (e2e/offline-off.mjs checks that one).
+const DIST = fileURLToPath(new URL(process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : "../dist/", import.meta.url));
 if (!existsSync(join(DIST, "sw.js"))) throw new Error("build the app first (npm run build): dist/sw.js is missing");
+if (!readFileSync(join(DIST, "sw.js"), "utf8").startsWith("self.__SPINDLELABS_BUILD__")) {
+  console.log("offline: skipped, this build has offline mode off (npm run e2e:offline builds one with it on)");
+  process.exit(0);
+}
 const shots = process.env.E2E_SHOTS;
 const work = mkdtempSync(join(tmpdir(), "offline-e2e-"));
 
