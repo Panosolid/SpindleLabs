@@ -81,7 +81,8 @@ async function colourAt(page, p, view) {
 // the body colour is BASE_COLOUR (0x9a, 0xa7, 0xb8) lit, so "a body is
 // here" is: not the background colour sampled in an empty corner.
 const differs = (a, b) => a.some((x, i) => Math.abs(x - b[i]) > 12);
-const green = ([r, g, b]) => g - (r + b) / 2;
+/** How blue a pixel is: the selection's accent blue (74, 168, 255) is 181 above its red, the body's grey-blue 30. */
+const blue = ([r, , b]) => b - r;
 
 /** What the properties panel's Feature and Body sections describe. */
 const panelBody = (page) =>
@@ -209,8 +210,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     assert.notEqual(await selection(page), "body:feature-1");
     const lit1 = await colourAt(page, [20, 15, 20], view);
     const lit2 = await colourAt(page, top2, view);
-    assert.ok(green(lit2) > green(box2) + 20, `body 2 tinted: ${lit2} vs ${box2}`);
-    assert.ok(Math.abs(green(lit1) - green(box1)) < 6, `body 1 untouched: ${lit1} vs ${box1}`);
+    assert.ok(blue(lit2) > blue(box2) + 20, `body 2 tinted: ${lit2} vs ${box2}`);
+    assert.ok(Math.abs(blue(lit1) - blue(box1)) < 6, `body 1 untouched: ${lit1} vs ${box1}`);
     assert.deepEqual(await panelBody(page), body2);
     if (shots) await page.screenshot({ path: `${shots}/bodies-${width}-selected.png` });
 
@@ -222,8 +223,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await fold(false);
     const box1lit = await colourAt(page, [20, 15, 20], view);
     const box2now = await colourAt(page, top2, view);
-    assert.ok(green(box1lit) > green(box1) + 20, `body 1 tinted: ${box1lit} vs ${box1}`);
-    assert.ok(Math.abs(green(box2now) - green(box2)) < 6, `body 2 untouched: ${box2now} vs ${box2}`);
+    assert.ok(blue(box1lit) > blue(box1) + 20, `body 1 tinted: ${box1lit} vs ${box1}`);
+    assert.ok(Math.abs(blue(box2now) - blue(box2)) < 6, `body 2 untouched: ${box2now} vs ${box2}`);
     if (shots) await page.screenshot({ path: `${shots}/bodies-${width}-body1.png` });
     // Escape clears the selection: back to the last body, the part the parameters edit.
     await page.keyboard.press("Escape");

@@ -266,8 +266,9 @@ try {
       const s = at(p);
       return pixel((s.x - box.x) / box.width, (s.y - box.y) / box.height);
     };
-    // How green a pixel is: the selection colour is green, the body grey-blue.
-    const green = ([r, g, b]) => g - (r + b) / 2;
+    // How blue a pixel is: the selection colour is the accent blue (74, 168, 255), blue 181 above red; the body
+    // grey-blue (154, 167, 184), 30 above.
+    const blue = ([r, , b]) => b - r;
     const away = () => page.mouse.move(box.x + 2, box.y + box.height - 2); // empty space, below the floating browser: nothing hovered
     const viewport = (key) => page.$eval("#viewport", (el, k) => el.dataset[k], key);
     const listed = () => page.$$eval("#selection-list li", (els) => els.map((e) => e.textContent));
@@ -283,7 +284,7 @@ try {
     await page.mouse.click(at(top).x, at(top).y);
     await away();
     const selectedTop = await colourAt(top);
-    assert.ok(green(selectedTop) > green(plainTop) + 40, `selected top face ${selectedTop} is green, was ${plainTop}`);
+    assert.ok(blue(selectedTop) > blue(plainTop) + 40, `selected top face ${selectedTop} is blue, was ${plainTop}`);
     assert.deepEqual(await colourAt(front), plainFront, "the front face is not selected");
     assert.equal(await viewport("highlight"), "faces 1 edges ");
     assert.deepEqual(await listed(), ["Top face · plane face:feature-1/top"]);
@@ -293,7 +294,7 @@ try {
     await page.mouse.move(at(front).x, at(front).y);
     const hoveredFront = await colourAt(front);
     assert.equal(await viewport("hover"), "face 2");
-    assert.ok(green(hoveredFront) > green(plainFront) + 10, `hovered front ${hoveredFront}, plain ${plainFront}`);
+    assert.ok(blue(hoveredFront) > blue(plainFront) + 10, `hovered front ${hoveredFront}, plain ${plainFront}`);
     await away();
     assert.equal(await viewport("hover"), "");
     assert.deepEqual(await colourAt(front), plainFront, "leaving the face ends the hover");
@@ -308,7 +309,7 @@ try {
     // Body 1 in the browser selects the whole body: every face tinted, its row lit.
     await clickRow("body-1");
     assert.equal(await viewport("highlight"), "body faces  edges ");
-    assert.ok(green(await colourAt(front)) > green(plainFront) + 40, "the body's front face is tinted too");
+    assert.ok(blue(await colourAt(front)) > blue(plainFront) + 40, "the body's front face is tinted too");
     // The box's Timeline row selects the same body (24f6), so it is lit with Body 1's row.
     assert.deepEqual(await lit(), ["feature-1", "body-1"]);
     assert.deepEqual(await listed(), ["Body 1 · solid body:feature-1"]);
