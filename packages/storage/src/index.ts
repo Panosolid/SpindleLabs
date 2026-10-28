@@ -15,7 +15,7 @@ export { indexedDbKeyValue } from "./indexeddb.ts";
 export { memoryKeyValue, type KeyValue } from "./key-value.ts";
 export { startAutosave, QUIET_MS, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
 export { projectStore, type ProjectStore, type ProjectSummary } from "./store.ts";
-export { recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
+export { journalEntry, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
 export { OPENING_KEY, reopenGuard, SETTLED_MS, type MarkStorage, type ReopenGuard } from "./reopen.ts";
 
 /** The store for this browser, kept in IndexedDB. `readers` are the workspace plugins. */

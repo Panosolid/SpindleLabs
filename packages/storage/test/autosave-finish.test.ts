@@ -10,7 +10,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type Project } from "@fission/core";
-import { startAutosave, unsavedKey, type AutosaveStatus, type JournalStorage, type ProjectStore, type Timers } from "../src/index.ts";
+import { readJournalEntry, startAutosave, unsavedKey, type AutosaveStatus, type JournalStorage, type ProjectStore, type Timers } from "../src/index.ts";
+
+/** The file text a journal entry holds, past the time it starts with (unsaved.ts). */
+const textOf = (entry: string | undefined) => (entry === undefined ? undefined : readJournalEntry(entry).text);
 
 const part = (width: number): Project => ({ ...emptyProject("Box"), workspaces: { design: { version: 1, width } } });
 const widthOf = (p: Project) => (p.workspaces.design as { width: number }).width;
@@ -105,7 +108,7 @@ test("an edit 0.9× the quiet moment before finish is stored, and is in the jour
   replace(99);
   await settle();
   assert.deepEqual(h.asked, [20]);
-  assert.equal(widthOf(JSON.parse(j.items.get(unsavedKey("p"))!)), 20, "journalled at once");
+  assert.equal(widthOf(JSON.parse(textOf(j.items.get(unsavedKey("p")))!)), 20, "journalled at once");
   await h.finishOne();
   assert.deepEqual(h.stored, [20]);
   assert.equal(j.items.size, 0, "the journal entry goes once the store holds it");
@@ -178,7 +181,7 @@ test("finish with the journal full still stores the edit; a failed store keeps t
   b.autosave.finish();
   await settle();
   await settle();
-  assert.equal(k.items.get(unsavedKey("p")), projectToJson(part(30)), "put back on the next visit");
+  assert.equal(textOf(k.items.get(unsavedKey("p"))), projectToJson(part(30)), "put back on the next visit");
 });
 
 test("after finish, nothing is reported and a change starts nothing", async () => {

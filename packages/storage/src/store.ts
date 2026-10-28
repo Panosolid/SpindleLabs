@@ -21,8 +21,13 @@ export interface ProjectStore {
   list(): Promise<ProjectSummary[]>;
   /** Reads and upgrades a stored project; refuses a missing or corrupt one with a message. */
   open(id: string): Promise<Project>;
-  /** Stores the project under `id`, replacing what was there. */
-  save(id: string, project: Project): Promise<void>;
+  /**
+   * Stores the project under `id`, replacing what was there. `read` is when
+   * the project was in that state (autosave reads it, a journal entry was
+   * written), kept as its save time: the next visit compares it with a
+   * journal entry's time (unsaved.ts). Left out, it is now.
+   */
+  save(id: string, project: Project, read?: Date): Promise<void>;
   /** Forgets a stored project; refuses an id that is not stored. */
   remove(id: string): Promise<void>;
 }
@@ -74,11 +79,16 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
         throw new Error(`can't open the stored project "${id}": ${message(e)}`);
       }
     },
-    async save(id, project) {
+    async save(id, project, read) {
       checkId(id);
       const text = projectToJson(project); // refuses NaN and the like before anything is written
+      // The save time is when the state was read, never when the writes finish: a journal entry written while
+      // they run holds a newer state, and must not look older than this one (unsaved.ts).
+      const when = read ?? now();
+      if (Number.isNaN(when.getTime())) throw new Error("a stored project needs a valid save time");
+      const modified = when.toISOString();
       await kv.set(PROJECT + id, text);
-      await kv.set(SUMMARY + id, JSON.stringify({ name: project.name, modified: now().toISOString() }));
+      await kv.set(SUMMARY + id, JSON.stringify({ name: project.name, modified }));
     },
     async remove(id) {
       checkId(id);

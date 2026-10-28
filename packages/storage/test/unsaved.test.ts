@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type Project } from "@fission/core";
 import {
   memoryKeyValue,
+  readJournalEntry,
   projectStore,
   recoverUnsaved,
   startAutosave,
@@ -19,6 +20,9 @@ import {
   type ProjectStore,
   type Timers,
 } from "../src/index.ts";
+
+/** The file text a journal entry holds, past the time it starts with (unsaved.ts). */
+const textOf = (entry: string | undefined) => (entry === undefined ? undefined : readJournalEntry(entry).text);
 
 /** A fake clock for one page: timers run only when the test moves time on. */
 function fakeTimers() {
@@ -85,11 +89,11 @@ function heldStore(kv = memoryKeyValue()) {
   const waiting: { width: number; finish: () => Promise<void>; fail: () => void }[] = [];
   const store: ProjectStore = {
     ...inner,
-    save: (id, p) =>
+    save: (id, p, read) =>
       new Promise<void>((resolve, reject) => {
         waiting.push({
           width: widthOf(p),
-          finish: () => inner.save(id, p).then(resolve),
+          finish: () => inner.save(id, p, read).then(resolve),
           fail: () => reject(new Error("browser storage is full")),
         });
       }),
@@ -139,7 +143,7 @@ test("the hunt's case: a page reloaded 100 ms after a change keeps it (worked by
   await clock.advance(100);
   assert.equal(h.waiting.length, 0, "no save before the quiet moment");
   assert.equal(autosave.leaving(), true);
-  assert.equal(journal.items.get(unsavedKey("p")), projectToJson(part(20)));
+  assert.equal(textOf(journal.items.get(unsavedKey("p"))), projectToJson(part(20)));
   assert.deepEqual(
     h.waiting.map((w) => w.width),
     [20],
@@ -196,9 +200,9 @@ test("an older save finishing never removes a newer journal entry", async () => 
   await clock.advance(1000); // 20's save starts and is held
   edit(30);
   assert.equal(autosave.leaving(), true);
-  assert.equal(journal.items.get(unsavedKey("p")), projectToJson(part(30)));
+  assert.equal(textOf(journal.items.get(unsavedKey("p"))), projectToJson(part(30)));
   await h.finishOne(); // 20 stored; 30's save starts straight after it
-  assert.equal(journal.items.get(unsavedKey("p")), projectToJson(part(30)), "the newer entry is kept");
+  assert.equal(textOf(journal.items.get(unsavedKey("p"))), projectToJson(part(30)), "the newer entry is kept");
   assert.deepEqual(
     h.waiting.map((w) => w.width),
     [30],
@@ -265,7 +269,7 @@ test("after a failed save, leaving() journals the change and tries the store onc
   await h.failOne();
   assert.deepEqual(last(), { state: "error", message: "browser storage is full" });
   assert.equal(autosave.leaving(), true);
-  assert.equal(journal.items.get(unsavedKey("p")), projectToJson(part(20)));
+  assert.equal(textOf(journal.items.get(unsavedKey("p"))), projectToJson(part(20)));
   assert.deepEqual(
     h.waiting.map((w) => w.width),
     [20],
