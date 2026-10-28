@@ -33,8 +33,8 @@ function problems(s: typeof sources): string[] {
   if (!rule(s.guide, ".guide .guide-bar button").includes("var(--look-radius-pill)")) out.push("the guide buttons are not pills");
   if (!rule(s.guide, ".guide .guide-progress i").includes("var(--look-accent)")) out.push("the guide progress is not the accent");
   if (!rule(s.assistant, ".assistant .ai-preview").includes("var(--look-shadow-1)")) out.push("the AI preview is not a shared card");
-  if (!rule(s.assistant, "#ai-accept:not(#none)").includes("var(--look-primary-fill)")) out.push("Accept is not the bright blue fill");
-  if (!rule(s.assistant, ".assistant#assistant").includes("var(--look-float)")) out.push("the AI panel is not the shared card colour");
+  if (!rule(s.assistant, 'button[id="ai-accept"]:not(#none)').includes("var(--look-primary-fill)")) out.push("Accept is not the bright blue fill");
+  if (!rule(s.assistant, ".assistant:not(#none)").includes("var(--look-float)")) out.push("the AI panel is not the shared card colour");
   return out;
 }
 
@@ -46,7 +46,7 @@ test("the check fails on the old green Finish Sketch, plain guide card and unsty
   const old = {
     sketchbar: sources.sketchbar.replace("var(--look-primary-fill)", "#1f5f3f"),
     guide: sources.guide.replace(".guide .guide-card { position: sticky; top: 13vh; width: min(430px, 36vw); padding: 20px 22px; font-size: 15px; border-radius: var(--look-radius-l); background: var(--look-float);", ".guide .guide-card { position: sticky; top: 13vh; width: min(430px, 36vw); padding: 20px 22px; font-size: 15px; border-radius: 18px; background: rgba(8, 12, 36, 0.5);"),
-    assistant: sources.assistant.replace(".assistant#assistant", ".assistant-gone"),
+    assistant: sources.assistant.replace(".assistant:not(#none) {", ".assistant-gone:not(#none) {"),
   };
   assert.deepEqual(problems(old), [
     "Finish Sketch is not the bright blue fill",

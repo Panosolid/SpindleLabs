@@ -31,7 +31,7 @@
 .assistant .ai-progress-fill { height: 100%; width: 0; background: var(--look-primary-fill); box-shadow: var(--look-glow); transition: width 0.2s ease-out; }
 .assistant .ai-progress-note { margin: 4px 0 0; color: #8a919c; font-size: 12px; }
 /* UX2c: the panel is a near-black blue card column with a blue hairline, and Ask and Accept (the panel's main actions) take the bright blue fill. */
-.assistant#assistant { background: var(--look-float); border-left: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }
-#workspace .assistant #ai-ask-button:not(#none), #workspace .assistant #ai-accept:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); box-shadow: var(--look-primary-glow); font-weight: 600; }
-#workspace .assistant #ai-accept:disabled { opacity: 0.45; box-shadow: none; }
+.assistant:not(#none) { background: var(--look-float); border-left: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }
+.assistant button[id="ai-ask-button"]:not(#none), .assistant button[id="ai-accept"]:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); box-shadow: var(--look-primary-glow); font-weight: 600; }
+.assistant button[id="ai-accept"]:disabled:not(#none) { opacity: 0.45; box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .assistant .ai-progress-fill { transition: none; } }
