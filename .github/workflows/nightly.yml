@@ -69,7 +69,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -91,6 +91,18 @@ jobs:
           JOURNEY_NIGHTLY: "1"
           JOURNEY_REPORT: ${{ runner.temp }}/journeys/report.txt
         run: node --experimental-strip-types --no-warnings e2e/journeys.mjs
+      # The long-session soak (apps/fission/e2e/soak.mjs): 60 cycles of sketch,
+      # extrude, edit, undo, split view, save, New and open; red when the heap,
+      # DOM nodes, listeners, kernel bodies or memory, or the viewport's
+      # geometries keep growing. About 16 minutes.
+      - name: Long-session soak (memory leaks)
+        if: always()
+        working-directory: apps/fission
+        env:
+          SOAK_CYCLES: "60"
+          SOAK_EVERY: "5"
+          SOAK_REPORT: ${{ runner.temp }}/journeys/soak.json
+        run: timeout 40m node e2e/soak.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

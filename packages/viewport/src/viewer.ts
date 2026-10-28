@@ -76,6 +76,8 @@ export class ViewportView {
   private cube: ViewCube;
   private legend = document.createElement("ul");
   private resizer: ResizeObserver;
+  /** Ends the listeners this view puts on its element, which outlives it (split view's pane): dispose aborts it. */
+  private listening = new AbortController();
   private queuedHover = 0;
   /**
    * This view's 2D mode (showImage): the sheet it shows, or null for the
@@ -113,7 +115,7 @@ export class ViewportView {
         if (plane) this.lookAt(plane, this.host.sketchSide());
       },
       view: (name) => this.setView(name),
-    });
+    }, this.listening.signal);
     container.appendChild(this.bar.element);
 
     this.camera.position.set(80, -100, 70);
@@ -305,7 +307,7 @@ export class ViewportView {
       e.stopPropagation();
       // A trackpad pinch comes as a wheel turn with Ctrl held.
       this.zoomToward(e.clientX, e.clientY, wheelFactor(e.deltaY, e.deltaMode, e.ctrlKey));
-    }, { capture: true, passive: false });
+    }, { capture: true, passive: false, signal: this.listening.signal });
     let drag: { id: number; action: "pan" | "zoom"; x: number; y: number; start: { x: number; y: number } } | null = null;
     this.element.addEventListener("pointerdown", (e) => {
       if (e.target !== canvas || e.pointerType === "touch" || drag) return;
@@ -315,7 +317,7 @@ export class ViewportView {
       e.stopPropagation(); // neither OrbitControls nor the click picker hears it
       canvas.setPointerCapture(e.pointerId);
       drag = { id: e.pointerId, action, x: e.clientX, y: e.clientY, start: { x: e.clientX, y: e.clientY } };
-    }, { capture: true });
+    }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointermove", (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -353,7 +355,7 @@ export class ViewportView {
       canvas.setPointerCapture(e.pointerId);
       this.arrowDrag = { id: e.pointerId, offset: s - arrow.distance, last: arrow.distance };
       this.host.setExtrudeHover(null, true);
-    }, { capture: true });
+    }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointermove", (e) => {
       const drag = this.arrowDrag;
       if (!drag || e.pointerId !== drag.id) return;
@@ -729,18 +731,27 @@ export class ViewportView {
     this.camera.updateProjectionMatrix();
   }
 
+  /** What this view's renderer holds on the graphics card (the soak test's leak check): geometries, textures and shader programs. */
+  gpuCounts(): { geometries: number; textures: number; programs: number } {
+    const { memory, programs } = this.renderer.info;
+    return { geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0 };
+  }
+
   /** Stops drawing and takes this view's canvas, cube and legend out of its element. */
   dispose() {
     this.clearImage();
     this.renderer.setAnimationLoop(null);
     if (this.queuedHover) cancelAnimationFrame(this.queuedHover);
     this.resizer.disconnect();
+    this.listening.abort(); // its listeners on the element, which outlives it, and the document's
     this.controls.dispose();
     this.renderer.domElement.remove();
     this.cube.element.remove();
     this.bar.element.remove();
     this.legend.remove();
     this.renderer.dispose();
+    // Give the WebGL context back now, not when the canvas is collected: a page has 16 at most, and the oldest (the main view's) is the one dropped.
+    this.renderer.forceContextLoss();
   }
 }
 
@@ -894,6 +905,13 @@ export class Viewer implements SharedViewport {
   }
 
   /** Another view of the same scene, filling `container`, with its own camera; it starts at the home view of the current body. */
+  /** The main view's renderer counts and how many objects the scene holds (the soak test's leak check). */
+  memoryCounts(): { geometries: number; textures: number; programs: number; objects: number } {
+    let objects = 0;
+    this.scene.traverse(() => objects++);
+    return { ...this.views[0].gpuCounts(), objects };
+  }
+
   addView(container: HTMLElement): ViewportView {
     if (this.views.some((v) => v.element === container)) throw new Error("That element already shows a view");
     const view = new ViewportView(this.host, container);
