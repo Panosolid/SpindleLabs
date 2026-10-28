@@ -210,9 +210,9 @@ try {
     await check(`${at}: the tools still to come are greyed with "Coming soon", say what each will do, and choosing one does nothing`, async () => {
       const page = await fresh(width, tap);
       try {
-        // Modify ▾ and Construct ▾ hold only tools to come: their buttons greyed (coming-soon.css), still opening to show them.
+        // Construct ▾ holds only tools to come: its button greyed (coming-soon.css), still opening to show them; Modify ▾ has Move (35e2b).
         const faded = await page.$$eval("#modify-menu, #construct-menu, #inspect-menu", (bs) => bs.map((b) => [b.id, getComputedStyle(b).opacity, b.disabled]));
-        assert.deepEqual(faded, [["modify-menu", "0.5", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
+        assert.deepEqual(faded, [["modify-menu", "1", false], ["construct-menu", "0.5", false], ["inspect-menu", "1", false]]);
         const lists = {};
         for (const menu of ["create-menu", "modify-menu", "construct-menu", "inspect-menu"]) {
           await press(page, `#${menu}`, tap);
@@ -224,7 +224,7 @@ try {
         }
         assert.deepEqual(lists, {
           "create-menu": ["revolve", "hole", "pattern", "sweep", "loft"],
-          "modify-menu": ["move", "duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
+          "modify-menu": ["duplicate", "mirror", "combine", "chamfer", "fillet", "shell", "draft"],
           "construct-menu": ["plane", "axis", "point"],
           "inspect-menu": ["measure", "section"],
         });
