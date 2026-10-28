@@ -1,8 +1,8 @@
 // Reviewer repros (sweep-storage review): a clock stepped back after a save, and an entry recovery could not store.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptyProject, type Project } from "@fission/core";
-import { memoryKeyValue, projectStore, recoverUnsaved, startAutosave, type JournalStorage, type ProjectStore } from "../src/index.ts";
+import { emptyProject, projectToJson, type Project } from "@fission/core";
+import { journalEntry, memoryKeyValue, projectStore, recoverUnsaved, startAutosave, unsavedKey, type JournalStorage, type ProjectStore } from "../src/index.ts";
 
 const part = (w: number): Project => ({ ...emptyProject("Box"), workspaces: { design: { version: 1, width: w } } });
 const settle = () => new Promise<void>((r) => setImmediate(r));
@@ -34,4 +34,30 @@ test("single tab: clock steps back (NTP) between a save and closing -> last edit
   // next visit
   await recoverUnsaved(real, journal, []);
   assert.equal(((await real.open("p")).workspaces.design as any).width, 45, "the journalled edit was thrown away");
+});
+
+test("single tab: an entry recovery couldn't store ('kept for the next visit') is deleted by the first autosave", async () => {
+  // Stored 40 (save time 500); the journal holds 45 written at 900. Recovery's save is refused (quota) and says the
+  // changes are kept. The reopened tab (showing 40) is renamed: its save must not go over them, nor remove them, so
+  // the next visit, with storage working, puts 45 back.
+  let t = 1000; const now = () => new Date(t);
+  const real = projectStore(memoryKeyValue(), [], now);
+  await real.save("p", part(40), new Date(500));
+  const journal = storage();
+  journal.setItem(unsavedKey("p"), journalEntry(projectToJson(part(45)), new Date(900)));
+  let full = true; // a transient quota error on the recovery save
+  const store: ProjectStore = { ...real, save: (...a) => (full ? Promise.reject(new Error("quota")) : real.save(...a)) };
+  const msgs = await recoverUnsaved(store, journal, []);
+  assert.equal(msgs.length, 1); // "they are kept in this browser for the next visit"
+  full = false;
+  const top = (await real.list())[0];
+  const timers = { setTimeout: (fn: () => void) => (queueMicrotask(fn), 1), clearTimeout: () => {} };
+  let project = await real.open("p");
+  const a = startAutosave(store, "p", () => project, () => {}, { journal, now, timers, quietMs: 0, stored: true, storedAt: top.modified });
+  project = { ...project, name: "Renamed" }; a.changed(); await settle(); await settle();
+  assert.notEqual(journal.getItem(unsavedKey("p")), null, "the kept unsaved changes were deleted");
+  assert.equal(((await real.open("p")).workspaces.design as any).width, 40, "nothing saved over them");
+  assert.equal(a.leaving(), false, "the page asks before going");
+  assert.deepEqual(await recoverUnsaved(real, journal, []), []);
+  assert.equal(((await real.open("p")).workspaces.design as any).width, 45, "the next visit puts them back");
 });

@@ -149,6 +149,15 @@ export function startAutosave(
 
   /** A journal entry's time: now, but never before this tab's last known stored state (a clock set back must not make its own entry look older than its own save). */
   const stamp = () => new Date(Math.max(now().getTime(), base?.getTime() ?? -Infinity, writtenAt?.getTime() ?? -Infinity));
+  /** The last visit's unsaved changes, which recovery couldn't store, are still here: nothing may be saved over them. */
+  const keptFromLastVisit = () => {
+    try {
+      const entry = journal?.getItem(key);
+      return entry != null && readJournalEntry(entry).kept;
+    } catch {
+      return false;
+    }
+  };
   const report = (s: AutosaveStatus) => {
     if (!stopped) onStatus(s);
   };
@@ -189,6 +198,10 @@ export function startAutosave(
       text = projectToJson(project()); // refuses NaN and the like before anything is written
     } catch (e) {
       report({ state: "error", message: message(e) });
+      return;
+    }
+    if (keptFromLastVisit()) {
+      report({ state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload to try again." });
       return;
     }
     if (text === written) {
@@ -253,7 +266,7 @@ export function startAutosave(
     leaving() {
       if (stopped || storedVersion === version) return true;
       // Kept in the journal, it would be put back over the other tab's work on the next visit: the page asks instead.
-      if (conflicted) return false;
+      if (conflicted || keptFromLastVisit()) return false;
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
@@ -285,7 +298,7 @@ export function startAutosave(
         }
       }
       stop();
-      if (text === null || conflicted) return; // after another tab's save: nothing of this one's can be stored
+      if (text === null || conflicted || keptFromLastVisit()) return; // after another tab's save: nothing of this one's can be stored
       // The store holds it already, unless a save of another state is running: that one lands after, so this
       // state is stored again behind it (app sweep 2026-10-28, finding 14).
       if (text === written && !inFlight) return stored(v, writtenAt);
