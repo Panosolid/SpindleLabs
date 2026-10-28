@@ -712,7 +712,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (Array.isArray(list)) notTooMany(list.length, limit, "Design data has", what);
   const v2 = data.version === 1 ? migrateDesignV1(data) : data;
   const d = (v2.version === 2 ? migrateDesignV2(v2) : v2) as Partial<DesignDocument>;
-  if (d.version !== 3) throw new Error(`Design data version ${shown(d.version)} is not one this SpindleLabs reads (1, 2 or 3)`);
+  // Text quoted, so "3" (text) never reads as the 3 it is not (app sweep, finding 25).
+  if (d.version !== 3) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2 or 3)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
