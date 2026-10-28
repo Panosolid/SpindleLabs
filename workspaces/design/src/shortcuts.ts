@@ -7,7 +7,7 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   // Also in a size field: Escape there has nothing else to do.
   { id: "clear-selection", keys: "Escape", label: "Clear the selection", inText: true },
   // UX1b: OK in the Extrude panel when the focus is elsewhere (on the view, after dragging the arrow); in its distance box Enter is the box's own.
-  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude panel" },
+  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude or Move panel" },
   // Step 35e2b: Move (Fusion's key), outside a sketch; in a sketch the key does what it would.
   { id: "move-tool", keys: "M", label: "Move bodies (outside a sketch)" },
   // Copy (the keys or the browser's Edit menu) with one profile selected.
