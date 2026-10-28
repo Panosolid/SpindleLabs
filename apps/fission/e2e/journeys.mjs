@@ -5,12 +5,18 @@
 // journey's click and time limits. Journeys waiting for a workspace are
 // listed as PENDING and never pass.
 // Then each journey is compared with its baseline in tests/baseline.json
-// (X8b, `compareToBaseline`): an extra click always fails; a slowest walk more
-// than 15% over (in seconds, or as a multiple of the fixed workload timed in
-// the same page once the baseline holds `slowestRelative`, see
-// `fixedWorkloadMs`) fails only with JOURNEY_NIGHTLY=1 (the nightly run), since
-// one PR run's time is too noisy to judge. JOURNEY_REPORT=<file> writes the
-// baseline lines there for the nightly summary.
+// (X8b, `compareToBaseline`): an extra click always fails. Time is judged
+// only with JOURNEY_NIGHTLY=1 (the nightly run), since one PR run's time is
+// too noisy: a slowest walk more than 15% over (in seconds, or as a multiple
+// of the fixed workload timed in the same page once the baseline holds
+// `slowestRelative`, see `fixedWorkloadMs`) is flagged as a warning, since
+// runners differ by more than that (1.35–1.65 s on 10-26/27 against 1.16 s);
+// more than twice over fails. With JOURNEY_REFERENCE_DIST=<main's built
+// dist> (the nightly run on a branch) each journey is also walked in turns
+// with main's build on the same runner (`walkAgainstReference`), where the
+// runner cancels out: more than 15% slower is flagged, more than 30% fails.
+// JOURNEY_REPORT=<file> writes the baseline lines there for the nightly
+// summary.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -31,11 +37,19 @@ const baselines = parseBaselines(JSON.parse(readFileSync(new URL("../../../tests
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4180/";
+// Main's build, when JOURNEY_REFERENCE_DIST names its folder (the nightly run
+// on a branch): each journey is then also walked against it on this same
+// runner, the two builds taking turns (`walkAgainstReference`), so a slow or
+// busy runner slows both alike and cancels out.
+const referenceServer = process.env.JOURNEY_REFERENCE_DIST
+  ? await preview({ preview: { port: 4181, strictPort: true }, build: { outDir: process.env.JOURNEY_REFERENCE_DIST }, logLevel: "error" })
+  : null;
+const referenceUrl = "http://localhost:4181/";
 const browser = await launch();
 const errors = [];
 
-/** A page on a new project; `box`: with the 40 × 30 × 20 box inserted (a new project starts empty, U0c). */
-async function fresh({ box = true } = {}) {
+/** A page on a new project; `box`: with the 40 × 30 × 20 box inserted (a new project starts empty, U0c); `at`: which build's address. */
+async function fresh({ box = true, at = url } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => {
@@ -50,7 +64,7 @@ async function fresh({ box = true } = {}) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto(url);
+  await page.goto(at);
   if (!box) {
     await page.waitForSelector("#start-hint", { state: "visible" });
     return page;
@@ -147,13 +161,13 @@ async function designShapeToStl(page, { extraClick = false } = {}) {
  * "Design: sketch to STL" (step 25c4), from an empty design (a new project,
  * U0c): Create Sketch, the ground plane, the rectangle tool, its corners
  * (0, 0) and (40, 30), Extrude, OK at its 10 mm, and STL, which saves the
- * extrude, the one body. Set-up, not counted: a fresh page (the one passed in is
- * left alone), and Snap to grid ticked in a sketch that Undo then takes
- * back, so the corners are exact.
+ * extrude, the one body. Set-up, not counted: a fresh page on the same build
+ * as the one passed in (which is left alone), and Snap to grid ticked in a
+ * sketch that Undo then takes back, so the corners are exact.
  */
-async function designSketchToStl() {
+async function designSketchToStl(on) {
   // Set-up: a page of its own, as a reload would bring back the autosaved design.
-  const page = await fresh({ box: false });
+  const page = await fresh({ box: false, at: on ? new URL("./", on.url()).href : url });
   try {
     // Snap to grid lives in the sketch panel and lasts for the page: tick it in a sketch, then Undo that sketch.
     await page.click("#create-sketch");
@@ -197,6 +211,90 @@ const FILES = {
   "Design: sketch to STL": { name: "fission-extrude.stl", length: 684, volume: 12000 },
 };
 
+/** Turns per build when a journey is walked against a reference build, after one warm-up walk on each. */
+const REFERENCE_TURNS = 6;
+
+/**
+ * Makes a page's app `factor` times slower, the deliberate break of the
+ * reference check: every click a person makes then holds the page's main
+ * thread busy for `(factor − 1) × walkMs / clicks`, so a walk of `walkMs`
+ * over `clicks` clicks takes about `factor × walkMs`, like app code that got
+ * that much slower answering each click. (Chromium's CPU throttle is no
+ * good here: a walk spends most of its time drawing and in the kernel's
+ * worker, which it doesn't slow; 4× throttled read only 1.3× here.)
+ */
+async function slowDown(page, factor, walkMs, clicks) {
+  await page.evaluate((busyMs) => {
+    window.addEventListener(
+      "click",
+      (e) => {
+        if (!e.isTrusted) return;
+        const end = performance.now() + busyMs;
+        while (performance.now() < end);
+      },
+      { capture: true },
+    );
+  }, ((factor - 1) * walkMs) / clicks);
+}
+
+/**
+ * Walks `journey` on this build and on the reference build (`at`) in turns,
+ * on the same runner: one warm-up walk on each (not counted, the first walk
+ * of a page loads the kernel), then `REFERENCE_TURNS` pairs in the order
+ * ABBA ABBA…, so a runner that speeds up or slows down during the walks
+ * weighs on both alike. The result is the median of the pairs' ratios
+ * (this build's time over the reference's), so one interrupted walk can't
+ * move it. Each walk still makes the right file. `slowdown` throttles this
+ * build's page that many times (Chromium's CPU throttle): the deliberate
+ * break, for the shape journey, whose walks stay on the page passed in.
+ */
+async function walkAgainstReference(journey, { at, slowdown = 1 } = {}) {
+  const walk = WALKERS[journey.name];
+  const want = FILES[journey.name];
+  const mine = await fresh({ box: false });
+  const theirs = await fresh({ box: false, at });
+  try {
+    // Only the walking page runs: the other is frozen meanwhile, so its viewport doesn't draw on the same CPU.
+    const cdps = new Map([[mine, await mine.context().newCDPSession(mine)], [theirs, await theirs.context().newCDPSession(theirs)]]);
+    const timed = async (page) => {
+      const other = page === mine ? theirs : mine;
+      await cdps.get(other).send("Page.setWebLifecycleState", { state: "frozen" });
+      await cdps.get(page).send("Page.setWebLifecycleState", { state: "active" });
+      const run = await walk(page);
+      assert.equal(run.name, want.name);
+      assert.equal(run.bytes.length, want.length);
+      assert.equal(stlVolume(run.bytes), want.volume);
+      return run;
+    };
+    const warm = await timed(mine);
+    await timed(theirs);
+    if (slowdown !== 1) await slowDown(mine, slowdown, warm.ms, warm.clicks);
+    const ratios = [];
+    const thisMs = [];
+    const referenceMs = [];
+    for (let i = 0; i < REFERENCE_TURNS; i++) {
+      let m, r;
+      if (i % 2 === 0) {
+        m = (await timed(mine)).ms;
+        r = (await timed(theirs)).ms;
+      } else {
+        r = (await timed(theirs)).ms;
+        m = (await timed(mine)).ms;
+      }
+      thisMs.push(m);
+      referenceMs.push(r);
+      ratios.push(m / r);
+    }
+    ratios.sort((p, q) => p - q);
+    const mid = ratios.length / 2;
+    const ratio = ratios.length % 2 === 1 ? ratios[Math.floor(mid)] : (ratios[mid - 1] + ratios[mid]) / 2;
+    return { ratio: Math.round(ratio * 10000) / 10000, thisMs, referenceMs };
+  } finally {
+    await mine.context().close();
+    await theirs.context().close();
+  }
+}
+
 let failed = false;
 async function check(name, fn) {
   try {
@@ -238,6 +336,16 @@ try {
         const slowestRelative = Math.round((worst.ms / workloadMs) * 10000) / 10000; // to 4 decimals, as tests/baseline.json keeps relative times
         measured[journey.name] = { clicks: worst.clicks, medianMs: ms[Math.floor(ms.length / 2)], slowestMs: worst.ms, workloadMs, slowestRelative };
         console.log(`  clicks ${runs.map((r) => r.clicks).join(", ")}; times ${runs.map((r) => (r.ms / 1000).toFixed(2)).join(", ")} s; the fixed workload ${workloadMs.toFixed(1)} ms, so the slowest walk is ${slowestRelative.toFixed(2)}× it`);
+        if (referenceServer) {
+          // Main's build may not walk a journey this branch changed (new ids, one click fewer): then say so, and the baseline alone judges.
+          try {
+            const vs = await walkAgainstReference(journey, { at: referenceUrl });
+            measured[journey.name].referenceRatio = vs.ratio;
+            console.log(`  against main's build in turns: this ${vs.thisMs.map((t) => (t / 1000).toFixed(2)).join(", ")} s, main ${vs.referenceMs.map((t) => (t / 1000).toFixed(2)).join(", ")} s; median ratio ${vs.ratio.toFixed(3)}`);
+          } catch (e) {
+            console.log(`  main's build could not walk this journey, so it is judged against the baseline only: ${e.message.split("\n")[0]}`);
+          }
+        }
         const verdict = judge(journey, worst);
         console.log(`  ${reportLine(journey, verdict)}`);
         assert.equal(verdict.kind, "pass", reportLine(journey, verdict));
@@ -305,15 +413,31 @@ try {
     }
   });
 
+  await check("against a reference build in turns: the same build passes, a deliberately 2× slower app fails", async () => {
+    // Both against this same build (a second page), so only the deliberate break differs.
+    const journey = MAGIC_JOURNEYS.find((j) => j.name === "Design: shape to STL");
+    const base = baselines.get(journey.name);
+    const same = await walkAgainstReference(journey, { at: url });
+    const slow = await walkAgainstReference(journey, { at: url, slowdown: 2 });
+    console.log(`  the same build ${same.ratio.toFixed(3)}×, the 2× slower app ${slow.ratio.toFixed(3)}×`);
+    const kinds = (m) => {
+      const c = compareToBaseline(journey, { clicks: 4, slowestMs: 1, referenceRatio: m.ratio }, base);
+      return c.kind === "flag" ? c.flags.map((f) => f.kind) : [];
+    };
+    assert.deepEqual(kinds(same), []);
+    assert.deepEqual(kinds(slow), ["slower"]);
+  });
+
   const lines = [];
-  await check(`against tests/baseline.json: no extra click${NIGHTLY ? ", slowest walk at most 15% over" : " (time judged nightly only)"}`, async () => {
+  await check(`against tests/baseline.json: no extra click${NIGHTLY ? ", slowest walk at most twice the baseline and at most 30% slower than main's build" : " (time judged nightly only)"}`, async () => {
     const bad = [];
     for (const journey of MAGIC_JOURNEYS) {
       const m = journey.status === "ready" ? (measured[journey.name] ?? null) : null;
       const b = baselines.get(journey.name);
       const c = compareToBaseline(journey, m && { clicks: m.clicks, slowestMs: m.slowestMs, slowestRelative: m.slowestRelative }, b);
       lines.push(baselineLine(journey, m, b, c));
-      if (c.kind === "flag" && c.flags.some((f) => f.kind !== "time" || NIGHTLY)) bad.push(lines.at(-1));
+      // "time" only warns; "slower" fails the nightly run; an extra click or a missing number always fails.
+      if (c.kind === "flag" && c.flags.some((f) => (f.kind === "slower" ? NIGHTLY : f.kind !== "time"))) bad.push(lines.at(-1));
     }
     console.log(lines.map((l) => `  ${l}`).join("\n"));
     assert.deepEqual(bad, []);

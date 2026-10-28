@@ -892,8 +892,9 @@ for (const slot of ["browser", "properties"] as const) {
       const give = () => $("properties").querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
       give();
       // WebKit and Firefox lay the sheet out a frame later, and the row menu that chose Edit feature gives the focus back to
-      // its opener (in the sheet just put away) as it closes: try again while nothing has the focus.
-      for (const ms of [0, 100, 300]) setTimeout(() => (!document.activeElement || document.activeElement === document.body) && give(), ms);
+      // its opener (in the sheet just put away) as it closes, which WebKit can leave on the opener rather than the page:
+      // try again until the focus is inside the panel (a tap on one of its boxes puts it there for good).
+      for (const ms of [0, 50, 100, 200, 300, 500, 800]) setTimeout(() => !$("properties").querySelector("#feature-edit:not([hidden])")?.contains(document.activeElement) && give(), ms);
     } else if (!now && opened && open) {
       toggle.click();
       opened = false;

@@ -115,10 +115,12 @@ export function reportLine(journey: MagicJourney, verdict: JourneyVerdict): stri
 }
 
 // The baseline (X8b): what each ready journey took when the owner confirmed
-// it, kept in tests/baseline.json under "journeys". The nightly run flags any
-// click over the baseline, and a slowest walk more than 15% over it (root
-// CLAUDE.md, "Metrics and baselines"). Clicks are deterministic, so PR CI
-// fails on an extra click too; time is only judged nightly.
+// it, kept in tests/baseline.json under "journeys". The nightly run fails any
+// click over the baseline, flags a slowest walk more than 15% over it (root
+// CLAUDE.md, "Metrics and baselines") and fails one more than twice over or,
+// on a branch, more than 30% slower than main's build on the same runner.
+// Clicks are deterministic, so PR CI fails on an extra click too; time is
+// only judged nightly.
 
 /**
  * A ready journey's confirmed numbers: clicks, the slowest of the walks in
@@ -134,17 +136,39 @@ export interface JourneyBaseline {
   slowestRelative?: number;
 }
 
-/** What one browser run measured for a journey: the most clicks, the slowest walk, and that walk relative to the fixed workload when it was timed. */
+/**
+ * What one browser run measured for a journey: the most clicks, the slowest
+ * walk, that walk relative to the fixed workload when it was timed, and,
+ * when main's build was walked in turns with this one on the same runner
+ * (the nightly run on a branch), `referenceRatio`: the median of the pairs'
+ * times, this build's over main's.
+ */
 export interface JourneyMeasured {
   clicks: number;
   slowestMs: number;
   slowestRelative?: number;
+  referenceRatio?: number;
 }
 
-/** How far over the baseline the slowest walk may be, in percent, before it is flagged. */
+/** How far over the baseline the slowest walk may be, in percent, before it is flagged (a warning: one runner's time varies more than this). */
 export const SLOWEST_MARGIN_PERCENT = 15;
+/** How far over the baseline the slowest walk may be, in percent, before it fails: twice as slow, as `relative_time` in tests/baseline.json. */
+export const SLOWEST_FAIL_PERCENT = 100;
+/**
+ * Against main's build walked in turns on the same runner, where a slow
+ * runner slows both alike: more than 15% slower is flagged, more than 30%
+ * fails. The same build against itself read 0.99–1.02 (2026-10-28, 4
+ * cores, idle and loaded), and a deliberately 2× slower app 1.72.
+ */
+export const REFERENCE_FLAG_PERCENT = 15;
+export const REFERENCE_FAIL_PERCENT = 30;
 
-export type BaselineFlag = { kind: "clicks" | "time" | "missing"; text: string };
+/**
+ * "time" is a warning (listed, never failing on its own); "slower" fails the
+ * nightly run: more than 30% slower than main's build on the same runner,
+ * or more than twice the baseline.
+ */
+export type BaselineFlag = { kind: "clicks" | "time" | "slower" | "missing"; text: string };
 
 export type JourneyCheck =
   | { kind: "ok"; note?: string }
@@ -199,25 +223,32 @@ export function compareToBaseline(journey: MagicJourney, measured: JourneyMeasur
   }
   const seconds = (ms: number) => `${(ms / 1000).toFixed(2)} s`;
   const times = (relative: number) => `${relative.toFixed(2)}× the fixed workload`;
+  // Integer-safe "more than p% over": measured × 100 > baseline × (100 + p).
+  const overBy = (m: number, b: number) => (m * 100 > b * (100 + SLOWEST_FAIL_PERCENT) ? "slower" : m * 100 > b * (100 + SLOWEST_MARGIN_PERCENT) ? "time" : null);
+  const limits = `flag above ${SLOWEST_MARGIN_PERCENT}%, fail above ${SLOWEST_FAIL_PERCENT}%`;
   if (baseline.slowestRelative !== undefined) {
-    // Relative: the slowest walk as a multiple of the fixed workload timed in the same browser. Integer-safe "more than 15% over": × 100 > baseline × 115.
+    // Relative: the slowest walk as a multiple of the fixed workload timed in the same browser.
     if (measured.slowestRelative === undefined) {
       flags.push({ kind: "missing", text: "the fixed workload was not timed, so the slowest walk cannot be judged against the relative baseline" });
-    } else if (measured.slowestRelative * 100 > baseline.slowestRelative * (100 + SLOWEST_MARGIN_PERCENT)) {
+    } else {
+      const kind = overBy(measured.slowestRelative, baseline.slowestRelative);
       const over = (measured.slowestRelative / baseline.slowestRelative - 1) * 100;
-      flags.push({
-        kind: "time",
-        text: `slowest ${seconds(measured.slowestMs)} = ${times(measured.slowestRelative)}, baseline ${baseline.slowestRelative.toFixed(2)}× (${over.toFixed(0)}% over, flag above ${SLOWEST_MARGIN_PERCENT}%)`,
-      });
+      if (kind) flags.push({ kind, text: `slowest ${seconds(measured.slowestMs)} = ${times(measured.slowestRelative)}, baseline ${baseline.slowestRelative.toFixed(2)}× (${over.toFixed(0)}% over, ${limits})` });
     }
-  } else if (measured.slowestMs * 100 > baseline.slowestMs * (100 + SLOWEST_MARGIN_PERCENT)) {
+  } else {
     // Absolute, as before the relative baseline is set; the relative number rides along so the nightly summaries collect it.
+    const kind = overBy(measured.slowestMs, baseline.slowestMs);
     const over = (measured.slowestMs / baseline.slowestMs - 1) * 100;
     const relative = measured.slowestRelative === undefined ? "" : ` = ${times(measured.slowestRelative)}`;
-    flags.push({
-      kind: "time",
-      text: `slowest ${seconds(measured.slowestMs)}${relative}, baseline ${seconds(baseline.slowestMs)} (${over.toFixed(0)}% over, flag above ${SLOWEST_MARGIN_PERCENT}%)`,
-    });
+    if (kind) flags.push({ kind, text: `slowest ${seconds(measured.slowestMs)}${relative}, baseline ${seconds(baseline.slowestMs)} (${over.toFixed(0)}% over, ${limits})` });
+  }
+  if (measured.referenceRatio !== undefined) {
+    // Main's build on the same runner, in turns: the runner's own speed cancels out, so this is the check that fails a real slowdown.
+    const r = measured.referenceRatio;
+    const kind = r * 100 > 100 + REFERENCE_FAIL_PERCENT ? "slower" : r * 100 > 100 + REFERENCE_FLAG_PERCENT ? "time" : null;
+    if (kind) {
+      flags.push({ kind, text: `${r.toFixed(2)}× main's build walked in turns on the same runner (flag above ${REFERENCE_FLAG_PERCENT}% slower, fail above ${REFERENCE_FAIL_PERCENT}%)` });
+    }
   }
   if (flags.length > 0) return { kind: "flag", flags };
   if (measured.clicks < baseline.clicks) return { kind: "ok", note: `${measured.clicks} clicks, fewer than the baseline ${baseline.clicks}: ask the owner to lower it` };
@@ -236,7 +267,8 @@ export function baselineLine(journey: MagicJourney, measured: JourneyMeasured | 
       const b = baseline as JourneyBaseline;
       const relative =
         m.slowestRelative === undefined ? "" : ` = ${m.slowestRelative.toFixed(2)}× the fixed workload${b.slowestRelative === undefined ? "" : ` (baseline ${b.slowestRelative.toFixed(2)}×)`}`;
-      const line = `OK ${journey.name}: ${m.clicks} clicks (baseline ${b.clicks}), slowest ${(m.slowestMs / 1000).toFixed(2)} s${relative} (baseline ${(b.slowestMs / 1000).toFixed(2)} s)`;
+      const reference = m.referenceRatio === undefined ? "" : `, ${m.referenceRatio.toFixed(2)}× main's build on the same runner`;
+      const line = `OK ${journey.name}: ${m.clicks} clicks (baseline ${b.clicks}), slowest ${(m.slowestMs / 1000).toFixed(2)} s${relative} (baseline ${(b.slowestMs / 1000).toFixed(2)} s)${reference}`;
       return check.note ? `${line}; ${check.note}` : line;
     }
   }
