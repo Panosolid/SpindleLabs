@@ -207,7 +207,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
     id: COPY_SVG,
     workspace: "design",
     label: "Copy as SVG",
-    title: "Copy the profile or sketch as an SVG drawing, sized in mm, to paste into a drawing program or a laser cutter's software.",
+    title: "Copy the profile or sketch as an SVG drawing, sized in mm, to paste into a drawing program or a laser cutter's software. Key: Ctrl+C (⌘C on a Mac).",
     kinds: ["outline"],
     uses: "outline",
     count: "one",
