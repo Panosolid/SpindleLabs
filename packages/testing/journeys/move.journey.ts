@@ -360,3 +360,31 @@ test("an edited Move previews in the app (35e2c): its handles at its pivot moved
   near(meshBox(a.mesh()!.positions), built, "Cancel: as built");
   assert.equal(a.moveHandlesShown(), null);
 });
+
+test("an empty Move box (Ben, 2026-10-28) counts as 0 while empty, keeps the preview and handles up, and shows 0 once left", async () => {
+  const { app } = await import("./design-app.ts");
+  const { bodyReference } = await import("@fission/design");
+  const a = await app(BOX());
+  a.selection.set([bodyReference("feature-1")]);
+  await a.key("move-tool");
+  const x = a.$("#move-x") as HTMLInputElement;
+  const typeIn = (value: string) => {
+    x.value = value;
+    x.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  };
+  typeIn("10");
+  await a.settle();
+  const centre = a.moveHandlesShown()!.centre;
+  // Cleared to type a new number: counted as 0, so the handles go back 10 mm and stay up; the box stays empty while it has the focus.
+  typeIn("");
+  await a.settle();
+  assert.deepEqual(a.moveHandlesShown()?.centre, [centre[0] - 10, centre[1], centre[2]]);
+  assert.equal(x.value, "");
+  assert.equal(a.$("#move-error")!.hidden, true, "no error for an empty box");
+  // Left: it shows 0. A box with a number keeps it when left.
+  x.dispatchEvent(new a.window.Event("blur") as unknown as Event);
+  assert.equal(x.value, "0");
+  typeIn("4.5");
+  x.dispatchEvent(new a.window.Event("blur") as unknown as Event);
+  assert.equal(x.value, "4.5");
+});
