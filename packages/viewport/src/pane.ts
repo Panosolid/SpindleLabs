@@ -3,7 +3,7 @@
 // overlays) go to the viewer, so every view draws the same thing; camera
 // methods (fit, setView, fitSelection, lookAt) and an image (showImage, clearImage)
 // go to that pane's view only.
-import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, OriginPlane, Plane, SharedViewport, SketchDrawing, SketchPointer, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
+import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, Plane, SharedViewport, SketchDrawing, SketchPointer, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
 
 /** What a pane needs of its view: the element it fills and its camera. */
 export interface PaneCamera {
@@ -19,6 +19,7 @@ export interface PaneCamera {
 type PickHandler = (pick: ViewportPick) => void;
 type SketchHandler = (pointer: SketchPointer) => void;
 type ExtrudeHandler = (pointer: ExtrudePointer) => void;
+type MoveHandler = (pointer: MovePointer) => void;
 
 /**
  * Returns a maker of panes over `scene` (the Viewer). The viewer has one
@@ -31,10 +32,12 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
   const pickers = new Map<object, PickHandler>(); // in the order they were set
   const sketchers = new Map<object, SketchHandler>(); // the same rule for the sketch pointer
   const extruders = new Map<object, ExtrudeHandler>(); // and for Extrude's (UX1b)
+  const movers = new Map<object, MoveHandler>(); // and for Move's handles (35e2c)
   const sync = () => {
     scene.onPick = [...pickers.values()].at(-1) ?? null;
     scene.onSketchPointer = [...sketchers.values()].at(-1) ?? null;
     scene.onExtrudePointer = [...extruders.values()].at(-1) ?? null;
+    scene.onMovePointer = [...movers.values()].at(-1) ?? null;
   };
   return (view) => {
     const key = {};
@@ -61,6 +64,15 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       set onExtrudePointer(handler: ExtrudeHandler | null) {
         extruders.delete(key);
         if (handler) extruders.set(key, handler);
+        sync();
+      },
+      showMoveHandles: (show: MoveHandlesShow | null) => scene.showMoveHandles(show),
+      get onMovePointer() {
+        return movers.get(key) ?? null;
+      },
+      set onMovePointer(handler: MoveHandler | null) {
+        movers.delete(key);
+        if (handler) movers.set(key, handler);
         sync();
       },
       get onSketchPointer() {

@@ -137,10 +137,11 @@ try {
         assert.equal(await page.isVisible("#move-hint"), false, "no hint once a body is picked");
         // The pivot follows: the box spans 0..40, 0..30, 0..20, so its middle is (20, 15, 10).
         assert.deepEqual([p.boxes.pivotX, p.boxes.pivotY, p.boxes.pivotZ], ["20", "15", "10"]);
-        // A second click on it takes it out again; a third puts it back.
-        await pressAt(page, [20, 15, 20], tap);
+        // A second click on it takes it out again; a third puts it back. Near a corner of the top: from 35e2c the Move's
+        // handles stand at the box's middle, and a press on one drags it instead of picking (e2e/move-drag.mjs).
+        await pressAt(page, [6, 4, 20], tap);
         await until(page, () => document.body.dataset.selection === "", null, "the box let go");
-        await pressAt(page, [20, 15, 20], tap);
+        await pressAt(page, [6, 4, 20], tap);
         await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked again");
         // The preview: 45 mm along X takes the box off its old place at once, before any OK (no undo step yet).
         const top = [5, 5, 20];

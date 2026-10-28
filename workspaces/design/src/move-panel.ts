@@ -38,6 +38,8 @@ export interface MovePanel {
   setBodies(names: readonly string[]): void;
   /** The pivot the bodies give, put in its boxes unless the user typed one. */
   setPivot(p: readonly [number, number, number]): void;
+  /** One box set from a drag of the view's handles (35e2c): typed values follow the drag. */
+  setValue(key: MoveParam, value: number): void;
   /** Why OK recorded nothing ("" hides it). */
   showError(message: string): void;
   /** OK off while the kernel checks the Move, so a second press can't record twice. */
@@ -163,6 +165,9 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       if (pivotTyped) return;
       (["pivotX", "pivotY", "pivotZ"] as const).forEach((k, i) => (inputs.get(k)!.value = boxText(p[i])));
       showSummary();
+    },
+    setValue(key, value) {
+      inputs.get(key)!.value = boxText(value);
     },
     showError(message) {
       error.textContent = message;
