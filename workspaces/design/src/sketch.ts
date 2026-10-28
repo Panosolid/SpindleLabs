@@ -468,8 +468,23 @@ export function curvesOf(points: readonly SketchPoint[], curves: readonly Sketch
 }
 
 /** Asks the kernel what the sketch's lines, circles and arcs make. */
-export function askOutline(kernel: KernelCalls, curves: ReturnType<typeof sketchCurves>) {
-  return kernel.call("sketch_outline", curves.lines, curves.circles, curves.arcs);
+/**
+ * Why an outline is refused when the kernel names two of its curves: they
+ * cross, touch, fold back onto each other or come closer than its smallest
+ * feature (0.001 mm). The kernel's own words ("pieces (0, 0) and (0, 2)
+ * (loop, piece) are 0e0 mm apart") were jargon to a beginner (play-test
+ * 2026-10-28); which case it is comes from the curves it names, never
+ * from its message.
+ */
+export const TOUCHING_CURVES = "two of its curves cross, touch or come closer than 0.001 mm; move them apart";
+
+/** A sketch_outline answer with TOUCHING_CURVES for the kernel's words when it names two curves. */
+export function plainOutline<T extends { closed: unknown } | { open: string; invalid?: readonly unknown[] }>(out: T): T {
+  return "open" in out && out.invalid?.length === 2 ? { ...out, open: TOUCHING_CURVES } : out;
+}
+
+export async function askOutline(kernel: KernelCalls, curves: ReturnType<typeof sketchCurves>) {
+  return plainOutline(await kernel.call("sketch_outline", curves.lines, curves.circles, curves.arcs));
 }
 
 /** The sketch's one closed outline, from the kernel; a sketch that makes none is refused with the kernel's reason. */

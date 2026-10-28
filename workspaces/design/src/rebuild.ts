@@ -34,7 +34,7 @@ import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges
 import { featureNames, type BodyNames } from "./naming.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { resolveReference, sharedBy } from "./references.ts";
-import { planeOf, sketchCurves } from "./sketch.ts";
+import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -252,7 +252,7 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
   if (none !== null) return { lost: "open-outline", message: none, curves: [] };
   const c = sketchCurves(content);
   try {
-    const out = await kernel.call("sketch_outline", c.lines, c.circles, c.arcs);
+    const out = plainOutline(await kernel.call("sketch_outline", c.lines, c.circles, c.arcs));
     if ("closed" in out) return { outline: out.closed };
     if (out.invalid) return { lost: "invalid-outline", message: out.open, curves: namedCurves(out.invalid, ids) };
     return { lost: "open-outline", message: out.open, curves: [] };

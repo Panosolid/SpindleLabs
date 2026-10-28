@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SketchXY } from "@fission/core";
-import { addSketch, askOutline, clickAt, partDocument, rounding, sketchCurves, SNAP_PIXELS, snapOnSketch, startTool, type DesignDocument, type SketchTool } from "@fission/design";
+import { addSketch, askOutline, clickAt, partDocument, rounding, sketchCurves, SNAP_PIXELS, snapOnSketch, startTool, TOUCHING_CURVES, type DesignDocument, type SketchTool } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 import { seeded, type SeededRandom } from "../src/index.ts";
 
@@ -93,8 +93,8 @@ test("seeded free polygons: every click lands within half a pixel unless it snap
       assert.equal(sketch.points.length, placed.length, `${context}: closing made a new point`);
       const out = await askOutline(kernel, sketchCurves(sketch));
       if ("open" in out) {
-        // A random star can fold into a sliver or cross itself after snapping; nothing else may open it.
-        assert.match(out.open, /not a valid outline|ends meet/, `${context}: ${out.open}`);
+        // A random star can fold into a sliver or cross itself after snapping (two curves named: the app's plain words); nothing else may open it.
+        assert.ok(out.open === TOUCHING_CURVES || /not a valid outline|ends meet/.test(out.open), `${context}: ${out.open}`);
         continue;
       }
       closed++;
