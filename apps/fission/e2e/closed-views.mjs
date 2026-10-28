@@ -42,7 +42,7 @@ async function judge({ page, warnings }) {
   await page.waitForTimeout(500);
   assert.deepEqual(warnings, [], "no WebGL context dropped or lost");
   assert.equal(await page.evaluate(() => Boolean(window.mainLost)), false, "the main view keeps its WebGL context");
-  // The box fills the middle of the home view; the background is #14161a.
+  // The box fills the middle of the home view; the backdrop a dark blue gradient (backdrop.ts).
   const middle = await page.evaluate(() => {
     const canvas = document.querySelector("#viewport canvas");
     const gl = canvas.getContext("webgl2");
@@ -50,8 +50,8 @@ async function judge({ page, warnings }) {
     gl.readPixels(canvas.width >> 1, canvas.height >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     return [...px.slice(0, 3)];
   });
-  assert.notDeepEqual(middle, [0x14, 0x16, 0x1a], "the main view still draws the box");
-  assert.notDeepEqual(middle, [0, 0, 0], "the main view still draws the box");
+  // The lit box is far brighter than the backdrop (a dark blue, every channel under 60, backdrop.ts) and than black.
+  assert.ok(middle[0] + middle[1] + middle[2] > 3 * 80, `the main view still draws the box, got ${middle}`);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("HeapProfiler.collectGarbage");
   await cdp.send("DOM.enable");

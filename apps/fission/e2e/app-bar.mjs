@@ -57,8 +57,10 @@ const NEW_ON = "New: clear the whole design and start again from an empty one. I
  * least 16 px on screen), a name (its words, or its aria-label), and, for
  * Save, its words out of sight. Empty when all is well.
  */
+// Measured once the menu's opening slide has finished: mid-slide a 16 px icon reads 15.999996 px.
 const barProblems = (page) =>
-  page.evaluate(() => {
+  page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
     const out = [];
     const sels = ["#save", "#undo", "#redo", "#file-menu-menu [role=menuitem]", "#assistant-toggle", "#guide-open", "#community"];
     for (const b of document.querySelectorAll(sels.join(","))) {
@@ -228,10 +230,11 @@ try {
         await chooseFile(page, "start-fresh", tap);
         await until(page, () => document.getElementById("start-fresh-dialog").open, null, "the dialog");
         assert.match(await page.textContent("#start-fresh-words"), /\(1 feature\)/);
-        // Its own styles (start-fresh.css), not the browser's white box: the dark panel #1c1f24 = rgb(28, 31, 36) and
-        // the warning-red confirm #6b2328 = rgb(107, 35, 40), hex to decimal by hand (Ben's screenshot, 0.32.x: unstyled).
+        // Its own styles (start-fresh.css), not the browser's white box: the near-black blue panel #161d2a =
+        // rgb(22, 29, 42) (UX2) and the warning-red confirm #6b2328 = rgb(107, 35, 40), hex to decimal by hand
+        // (Ben's screenshot, 0.32.x: unstyled).
         const look = await page.evaluate(() => [getComputedStyle(document.getElementById("start-fresh-dialog")).backgroundColor, getComputedStyle(document.getElementById("start-fresh-confirm")).backgroundColor]);
-        assert.deepEqual(look, ["rgb(28, 31, 36)", "rgb(107, 35, 40)"]);
+        assert.deepEqual(look, ["rgb(22, 29, 42)", "rgb(107, 35, 40)"]);
         if (shots) await page.screenshot({ path: `${shots}/file-menu-${width}-new-ask.png` });
         await press(page, "#start-fresh-confirm", tap);
         await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "the empty design's hint");
@@ -351,7 +354,7 @@ try {
     }
   });
 
-  await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as 44 px icons; AI, Guide and Community behind Menu", async () => {
+  await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as round 48 px icons; AI, Guide and Community behind Menu", async () => {
     const page = await fresh(375, true);
     try {
       assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#workspace-menu"]);
@@ -359,7 +362,7 @@ try {
       assert.equal(await page.evaluate(() => document.getElementById("undo-redo").classList.contains("docked")), true);
       for (const id of ["undo", "redo"]) {
         const b = await rect(page, `#${id}`);
-        assert.deepEqual([b.width, b.height], [44, 44], id);
+        assert.deepEqual([b.width, b.height], [48, 48], id); // round 48 px floating buttons (UX2b)
         assert.equal(await page.$eval(`#${id} svg.icon`, (s) => s.dataset.icon), id);
       }
       await page.tap("#menu-toggle");

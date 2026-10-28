@@ -1,5 +1,5 @@
 /* The change note (change-note.ts): an automatic update, its cause, "Why?" and dismiss. */
-.change-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; padding: 6px 8px; margin-bottom: 6px; border-radius: 6px; border-left: 3px solid #4aa8ff; background: #23272e; }
+.change-note { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; padding: 6px 8px; margin-bottom: 6px; border-radius: var(--look-radius-s); border-left: 3px solid #4aa8ff; background: #1b2331; }
 .change-note.needs-rerun { border-left-color: #f5b14c; }
 .change-note .note-body { flex: 1; }
 .change-note details { margin-top: 4px; color: #aab0b8; }

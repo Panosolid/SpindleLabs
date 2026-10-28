@@ -177,3 +177,80 @@ test("seeded: random moves of random boxes put every corner where plain arithmet
   // Every kind of case was reached.
   assert.ok(kinds.turned > 20 && kinds.shifted > 20 && kinds.chained > 10, JSON.stringify(kinds));
 });
+
+/** The scene the app draws for `doc` (rebuilt and joined as workspace.ts does it). */
+async function sceneOf(doc: DesignDocument) {
+  const { joinBodies, shownBodies } = await import("@fission/design");
+  const kernel = nodeKernel();
+  const cache = new BodyCache(kernel);
+  try {
+    return joinBodies(await shownBodies(doc, await rebuildTimeline(doc, cache, kernel), cache));
+  } finally {
+    await cache.close();
+  }
+}
+
+test("the Move panel's preview (35e2b) draws the picked bodies where the kernel puts them, seeded (FISSION_SEED)", async () => {
+  const { movedMesh } = await import("@fission/design");
+  const seed = BigInt(process.env.FISSION_SEED ?? "35");
+  const r = seeded(seed);
+  const pick = (n: number) => Math.floor(r.next() * n);
+  for (let n = 0; n < 20; n++) {
+    // A box and a cylinder; one, the other or both picked.
+    const d = insertPreset(partDocument("box", 1 + pick(60), 1 + pick(60), 1 + pick(60)), "cylinder", 2 + pick(40), 2 + pick(40), 1 + pick(40)).doc;
+    const picked = [["feature-1"], ["feature-2"], ["feature-1", "feature-2"]][pick(3)];
+    const angle = () => (pick(3) === 0 ? 0 : pick(2) === 0 ? 90 * (pick(7) - 3) : Math.round((r.next() * 720 - 360) * 10) / 10);
+    const values = v({ x: pick(401) - 200, y: pick(401) - 200, z: pick(401) - 200, turnX: angle(), turnY: angle(), turnZ: angle(), pivotX: pick(100) - 50, pivotY: pick(100) - 50, pivotZ: pick(100) - 50 });
+    const what = `seed ${seed} case ${n} (${picked.join(" and ")}, ${JSON.stringify(values)}; FISSION_SEED=${seed} to replay)`;
+    const preview = movedMesh(await sceneOf(d), picked, values);
+    const kernel = (await sceneOf(insertMove(d, picked, values).doc)).mesh;
+    // The same triangles in the same order: every point within LINEAR of the kernel's, every normal within 1e-6 of it.
+    assert.equal(preview.positions.length, kernel.positions.length, what);
+    assert.deepEqual(preview.indices, kernel.indices, what);
+    preview.positions.forEach((x, i) => assert.ok(Math.abs(x - kernel.positions[i]) <= LINEAR, `${what}: point number ${i} ${x}, the kernel's ${kernel.positions[i]}`));
+    preview.edge_lines.forEach((x, i) => assert.ok(Math.abs(x - kernel.edge_lines[i]) <= LINEAR, `${what}: line number ${i}`));
+    // The kernel sends normals as 32-bit floats, good to about 6e-8 on a unit vector: 1e-6 still catches any wrong turn.
+    preview.normals.forEach((x, i) => assert.ok(Math.abs(x - kernel.normals[i]) <= 1e-6, `${what}: normal number ${i} ${x}, the kernel's ${kernel.normals[i]}`));
+  }
+});
+
+test("the Move panel's OK asks the kernel first (35e2b): a move out past model space is refused with its words; one inside is not", async () => {
+  const { refusedMove } = await import("@fission/design");
+  const far = insertMove(BOX(), ["feature-1"], v({ x: 2e8 }));
+  assert.match((await refusedMove(nodeKernel(), far.doc, far.id)) ?? "", /limit is 1e8 mm/);
+  const near10 = insertMove(BOX(), ["feature-1"], v({ x: 10, turnZ: 45 }));
+  assert.equal(await refusedMove(nodeKernel(), near10.doc, near10.id), null);
+  // Behind the marker it builds nothing, so it is not refused (it waits there, as any item does).
+  const behind = moveMarker(far.doc, "feature-1");
+  assert.equal(await refusedMove(nodeKernel(), behind, far.id), null);
+});
+
+test("regression (35e2b's browser check): a moved body downloads as STL, and is handed to other workspaces, where the Move put it", async () => {
+  const { ActionRegistry, emptyProject, RepresentationRegistry } = await import("@fission/core");
+  const { designWorkspace, DOWNLOAD_STL, registerDesignActions, shownBodyRefs } = await import("@fission/design");
+  const kernel = nodeKernel();
+  const saved: Uint8Array[] = [];
+  const actions = new ActionRegistry();
+  registerDesignActions(actions, (bytes) => void saved.push(bytes), async () => {});
+  const representations = new RepresentationRegistry();
+  designWorkspace.registerRepresentations!(representations, kernel);
+  // The box moved up 5 and along X 10, then a second Move turning it 90° about Z through the origin:
+  // up 5 gives z 5..25, x 10..50; turned, (x, y) → (−y, x): x −30..0, y 10..50.
+  const doc = insertMove(insertMove(BOX(), ["feature-1"], v({ x: 10, z: 5 })).doc, ["feature-1"], v({ turnZ: 90 })).doc;
+  const want: Box3 = [[-30, 10, 5], [0, 50, 25]];
+  const project = emptyProject("Moved");
+  project.workspaces.design = doc;
+  const ctx = { project, kernel, representations, viewport: { setOverlay() {}, clearOverlay() {} } } as never;
+  assert.deepEqual(await actions.get(DOWNLOAD_STL)!.run(shownBodyRefs(doc), ctx), { message: "Exported spindlelabs-box.stl.", bad: false });
+  const bytes = saved[0];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const pts: number[][] = [];
+  for (let t = 0; t < view.getUint32(80, true); t++) for (let k = 0; k < 3; k++) pts.push([0, 1, 2].map((i) => view.getFloat32(84 + 50 * t + 12 + 12 * k + 4 * i, true)));
+  const stl: Box3 = [[0, 1, 2].map((i) => Math.min(...pts.map((p) => p[i]))) as Box3[0], [0, 1, 2].map((i) => Math.max(...pts.map((p) => p[i]))) as Box3[1]];
+  near(stl, want, "the STL");
+  // Slice and the other workspaces take the body as a mesh: there too.
+  const { representation } = await representations.deliver({ type: "design.feature", id: "feature-1", document: doc } as never, ["mesh"]);
+  const p = (representation as { positions: number[] }).positions;
+  const corners = (k: number, f: (...x: number[]) => number) => f(...p.filter((_, i) => i % 3 === k));
+  near([[0, 1, 2].map((k) => corners(k, Math.min)), [0, 1, 2].map((k) => corners(k, Math.max))] as Box3, want, "the mesh other workspaces are handed");
+});

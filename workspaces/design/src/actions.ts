@@ -8,7 +8,7 @@ import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, typ
 import { saveFile, STL_KIND } from "@fission/ui";
 import { bodyFeatures } from "./browser.ts";
 import { isHidden, partFeature, shapeOf, type DesignDocument } from "./document.ts";
-import { featureSpec } from "./extrude.ts";
+import { endSpec } from "./move-tool.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
 import type { Scene } from "./scene.ts";
@@ -182,7 +182,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
       };
       try {
         const files: StlFile[] = [];
-        for (const f of features) files.push(await ctx.kernel.call("export_stl", await featureSpec(ctx.kernel, doc, f), kindOf(f)));
+        for (const f of features) files.push(await ctx.kernel.call("export_stl", await endSpec(ctx.kernel, doc, f), kindOf(f)));
         const one = features.length === 1;
         const name = one ? kindOf(features[0]) : `${features.length} bodies`;
         const file = `spindlelabs-${one ? name : `${features.length}-bodies`}.stl`;

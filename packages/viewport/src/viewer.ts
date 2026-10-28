@@ -15,6 +15,7 @@ import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, 
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
+import { paintBackdrop } from "./backdrop.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
 
 // The kernel is Z-up (like most CAD); Three.js defaults to Y-up.
@@ -99,6 +100,7 @@ export class ViewportView {
     this.host = host;
     this.element = container;
     this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.autoClearColor = false; // paintBackdrop paints the colour every frame; depth and stencil still clear
     container.appendChild(this.renderer.domElement);
     this.legend.className = "overlay-legend";
     this.legend.hidden = true;
@@ -216,6 +218,7 @@ export class ViewportView {
     this.bar.canLookAt(!this.image && this.host.sketchPlane() !== null);
     this.host.frame(this);
     this.sizeArrow();
+    paintBackdrop(this.renderer); // the near-black blue gradient behind the scene (UX2)
     this.renderer.render(this.host.scene, this.camera);
     if (!this.image) this.cube.render(this.renderer, this.camera);
   };
@@ -864,8 +867,8 @@ export class Viewer implements SharedViewport {
 
   constructor(container: HTMLElement) {
     this.element = container;
-    this.scene.background = new THREE.Color(0x14161a);
-    const grid = (this.grid = new THREE.GridHelper(200, 20, 0x3a3f47, 0x2a2e35));
+    // Blue-grey lines on the blue backdrop (UX2): the middle pair stronger.
+    const grid = (this.grid = new THREE.GridHelper(200, 20, 0x46536a, 0x2a3242));
     grid.rotation.x = Math.PI / 2; // lay the grid on the XY plane
     for (const ground of [grid, this.axes]) {
       ground.renderOrder = GROUND_ORDER;

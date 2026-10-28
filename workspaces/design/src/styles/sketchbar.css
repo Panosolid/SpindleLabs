@@ -20,9 +20,9 @@
 .sketchbar .sketchbar-menu-button[aria-expanded="true"]:not(#none) { border-color: #4aa8ff; }
 /* The Create menu: fixed to the page under its button, so the toolbar's
    sideways scroll at phone width never clips it. */
-.sketchbar .sketchbar-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 190px; padding: 4px; background: #1c1f24; border: 1px solid #353a43; border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.sketchbar .sketchbar-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 190px; padding: 4px; background: #161d2a; border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .sketchbar .sketchbar-menu button:not(#none) { display: flex; justify-content: space-between; gap: 16px; background: none; border-color: transparent; text-align: left; }
-.sketchbar .sketchbar-menu button:not(#none):hover, .sketchbar .sketchbar-menu button:not(#none):focus { background: #2e333b; }
+.sketchbar .sketchbar-menu button:not(#none):hover, .sketchbar .sketchbar-menu button:not(#none):focus { background: #263142; }
 .sketchbar .sketchbar-menu button[aria-checked="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
 .sketchbar .sketchbar-menu kbd { font-family: ui-monospace, monospace; color: #8a919c; }
 /* Phone width: everything 44 px tall to tap, and the tools wrap inside the
@@ -39,5 +39,5 @@
    at phone width). The row is lit while one of its arcs is the tool in use. */
 .sketchbar .sketchbar-menu .sketchbar-menu-more { color: #8a919c; }
 .sketchbar .sketchbar-menu button.sketchbar-menu-holds:not(#none) { border-color: #4aa8ff; }
-.sketchbar .sketchbar-menu button[aria-expanded="true"]:not(#none) { background: #2e333b; }
+.sketchbar .sketchbar-menu button[aria-expanded="true"]:not(#none) { background: #263142; }
 .sketchbar .sketchbar-submenu { z-index: 31; }

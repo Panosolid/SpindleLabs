@@ -176,11 +176,14 @@ try {
 
   await check("the box is actually drawn", async () => {
     await page.waitForTimeout(300);
-    const background = [0x14, 0x16, 0x1a];
-    const centre = await pixel(0.5, 0.5);
+    // The backdrop (packages/viewport/src/backdrop.ts) runs from (30, 38, 52) at the top
+    // to (14, 16, 22) at the bottom: 2 % down it is (30 − 0.32, 38 − 0.44, 52 − 0.6) =
+    // (29.68, 37.56, 51.4); halfway, each channel's mean, (22, 27, 37).
     const corner = await pixel(0.02, 0.02);
-    assert.deepEqual(corner, background, "corner should be empty background");
-    assert.notDeepEqual(centre, background, "centre of the view should show the body");
+    const centre = await pixel(0.5, 0.5);
+    const near = (got, want) => got.every((c, i) => Math.abs(c - want[i]) <= 1.5);
+    assert.ok(near(corner, [29.68, 37.56, 51.4]), `corner should be empty backdrop, got ${corner}`);
+    assert.ok(!near(centre, [22, 27, 37]) && centre.some((c, i) => Math.abs(c - [22, 27, 37][i]) > 12), `centre of the view should show the body, got ${centre}`);
   });
 
   await foldBrowser(false);
@@ -390,8 +393,8 @@ try {
       const s = screenPoint(box, p, view);
       return pixel((s.x - box.x) / box.width, (s.y - box.y) / box.height);
     };
-    // The body is lit grey-blue, far brighter than the background
-    // (0x14, 0x16, 0x1a) and the grid lines on it.
+    // The body is lit grey-blue, far brighter than the backdrop (a dark
+    // blue, every channel under 60, backdrop.ts) and the grid lines on it.
     const isBody = ([r, g, b]) => r + g + b > 3 * 80;
     const clickView = async (name) => {
       await page.click(`#view-controls [data-view=${name}]`);
@@ -649,7 +652,8 @@ try {
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(3) * 0.001 / 2) < 1e-9, `framed radius ${r}`);
     await page.waitForTimeout(300);
-    assert.notDeepEqual(await pixel(0.5, 0.5), [0x14, 0x16, 0x1a], "the cube should fill the centre of the view");
+    const cube = await pixel(0.5, 0.5);
+    assert.ok(cube[0] + cube[1] + cube[2] > 3 * 80, `the cube should fill the centre of the view (lit body, far brighter than the backdrop), got ${cube}`);
     await page.screenshot({ path: "e2e/tiny-cube.png" });
     // Back to 40 × 30 × 20, one size at a time, re-framing whenever the body
     // reaches past 1.5× the framed radius:
@@ -693,7 +697,8 @@ try {
     const r = Number(await page.$eval("#viewport", (el) => el.dataset.framedRadius));
     assert.ok(Math.abs(r - Math.sqrt(2900) / 2) < 1e-4, `framed radius ${r}`);
     await page.waitForTimeout(300);
-    assert.notDeepEqual(await pixel(0.5, 0.5), [0x14, 0x16, 0x1a], "the bracket should be drawn");
+    const bracket = await pixel(0.5, 0.5);
+    assert.ok(bracket[0] + bracket[1] + bracket[2] > 3 * 80, `the bracket should be drawn (lit body, far brighter than the backdrop), got ${bracket}`);
     await page.screenshot({ path: "e2e/l-bracket.png" });
   });
 
@@ -1073,12 +1078,13 @@ try {
       );
     assert.deepEqual(await overflow(), []);
     // The viewport keeps the full width and fills the height (U5): from the
-    // panel toggles' bottom to the timeline's top, the page itself never scrolling.
+    // toolbar's bottom to the timeline's top (the panel toggles float over its
+    // top since UX2b), the page itself never scrolling.
     // Properties and the browser are bottom sheets, both closed at the start.
     const box = await page.$eval("#viewport", (el) => el.getBoundingClientRect().toJSON());
     assert.equal(box.width, 375);
-    const [togglesBottom, timelineTop] = await page.evaluate(() => [document.querySelector("#panel-toggles").getBoundingClientRect().bottom, document.querySelector("#timeline").getBoundingClientRect().top]);
-    assert.ok(Math.abs(box.top - togglesBottom) < 1 && Math.abs(box.bottom - timelineTop) < 1, `viewport ${box.top} to ${box.bottom}, between the toggles' bottom ${togglesBottom} and the timeline's top ${timelineTop}`);
+    const [toolbarBottom, timelineTop] = await page.evaluate(() => [document.querySelector("#toolbar").getBoundingClientRect().bottom, document.querySelector("#timeline").getBoundingClientRect().top]);
+    assert.ok(Math.abs(box.top - toolbarBottom) < 1 && Math.abs(box.bottom - timelineTop) < 1, `viewport ${box.top} to ${box.bottom}, between the toolbar's bottom ${toolbarBottom} and the timeline's top ${timelineTop}`);
     assert.ok(box.height > 0.55 * 740, `viewport height ${box.height}: more than the 55% share it had when the panels stacked under it`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true, "the page does not scroll");
     assert.equal(await page.isVisible("#browser"), false);
@@ -1139,13 +1145,16 @@ try {
       await phone.goto(url + "#design");
       await startWithBox(phone, true); // a new project starts empty (U0c): the 40 × 30 × 20 box, inserted
       const rect = (sel) => phone.$eval(sel, (el) => el.getBoundingClientRect().toJSON());
-      const [viewport, cube, buttons, toggles] = await Promise.all(["#viewport", "#viewport .view-cube", "#view-controls", "#panel-toggles"].map(rect));
+      const [viewport, cube, buttons] = await Promise.all(["#viewport", "#viewport .view-cube", "#view-controls"].map(rect));
+      // The toggles are pills floating over the view's top left (UX2b): each one is checked, not their row's box.
+      const pills = await phone.$$eval("#panel-toggles button", (bs) => bs.filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect().toJSON()));
+      assert.equal(pills.length, 2, "Browser and Properties shown");
       const inside = (a, b) => a.left >= b.left && a.right <= b.right && a.top >= b.top && a.bottom <= b.bottom;
       const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
       assert.ok(inside(cube, viewport) && inside(buttons, viewport), "cube and buttons over the viewport");
-      assert.ok(apart(cube, toggles) && apart(buttons, toggles), "neither covers the panel toggles");
+      assert.ok(pills.every((t) => apart(cube, t) && apart(buttons, t)), "neither covers the panel toggles");
       assert.ok(apart(cube, buttons), "the cube and the View buttons do not overlap");
-      assert.ok(toggles.bottom <= viewport.top, "the toggles sit above the viewport");
+      assert.ok(pills.every((t) => inside(t, viewport)), "the toggles float over the viewport (UX2b)");
       // Every View button is whole on screen and at least 24 px tall to tap.
       for (const b of await phone.$$eval("#view-controls button", (els) => els.map((e) => e.getBoundingClientRect().toJSON()))) {
         assert.ok(b.left >= 0 && b.right <= 375 && b.height >= 24, JSON.stringify(b));
