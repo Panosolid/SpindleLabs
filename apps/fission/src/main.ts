@@ -16,8 +16,8 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
-import { changeNote, fileMenu, iconSvg, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
+import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { changeNote, fileMenu, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
@@ -698,7 +698,10 @@ $("open-file").addEventListener("change", async () => {
 // Files from outside (X6): a file dropped anywhere on the app, or pasted
 // (outside a text field), goes through the representation registry: a
 // project opens as Open does, a PNG or JPEG opens in Image, and anything
-// else is refused in the top bar with what will take it and when.
+// else is refused in the top bar with what will take it and when. A file
+// for a workspace not on screen asks first ("Open in Image?"; the owner's
+// ask, 2026-10-28): Cancel opens nothing and leaves you where you were.
+const elsewhere = openElsewhere(document);
 async function receive(files: File[]) {
   await started; // or the project being reopened would replace what this opens
   const heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await f.slice(0, HEAD_BYTES).arrayBuffer()) })));
@@ -706,6 +709,11 @@ async function receive(files: File[]) {
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
   const file = files[0];
+  const target = route.importer.workspace;
+  if (target && pool.showing("main") !== target && pool.showing("split") !== target) {
+    const here = pool.showing("main");
+    if (!(await elsewhere.ask(file.name, formatInfo(route.format).one, workspaceName(target), here ? workspaceName(here) : null))) return;
+  }
   try {
     await route.importer.open(file.name, new Uint8Array(await file.arrayBuffer()));
   } catch (e) {

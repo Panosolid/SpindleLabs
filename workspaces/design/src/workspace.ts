@@ -355,8 +355,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let menuAt = { x: 0, y: 0 };
   // An empty design's hint (U0c): its buttons do what the toolbar's and the top bar's do.
   const startCard = startHint(ctx.viewport.element, { sketch: () => startSketch(), insert: () => insertMenu.open(true), open: ctx.openFile });
-  /** Shows the hint while the design is empty and no sketch is being started. */
-  const showStart = () => startCard.update(ctx.project.workspaces.design as DesignDocument | undefined, mode.kind !== "none");
+  /**
+   * Shows the hint while the design is empty and no sketch is being started, and only while Design is on screen:
+   * the card sits in the shared 3D view, so asleep it would float over another workspace (owner's report, 2026-10-28).
+   */
+  const showStart = () => startCard.update(shown ? (ctx.project.workspaces.design as DesignDocument | undefined) : undefined, mode.kind !== "none");
   const { kernel, viewport } = ctx;
   /** On screen (awake); false while asleep (X7) and after unmount. */
   let shown = true;
@@ -1946,6 +1949,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.element.removeEventListener("pointerdown", onViewportMove);
     typed.hide();
     hint.hide();
+    showStart(); // hidden while asleep; wake shows it again if it still applies
     sketchBar.closeMenu();
     // Asleep, the sketches stay drawn as finished ones: no grid, no planes to pick.
     viewport.showPlanes([]);
@@ -2040,6 +2044,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (shown) return;
       shown = true;
       listen();
+      showStart();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;
