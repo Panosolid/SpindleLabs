@@ -182,7 +182,8 @@ useGraph(ctx.graph, ctx.changeNotes);
 // stand in a result in another workspace before any workspace makes one;
 // the main view's camera, to check navigation (SF3a); split view's second
 // view, to check its camera and to break its "no 3D view" on purpose; how
-// many bodies the kernel holds (the monkey tester's leak check).
+// many bodies the kernel holds (the monkey tester's leak check); the
+// kernel's WebAssembly memory and the viewport's counts (the soak test's).
 if (new URLSearchParams(location.search).has("test-hooks"))
   Object.assign(window, {
     fissionTest: {
@@ -195,6 +196,8 @@ if (new URLSearchParams(location.search).has("test-hooks"))
       camera: () => viewer.main.cameraPose(),
       splitView: () => split?.view ?? null,
       bodyCount: () => kernel.call("body_count"),
+      wasmBytes: () => kernel.call("wasm_bytes"),
+      gpu: () => viewer.memoryCounts(),
     },
   });
 
@@ -374,7 +377,8 @@ function mountSplitPane(id: WorkspaceId) {
     // as its observer was registered first), or, while the pane shows no 3D
     // view (Image's 2D view, a placeholder), when a 3D workspace comes in.
     const settled = new ResizeObserver(([entry]) => {
-      if (!entry || entry.contentRect.width === 0 || split?.view !== view) return;
+      if (split?.view !== view) return settled.disconnect(); // closed before it settled: let the view go
+      if (!entry || entry.contentRect.width === 0) return;
       settled.disconnect();
       split.settled = true;
       frameSplit();
@@ -889,8 +893,9 @@ for (const slot of ["browser", "properties"] as const) {
       const give = () => $("properties").querySelector<HTMLElement>("#feature-edit:not([hidden]) input")?.focus();
       give();
       // WebKit and Firefox lay the sheet out a frame later, and the row menu that chose Edit feature gives the focus back to
-      // its opener (in the sheet just put away) as it closes: try again while nothing has the focus.
-      for (const ms of [0, 100, 300]) setTimeout(() => (!document.activeElement || document.activeElement === document.body) && give(), ms);
+      // its opener (in the sheet just put away) as it closes, which WebKit can leave on the opener rather than the page:
+      // try again until the focus is inside the panel (a tap on one of its boxes puts it there for good).
+      for (const ms of [0, 50, 100, 200, 300, 500, 800]) setTimeout(() => !$("properties").querySelector("#feature-edit:not([hidden])")?.contains(document.activeElement) && give(), ms);
     } else if (!now && opened && open) {
       toggle.click();
       opened = false;

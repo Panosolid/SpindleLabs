@@ -46,6 +46,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       setView: (name: ViewName) => view.setView(name),
       fitSelection: () => view.fitSelection(),
       lookAt: (plane: Plane, side?: 1 | -1) => view.lookAt(plane, side),
+      editedScreenPoints: () => scene.editedScreenPoints(),
       showImage: (image: ImageRep | null) => view.showImage(image),
       clearImage: () => view.clearImage(),
       setOverlay: (overlay: AnalysisOverlay) => scene.setOverlay(overlay),

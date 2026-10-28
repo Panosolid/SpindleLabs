@@ -8,7 +8,11 @@ import { startKernel } from "./handshake.ts";
 import { kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
-const ready = init().then(() => startKernel(kernel.begin, release));
+let memory: WebAssembly.Memory | null = null;
+const ready = init().then((exports) => {
+  memory = exports.memory;
+  return startKernel(kernel.begin, release);
+});
 
 const ops = {
   kernel_version: () => kernel.kernel_version(),
@@ -26,6 +30,7 @@ const ops = {
   body_step: (body: BodyHandle) => kernel.body_step(body),
   body_free: (body: BodyHandle) => kernel.body_free(body),
   body_count: () => kernel.body_count(),
+  wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
 self.onmessage = async (event: MessageEvent<KernelRequest>) => {

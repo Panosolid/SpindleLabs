@@ -38,7 +38,7 @@ const VIEWS: readonly [ViewName, string, string][] = [
 ];
 
 /** Builds the bar; `showMode` lights the mode in use, `canLookAt` turns Look at on while there is a sketch plane to look at. */
-export function navBar(actions: NavBarActions): { element: HTMLElement; showMode(mode: NavMode): void; canLookAt(can: boolean): void } {
+export function navBar(actions: NavBarActions, signal?: AbortSignal): { element: HTMLElement; showMode(mode: NavMode): void; canLookAt(can: boolean): void } {
   const bar = document.createElement("div");
   bar.className = "view-controls";
   bar.setAttribute("role", "toolbar");
@@ -102,7 +102,7 @@ export function navBar(actions: NavBarActions): { element: HTMLElement; showMode
     };
     // A refusal (no click to allow it, a policy) changes nothing and the button stays as it was.
     full.addEventListener("click", () => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => show()));
-    document.addEventListener("fullscreenchange", show);
+    document.addEventListener("fullscreenchange", show, { signal }); // ended with its view (signal), or the document would keep the bar and its view alive
     show();
     screen.append(full);
   }

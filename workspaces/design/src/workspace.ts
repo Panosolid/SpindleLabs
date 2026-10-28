@@ -1001,7 +1001,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const anchor = editing && anchorOf(doc, editing.tool);
     if (!editing) return (typed.hide(), hint.hide());
     const width = viewport.element.clientWidth;
-    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y);
+    typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
     if (editing.pointer) hint.show(hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y);
     else hint.hide();
   }
