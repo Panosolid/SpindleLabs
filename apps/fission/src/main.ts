@@ -23,6 +23,7 @@ import { communityPage } from "@fission/community";
 import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { sheetDrag } from "./sheet-drag.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -968,6 +969,11 @@ $("workspace").addEventListener("properties-reveal", () => {
     setAssistant(false);
   });
 }
+// Dragging a sheet down by its handle puts it away too (src/sheet-drag.ts).
+sheetDrag(document, window.matchMedia("(max-width: 640px)"), (sheet) => {
+  if (sheet.id === "assistant") setAssistant(false);
+  else $(`${sheet.id}-toggle`).dispatchEvent(new CustomEvent("sheet-close"));
+});
 const pages: string[] = [...workspaces.map((w) => w.id), "community"];
 const fromHash = (): Page => {
   const id = location.hash.slice(1);
