@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { isHidden, isSketchItem, NAME_LIMIT, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -94,6 +94,7 @@ function withoutHidden(doc: DesignDocument, id: string): DesignDocument {
 export function hideBody(doc: DesignDocument, id: string, hide: boolean): DesignDocument {
   const item = itemIn(doc, id);
   if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
+  if (!makesBody(item)) throw new Error(`${itemName(item)} is a move, which has no body of its own to hide`);
   if (isHidden(doc, id) === hide) return doc;
   if (!hide) return withoutHidden(doc, id);
   const now = new Set([...(doc.hidden ?? []), id]);
@@ -107,6 +108,7 @@ export function hideBody(doc: DesignDocument, id: string, hide: boolean): Design
  * (27d); anything else is built from its inputs.
  */
 function link(doc: DesignDocument, f: Feature, on: Feature): string {
+  if (isMoveItem(f)) return "a move of";
   if (!isSketchItem(f)) return "built from";
   const plane = f.intent.parameters.plane;
   if (isFacePlane(plane) && faceFeature(plane) === on.id) return "drawn on a face of";

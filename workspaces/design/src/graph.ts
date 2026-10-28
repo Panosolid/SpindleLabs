@@ -1,7 +1,7 @@
 // Design's timeline in the project-wide dependency graph.
 
 import type { ChangeNotes, DependencyGraph, Feature } from "@fission/core";
-import { buildingItems, isSketchExtrude, isSketchItem, keptOf, partFeature, type DesignDocument } from "./document.ts";
+import { buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, partFeature, type DesignDocument } from "./document.ts";
 
 /** Graph id of the part's mass properties and mesh: cheap, rebuilt at once after every change. */
 export const PART_VIEW = "design.part-view";
@@ -14,7 +14,7 @@ export function changeWords(kind: string, removed = false): string {
 
 /** What a note calls a timeline item: a sketch or an extrude of one by its name ("Sketch 2", "Extrude 1"), a preset by its kind ("the box"). */
 export function itemCalled(f: Feature): string {
-  if (isSketchItem(f) || isSketchExtrude(f)) return f.provenance.self.label;
+  if (isSketchItem(f) || isSketchExtrude(f) || isMoveItem(f)) return f.provenance.self.label;
   return changeWords(f.intent.type).slice("you changed ".length);
 }
 

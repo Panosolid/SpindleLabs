@@ -5,7 +5,7 @@
 
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { buildingItems, isHidden, isSketchItem, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { buildingItems, isHidden, isSketchItem, makesBody, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -51,7 +51,7 @@ export function itemIcons(doc: Pick<DesignDocument, "profiles">): (f: Feature) =
  */
 export function bodyFeatures(document: DesignDocument): Feature[] {
   const building = buildingItems(document);
-  return document.timeline.features.filter((f) => !isSketchItem(f) && building.has(f));
+  return document.timeline.features.filter((f) => makesBody(f) && building.has(f));
 }
 
 /** No feature failed: the browser before any rebuild has answered. */

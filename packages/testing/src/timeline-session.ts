@@ -59,6 +59,7 @@ import {
   type PresetKind,
   type Rebuild,
   type TimelineModel,
+  type Vec3,
 } from "./timeline-model.ts";
 
 /** One random step. `pick` and `to` are fractions in [0, 1), resolved against the document when the step runs. */
@@ -99,7 +100,11 @@ export type WaitingOp =
   /** 39: an extrude of the `pick`th sketch that joins, cuts or intersects the bodies it overlaps. */
   | { op: "add-extrude-into"; pick: number; distance: number; operation: BooleanKind }
   /** 39: the `pick`th extrude's operation changed, a new body included. */
-  | { op: "set-extrude-operation"; pick: number; operation: BooleanKind | "new-body" };
+  | { op: "set-extrude-operation"; pick: number; operation: BooleanKind | "new-body" }
+  /** 35e2: a Move of the `pick`th built body before where it goes in, and, when `other` is a number, the `other`th of the rest too; turned `turnZ` degrees about the upright through `pivot`, then shifted. */
+  | { op: "add-move"; pick: number; other: number | null; shift: Vec3; turnZ: number; pivot: Point }
+  /** 35e2: the `pick`th Move's numbers changed. */
+  | { op: "set-move"; pick: number; shift: Vec3; turnZ: number; pivot: Point };
 
 /** One waiting move: when it turns on, how often it is drawn, and what the model and Design must answer once it does. */
 export interface WaitingMove {
@@ -117,6 +122,15 @@ export interface WaitingMove {
 
 const BOOLEAN_KINDS: readonly BooleanKind[] = ["join", "cut", "intersect"];
 
+/** A Move's numbers (35e2): a shift each way of whole mm, often none; a quarter turn half the time, a turn of any whole degree a fifth, none the rest; a pivot on the grid. */
+function moveNumbers(r: SeededRandom): { shift: Vec3; turnZ: number; pivot: Point } {
+  const along = () => (r.next() < 0.4 ? 0 : int(r, -40, 40));
+  const shift: Vec3 = [along(), along(), along()];
+  const t = r.next();
+  const turnZ = t < 0.5 ? pick(r, [90, 180, 270]) : t < 0.7 ? int(r, 1, 359) : 0;
+  return { shift, turnZ, pivot: [int(r, -30, 30), int(r, -30, 30)] };
+}
+
 /**
  * The moves Combine (35) and Extrude's operations (39) bring to the
  * timeline sessions, written before either exists, as the golden models
@@ -125,6 +139,23 @@ const BOOLEAN_KINDS: readonly BooleanKind[] = ["join", "cut", "intersect"];
  * on Design from 39b.
  */
 export const WAITING_MOVES: readonly WaitingMove[] = [
+  {
+    op: "add-move",
+    from: "35e2",
+    weight: 6,
+    does: "Move (35e2): pick one or two bodies shown before where the new item goes, type a shift and a turn about Z through a pivot; a new timeline item that makes no body.",
+    model:
+      "Each body it moves is turned about the upright through the pivot, then shifted, from the Move on: faces and edges keep their names, areas and lengths; centroids move. Greyed while a body it moves is suppressed or greyed, failed naming one deleted or not built, all or none (timeline-model.ts `moveBodies`).",
+    draw: (r) => ({ op: "add-move", pick: r.next(), other: r.next() < 0.3 ? r.next() : null, ...moveNumbers(r) }),
+  },
+  {
+    op: "set-move",
+    from: "35e2",
+    weight: 3,
+    does: "Edit a Move's numbers.",
+    model: "The bodies it moves are moved by the new numbers from the Move on, and everything after it (a sketch on a moved face, its extrude) follows.",
+    draw: (r) => ({ op: "set-move", pick: r.next(), ...moveNumbers(r) }),
+  },
   {
     op: "add-combine",
     from: "35",
@@ -416,6 +447,20 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
       const name = choose(faces, step.pick);
       return name ? { kind: "hold-ref", name } : null;
     }
+    case "add-move": {
+      // As in the app: bodies shown, built before where the new item goes.
+      const built = rebuild(doc);
+      const before = new Set(doc.items.slice(0, insertAt(doc)).map((i) => i.id));
+      const bodies = built.order.filter((id) => before.has(id) && built.results[id].status === "built" && (built.results[id] as { body?: unknown }).body !== undefined);
+      const first = choose(bodies, step.pick);
+      if (first === undefined) return null;
+      const second = step.other === null ? undefined : choose(bodies.filter((b) => b !== first), step.other);
+      return edit({ op: "add-move", bodies: second === undefined ? [first] : [first, second], shift: step.shift, turnZ: step.turnZ, pivot: step.pivot });
+    }
+    case "set-move": {
+      const m = choose(doc.items.filter((i) => i.kind === "move"), step.pick);
+      return edit(m && { op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot });
+    }
     case "add-combine":
     case "set-combine":
     case "add-extrude-into":
@@ -519,6 +564,10 @@ function translateOp(op: ConcreteOp, to: (id: string) => string): ConcreteOp {
       return { ...op, sketch: to(op.sketch), curve: to(op.curve) };
     case "marker":
       return { ...op, at: op.at === null || op.at === "start" ? op.at : to(op.at) };
+    case "add-move":
+      return { ...op, bodies: op.bodies.map(to) };
+    case "set-move":
+      return { ...op, item: to(op.item) };
     default:
       return op;
   }
