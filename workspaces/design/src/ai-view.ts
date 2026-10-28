@@ -13,7 +13,7 @@ import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
 import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable, RENAME_OP } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
-import { insertAt, isHidden, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
+import { insertAt, isHidden, isMoveItem, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
 import { addSketch } from "./sketch.ts";
@@ -182,6 +182,7 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     // 26e (Q3): built on a suppressed item, it is greyed with it.
     if (item.greyed !== null) return `${label} Greyed: builds nothing while ${item.greyed}, which it is built on, is suppressed.`;
     if (isSketchItem(f)) return `${label} A sketch: builds no body.`;
+    if (isMoveItem(f)) return `${label} A move: builds no body; ${item.failed ? "failed, so it moves nothing" : "the bodies it moves are where it puts them from here on"}.`;
     if (item.failed) return `${label} Failed: builds no body${failed.has(f.id) ? "" : " (its sketch is gone)"}.`;
     const kept = keptOf(doc, f) ? " Its sketch is lost (deleted, or no longer a closed outline), so it builds from the shape it kept." : "";
     const hidden = isHidden(doc, f.id) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";

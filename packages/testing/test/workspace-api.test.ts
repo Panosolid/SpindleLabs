@@ -504,7 +504,7 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   const groups = [...ctx.toolbar.querySelectorAll<HTMLElement>(":scope > [role=group], :scope > * > [role=group]")].filter((g) => g.closest(".menu-button-menu") === null);
   assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Modify", "Construct", "Inspect", "Insert", "Export"]);
   // The sketch's own toolbar (SF3b) is there too, hidden until a sketch is edited: its Create menu and tools first, Finish Sketch last.
-  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Modify", false], ["Construct", false], ["Inspect", false], ["Insert", false], ["Export", false], ["Finish", true]]);
+  assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Modify", false], ["Construct", false], ["Inspect", false], ["Insert", false], ["Export", false], ["Snapping", true], ["Finish", true]]);
   // Its File ▾ entries (U0f2a): New is on (the box is there to clear); Export STL is off, saying why, as the failed kernel built nothing.
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);

@@ -36,11 +36,11 @@ import { droppedNote, highlightOf, panelFocus, selectionRows, survivors } from "
 import { joinBodies, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
-import { PROJECT_AGAIN, projectedOpen, projectPick } from "./projection.ts";
-import { sketchEdgeTargets } from "./face-edges.ts";
+import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
+import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
-import { rounding, snapOnSketch, withSnap, type Snap } from "./snap.ts";
+import { rounding, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
@@ -69,6 +69,10 @@ let putAwayByRestore = false;
 let editingSketch: { id: string; grid: number; typed: string; tool: ToolKind } | null = null;
 /** Grid snap on or off (sketch feel SF1; off by default: points go where you click), kept for every sketch until the page reloads. */
 let gridSnap = DEFAULT_GRID_SNAP;
+/** How long (ms) Ctrl or Cmd is held with no other key before the snap under a still pointer goes: long enough for a shortcut's second key. */
+const HELD_SHOW_MS = 150;
+/** The Snap button on the sketch's toolbar: snapping to points, edges and line-ups on (the default) or off, kept for every sketch until the page reloads. */
+let snapOn = true;
 /** The properties' fold a new mount starts with (U0b): the user's pin, kept across Undo, Redo and switching; null until the first mount reads it from storage. */
 let foldKept: FoldState | null = null;
 /** How many times Design has framed the part, read by the e2e test (an undo must not add one). */
@@ -681,6 +685,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * not rebuilt since, the frame it was made in).
    */
   const edgeTargets = (id: string) => sketchEdgeTargets(designDoc(), id, lastScene, sketchPlane(designDoc(), id, placedNow));
+  /** The body edges sketch `id` lands on part way along ("on edge", projection.ts `sketchEdgeCurves`) and the corners in its plane it lines up with. */
+  const bodySnaps = (id: string): BodySnaps => {
+    const plane = sketchPlane(designDoc(), id, placedNow);
+    return { curves: sketchEdgeCurves(designDoc(), id, lastScene, plane), corners: sketchPlaneCorners(designDoc(), id, lastScene, plane) };
+  };
+  /** Ctrl (Cmd on a Mac) held over the view: snapping and the grid are off while it is (snap.ts `snapsNow`). */
+  let modHeld = false;
+  /** Where the pointer landed on `doc`'s sketch for `tool`: snap.ts `snapOnSketch` with the body's corners and edges, unless snapping is off now. */
+  const snapHere = (doc: DesignDocument, tool: SketchTool, at: SketchXY, rounded: SketchXY, pixel: number | undefined, edges = edgeTargets(tool.sketch), held = modHeld) =>
+    snapOnSketch(doc, tool, at, rounded, pixel, edges, bodySnaps(tool.sketch), snapsNow(snapOn, held, gridSnap).points);
   /** The bar's item whose ⋯ shows (a click or tap picked it). */
   let picked: string | null = null;
   /** The sketch being edited, whose own Suppress and Delete are off. */
@@ -967,7 +981,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     lookAt: () => lookAtSketch(),
   });
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch() });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on) });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1240,6 +1254,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketchBox.showEditing(sketchItem(doc, editingSketch.id).provenance.self.label, editingSketch.typed, gridSnap, editingSketch.tool);
     modelling(false);
     sketchBar.show(editingSketch.tool);
+    sketchBar.showSnap(snapOn);
     drawSketches();
     showBar(doc); // the playback buttons that would roll the sketch back are off (24f5)
     void showOutline();
@@ -1317,6 +1332,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketchBox.showError("");
     mode.grid = sketch.grid = grid;
     sketch.typed = typed;
+    drawSketches();
+  }
+
+  /** The Snap button pressed: snapping to points, edges and line-ups on or off, from the snap shown now. */
+  function setSnapOn(on: boolean) {
+    snapOn = on;
+    sketchBar.showSnap(on);
+    if (mode.kind === "edit") mode.snap = null;
+    if (mode.kind === "edit" && lastHover) onSketchPointer(lastHover);
     drawSketches();
   }
 
@@ -1697,8 +1721,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /** The pointer rounded by the kernel: onto the grid with grid snap on, else where it is to within half a pixel (snap.ts `rounding`). */
-  const roundPointer = (at: SketchXY, grid: number, pixel: number | undefined): Promise<SketchXY> => {
-    const r = rounding(at, grid, gridSnap, pixel);
+  const roundPointer = (at: SketchXY, grid: number, pixel: number | undefined, held = modHeld): Promise<SketchXY> => {
+    const r = rounding(at, grid, snapsNow(snapOn, held, gridSnap).grid, pixel);
     return r.op === "snap_to_grid" ? kernel.call("snap_to_grid", ...r.args) : kernel.call("place_freely", ...r.args);
   };
   /** The pointer's moves counted, the pointer leaving the view among them: a move's rounding answered after a later move is dropped, so it never shows a snap where the pointer was. */
@@ -1710,6 +1734,32 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * on the way), or null: an Enter places from where the pointer was as Enter was pressed, once that move is rounded.
    */
   let lastMove: { at: SketchXY; pixel: number | undefined; rounded: Promise<SketchXY> } | null = null;
+  /** The pointer's last move over the sketch, snapped again when Ctrl or Cmd is pressed or let go with the pointer still. */
+  let lastHover: SketchPointer | null = null;
+  /** A press of Ctrl or Cmd waiting to show: dropped when another key follows, a shortcut like Ctrl+Z rather than a hold. */
+  let heldShow: ReturnType<typeof setTimeout> | undefined;
+  /** Another key pressed while Ctrl or Cmd is held (a shortcut, not a hold). */
+  let chord = false;
+  /**
+   * Ctrl or Cmd pressed or let go: the snap under a still pointer shows the change, as Fusion's does. A press shows it
+   * after HELD_SHOW_MS unless another key comes first, and a release after another key shows nothing until the pointer
+   * moves, so Ctrl+Z never snaps a hover again just as Undo puts the sketch state away (a hover answered after Undo
+   * would draw the old tool on the new document: sketch-session.mjs, seed 1).
+   */
+  const onHeldKey = (e: KeyboardEvent) => {
+    clearTimeout(heldShow);
+    const now = e.ctrlKey || e.metaKey;
+    if (now && e.type === "keydown" && e.key !== "Control" && e.key !== "Meta") chord = true;
+    if (now === modHeld) return;
+    modHeld = now;
+    const show = () => {
+      if (shown && mode.kind === "edit" && lastHover) onSketchPointer(lastHover);
+    };
+    // Let go after a shortcut: the next pointer move shows the snap, never a hover snapped while the shortcut's change lands.
+    if (now) heldShow = setTimeout(show, HELD_SHOW_MS);
+    else if (!chord) show();
+    if (!now) chord = false;
+  };
   /** Clicks are handled one after another, each on the document the last one left. */
   let clicks = Promise.resolve();
   /** How many clicks (typed Enters and projections too) wait their turn: Finish Sketch waits for them. */
@@ -1732,6 +1782,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return drawSketches();
     }
     if (pointer.kind === "move") {
+      lastHover = at ? pointer : null;
       const move = ++moves;
       if (!at) {
         mode.pointer = mode.snap = null;
@@ -1746,7 +1797,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       void rounded.then((value) => {
         if (move !== moves || mode.kind !== "edit") return;
         hovered = { move, at, rounded: value, pixel: pointer.pixel };
-        mode.snap = snapOnSketch(designDoc(), mode.tool, at, value, pointer.pixel, edgeTargets(mode.tool.sketch));
+        mode.snap = snapHere(designDoc(), mode.tool, at, value, pointer.pixel);
         mode.pointer = mode.snap.at;
         mode.pixel = pointer.pixel;
         drawSketches();
@@ -1757,13 +1808,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const changes = toolChanges;
     // What is typed as the click is made (hunt 26h): the kernel may answer after more is typed, which is for the next point.
     const took = locks;
+    // Ctrl or Cmd as the click is made: the kernel may answer after it is let go.
+    const held = modHeld;
     const movedAt = moves;
     lastMove = null; // an Enter from now on places from this click's point, or from a hover after it
     inTurn(async () => {
       if (mode.kind !== "edit") return;
       let rounded: SketchXY;
       try {
-        rounded = await roundPointer(at, mode.grid, pointer.pixel);
+        rounded = await roundPointer(at, mode.grid, pointer.pixel, held);
       } catch (e) {
         return sketchBox.showError(e instanceof Error ? e.message : String(e));
       }
@@ -1771,7 +1824,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (mode.kind !== "edit" || toolChanges !== changes) return;
       // The click lands where the hover showed it would: where it was rounded to (free or on the grid), or on the point or line-up snap.ts finds.
       const edges = edgeTargets(mode.tool.sketch);
-      const snapped = snapOnSketch(designDoc(), mode.tool, at, rounded, pointer.pixel, edges).at;
+      const snapped = snapHere(designDoc(), mode.tool, at, rounded, pointer.pixel, edges, held).at;
       // A typed size overrules the pointer for what it locks (SF4): the point goes where the locks put it, exactly.
       const aim = aimOf(designDoc(), mode.tool, snapped, took);
       if (!aim) return sketchBox.showError(NO_AIM);
@@ -1796,7 +1849,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // click has it (the click waited its turn behind the kernel while the pointer moved on: hunt 26h), else still at
       // the click. (A finger has left the view by now, and this keeps the hint and the boxes by the tap; sketch-hover.journey.ts.)
       const now = hovered !== null && hovered.move > movedAt ? hovered : { at, rounded, pixel: pointer.pixel };
-      mode.snap = snapOnSketch(done.doc, done.tool, now.at, now.rounded, now.pixel, edges);
+      mode.snap = snapHere(done.doc, done.tool, now.at, now.rounded, now.pixel, edges);
       mode.pointer = mode.snap.at;
       mode.pixel = now.pixel;
       if (done.drew) applySketchEdit(next, drawStep(done.tool), done.tool.sketch);
@@ -1870,7 +1923,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (from) {
         const rounded = await from.rounded.catch(() => null);
         if (mode.kind !== "edit" || toolChanges !== changes) return;
-        if (rounded) pointer = snapOnSketch(designDoc(), mode.tool, from.at, rounded, from.pixel, edgeTargets(mode.tool.sketch)).at;
+        if (rounded) pointer = snapHere(designDoc(), mode.tool, from.at, rounded, from.pixel).at;
       }
       const aim = aimOf(designDoc(), mode.tool, pointer, took);
       if (!aim) return (sketchBox.showError(NO_AIM), giveBack());
@@ -1896,6 +1949,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     });
   }
   const onViewportMove = (e: PointerEvent) => {
+    modHeld = e.ctrlKey || e.metaKey;
     if (e.target instanceof Node && typed.element.contains(e.target)) return; // over the boxes themselves: they stay put
     const r = viewport.element.getBoundingClientRect();
     screen = { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -1926,6 +1980,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showExtrudeView();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
+    globalThis.addEventListener?.("keydown", onHeldKey);
+    globalThis.addEventListener?.("keyup", onHeldKey);
     if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
     drawSketches();
     stopWatching = ctx.selection.onChange(() => {
@@ -1947,6 +2003,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showExtrude(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
+    globalThis.removeEventListener?.("keydown", onHeldKey);
+    globalThis.removeEventListener?.("keyup", onHeldKey);
+    clearTimeout(heldShow);
     typed.hide();
     hint.hide();
     showStart(); // hidden while asleep; wake shows it again if it still applies
