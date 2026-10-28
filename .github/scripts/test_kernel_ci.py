@@ -99,3 +99,65 @@ class Describe(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Save(unittest.TestCase):
+    """kernel_ci.sh save against a local bare repo standing in for
+    kernel-results (RESULTS_REPO)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        t = self.tmp.name
+        self.remote = os.path.join(t, "results.git")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.remote], check=True)
+        seed = os.path.join(t, "seed")
+        subprocess.run(["git", "clone", "-q", self.remote, seed], check=True, capture_output=True)
+        open(os.path.join(seed, "README"), "w").close()
+        git = ["git", "-C", seed, "-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(git + ["add", "README"], check=True)
+        subprocess.run(git + ["commit", "-qm", "seed"], check=True)
+        subprocess.run(git + ["push", "-q", "origin", "HEAD:main"], check=True, capture_output=True)
+        self.logs = os.path.join(t, "logs")
+        os.makedirs(os.path.join(self.logs, "release"))
+        with open(os.path.join(self.logs, "tests.log"), "w") as f:
+            f.write("all passed\n")
+
+    def save(self):
+        env = dict(os.environ, RESULTS_REPO=self.remote, RESULTS_PATH="ci/pr-3/abc/1-1", LABEL="pr-3", HEAD_SHA="abc")
+        return subprocess.run(["bash", SCRIPT, "save", "checks", self.logs], capture_output=True, text=True, env=env)
+
+    def saved(self):
+        return subprocess.run(["git", "-C", self.remote, "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True, check=True).stdout.split()
+
+    def test_files_over_50_mb_stay_behind_and_are_counted(self):
+        # 50 MiB + 1 byte is over the limit (find -size +50M counts whole
+        # MiB: over 50 means at least 50 MiB + 1 byte); exactly 50 MiB is
+        # not. Sparse files, so the test writes almost nothing.
+        for name, size in [("release/plain.jsonl", 50 * 2**20 + 1), ("release/at-limit.bin", 50 * 2**20)]:
+            with open(os.path.join(self.logs, name), "wb") as f:
+                f.truncate(size)
+        out = self.save()
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, "saved checks (1 over 50 MB left out)\n")
+        files = self.saved()
+        self.assertIn("ci/pr-3/abc/1-1/checks/tests.log", files)
+        self.assertIn("ci/pr-3/abc/1-1/checks/release/at-limit.bin", files)
+        self.assertNotIn("ci/pr-3/abc/1-1/checks/release/plain.jsonl", files)
+
+    def test_small_logs_save_with_no_note(self):
+        out = self.save()
+        self.assertEqual((out.returncode, out.stdout), (0, "saved checks\n"))
+        self.assertIn("ci/pr-3/abc/1-1/checks/tests.log", self.saved())
+
+    def test_a_refused_push_says_why_without_naming_files(self):
+        # The way GitHub refuses a file over 100 MB, from a hook.
+        hook = os.path.join(self.remote, "hooks", "pre-receive")
+        with open(hook, "w") as f:
+            f.write("#!/bin/sh\necho 'error: GH001: Large files detected.' >&2\n"
+                    "echo 'error: File ci/pr-3/abc/1-1/checks/secret_name.rs is 1242 MB; this exceeds the limit' >&2\nexit 1\n")
+        os.chmod(hook, 0o755)
+        out = self.save()
+        self.assertEqual(out.returncode, 1)
+        self.assertEqual(out.stdout, "could not save checks (GH001,exceeds,rejected)\n")
+        self.assertNotIn("secret_name", out.stdout + out.stderr)

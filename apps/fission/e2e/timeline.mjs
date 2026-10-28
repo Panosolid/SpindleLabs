@@ -1020,7 +1020,8 @@ try {
       const box = await page.locator("#feature-edit").boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width, `the panel fits across the screen: ${JSON.stringify(box)}`);
       // The first box has the keys: typing goes into it.
-      assert.equal(await page.evaluate(() => document.activeElement?.id), "edit-width");
+      // (On a phone the sheet opens a moment before the box can take the keys, so wait for them.)
+      await until(page, () => document.activeElement?.id === "edit-width", null, "the first box has the keys");
 
       // 2. A height of 0: the kernel's words, nothing recorded, the panel stays open.
       await page.fill("#edit-height", "0");
