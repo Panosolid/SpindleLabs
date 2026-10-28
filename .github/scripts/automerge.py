@@ -486,7 +486,10 @@ def run_queue(gh, dry_run=False, log=print, now=None, files_for=conflicted_files
 
 
 def note_dequeued(gh, number, head_sha, reason, dry_run=False, log=print):
-    """One comment per head when the queue removes a pull request."""
+    """One comment per head when the queue removes a pull request; none when
+    it left because it merged (reason MERGE), which isn't a failure."""
+    if reason == "MERGE":
+        return False
     comments = bot_comments(gh, number)
     if any(DEQUEUED.format(head_sha) in c for c in comments):
         return False
