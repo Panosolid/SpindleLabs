@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { licencesPlugin } from "./licences.mjs";
+import { offlinePlugin } from "./offline.mjs";
 
 export default defineConfig({
   // Relative paths so the built site works from any URL, including GitHub Pages.
@@ -7,5 +8,6 @@ export default defineConfig({
   // The kernel worker imports the wasm-bindgen ES module.
   worker: { format: "es", plugins: () => [licencesPlugin({ emit: false })] },
   // third-party-licences.txt beside the app, checked against what is bundled (audit L2).
-  plugins: [licencesPlugin({ emit: true })],
+  // sw.js, written last from every file of the build (offline mode, offline.mjs).
+  plugins: [licencesPlugin({ emit: true }), offlinePlugin()],
 });
