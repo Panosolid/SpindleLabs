@@ -8,6 +8,7 @@ End goal, a world-class free CAD suite anyone can use instead of a paid subscrip
 - The best integration of any creative and making tools: ten workspaces (Design, Render, Simulate, Manufacture, Laser, Slice, Circuit, Vector, Image, Layout) sharing one project, live-linked, with lossless round trips and no exporting files between them. This is the flagship, so moving a design between workspaces should feel like one tool; it never comes at the cost of CAD reliability or slows the kernel roadmap (rules: packages/CLAUDE.md, "Ecosystem"; reasons: docs/integration.md).
 - An optional AI assistant that costs us nothing to run (the user picks the provider), only issues the same commands a user could, previews everything, and never controls a machine.
 - Free community sharing, no payments anywhere. A licence is chosen once the CAD is decent (the owner's call; not yet).
+- Headline features, launch-critical ("the CAD that knows your printer"): a print check toggle while designing (supports needed, thin walls, weak spots), a print preview with a time-lapse, slice and send to the printer in one go (the file always works), a strength check labelled an estimate, and AI that builds simple parts fast. They are H1–H5 at the top of `docs/roadmap.md`: a step that moves one forward says so in its pull request, and a step that would delay or shrink one stops and tells the coordinator.
 
 ## Top rules
 

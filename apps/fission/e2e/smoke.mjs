@@ -838,12 +838,12 @@ try {
     const f = await downloadStl();
     // 12 triangles: 84 + 12 × 50 = 684 bytes. Corners 0/40, 0/30, 0/20 are
     // exact in single precision, so the volume is exactly 40 × 30 × 20.
-    assert.equal(f.name, "fission-box.stl");
+    assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.header, "SpindleLabs STL:");
     assert.equal(f.size, 684);
     assert.equal(f.tris.length, 12);
     assert.equal(stlVolume(f.tris), 24000);
-    assert.equal(await text("action-note"), "");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
   });
 
   await check("a selected body offers Download STL from the action registry, and it saves the same file", async () => {
@@ -856,10 +856,10 @@ try {
     assert.deepEqual(await verbs(), [["Download STL", "design.download-stl"]]);
     assert.equal(await page.isVisible("#selection-actions"), true);
     const f = await downloadStl("#selection-actions [data-action='design.download-stl']");
-    assert.equal(f.name, "fission-box.stl");
+    assert.equal(f.name, "spindlelabs-box.stl");
     assert.equal(f.size, 684);
     assert.equal(stlVolume(f.tris), 24000); // 40 × 30 × 20, exact in single precision
-    assert.equal(await text("action-note"), "");
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl.");
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.body.dataset.selection === "");
     assert.deepEqual(await verbs(), []);
@@ -879,7 +879,7 @@ try {
     assert.ok(Number.isInteger(n) && n >= 3, `${f.tris.length} triangles`);
     const expected = (n / 2) * 400 * Math.sin((2 * Math.PI) / n) * 20;
     assert.ok(Math.abs(stlVolume(f.tris) - expected) <= 1e-6 * expected, `${stlVolume(f.tris)} vs ${expected}`);
-    assert.equal(f.name, "fission-cylinder.stl");
+    assert.equal(f.name, "spindlelabs-cylinder.stl");
   });
 
   await check("a part too big for single precision is exported with a warning", async () => {
@@ -923,7 +923,7 @@ try {
     // Only the red X axis line is left (a few dozen pixels).
     assert.ok((await amber()) < 1000, `nothing amber once the overlay is cleared (${await amber()} px)`);
     await downloadStl();
-    assert.equal(await text("action-note"), ""); // the warning goes once the part fits again
+    assert.equal(await text("action-note"), "Exported spindlelabs-box.stl."); // the warning goes once the part fits again
   });
 
   await check("DESIGN ▾ names Design and lists the ten workspaces, Design first and marked, the eight not built yet greyed with Coming soon", async () => {
@@ -1255,8 +1255,8 @@ try {
     // V = 50·30·20 = 30000.
     await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
-    assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
-    const saved = "e2e/saved.spindlelabs.json";
+    assert.equal(download.suggestedFilename(), "Untitled.spindle");
+    const saved = "e2e/saved.spindle";
     await download.saveAs(saved);
     const file = JSON.parse(readFileSync(saved, "utf8"));
     assert.equal(file.formatVersion, 2);
@@ -1311,7 +1311,7 @@ try {
       assert.equal(await kept.evaluate(() => document.body.dataset.projectId), id, "the same stored project");
       assert.equal(await kept.textContent("#save-status"), "Saved");
       // Opening a file makes a new stored project; the autosaved one is kept.
-      await kept.setInputFiles("#open-file", "e2e/saved.spindlelabs.json");
+      await kept.setInputFiles("#open-file", "e2e/saved.spindle");
       await kept.waitForFunction((old) => document.body.dataset.projectId !== old, id);
       await kept.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
       const stored = await kept.evaluate(async () => {
@@ -1362,7 +1362,7 @@ try {
       await kept.reload({ waitUntil: "domcontentloaded" });
       const download = kept.waitForEvent("download");
       await kept.click("#save");
-      const wide = JSON.parse(readFileSync("e2e/saved.spindlelabs.json", "utf8"));
+      const wide = JSON.parse(readFileSync("e2e/saved.spindle", "utf8"));
       wide.workspaces.design.timeline.features[0].intent.parameters.width = 60;
       await kept.setInputFiles("#open-file", { name: "wide.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(wide)) });
       await holder.evaluate(() => (window.release = true));
@@ -1603,7 +1603,7 @@ try {
       await bare.waitForFunction(() => document.querySelector("#volume")?.textContent === "30,000 mm³");
       assert.equal(await bare.textContent("#save-status"), "");
       const [download] = await Promise.all([bare.waitForEvent("download"), bare.click("#save")]);
-      assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
+      assert.equal(download.suggestedFilename(), "Untitled.spindle");
     } finally {
       await bare.close();
     }
