@@ -1,0 +1,2 @@
+Monkey, seeds 202610260-202610261: 2 session(s) of 2000 actions in Chromium; 1 FAILED
+failure: save: Save wrote a file that is not JSON (Unexpected token 'S', "SpindleLab"... is not valid JSON) | seed 202610261 at action 1634; replay: cd apps/fission && npm run build && FISSION_SEED=202610261 MONKEY_STEPS=2000 node e2e/monkey.mjs
