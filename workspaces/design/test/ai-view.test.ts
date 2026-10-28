@@ -71,7 +71,7 @@ test("hand-worked: the marker on a preset, so set_part changes it in place, and 
     `${SLOT} Builds Body 3. This is the part set_part changes.`,
     `${SPHERE} After the timeline marker: not built.`,
     "The timeline marker is after item 6: items after it are not built.",
-    "set_part changes the part in place.",
+    "set_part changes the part in place, unless extrude_sketch comes before it in the same answer: the extruded body is then the part, so set_part adds a new body after it.",
     "A size set_part leaves out keeps the value it has now: width 60, depth 20, height 5.",
     // AI7a: two sketches are there, so the next is Sketch 3, put in at the marker: insertAt = 6, so item 7 after item 6.
     `create_sketch adds an empty Sketch 3 as item 7, after ${SLOT.slice(0, -1)}, and opens it; nothing already in the timeline changes.`,

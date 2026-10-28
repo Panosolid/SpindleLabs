@@ -165,6 +165,9 @@ function sketchNotes(doc: DesignDocument | undefined, faces: readonly AIFace[], 
   ];
 }
 
+/** What set_part does when the part is a preset, unless an extrude in the same answer has made its body the part. */
+const IN_PLACE = "set_part changes the part in place, unless extrude_sketch comes before it in the same answer: the extruded body is then the part, so set_part adds a new body after it.";
+
 /** The prompt's lines about the timeline: each item and its state, the marker, and what set_part does now. */
 function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: PanelSizes, adds: string | null): string[] {
   const { features, marker } = doc.timeline;
@@ -190,7 +193,8 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     marker === undefined ? "The timeline marker is at the end: every item is built." : marker === "start" ? "The timeline marker is at the start: nothing is built." : `The timeline marker is after item ${features.findIndex((f) => f.id === marker) + 1}: items after it are not built.`;
   // The part an extruded sketch: named, so the model knows what the user calls "it" and that set_part leaves it as it is.
   const what = part === null ? "Nothing builds a body, so" : `The part (the last body) is ${features.indexOf(part) + 1}. ${part.intent.summary}, an extruded sketch, which no command you can use changes, so`;
-  const does = adds === null ? "set_part changes the part in place." : `${what} set_part adds ${adds}; nothing already in the timeline changes.`;
+  // An extrude earlier in the same answer makes its body the part, so a set_part after it adds one (sweep 2026-10-28: the note said "in place").
+  const does = adds === null ? IN_PLACE : `${what} set_part adds ${adds}; nothing already in the timeline changes.`;
   return [
     "The design's timeline, in build order:",
     ...shown,
