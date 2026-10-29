@@ -323,7 +323,8 @@ jobs:
 
   collect:
     needs: [gate, journeys, golden, golden-step, monkey, ts-mutants]
-    if: always() && needs.gate.outputs.run == 'true'
+    # Also when the gate itself failed: its red job is filed like any other (it was red on the Actions tab only).
+    if: always() && (needs.gate.outputs.run == 'true' || needs.gate.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

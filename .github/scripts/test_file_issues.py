@@ -342,6 +342,27 @@ class Checks(unittest.TestCase):
         self.assertEqual([k for k, _ in check_kinds({"journeys/report.txt": "FAIL a: 5 clicks\n"}, {"journeys": "failure", "new-job": "failure"}, set())],
                          ["check journeys: a: # clicks", "check the new-job job failed with nothing more specific reported"])
 
+    def test_weak_spot_hunt_10_29_red_jobs_are_not_hidden(self):
+        red = lambda job: f"check the {job} job failed with nothing more specific reported"
+        kinds = lambda *a: [k for k, _ in check_kinds(*a)]
+        # A matrix leg that crashed (its folder came in with no kind) beside a leg that found something: filed.
+        self.assertEqual(kinds({}, {"test": "failure"}, {"endless-a-1"}, ["endless-a-1", "endless-a-2"]), [red("test")])
+        _, example = check_kinds({}, {"test": "failure"}, {"endless-a-1"}, ["endless-a-1", "endless-a-2"])[0]
+        self.assertEqual(example, "job test: failure (no kind from endless-a-2)")
+        # Every leg that came in gave a kind: explained, not filed twice.
+        self.assertEqual(kinds({}, {"test": "failure"}, {"endless-a-1", "endless-a-2"}, ["endless-a-1", "endless-a-2"]), [])
+        # "fuzz-sessions" is its folder exactly: the oracle's folder doesn't explain a red sessions job...
+        self.assertEqual(kinds({}, {"sessions": "failure"}, {"fuzz-sessions-oracle"}, ["fuzz-sessions-oracle"]), [red("sessions")])
+        # ...and explains its own job (it was missing from JOB_DIRS, so a second, misleading issue was filed), as golden/ does golden-step's.
+        self.assertEqual(kinds({}, {"sessions-oracle": "failure"}, {"fuzz-sessions-oracle"}, ["fuzz-sessions-oracle"]), [])
+        self.assertEqual(kinds({}, {"golden-step": "failure"}, {"golden"}, ["golden"]), [])
+        # The soak's problems are kinds of their own, beside a journey FAIL, numbers out.
+        soak = json.dumps({"seed": 7, "problems": ["heap grew 12 MB over 60 cycles"]})
+        self.assertEqual(kinds({"journeys/report.txt": "FAIL a: 5 clicks\n", "journeys/soak.json": soak}, {"journeys": "failure"}, set()),
+                         ["check journeys: a: # clicks", "check soak: heap grew # MB over # cycles"])
+        # A soak file that isn't JSON (cut off) is no kind and no crash: the red job is filed as before.
+        self.assertEqual(kinds({"journeys/soak.json": "{"}, {"journeys": "failure"}, set()), [red("journeys")])
+
     def test_check_texts_and_the_whole_run(self):
         kind = "check the golden job failed with nothing more specific reported"
         title, body = texts("create", kind, [("run", "job golden: failure")], "u", "c", "main")
@@ -409,6 +430,41 @@ class Locking(unittest.TestCase):
         self.assertEqual(calls[-1], ("issue", "lock", "7"))
         calls, _ = self.run_with([issue(7, self.K, "CLOSED", "COMPLETED")])
         self.assertEqual([c[:2] for c in calls[-3:]], [("issue", "reopen"), ("issue", "comment"), ("issue", "lock")])
+
+    def test_one_refused_gh_call_skips_only_its_kind_and_the_run_ends_red(self):
+        # Weak-spot hunt 10-29: the first refused `gh issue create` stopped the whole night's filing, and the job stayed
+        # green. Three kinds, the first create refused: all three are tried, then FilingFailed names the one.
+        import subprocess
+        import file_issues
+        calls = []
+
+        def fake_gh(*args, stdin=None):
+            calls.append(args)
+            if args[:2] == ("issue", "list"):
+                return "[]"
+            if args[:2] == ("issue", "create") and sum(c[:2] == ("issue", "create") for c in calls) == 1:
+                raise subprocess.CalledProcessError(1, "gh", stderr="rate limited")
+            return "https://github.com/Panosolid/fission/issues/9\n"
+        kinds = {"kind one": [("1", "e")], "kind two": [("2", "e")], "kind three": [("3", "e")]}
+        saved = file_issues.gh, file_issues.gather, file_issues.read_folders, dict(os.environ)
+        file_issues.gh, file_issues.gather = fake_gh, lambda folders, checks=(): kinds
+        file_issues.read_folders = lambda incoming: []
+        os.environ.update(RUN_URL="u", COMMIT="c", BRANCH="main", GH_TOKEN="t")
+        logs = []
+        try:
+            with self.assertRaises(file_issues.FilingFailed) as caught:
+                file_issues.run("unused", log=logs.append)
+        finally:
+            file_issues.gh, file_issues.gather, file_issues.read_folders = saved[:3]
+            os.environ.clear()
+            os.environ.update(saved[3])
+        self.assertEqual(sum(c[:2] == ("issue", "create") for c in calls), 3, "every kind tried")
+        self.assertEqual(len(caught.exception.kinds), 1)
+        self.assertTrue(any("rate limited" in line for line in logs))
+
+    def test_no_incoming_folder_is_nothing_to_read(self):
+        import file_issues
+        self.assertEqual(file_issues.read_folders("/nonexistent-incoming"), {})
 
     def test_an_already_locked_issue_only_logs(self):
         calls, logs = self.run_with([issue(7, self.K)], lock_fails=True)
