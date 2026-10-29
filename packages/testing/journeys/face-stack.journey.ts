@@ -105,7 +105,7 @@ test("hand-worked: a tiny face far from its sketch's origin keeps its area and m
 
 test("the checks' tolerances: 0.9× passes, 1.1× fails (volume and area 1e-9 relative, lengths 1e-9 × the chain's size)", async () => {
   // One block, 30 × 20 × 10 on XY: volume 6000, its corner (30, 20, 10) at the top.
-  let doc = readDesignDocument({ version: 3, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
+  let doc = readDesignDocument({ version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
   const s = addSketch(doc);
   doc = s.doc;
   const c = square(0, 0, 30, 20);

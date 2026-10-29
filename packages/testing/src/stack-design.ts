@@ -182,7 +182,7 @@ export async function runStack(kernel: KernelCalls, chain: StackChain, opts: { l
   const editCount = opts.edits ?? chain.edits.length;
   const startCount = await kernel.call("body_count");
   const cache = new BodyCache(kernel);
-  let doc: DesignDocument = readDesignDocument({ version: 3, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
+  let doc: DesignDocument = readDesignDocument({ version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
   const saveF = (d: DesignDocument) => (faults.has("save-drops-flip") ? save({ ...d, timeline: { ...d.timeline, features: d.timeline.features.map((f) => (f.intent.type === "extrude" ? { ...f, intent: { ...f.intent, parameters: Object.fromEntries(Object.entries(f.intent.parameters).filter(([k]) => k !== "flip")) } } : f)) } }) : save(d));
   const history = createHistory({ capture: () => saveF(doc), restore: (s) => void (doc = open(s)), mergeMs: 0 });
   /** Each history entry's fingerprint, by entry. */
