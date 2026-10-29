@@ -371,7 +371,7 @@ test("tools: Escape ends what is part way, switching starts afresh, L, R, C, A, 
   assert.equal(toolBusy(freshCircle().tool), false);
   assert.equal(toolBusy(clickAt(freshCircle().doc, freshCircle().tool, [0, 0]).tool), true, "a centre down");
   assert.deepEqual(startTool("arc", "sketch-2"), { kind: "arc", sketch: "sketch-2", start: null, end: null });
-  assert.deepEqual(SKETCH_TOOLS.map((t) => [t.kind, t.key]), [["line", "L"], ["rectangle", "R"], ["circle", "C"], ["arc", "A"], ["centre", undefined], ["tangent", "T"], ["project", "P"]]);
+  assert.deepEqual(SKETCH_TOOLS.map((t) => [t.kind, t.key]), [["line", "L"], ["rectangle", "R"], ["circle", "C"], ["arc", "A"], ["centre", undefined], ["tangent", undefined], ["project", "P"]]);
   // 27d: the Project tool places nothing, so nothing is ever part way.
   assert.deepEqual(startTool("project", "sketch-2"), { kind: "project", sketch: "sketch-2" });
   assert.equal(toolBusy(startTool("project", "sketch-2")), false);

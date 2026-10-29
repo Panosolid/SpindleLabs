@@ -19,7 +19,7 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui";
+import { commandSearch, iconSvg, toolGroup, type Command as SearchCommand, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
@@ -99,7 +99,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -118,22 +118,16 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   const create = button("create-sketch", "Create sketch", sketchTitle, onSketch);
   create.dataset.modelling = ""; // hidden while a sketch is edited (SF3b): the sketch's toolbar stands in
   const extrude = button("extrude", "Extrude", extrudeTitle, onExtrude);
-  const creating = toolGroup(document, {
-    name: "Create",
-    menu: {
-      id: "create-menu",
-      title: "Every way to make a solid, by name",
-      sections: () => [
-        {
-          items: [
-            { id: "create-menu-sketch", label: "Create sketch", icon: "sketch", title: sketchTitle, run: onSketch },
-            { id: "create-menu-extrude", label: "Extrude", icon: "extrude", title: extrudeTitle, run: onExtrude },
-          ],
-        },
-        { items: comingItems("Create") },
+  const createSections = (): MenuSection[] => [
+    {
+      items: [
+        { id: "create-menu-sketch", label: "Create sketch", icon: "sketch", title: sketchTitle, run: onSketch },
+        { id: "create-menu-extrude", label: "Extrude", icon: "extrude", key: "E", title: extrudeTitle, run: onExtrude },
       ],
     },
-  });
+    { items: comingItems("Create") },
+  ];
+  const creating = toolGroup(document, { name: "Create", menu: { id: "create-menu", title: "Every way to make a solid, by name", sections: createSections } });
   creating.add([create, "sketch"], [extrude, "extrude"]);
   // While a sketch is edited its own Create ▾ stands in, and Extrude (kept, SF3b) sits over the plain name Solid.
   creating.menu!.element.dataset.modelling = "";
@@ -148,10 +142,8 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // The body facts (volume, area, faces), from the properties panel, folded since U0b.
   const facts = button("inspect-facts", "Body facts", "Body facts: the volume, area and faces of what is built, in the properties.", () => inspect.facts());
   facts.disabled = true; // until a body is built (workspace: after each build)
-  const inspecting = toolGroup(document, {
-    name: "Inspect",
-    menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: () => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }] },
-  });
+  const inspectSections = (): MenuSection[] => [{ items: [{ id: "inspect-menu-facts", label: "Body facts", icon: "inspect", title: facts.title, off: inspect.none() ?? undefined, run: () => inspect.facts() }] }, { items: comingItems("Inspect") }];
+  const inspecting = toolGroup(document, { name: "Inspect", menu: { id: "inspect-menu", title: "Every way to look into the part, by name", sections: inspectSections } });
   inspecting.add([facts, "inspect"]);
   inspecting.element.dataset.modelling = "";
   // Groups whose tools are all still to come (coming-soon.ts), greyed: their menus list what is on the way.
@@ -164,19 +156,15 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
   // Modify ▾ (35e2b): Move, then the tools still to come.
   const moveTitle = "Move: move and turn bodies by distances and angles you type. Pick the bodies, then OK. A Move in the timeline, at the marker.";
   const move = button("move", "Move", moveTitle, onMove);
-  const modifying = toolGroup(document, {
-    name: "Modify",
-    menu: {
-      id: "modify-menu",
-      title: "Every way to change bodies, by name",
-      sections: () => [{ items: [{ id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove }] }, { items: comingItems("Modify") }],
-    },
-  });
+  const modifySections = (): MenuSection[] => [{ items: [{ id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove }] }, { items: comingItems("Modify") }];
+  const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
   modifying.add([move, "move"]);
   modifying.element.dataset.modelling = "";
   const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
   slot.append(creating.element, modifying.element, constructing.element, inspecting.element, inserting.element);
+  /** The toolbar's own buttons as the command search names them: the group's name, then the button's ("Export STL"). */
+  const named: [string, HTMLButtonElement][] = [];
   for (const group of toolbarGroups()) {
     const g = toolGroup(document, { name: group.name });
     g.element.dataset.modelling = "";
@@ -186,10 +174,20 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
       if (typeof b.command.shape === "string") el.dataset.shape = b.command.shape;
       g.add([el, b.icon]);
       made.push([b, el]);
+      named.push([`${group.name} ${b.label}`, el]);
     }
     slot.append(g.element);
   }
-  return { made, insert: inserting.menu!, facts };
+  // The command search box (S, Ben's keys 10-29): every menu's items as they are now, in the toolbar's order, then the
+  // toolbar's own buttons (Export STL…), each off with its reason exactly when its menu item or button is.
+  const commands = (): SearchCommand[] => {
+    const items = [createSections(), modifySections(), [{ items: comingItems("Construct") }], inspectSections(), insertSections(onInsert)].flatMap((ss) => ss.flatMap((sec) => sec.items));
+    return [
+      ...items.map((i) => ({ id: i.id, label: i.label, key: i.key, off: i.off, run: i.run })),
+      ...named.map(([label, el]) => ({ id: el.id, label, off: el.disabled ? `${label} is off now` : undefined, run: () => el.click() })),
+    ];
+  };
+  return { made, insert: inserting.menu!, facts, commands };
 }
 
 /** A browser row's icon (U0f3): 16 px, before its words, hidden from screen readers. */
@@ -368,7 +366,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
   };
-  const { insert: insertMenu, facts: factsButton } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), (kind) => void insertBody(kind), inspecting);
+  // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
+  const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);
@@ -2395,6 +2395,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === "clear-selection" && moveBox.shown) return leaveMove(), true;
       // M opens Move outside a sketch (Fusion's key); in a sketch the key does what it would.
       if (id === "move-tool") return mode.kind === "none" ? (startMove(), true) : false;
+      // E is Extrude (Fusion's key), in a sketch too (Extrude leaves it, as its toolbar button does); not while a plane is
+      // being picked, nor with Extrude already open. S opens the command search box outside a sketch (Ben's keys 10-29).
+      if (id === "extrude-tool") return mode.kind === "pick" || extrudeBox.shown ? false : (startExtrude(), true);
+      if (id === "command-search") return mode.kind === "none" ? (searchBox.open(), true) : false;
       if (id === "clear-selection" && mode.kind === "edit" && toolBusy(mode.tool)) {
         mode.tool = startTool(mode.tool.kind, mode.tool.sketch);
         mode.snap = null;
@@ -2404,7 +2408,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         drawSketches();
         return true;
       }
-      // L, R, C, A and T choose the line, rectangle, circle, arc and tangent arc tools while a sketch is edited; otherwise the key does what it would.
+      // L, R, C and A choose the line, rectangle, circle and arc tools while a sketch is edited; otherwise the key does what it would.
       // A digit, point or minus while a line or rectangle is part drawn starts typing its size in the first box (SF4).
       const typedKey = typedSizeKey(id);
       if (typedKey !== null) return mode.kind === "edit" && typedFields(mode.tool).length > 0 ? (typed.start(typedKey), true) : false;

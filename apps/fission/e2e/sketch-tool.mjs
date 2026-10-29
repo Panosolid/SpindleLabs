@@ -624,7 +624,7 @@ try {
     await page.context().close();
   });
 
-  await check("the tangent arc tool: T carries on from a line, a slot of two lines and two tangent arcs as one undo step each, notes for no free end and no turn, extruded 10 mm is 8000 + 1000π mm³", async () => {
+  await check("the tangent arc tool (its button; T is kept for Trim) carries on from a line, a slot of two lines and two tangent arcs as one undo step each, notes for no free end and no turn, extruded 10 mm is 8000 + 1000π mm³", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
     await pickPlane(page, "XY", false);
@@ -632,9 +632,12 @@ try {
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
     // A first click that is no line's or arc's end says why.
+    // T no longer chooses it (Ben 10-29: T is Fusion's Trim, coming with step 52; until then the key does nothing here).
     await page.keyboard.press("t");
-    assert.equal(await page.getAttribute("#sketch-tool-tangent", "aria-pressed"), "true", "T chose Tangent arc");
-    assert.equal(await page.getAttribute("#sketch-tool-tangent", "title"), "Tangent arc (T)");
+    assert.equal(await page.getAttribute("#sketch-tool-tangent", "aria-pressed"), "false", "T chose nothing");
+    await page.click("#sketch-tool-tangent");
+    assert.equal(await page.getAttribute("#sketch-tool-tangent", "aria-pressed"), "true", "the button chose Tangent arc");
+    assert.equal(await page.getAttribute("#sketch-tool-tangent", "title"), "Tangent arc");
     assert.match(await page.textContent("#sketch-help"), /^Click the end of a line or arc, then where the arc ends/);
     await at(page, [20, 30], TOP);
     await until(page, () => /^A tangent arc starts at the end of a line or arc/.test(document.querySelector("#sketch-grid-error").textContent), null, "the no-free-end note");
@@ -644,7 +647,7 @@ try {
     // Each key waits for the click before it to land: a click still being snapped when the tool changes is dropped.
     await points(page, "0,0 40,0");
     await page.mouse.move(0, 0);
-    await page.keyboard.press("t");
+    await page.click("#sketch-tool-tangent");
     // Straight on along the line: no turn, a note, nothing drawn.
     await at(page, [50, 0], TOP);
     await until(page, () => /^A tangent arc needs to turn/.test(document.querySelector("#sketch-grid-error").textContent), null, "the no-turn note");
@@ -665,7 +668,7 @@ try {
     await at(page, [0, 20], TOP);
     await points(page, "0,0 40,0 40,20 40,10 0,20");
     await page.mouse.move(0, 0);
-    await page.keyboard.press("t");
+    await page.click("#sketch-tool-tangent");
     await at(page, [0, 0], TOP);
     await status(page, "2 lines and 2 arcs, a closed outline.");
     await points(page, "0,0 40,0 40,20 40,10 0,20 0,10");
