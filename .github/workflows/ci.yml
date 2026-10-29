@@ -56,6 +56,7 @@ jobs:
       full: ${{ steps.mode.outputs.full }}
       ui: ${{ steps.mode.outputs.ui }}
       docs: ${{ steps.mode.outputs.docs }}
+      draft: ${{ steps.mode.outputs.draft }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -262,9 +263,12 @@ jobs:
   # so no head reaches the queue without the phone check it needs (that
   # check never runs in the queue). Marking the pull request ready starts a
   # run in which this job is skipped, and the full pull request checks.
+  # Draft or not is the pull request's state when `mode` ran, not the
+  # event's (ci_mode.py, draft).
   draft:
     name: draft run
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft
+    needs: mode
+    if: needs.mode.outputs.draft == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -281,7 +285,7 @@ jobs:
   phone:
     name: phone
     needs: mode
-    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' && !github.event.pull_request.draft }}
+    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' && needs.mode.outputs.draft != 'true' }}
     timeout-minutes: 40
     runs-on: ubuntu-latest
     steps:
@@ -319,7 +323,7 @@ jobs:
   browsers:
     name: browsers (${{ matrix.browser }})
     needs: mode
-    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' && !github.event.pull_request.draft }}
+    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' && needs.mode.outputs.draft != 'true' }}
     timeout-minutes: 45
     runs-on: ubuntu-latest
     strategy:

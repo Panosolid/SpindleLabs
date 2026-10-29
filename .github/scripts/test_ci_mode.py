@@ -151,6 +151,19 @@ class Docs(unittest.TestCase):
         self.assertFalse(ci_mode.docs_only([]))
         self.assertFalse(ci_mode.docs_only(None))
 
+    def test_draft_is_read_now_and_doubt_means_ready(self):
+        # The API says draft: a draft run. Ready: not. Any failure, or an
+        # answer without the field: not a draft, so every check runs.
+        with mock.patch.object(ci_mode, "get", return_value={"draft": True}) as get:
+            self.assertTrue(ci_mode.read_draft(56))
+        get.assert_called_once_with("/pulls/56")
+        with mock.patch.object(ci_mode, "get", return_value={"draft": False}):
+            self.assertFalse(ci_mode.read_draft(56))
+        with mock.patch.object(ci_mode, "get", return_value={}):
+            self.assertFalse(ci_mode.read_draft(56))
+        with mock.patch.object(ci_mode, "get", side_effect=OSError("down")):
+            self.assertFalse(ci_mode.read_draft(56))
+
     def test_a_rename_out_of_code_is_code(self):
         # GitHub lists a rename once, with its old path as previous_filename;
         # read_files keeps both, so moving kernel code into docs/ is not docs only.
@@ -305,10 +318,13 @@ class Workflows(unittest.TestCase):
         for t in ("opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"):
             self.assertIn(t, types)
         self.assertIn(f"name: {automerge.DRAFT}\n", ci["draft"])
-        self.assertIn("if: github.event_name == 'pull_request' && github.event.pull_request.draft\n", ci["draft"])
-        self.assertNotIn("needs:", ci["draft"])
+        # Draft or not comes from the API when the run starts, never from the
+        # event, and only an explicit 'true' skips anything.
+        self.assertIn("    needs: mode\n    if: needs.mode.outputs.draft == 'true'\n", ci["draft"])
+        self.assertIn("draft: ${{ steps.mode.outputs.draft }}", ci["mode"])
+        self.assertNotIn("pull_request.draft", text)
         for job in ("browsers", "phone"):
-            self.assertIn("&& !github.event.pull_request.draft }}", ci[job], job)
+            self.assertIn("&& needs.mode.outputs.draft != 'true' }}", ci[job], job)
         for job in ("app", "baseline", "e2e-shard", "e2e-quick"):
             self.assertIn("github.event.action != 'converted_to_draft'", ci[job], job)
             self.assertNotIn("pull_request.draft", ci[job], job)
