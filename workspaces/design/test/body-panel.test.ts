@@ -62,7 +62,7 @@ const solid = (id: string, summary: string, suppressed = false): Feature => ({
   suppressed,
 });
 const doc: DesignDocument = {
-  version: 3,
+  version: 4,
   nextId: 100,
   sketches: [],
   profiles: [],

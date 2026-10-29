@@ -31,7 +31,7 @@ test("buildingItems worked by hand: the marker, suppression, a lost sketch with 
   // feature-5 (extrudes sketch-9, deleted, kept shape), feature-6 (extrudes sketch-8, deleted, none),
   // feature-7 a box, then the marker on feature-7, then feature-8 a box after it.
   const doc: DesignDocument = {
-    version: 3,
+    version: 4,
     nextId: 30,
     profiles: [],
     sketches: [{ id: "sketch-1", ...triangle(10), constraints: [] }, { id: "sketch-3", ...triangle(20), constraints: [] }],
@@ -92,7 +92,7 @@ function randomDesign(pick: (n: number) => number, length: number): DesignDocume
   }
   const m = pick(5);
   const marker = m === 0 ? "start" : m === 1 ? undefined : m === 2 ? "feature-99999" : features[pick(features.length)]?.id;
-  return { version: 3, nextId: n, profiles: [], sketches, kept, timeline: marker === undefined ? { features } : { features, marker } };
+  return { version: 4, nextId: n, profiles: [], sketches, kept, timeline: marker === undefined ? { features } : { features, marker } };
 }
 
 test("seeded random timelines: buildingItems is builds asked of every item, and the browser's rows agree", () => {
@@ -175,7 +175,7 @@ test("the rebuild asks for every outline and body at once, each once, and builds
     sketches.push({ id: `sketch-${2000 + i}`, ...triangle(100 * i, 10 * (1 + Math.floor(i / 2))), constraints: [] });
     features.push(item(`sketch-${2000 + i}`, "sketch", { plane: "XY" }), item(`feature-${3000 + i}`, "extrude", { sketch: `sketch-${2000 + i}`, distance: 1 + i }));
   }
-  const doc: DesignDocument = { version: 3, nextId: 5000, profiles: [], sketches, timeline: { features } };
+  const doc: DesignDocument = { version: 4, nextId: 5000, profiles: [], sketches, timeline: { features } };
   const k = heldKernel();
   const cache = new BodyCache(k.kernel);
   const done = rebuildTimeline(doc, cache, k.kernel);
