@@ -249,6 +249,14 @@ try {
     // On a phone Extrude leaves the Properties sheet shut, the view clear (Ben's rule, 10-28): Finish Extrude and Cancel are on the bar over the view.
     await until(page, () => document.getElementById("float-finish")?.textContent === "Finish Extrude", null, "Finish Extrude on the bar over the view");
     assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "Extrude leaves the sheet shut");
+    // Finish Extrude tapped on the bar at 0 mm (where Extrude starts), the sheet still shut (35e2g's phone check): the
+    // bar itself says what to do, since the panel's words are in the shut sheet; nothing is made, Extrude stays open.
+    await page.tap("#float-finish");
+    await until(page, () => /^Drag the arrow or type a distance first/.test(document.getElementById("float-why")?.textContent ?? ""), null, "Finish Extrude at 0 says what to do on the bar");
+    assert.ok(await page.isVisible("#float-why"), "the words are on screen");
+    assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the sheet stays shut");
+    assert.equal(await page.textContent("#volume"), "24,000 mm³", "nothing made at 0");
+    assert.equal(await page.textContent("#float-finish"), "Finish Extrude", "Extrude still open");
     await openPanel(page, "properties", true); // the panel's own boxes, opened by hand
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-flip", "#extrude-clear"]) {
