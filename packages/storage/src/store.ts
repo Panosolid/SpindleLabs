@@ -131,3 +131,22 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
     },
   };
 }
+
+/**
+ * The stored project that holds exactly `project` (compared as read, so a file's spacing or an older version doesn't
+ * matter), the one saved last when there are several; none when no stored project does. Open reuses it rather than
+ * storing the same file again as a new copy no one can reach (real-use hunt B3). A stored project that can't be read
+ * is passed over. Only projects of the same name are read.
+ */
+export async function storedCopy(store: ProjectStore, project: Project): Promise<ProjectSummary | undefined> {
+  const text = projectToJson(project);
+  for (const summary of await store.list()) {
+    if (summary.problem !== undefined || summary.name !== project.name) continue;
+    try {
+      if (projectToJson(await store.open(summary.id)) === text) return summary;
+    } catch {
+      // can't be read: not a copy of anything
+    }
+  }
+  return undefined;
+}
