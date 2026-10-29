@@ -99,13 +99,15 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       const when = read ?? now();
       if (Number.isNaN(when.getTime())) throw new Error("a stored project needs a valid save time");
       const modified = when.toISOString();
-      if (unchangedSince !== undefined) {
-        // Read just before writing: another tab's save landing in between is the one gap left (IndexedDB has no compare-and-set across tabs here).
-        const holds = readSummary(id, await kv.get(SUMMARY + id));
-        if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
-      }
-      await kv.set(PROJECT + id, text);
-      await kv.set(SUMMARY + id, JSON.stringify({ name: project.name, modified }));
+      // The check and both writes in one step (KeyValue.update): no other tab's save lands between them, and a tab
+      // killed mid-save leaves both entries or neither (real-use hunt B6, B7).
+      await kv.update([SUMMARY + id], ([summary]) => {
+        if (unchangedSince !== undefined) {
+          const holds = readSummary(id, summary);
+          if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
+        }
+        return { [PROJECT + id]: text, [SUMMARY + id]: JSON.stringify({ name: project.name, modified }) };
+      });
     },
     async remove(id) {
       checkId(id);

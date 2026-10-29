@@ -50,7 +50,38 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
     const [value] = await Promise.all([result, done]);
     return value;
   };
+  /** KeyValue.update: the reads, `change` and the writes in one readwrite transaction, which IndexedDB runs alone among those touching this store, in every tab. */
+  const update: KeyValue["update"] = async (keys, change) => {
+    const doing = `save "${keys.join('", "')}"`;
+    const tx = (await open()).transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const values: (string | undefined)[] = [];
+    let thrown: { error: unknown } | null = null;
+    // Nothing awaited from here to the writes: a transaction left with no request waiting commits.
+    const write = () => {
+      try {
+        for (const [k, v] of Object.entries(change(values))) store.put(v, k);
+      } catch (error) {
+        thrown = { error };
+        tx.abort();
+      }
+    };
+    let left = keys.length;
+    keys.forEach((k, i) => {
+      const r = store.get(k);
+      r.onsuccess = () => {
+        values[i] = typeof r.result === "string" ? r.result : undefined;
+        if (--left === 0) write();
+      };
+    });
+    if (keys.length === 0) write();
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(thrown ? thrown.error : failure(tx.error, doing));
+    });
+  };
   return {
+    update,
     get: async (key) => {
       const v = await run("readonly", `read "${key}"`, (s) => s.get(key));
       return typeof v === "string" ? v : undefined;
