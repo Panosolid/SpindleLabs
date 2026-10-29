@@ -36,3 +36,10 @@
   .start-hint .start-hint-actions:not(#none) { display: flex; flex-wrap: nowrap; gap: 6px; }
   .start-hint .start-hint-actions > button:first-child:not(#none) { grid-column: auto; }
 }
+/* A short wide view (a phone held sideways, 641 px and wider): the desktop
+   layout keeps the Browser open over the view's left (8 + 240 px), so the
+   card sits right of it and left of the view cube rather than in the
+   middle over the Browser (weak-spot hunt A, F2: 667 × 375). */
+@media (min-width: 641px) and (max-height: 500px) {
+  .start-hint:is(#workspace:not([data-split="on"]):has(#browser:not(:empty)) #viewport > *) { left: 264px; right: 112px; transform: translateY(-50%); max-width: none; width: auto; }
+}

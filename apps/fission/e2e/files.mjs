@@ -350,6 +350,33 @@ try {
     }
   });
 
+  await check("a dropped file the browser can no longer read says so in the top bar, and Design stays as it was", async () => {
+    // Backlog 2026-10-29 (weak-spot hunt C): a file moved or deleted after the drag started, a cloud placeholder or a
+    // permission change makes the browser's read fail with NotReadableError; it did nothing visible, only a page error.
+    const page = await fresh();
+    try {
+      for (const where of ["head", "whole"]) {
+        await page.evaluate((where) => {
+          const f = new File(['{"formatVersion":2}'], "gone.spindle");
+          const fail = () => Promise.reject(new DOMException("The requested file could not be read.", "NotReadableError"));
+          if (where === "head") f.slice = () => ({ arrayBuffer: fail });
+          else f.arrayBuffer = fail;
+          const dt = new DataTransfer();
+          dt.items.add(f);
+          // A DataTransfer hands out copies of its files, so the broken one is given straight to the drop.
+          Object.defineProperty(dt, "files", { value: [f] });
+          window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+        }, where);
+        await page.waitForFunction(() => document.querySelector("#file-status").textContent !== "", null, { timeout: 5000 }).catch(() => assert.fail(`${where}: nothing said`));
+        assert.equal(await status(page), "Couldn't read “gone.spindle”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.", where);
+        assert.equal(await page.textContent("#volume"), "24,000 mm³", `${where}: the open project is untouched`);
+        await page.evaluate(() => (document.querySelector("#file-status").textContent = ""));
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
   await check("no page errors", async () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

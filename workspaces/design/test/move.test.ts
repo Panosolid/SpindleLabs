@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Feature } from "@fission/core";
 import { builds, buildingItems, greyedBy, insertPreset, partDocument, partFeature, readDesignDocument, type DesignDocument } from "../src/document.ts";
-import { changedMove, insertMove, moveMotions, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "../src/move.ts";
+import { changedMove, insertMove, moveKindOf, moveMotions, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "../src/move.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { deleteItem, hideBody, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
 import { canEditFeature } from "../src/feature-edit.ts";
@@ -150,4 +150,32 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
   const later = file({});
   later.timeline.features.reverse();
   assert.throws(() => readDesignDocument(later), { message: "Design move feature-3 moves feature-1, which is not a body made before it in the timeline" });
+});
+
+test("Move and Rotate, two tools making one kind of item: names, words and which tool opens each, by hand", () => {
+  // Rotate's words: "Rotate", and "(not turned yet)" while it does nothing.
+  assert.equal(moveSummary(["Box 1"], NO_MOVE, "Rotate"), "Rotate Box 1 (not turned yet)");
+  assert.equal(moveSummary(["Box 1"], v({ turnZ: 90 }), "Rotate"), "Rotate Box 1 turned 90° about Z");
+  assert.equal(moveSummary(["Box 1", "Cylinder 1"], NO_MOVE), "Move 2 bodies (not moved yet)");
+  // Names counted per tool: Move 1, Rotate 1, Rotate 2, then Move 2 (the Rotates don't count towards the Moves).
+  let d = twoBodies();
+  const m1 = insertMove(d, ["feature-1"], v({ x: 10 }));
+  const r1 = insertMove(m1.doc, ["feature-1"], v({ turnZ: 90 }), "rotate");
+  const r2 = insertMove(r1.doc, ["feature-2"], NO_MOVE, "rotate");
+  const m2 = insertMove(r2.doc, ["feature-2"], v({ y: -3 }));
+  d = m2.doc;
+  assert.deepEqual([m1.id, r1.id, r2.id, m2.id].map((id) => item(d, id).provenance.self.label), ["Move 1", "Rotate 1", "Rotate 2", "Move 2"]);
+  assert.equal(item(d, r2.id).intent.summary, "Rotate Cylinder 1 (not turned yet)");
+  // Which tool opens each: a shift opens Move; a turn alone opens Rotate; a Rotate that does nothing yet stays Rotate,
+  // a Move that does nothing stays Move; an old file's Move that shifts and turns opens Move (its angles shown too).
+  assert.deepEqual([m1.id, r1.id, r2.id, m2.id].map((id) => moveKindOf(item(d, id))), ["move", "rotate", "rotate", "move"]);
+  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["feature-1"], NO_MOVE).doc, "feature-3")), "move");
+  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["feature-1"], v({ x: 1, turnX: 5 }), "rotate").doc, "feature-3")), "move");
+  // A turn alone made by Move (as old files have) opens Rotate: what it does is turn.
+  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["feature-1"], v({ turnY: -30 })).doc, "feature-3")), "rotate");
+  // Edited, each keeps its word: Rotate 1 changed to 45° still says Rotate; Move 1 changed still says Move.
+  assert.equal(item(changedMove(d, r1.id, v({ turnZ: 45 })), r1.id).intent.summary, "Rotate Box 1 turned 45° about Z");
+  assert.equal(item(changedMove(d, m1.id, v({ x: 20 })), m1.id).intent.summary, "Move Box 1 by (20, 0, 0) mm");
+  // A file with a Rotate reads back as it was written.
+  assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(d))), d);
 });

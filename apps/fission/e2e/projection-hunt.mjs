@@ -15,7 +15,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
-import { closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4234, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4234/?test-hooks";
@@ -200,7 +200,7 @@ try {
       const page = await fresh(width, tap);
       await press(page, "#create-sketch", tap);
       await until(page, () => document.querySelector("#viewport").dataset.planes === "XY, XZ, YZ", null, "planes offered");
-      await press(page, "#sketch-plane-XY", tap);
+      await pickPlane(page, "XY", tap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
       await settle(page);
       // Turned to the home view so the box's uprights can be clicked; the front right one, (40, 0, 0) to (40, 0, 20).

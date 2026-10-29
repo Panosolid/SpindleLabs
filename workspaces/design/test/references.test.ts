@@ -9,7 +9,7 @@ const names = nameBody("feature-1", BOX_VIEW, () => null);
 
 test("references for a body, a face and an edge of feature #1, by name", () => {
   // The box's faces in kernel order are bottom, top, front, back, left,
-  // right (primitives.rs); edge 4 is the top front edge (views.ts), where
+  // right (the kernel's box); edge 4 is the top front edge (views.ts), where
   // the front and the top meet: "front" sorts before "top".
   assert.deepEqual(bodyReference("feature-1"), { kind: "body", id: "body:feature-1" });
   assert.deepEqual(designReference("face", names, 1), { kind: "face", id: "face:feature-1/top" });

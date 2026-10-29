@@ -29,7 +29,8 @@ test("save then list shows the name and the save time (worked by hand)", async (
   const list = await store.list();
   // One save, at the clock's only time: 2026-10-16 12:00 UTC is
   // Date.UTC(2026, 9, 16, 12) ms (months count from 0, so October is 9).
-  assert.deepEqual(list, [{ id: "p1", name: "Bracket", modified: new Date(Date.UTC(2026, 9, 16, 12)) }]);
+  // The first save in an empty store is save number 1 (B5's count starts at 0, each save adds one).
+  assert.deepEqual(list, [{ id: "p1", name: "Bracket", modified: new Date(Date.UTC(2026, 9, 16, 12)), order: 1 }]);
 });
 
 test("the list is newest first, and saving again moves a project to the top", async () => {
@@ -75,7 +76,8 @@ test("remove forgets a project; removing or opening it again is refused", async 
   await store.save("b", part("B"));
   await store.remove("a");
   assert.deepEqual((await store.list()).map((s) => s.id), ["b"]);
-  assert.deepEqual([...kv.entries.keys()].sort(), ["project/b", "summary/b"]);
+  // The save count is shared by every project, so it stays (B5).
+  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/b"]);
   await assert.rejects(store.open("a"), /^Error: there is no stored project "a" in this browser$/);
   await assert.rejects(store.remove("a"), /^Error: there is no stored project "a" to remove$/);
 });
@@ -132,7 +134,8 @@ test("a project a file can't hold is refused before anything is written", async 
 
 test("a failing key-value store's message reaches the caller", async () => {
   const kv = memoryKeyValue();
-  kv.set = async () => {
+  // Saves write through update (one step, real-use hunt B6); set fails the same way, for any other write.
+  kv.set = kv.update = async () => {
     throw new Error("browser storage is full: can't save \"project/p\"");
   };
   await assert.rejects(projectStore(kv, [design]).save("p", part("P")), /browser storage is full/);

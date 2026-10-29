@@ -24,6 +24,13 @@ CHANGELOG.md and changelog.d/); every other required job reports skipped,
 which main's ruleset counts as passed. Any other file, a rename out of
 anywhere else, no files, or any doubt (the files can't be listed) means no.
 
+draft: whether the pull request is a draft now, read from the API when the
+run starts rather than from the event (a push and "ready for review" a
+second apart can reach CI in either order, and the run that won the
+concurrency group would otherwise test a ready pull request as a draft and
+never run phone; found on #56, 2026-10-29). Any doubt means no, so every
+check runs.
+
 `decide` is pure (tested in test_ci_mode.py); `main` reads the API and git
 and writes GITHUB_OUTPUT. Needs GITHUB_TOKEN, GITHUB_REPOSITORY, EVENT, BASE
 (the branch the pull request targets) and PR (its number) for pull requests,
@@ -124,6 +131,15 @@ def read_files(number):
     return None
 
 
+def read_draft(number):
+    """Is the pull request a draft right now? Any doubt: no (run everything)."""
+    try:
+        return get(f"/pulls/{number}").get("draft") is True
+    except Exception as e:  # noqa: BLE001 - any failure means every check runs
+        print(f"couldn't read whether it is a draft ({e}); running every check")
+        return False
+
+
 def read_group_files(base, head):
     """The paths a merge queue group changes on main: its commit against
     main's, renames as a deletion and an addition. Only the two commits'
@@ -142,9 +158,11 @@ def read_group_files(base, head):
 def main():
     event = os.environ["EVENT"]
     rules = files = None
+    draft = False
     if event == "pull_request":
         rules = read_rules(os.environ["BASE"])
         files = read_files(os.environ["PR"])
+        draft = read_draft(os.environ["PR"])
     elif event == "merge_group":
         files = read_group_files(os.environ["GROUP_BASE"], os.environ["GROUP_HEAD"])
     full, ui, docs = decide(event, rules, files)
@@ -161,6 +179,7 @@ def main():
         print(f"full={str(full).lower()}", file=f)
         print(f"ui={str(ui).lower()}", file=f)
         print(f"docs={str(docs).lower()}", file=f)
+        print(f"draft={str(draft).lower()}", file=f)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ import type { Outline } from "./profiles.ts";
 import { parameterRows, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { buildSpec } from "./spec.ts";
 import { itemName, TIMELINE_STEPS } from "./timeline-edits.ts";
+import { lengthRefused } from "./typed-entry.ts";
 
 /** What the Edit feature panel shows for an item: its shape, the sizes it has now, the boxes it uses, and an extrude's Flip (26c). */
 export interface EditableFeature {
@@ -137,14 +138,20 @@ export async function refusedSizes(kernel: KernelCalls, before: DesignDocument, 
   return was === null ? words(e) : null;
 }
 
-/** The sizes typed in the panel's boxes, or the first box that isn't a number (its key), for the panel to say "Type the width in mm." */
-export function readTyped(keys: readonly SizeKey[], typed: Partial<Record<SizeKey, string>>): { sizes: PartSizes } | { bad: SizeKey } {
+/**
+ * The sizes typed in the panel's boxes, or the first box that isn't a number (its key), for the panel to say "Type the
+ * width in mm.", or the first whose size is under 0.001 mm or over 1 km (its key and `lengthRefused`'s words: 1e300 gave
+ * the kernel's 350-character refusal, weak-spot hunt 10-29). 0 and the sign are left to the kernel's rules.
+ */
+export function readTyped(keys: readonly SizeKey[], typed: Partial<Record<SizeKey, string>>): { sizes: PartSizes } | { bad: SizeKey } | { refused: SizeKey; why: string } {
   const sizes: PartSizes = {};
   for (const key of SIZE_KEYS) {
     if (!keys.includes(key)) continue;
     const text = typed[key] ?? "";
     const v = Number(text);
     if (text.trim() === "" || !Number.isFinite(v)) return { bad: key };
+    const why = v === 0 ? null : lengthRefused(Math.abs(v));
+    if (why !== null) return { refused: key, why };
     sizes[key] = v;
   }
   return { sizes };

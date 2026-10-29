@@ -9,7 +9,7 @@
 // `inserted` and `changedMove` are the document changes, pure functions;
 // `moveMotions` what the kernel is asked to do.
 
-import type { BodySpec, Feature, Motion } from "@fission/core";
+import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
 import { freshName, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
 /** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm). */
@@ -21,13 +21,31 @@ export const NO_MOVE: MoveValues = { x: 0, y: 0, z: 0, turnX: 0, turnY: 0, turnZ
 /** The undo step a new Move is recorded as. */
 export const MOVE_STEP = "Move bodies";
 
-/** The words a Move's summary and the timeline row say: "Move Box 1 by (10, 0, 0) mm, turned 90° about Z". */
-export function moveSummary(labels: readonly string[], v: MoveValues): string {
+/** The undo step a new Rotate is recorded as. */
+export const ROTATE_STEP = "Rotate bodies";
+
+/** The words a Move's summary and the timeline row say: "Move Box 1 by (10, 0, 0) mm, turned 90° about Z"; a Rotate's start "Rotate". */
+export function moveSummary(labels: readonly string[], v: MoveValues, verb: "Move" | "Rotate" = "Move"): string {
   const what = labels.length === 1 ? labels[0] : `${labels.length} bodies`;
   const shift = v.x !== 0 || v.y !== 0 || v.z !== 0 ? ` by (${v.x}, ${v.y}, ${v.z}) mm` : "";
   const turns = (["X", "Y", "Z"] as const).flatMap((a) => (v[`turn${a}`] !== 0 ? [`${v[`turn${a}`]}° about ${a}`] : []));
   const turned = turns.length > 0 ? `${shift ? "," : ""} turned ${turns.join(", then ")}` : "";
-  return `Move ${what}${shift}${turned}${shift || turned ? "" : " (not moved yet)"}`;
+  return `${verb} ${what}${shift}${turned}${shift || turned ? "" : verb === "Move" ? " (not moved yet)" : " (not turned yet)"}`;
+}
+
+/**
+ * Which tool opens a Move item (Ben, 2026-10-29: Move and Rotate are
+ * separate tools, one kind of timeline item): Rotate for one that only
+ * turns, or one made by Rotate that does nothing yet (its summary says
+ * "Rotate"); Move for anything that shifts, an old file's Move that
+ * shifts and turns included, whose Move panel then shows its angles too.
+ */
+export function moveKindOf(f: Feature): MoveKind {
+  const v = moveValues(f);
+  const shifts = v.x !== 0 || v.y !== 0 || v.z !== 0;
+  const turns = v.turnX !== 0 || v.turnY !== 0 || v.turnZ !== 0;
+  if (shifts) return "move";
+  return turns || f.intent.summary.startsWith("Rotate ") ? "rotate" : "move";
 }
 
 /** A Move's numbers, read from its intent (checked when the file was read). */
@@ -78,16 +96,19 @@ function bodiesFor(doc: DesignDocument, bodies: readonly string[]): Feature[] {
   });
 }
 
-/** The design with a new Move of `bodies` by `values` put in at the marker ("Move 1", its id from the counter), and its id. */
-export function insertMove(doc: DesignDocument, bodies: readonly string[], values: MoveValues): { doc: DesignDocument; id: string } {
+/** The design with a new Move of `bodies` by `values` put in at the marker ("Move 1", or "Rotate 1" made by Rotate, its id from the counter), and its id. */
+export function insertMove(doc: DesignDocument, bodies: readonly string[], values: MoveValues, kind: MoveKind = "move"): { doc: DesignDocument; id: string } {
   const items = bodiesFor(doc, bodies);
   const v = checked(values);
   const id = `feature-${doc.nextId}`;
-  const label = freshName("Move", doc.timeline.features.filter(isMoveItem).length, takenNames(doc));
+  const verb = kind === "rotate" ? "Rotate" : "Move";
+  // Counted as before for a Move (every Move item but the Rotates); a Rotate counts the Rotates.
+  const rotates = (f: Feature) => f.provenance.self.label.startsWith("Rotate ");
+  const label = freshName(verb, doc.timeline.features.filter((f) => isMoveItem(f) && rotates(f) === (kind === "rotate")).length, takenNames(doc));
   const labels = items.map((f) => f.provenance.self.label);
   const feature: Feature = {
     id,
-    intent: { type: "move", parameters: { ...v }, summary: moveSummary(labels, v) },
+    intent: { type: "move", parameters: { ...v }, summary: moveSummary(labels, v, verb) },
     provenance: { self: { workspace: "design", id, label }, from: items.map((f) => ({ workspace: "design", id: f.id, label: f.provenance.self.label })) },
     dependsOn: items.map((f) => f.id),
     suppressed: false,
@@ -102,6 +123,7 @@ export function changedMove(doc: DesignDocument, id: string, values: MoveValues)
   const v = checked(values);
   if (MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k])) return doc;
   const labels = old.dependsOn.map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
-  const feature: Feature = { ...old, intent: { ...old.intent, parameters: { ...v }, summary: moveSummary(labels, v) } };
+  const verb = old.intent.summary.startsWith("Rotate ") ? "Rotate" : "Move";
+  const feature: Feature = { ...old, intent: { ...old.intent, parameters: { ...v }, summary: moveSummary(labels, v, verb) } };
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
 }

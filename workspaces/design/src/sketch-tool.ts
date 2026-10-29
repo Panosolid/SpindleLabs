@@ -21,7 +21,7 @@
 // with the sketch constraints (29).
 
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
-import { greyedItems, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
+import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
 import { arcThere, centreClick, centreHover, centrePreview, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
@@ -85,7 +85,8 @@ export const SKETCH_TOOLS: readonly { kind: ToolKind; label: string; key?: strin
   { kind: "circle", label: "Circle", key: "C" },
   { kind: "arc", label: "3-point arc", key: "A", group: "Arc" },
   { kind: "centre", label: "Centre arc", group: "Arc" },
-  { kind: "tangent", label: "Tangent arc", key: "T", group: "Arc" },
+  // No key: T is kept for Trim (Fusion's, Ben 10-29), which comes with step 52.
+  { kind: "tangent", label: "Tangent arc", group: "Arc" },
   { kind: "project", label: "Project", key: "P" },
 ];
 
@@ -109,6 +110,32 @@ function pendingClicks(tool: SketchTool): SketchXY[] {
   if (tool.kind === "tangent" || tool.kind === "project") return [];
   const at = tool.kind === "rectangle" ? tool.corner : tool.centre;
   return at ? [at] : [];
+}
+
+/**
+ * Why Extrude or Finish sketch (`verb`) waits for a second press while the
+ * tool has a shape half drawn (a circle's centre, a first corner, an arc's
+ * ends): pressed once, the shape was dropped without a word (beginner
+ * play-test 2026-10-28). Null when nothing would be lost: a line's start
+ * alone is only where a line would begin, and a chain going has drawn its
+ * lines already.
+ */
+export function unfinishedWords(tool: SketchTool, verb: string): string | null {
+  if (tool.kind === "line" || pendingClicks(tool).length === 0) return null;
+  const next = (): [string, string] => {
+    switch (tool.kind) {
+      case "rectangle":
+        return ["rectangle", "its opposite corner"];
+      case "arc":
+        return ["arc", tool.end === null ? "its end, then a point on the arc" : "a point on the arc"];
+      case "centre":
+        return ["arc", tool.start === null ? "its start, then its end" : "its end"];
+      default:
+        return ["circle", "a point on the circle"];
+    }
+  };
+  const [shape, click] = next();
+  return `The ${shape} isn't finished: click ${click} to finish it, or press ${verb} again to go on without it.`;
 }
 
 /** The grid a new sketch starts with (mm), as Design's grid in the viewport. */
@@ -210,7 +237,9 @@ function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY):
  */
 const distance = (a: SketchXY, b: SketchXY): number => Math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2);
 
-const NO_RADIUS = "A circle needs a radius: click a point on the circle away from its centre.";
+export const NO_RADIUS = "A circle needs a radius: click a point on the circle away from its centre.";
+/** NO_RADIUS when Snap to grid pulled the second click onto the centre (a small circle at phone zoom; beginner play-test 2026-10-28). */
+export const GRID_ATE_RADIUS = "The grid pulled that point onto the circle's centre, so it has no radius: click further out, make the grid smaller, or turn off Snap to grid.";
 
 /**
  * Why a circle on one already there draws nothing: the same centre point
@@ -570,9 +599,10 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
   const { features, marker } = doc.timeline;
   const end = marker === "start" ? 0 : marker === undefined ? features.length : features.findIndex((f) => f.id === marker) + 1;
   const rolled = new Set(features.slice(end).map((f) => f.id));
+  // Nor is one hidden by its eye or its folder's (an extrude of it shuts its eye, as in Fusion), save while it is edited.
   const off = (s: Sketch) => {
     const item = items.get(s.id);
-    return item !== undefined && editing?.tool.sketch !== s.id && (item.suppressed || greyed.has(item) || rolled.has(item.id));
+    return item !== undefined && editing?.tool.sketch !== s.id && (item.suppressed || greyed.has(item) || rolled.has(item.id) || sketchHidden(doc, s.id));
   };
   return doc.sketches.filter((s) => !off(s)).map((s) => {
     const plane: Plane = planeFor(items.get(s.id), s, placed);

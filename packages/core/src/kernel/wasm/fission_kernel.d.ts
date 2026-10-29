@@ -1,66 +1,66 @@
 
-export function begin(key: string): boolean;
+export function at4a9p(p0: string): boolean;
 
-export function body_build(spec: any): number;
+export function eds3ko(): string;
 
-export function body_count(): number;
+export function f5l94l(p0: any, p1: string): any;
 
-export function body_free(body: number): void;
+export function guf4qz(p0: any): number;
 
-export function body_step(body: number): any;
+export function irk2fy(p0: number, p1: number, p2: number): any;
 
-export function body_stl(body: number, name: string): any;
+export function jg9yot(p0: any, p1: any, p2: any): any;
 
-export function body_view(body: number): any;
+export function jgu9kn(p0: number, p1: string): any;
 
-export function export_stl(spec: any, name: string): any;
+export function ld2gsx(p0: any, p1: number): any;
 
-export function kernel_build(): string;
+export function nwekzr(p0: number): any;
 
-export function kernel_version(): string;
+export function p6rou1(p0: number): any;
 
-export function make_box(width: number, depth: number, height: number): any;
+export function pprlx7(p0: number): any;
 
-export function make_cylinder(radius: number, height: number): any;
+export function qmdw4c(): string;
 
-export function make_extrude(profile: any, distance: number): any;
+export function u3qr1f(p0: number, p1: number, p2: number): any;
 
-export function make_sphere(radius: number): any;
+export function urxw0w(): number;
 
-export function place_freely(x: number, y: number, pixel: number): any;
+export function uxyfpl(p0: number, p1: number, p2: number): any;
 
-export function sketch_outline(lines: any, circles: any, arcs: any): any;
+export function vicdld(p0: number): void;
 
-export function snap_to_grid(x: number, y: number, spacing: number): any;
+export function xqg0dt(p0: number, p1: number): any;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly begin: (a: number, b: number) => number;
-    readonly body_build: (a: any) => [number, number, number];
-    readonly body_count: () => number;
-    readonly body_free: (a: number) => [number, number];
-    readonly body_step: (a: number) => [number, number, number];
-    readonly body_stl: (a: number, b: number, c: number) => [number, number, number];
-    readonly body_view: (a: number) => [number, number, number];
-    readonly export_stl: (a: any, b: number, c: number) => [number, number, number];
-    readonly kernel_build: () => [number, number];
-    readonly kernel_version: () => [number, number];
-    readonly make_box: (a: number, b: number, c: number) => [number, number, number];
-    readonly make_cylinder: (a: number, b: number) => [number, number, number];
-    readonly make_extrude: (a: any, b: number) => [number, number, number];
-    readonly make_sphere: (a: number) => [number, number, number];
-    readonly place_freely: (a: number, b: number, c: number) => [number, number, number];
-    readonly sketch_outline: (a: any, b: any, c: any) => [number, number, number];
-    readonly snap_to_grid: (a: number, b: number, c: number) => [number, number, number];
+    readonly at4a9p: (a: number, b: number) => number;
+    readonly eds3ko: () => [number, number];
+    readonly f5l94l: (a: any, b: number, c: number) => [number, number, number];
+    readonly guf4qz: (a: any) => [number, number, number];
+    readonly irk2fy: (a: number, b: number, c: number) => [number, number, number];
+    readonly jg9yot: (a: any, b: any, c: any) => [number, number, number];
+    readonly jgu9kn: (a: number, b: number, c: number) => [number, number, number];
+    readonly ld2gsx: (a: any, b: number) => [number, number, number];
+    readonly nwekzr: (a: number) => [number, number, number];
+    readonly p6rou1: (a: number) => [number, number, number];
+    readonly pprlx7: (a: number) => [number, number, number];
+    readonly qmdw4c: () => [number, number];
+    readonly u3qr1f: (a: number, b: number, c: number) => [number, number, number];
+    readonly urxw0w: () => number;
+    readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
+    readonly vicdld: (a: number) => [number, number];
+    readonly xqg0dt: (a: number, b: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

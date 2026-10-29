@@ -157,15 +157,16 @@ async function pixel(page, { x, y }) {
 }
 
 /** A drag of the arrow from 0.6 of the way up it, `along` px further along its line on screen (negative back down), by mouse or by finger. */
-async function dragArrow(page, along, touch) {
+async function dragArrow(page, along, touch, during) {
   const ended = Number(await view(page, "arrowDrags")) + 1;
-  await sendDrag(page, along, touch);
+  await sendDrag(page, along, touch, during);
   // The browser may still be handing the page the moves sent (a finger's moves come once a frame):
   // only once the drag's end is heard is the distance the drag's last one (merge-queue flake, 2026-10-26).
   await until(page, (n) => Number(document.querySelector("#viewport").dataset.arrowDrags ?? 0) >= n, ended, "the drag's end heard by the view");
 }
 
-async function sendDrag(page, along, touch) {
+/** `during`, if given, runs while the arrow is still held, after the last move. */
+async function sendDrag(page, along, touch, during) {
   const { foot, tip } = await arrow(page);
   const len = Math.hypot(tip[0] - foot[0], tip[1] - foot[1]);
   const u = [(tip[0] - foot[0]) / len, (tip[1] - foot[1]) / len];
@@ -177,6 +178,7 @@ async function sendDrag(page, along, touch) {
     await until(page, () => document.querySelector("#viewport").dataset.arrowHot === "true", null, "the arrow lit under the pointer");
     await page.mouse.down();
     for (let k = 1; k <= steps; k++) await page.mouse.move(...at(k));
+    if (during) await during();
     await page.mouse.up();
     return;
   }
@@ -184,6 +186,7 @@ async function sendDrag(page, along, touch) {
   const touchAt = (type, [x, y]) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
   await touchAt("touchStart", from);
   for (let k = 1; k <= steps; k++) await touchAt("touchMove", at(k));
+  if (during) await during();
   await touchAt("touchEnd", at(steps));
 }
 
@@ -205,7 +208,7 @@ try {
       const page = await fresh(width, touch);
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await press("#extrude");
-      if (touch) await closePanels(page, true); // the Properties sheet opens by itself for Extrude's box; put away, the view is clear to tap and drag in
+      if (touch) await closePanels(page, true); // the view clear to tap and drag in (Extrude leaves the sheet shut; a no-op then)
       // Both sketches, then the box's six flat faces (UX1c).
       await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces", panelState);
       // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.
@@ -230,7 +233,17 @@ try {
       assert.ok(chosen[2] > offered[2] + 15, `the chosen one (${chosen}) is brighter than the one offered (${offered})`);
       if (shots) await page.screenshot({ path: `${shots}/extrude-preview-${width}.png` });
       // The arrow dragged up its own line by 90 px: a whole number of mm, more than 10, and the box, the arrow and the preview agree.
-      await dragArrow(page, 90, touch);
+      // While held, the distance box glows (Ben, 2026-10-28: the value a drag changes glows), drawn (its box-shadow not "none");
+      // it goes out when the drag ends.
+      const glows = () => page.evaluate(() => { const box = document.querySelector("#extrude-distance"); return box.classList.contains("extrude-dragged") && getComputedStyle(box).boxShadow !== "none"; });
+      assert.equal(await glows(), false, "no glow before the drag");
+      let held = null;
+      await dragArrow(page, 90, touch, async () => {
+        held = await glows();
+        if (shots && !touch) await page.screenshot({ path: `${shots}/extrude-glow-${width}.png` });
+      });
+      assert.equal(held, true, "the distance box glows while the arrow is held");
+      await until(page, () => !document.querySelector("#extrude-distance").classList.contains("extrude-dragged"), null, "the glow goes when the drag ends");
       await until(page, () => document.querySelector("#extrude-distance").value !== "10", null, "the distance changed by the drag");
       const up = Number(await page.inputValue("#extrude-distance"));
       assert.ok(Number.isInteger(up) && up > 10, `dragged up to ${up} mm`);

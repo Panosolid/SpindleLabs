@@ -4,12 +4,18 @@
 // Y then Z), the pivot they turn about (folded under its summary, as it is
 // rarely changed: the centre of the picked bodies until a pivot box is
 // typed in, "Centre of the bodies" giving that back), the kernel's
-// refusal, and OK or Cancel. Enter in a box is OK; Escape is Cancel
+// refusal, OK, Cancel, and Snap (35e2d: a face or edge of the bodies
+// laid on another body's, move-snap.ts, which sets the boxes). Since Ben's
+// ask (2026-10-29) it is two tools: Move shows the distances and Snap,
+// Rotate the angles and the pivot; a row the tool doesn't show comes up
+// when it holds something (an old file's Move that shifts and turns, or a
+// snap that turns), so nothing the Move does is ever out of sight. Enter in a box is OK; Escape is Cancel
 // (workspace.ts `shortcut`). A new Move picks its bodies in the view or the
 // browser while the panel is open; an edited one keeps the bodies it was
 // made with. The workspace drives it; the panel only shows what it is given
 // and reports what was typed and clicked. Styles: src/styles/move-panel.css.
 
+import type { MoveKind } from "@fission/core";
 import { MOVE_PARAMS, type MoveParam } from "./document.ts";
 import type { MoveValues } from "./move.ts";
 import { boxText } from "./move-tool.ts";
@@ -22,11 +28,14 @@ export interface MoveEvents {
   cancel(): void;
   /** "Centre of the bodies": the pivot follows the picked bodies again. */
   centre(): void;
+  /** Snap pressed (35e2d): start picking what to snap, or stop. */
+  snap(): void;
 }
 
-/** What the panel opens on: a new Move (no id) or Move `id`'s numbers, the bodies' names, and whether the pivot follows the bodies. */
+/** What the panel opens on: a new Move or Rotate (no id) or Move `id`'s numbers, which tool, and the bodies' names. */
 export interface MoveShow {
   id: string | null;
+  kind: MoveKind;
   name: string;
   bodies: readonly string[];
   values: MoveValues;
@@ -40,6 +49,21 @@ export interface MovePanel {
   setPivot(p: readonly [number, number, number]): void;
   /** One box set from a drag of the view's handles (35e2c): typed values follow the drag. */
   setValue(key: MoveParam, value: number): void;
+  /**
+   * The box a handle's drag is changing glows softly while the drag lasts
+   * (Ben, 2026-10-28: "make the changing value in the properties glow a lil
+   * bit to avoid confusion"); null when the drag ends, and on show.
+   */
+  dragging(key: MoveParam | null): void;
+  /** The distance and angle boxes set from a snap (35e2d), each to the number itself (already rounded by move-snap.ts), so the bodies land exactly. */
+  setValues(values: MoveValues): void;
+  /**
+   * Snap pressed, with what to pick now in place of the bodies' names, or
+   * not (null). The names hidden is what a phone's Properties sheet watches
+   * (apps/fission main.ts): it goes away while the view is tapped to pick
+   * and comes back with the snapped numbers and OK.
+   */
+  snapping(words: string | null): void;
   /** Why OK recorded nothing ("" hides it). */
   showError(message: string): void;
   /** OK off while the kernel checks the Move, so a second press can't record twice. */
@@ -49,6 +73,8 @@ export interface MovePanel {
   readonly shown: boolean;
   /** The Move being edited, or null for a new one (or none open). */
   readonly editing: string | null;
+  /** Which tool the panel is: Move or Rotate. */
+  readonly kind: MoveKind;
   /** Whether a pivot box was typed in, so the pivot no longer follows the bodies. */
   readonly pivotTyped: boolean;
   /** Every box as it is now. */
@@ -82,10 +108,29 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   // The bodies picked, or how to pick them; the second is hidden once there is one (main.ts opens a phone's sheet then).
   const bodies = el("p", "move-bodies", "move-panel-bodies");
   const pick = el("p", "move-pick", "move-panel-note", "Click the bodies to move in the view, or their rows in the browser.");
+  const snapNote = el("p", "move-snap-note", "move-panel-bodies");
+  snapNote.hidden = true;
   const inputs = new Map<MoveParam, HTMLInputElement>();
-  const typed = () => Object.fromEntries(MOVE_PARAMS.map((k) => [k, inputs.get(k)!.value])) as Record<MoveParam, string>;
+  // What the panel itself put in a box, rounded for show (boxText), with the exact number behind it: a box still showing
+  // it reads as that number, so OK on an unchanged Move of 1e-7 mm records no change (weak-spot hunt 10-29).
+  const exact = new Map<MoveParam, { text: string; value: number }>();
+  const put = (k: MoveParam, value: number) => {
+    const text = boxText(value);
+    inputs.get(k)!.value = text;
+    exact.set(k, { text, value });
+  };
+  // A box holding text it can't read as a number ("1e", "1.2.3") has the value "" (badInput): read it as not a number,
+  // never as an empty box's 0 (weak-spot hunt 10-29).
+  const read = (k: MoveParam) => {
+    const input = inputs.get(k)!;
+    if (input.validity?.badInput) return "?";
+    const shown = exact.get(k);
+    return shown && shown.text === input.value ? String(shown.value) : input.value;
+  };
+  const typed = () => Object.fromEntries(MOVE_PARAMS.map((k) => [k, read(k)])) as Record<MoveParam, string>;
   let pivotTyped = false;
   let editing: string | null = null;
+  let kind: MoveKind = "move";
   let open = false;
   const summary = el("summary", "move-pivot-summary");
   const showSummary = () => (summary.textContent = pivotWords(pivotTyped, ["pivotX", "pivotY", "pivotZ"].map((k) => inputs.get(k as MoveParam)!.value)));
@@ -107,7 +152,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       });
       // A box left empty shows 0 as soon as the focus leaves it (Ben, 2026-10-28): it counts as 0 meanwhile (readMoveBoxes).
       input.addEventListener("blur", () => {
-        if (input.value.trim() !== "" || !open) return;
+        if (input.value.trim() !== "" || input.validity?.badInput || !open) return;
         input.value = "0";
         if (row.id === "move-pivot") showSummary();
         on.typed(typed());
@@ -141,40 +186,78 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const cancel = el("button", "move-cancel", "", "Cancel");
   cancel.type = "button";
   cancel.addEventListener("click", () => on.cancel());
+  // Snap (35e2d): pressed while the view's clicks pick what to snap and where it lands; off until there are bodies.
+  const snap = el("button", "move-snap", "", "Snap");
+  snap.type = "button";
+  snap.title = "Snap: click a face or edge of the bodies, then a face or edge of another body to land it on";
+  snap.setAttribute("aria-pressed", "false");
+  snap.addEventListener("click", () => on.snap());
   const buttons = el("div", "", "move-panel-buttons");
-  buttons.append(ok, cancel);
-  const note = el("p", "", "move-panel-note", "Turned about X, then Y, then Z through the pivot, then moved.");
-  box.append(title, bodies, pick, rows[0], rows[1], pivot, error, note, buttons);
+  buttons.append(ok, cancel, snap);
+  const note = el("p", "move-note", "move-panel-note");
+  box.append(title, bodies, snapNote, pick, rows[0], rows[1], pivot, error, note, buttons);
+  /** The rows this tool shows, and any other that holds something; the note says what OK does with what is shown. */
+  const showRows = () => {
+    const holds = (keys: readonly MoveParam[]) => keys.some((k) => Number(inputs.get(k)!.value) !== 0);
+    const distances = kind === "move" || holds(ROWS[0].keys);
+    const angles = kind === "rotate" || holds(ROWS[1].keys);
+    rows[0].hidden = !distances;
+    rows[1].hidden = !angles;
+    pivot.hidden = !angles;
+    snap.hidden = kind !== "move";
+    note.textContent = angles && distances ? "Turned about X, then Y, then Z through the pivot, then moved." : angles ? "Turned about X, then Y, then Z through the pivot." : "Moved along X, Y and Z.";
+  };
   const setBodies = (names: readonly string[]) => {
     bodies.textContent = names.length === 0 ? "" : `${names.length === 1 ? "Body" : "Bodies"}: ${names.join(", ")}`;
-    bodies.hidden = names.length === 0;
+    bodies.hidden = names.length === 0 || !snapNote.hidden;
     pick.hidden = names.length > 0 || editing !== null;
+    snap.disabled = names.length === 0;
   };
   return {
     show(m) {
       editing = m.id;
       open = true;
+      kind = m.kind;
       // An edited Move keeps its pivot; a new one follows its bodies.
       pivotTyped = m.id !== null;
-      title.textContent = m.id === null ? "Move" : `Edit ${m.name}`;
-      for (const k of MOVE_PARAMS) inputs.get(k)!.value = boxText(m.values[k]);
+      title.textContent = m.id === null ? m.name : `Edit ${m.name}`;
+      box.setAttribute("aria-label", kind === "rotate" ? "Rotate" : "Move");
+      box.dataset.kind = kind; // read by the e2e test
+      this.dragging(null);
+      exact.clear();
+      for (const k of MOVE_PARAMS) put(k, m.values[k]);
+      showRows();
       pivot.open = false;
       showSummary();
       setBodies(m.bodies);
       error.hidden = true;
       ok.disabled = false;
       box.hidden = false;
-      inputs.get("x")!.focus();
-      inputs.get("x")!.select();
+      const first = inputs.get(kind === "rotate" ? "turnX" : "x")!;
+      first.focus();
+      first.select();
     },
     setBodies,
     setPivot(p) {
       if (pivotTyped) return;
-      (["pivotX", "pivotY", "pivotZ"] as const).forEach((k, i) => (inputs.get(k)!.value = boxText(p[i])));
+      (["pivotX", "pivotY", "pivotZ"] as const).forEach((k, i) => put(k, p[i]));
       showSummary();
     },
     setValue(key, value) {
-      inputs.get(key)!.value = boxText(value);
+      put(key, value);
+    },
+    dragging(key) {
+      for (const [k, input] of inputs) input.classList.toggle("move-panel-dragged", k === key);
+    },
+    setValues(values) {
+      for (const k of ["x", "y", "z", "turnX", "turnY", "turnZ"] as const) (inputs.get(k)!.value = String(values[k] + 0)), exact.delete(k);
+      showRows(); // a snap that turns shows the angles it set
+    },
+    snapping(words) {
+      snap.setAttribute("aria-pressed", String(words !== null));
+      snapNote.textContent = words ?? "";
+      snapNote.hidden = words === null;
+      bodies.hidden = words !== null || bodies.textContent === "";
     },
     showError(message) {
       error.textContent = message;
@@ -186,6 +269,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     hide() {
       editing = null;
       open = false;
+      snap.setAttribute("aria-pressed", "false");
+      snapNote.hidden = true;
       box.hidden = true;
       error.hidden = true;
     },
@@ -194,6 +279,9 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     },
     get editing() {
       return editing;
+    },
+    get kind() {
+      return kind;
     },
     get pivotTyped() {
       return pivotTyped;

@@ -143,7 +143,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 3;
+  version: 4;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -151,12 +151,39 @@ export interface DesignDocument {
   timeline: { features: Feature[]; marker?: Marker };
   /** Each extrude's kept shape while its sketch is lost (24d2), by the extrude's id; left out when there is none. */
   kept?: Record<string, KeptShape>;
-  /** The solid features whose bodies are hidden by the browser's eye (U0f3), by id in timeline order; left out when every body shows. */
+  /**
+   * What the browser's eyes hide (U0f3; Ben 2026-10-29, an eye on
+   * everything): solid features' bodies and sketches by their items' ids
+   * in timeline order, then the origin's axes ("origin-x"…) and the
+   * folders ("folder-bodies"…) whose eyes are shut, in EYE_ROWS' order;
+   * left out when nothing is hidden.
+   */
   hidden?: string[];
+  /** The origin's planes shown by their eyes ("origin-xy"…, in ORIGIN_PLANES' order), hidden at first as in Fusion; left out when none shows. */
+  shownPlanes?: string[];
 }
 
-/** Whether feature `id`'s body is hidden by the browser's eye (U0f3): built as ever, but not drawn, picked or exported as a whole. */
+/** Whether `id` has its own eye shut (U0f3): a solid feature's body or a sketch built as ever, but not drawn, picked or exported as a whole; an axis or a folder hidden. */
 export const isHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => doc.hidden?.includes(id) ?? false;
+
+/** The origin's axes with an eye, X, Y then Z: shown at first. */
+export const ORIGIN_AXES = ["origin-x", "origin-y", "origin-z"] as const;
+/** The origin's planes with an eye: hidden at first (Fusion's). */
+export const ORIGIN_PLANES = ["origin-xy", "origin-xz", "origin-yz"] as const;
+/** The browser's folders with an eye: shut, it hides every row in it (the Timeline lists items, not things drawn; the Profiles are drawn by nothing). */
+export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches", origin: "folder-origin" } as const;
+/** Every id `hidden` may list that is not a timeline item's, in the order it lists them. */
+export const EYE_ROWS: readonly string[] = [...ORIGIN_AXES, ...Object.values(EYE_FOLDERS)];
+
+/** Whether solid feature `id`'s body is hidden: its own eye shut, or the Bodies folder's. */
+export const bodyHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.bodies);
+/** Whether sketch `id` is hidden: its own eye shut (an extrude of it shuts it, as Fusion does), or the Sketches folder's. */
+export const sketchHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.sketches);
+/** Whether an origin axis or plane is drawn: an axis unless its eye is shut, a plane only once its eye is opened; neither while the Origin folder's is shut. */
+export function originDrawn(doc: Pick<DesignDocument, "hidden" | "shownPlanes">, id: string): boolean {
+  if (isHidden(doc, EYE_FOLDERS.origin)) return false;
+  return (ORIGIN_PLANES as readonly string[]).includes(id) ? (doc.shownPlanes?.includes(id) ?? false) : !isHidden(doc, id);
+}
 
 const profileNames: Record<ProfileKind, string> = {
   "l-bracket": "L-bracket",
@@ -277,7 +304,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return { version: 3, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } };
+  return { version: 4, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } };
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -688,6 +715,17 @@ function checkKept(kept: unknown, feature: string): void {
   }
 }
 
+/** An item's provenance, checked: its own name, and a `from` list of where it came from, each a workspace, an id and a name. */
+function checkProvenance(provenance: unknown, feature: string): void {
+  const at = `Design feature ${feature}`;
+  const entry = (p: unknown): boolean => isRecord(p) && typeof p.workspace === "string" && typeof p.id === "string" && typeof p.label === "string";
+  if (!isRecord(provenance)) throw new Error(`${at} has no provenance`);
+  // Its name itself is checked with the naming rules (withRuledNames: "must be text").
+  if (!isRecord(provenance.self) || typeof provenance.self.workspace !== "string" || typeof provenance.self.id !== "string") throw new Error(`${at}'s provenance has no name of its own`);
+  if (!Array.isArray(provenance.from)) throw new Error(`${at}'s provenance has no 'from' list`);
+  if (!provenance.from.every(entry)) throw new Error(`${at}'s provenance lists something that is not a workspace, id and name`);
+}
+
 /** The name a preset was given before U0e, from its id's number and its type: "Feature 3 (box)", "Feature 5 (extrude)" for a slot. */
 export const oldPresetName = (f: Feature): string => `Feature ${idNumber(f.id) ?? f.id} (${f.intent.type})`;
 
@@ -848,9 +886,12 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const [list, limit, what] of [[data.profiles, DESIGN_LIMITS.profiles, "profiles"], [isRecord(data.timeline) ? data.timeline.features : undefined, DESIGN_LIMITS.items, "timeline items"], [data.sketches, DESIGN_LIMITS.items, "sketches"]] as const)
     if (Array.isArray(list)) notTooMany(list.length, limit, "Design data has", what);
   const v2 = data.version === 1 ? migrateDesignV1(data) : data;
-  const d = (v2.version === 2 ? migrateDesignV2(v2) : v2) as Partial<DesignDocument>;
-  // Text quoted, so "3" (text) never reads as the 3 it is not (app sweep, finding 25).
-  if (d.version !== 3) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2 or 3)`);
+  const v3 = v2.version === 2 ? migrateDesignV2(v2) : v2;
+  // Version 4 has version 3's fields; only data saved before it can hold the old preset names, renamed once checked (below).
+  const old = v3.version === 3;
+  const d = (old ? { ...v3, version: 4 } : v3) as Partial<DesignDocument>;
+  // Text quoted, so "4" (text) never reads as the 4 it is not (app sweep, finding 25).
+  if (d.version !== 4) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3 or 4)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -865,6 +906,9 @@ export function readDesignDocument(data: unknown): DesignDocument {
     if (typeof f?.id !== "string" || typeof intent?.type !== "string" || typeof intent.summary !== "string" || typeof intent.parameters !== "object" || intent.parameters === null)
       throw new Error(`Design feature ${i + 1} has no id or intent`);
     if (typeof f.suppressed !== "boolean") throw new Error(`Design feature ${f.id}: suppressed must be true or false, not ${shown(f.suppressed)}`);
+    // The graph, the edits and the browser panel read these on every item (file fuzz hunt 10-28: a file without them opened, then crashed).
+    if (!Array.isArray(f.dependsOn)) throw new Error(`Design feature ${f.id} has no dependsOn list`);
+    checkProvenance(f.provenance, f.id);
   }
   // Two items with one id are said as that first (timeline hunt, finding 12: a sketch item's id given to another item
   // was refused as "a sketch with no content", sending the reader to the wrong place); every id is checked below.
@@ -929,15 +973,26 @@ export function readDesignDocument(data: unknown): DesignDocument {
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
     }
   }
-  // Hidden bodies (U0f3): each a solid feature in the timeline, once.
+  // What the eyes hide (U0f3): each a solid feature or a sketch in the timeline, an origin axis or a folder, once.
   if (Object.hasOwn(d, "hidden")) {
     const hidden: unknown = (d as { hidden?: unknown }).hidden;
-    if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden bodies are not a list of solid feature ids (left out when every body shows)");
+    if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden list is not a list of ids (left out when everything shows)");
     const once = new Set<string>();
     for (const id of hidden) {
       const at = byId.get(id as string);
-      if (typeof id !== "string" || !at || !makesBody(at.item)) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature in the timeline`);
+      if (typeof id !== "string" || !((at && (makesBody(at.item) || isSketchItem(at.item))) || EYE_ROWS.includes(id))) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature or sketch in the timeline, an origin axis or a folder`);
       if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
+      once.add(id);
+    }
+  }
+  // The origin's planes shown by their eyes: each one of them, once.
+  if (Object.hasOwn(d, "shownPlanes")) {
+    const planes: unknown = (d as { shownPlanes?: unknown }).shownPlanes;
+    if (!Array.isArray(planes) || planes.length === 0) throw new Error("Design data's shown planes are not a list of origin planes (left out when none shows)");
+    const once = new Set<string>();
+    for (const id of planes) {
+      if (typeof id !== "string" || !(ORIGIN_PLANES as readonly string[]).includes(id)) throw new Error(`Design data shows ${shown(id)}, which is not an origin plane`);
+      if (once.has(id)) throw new Error(`Design data shows ${id} twice`);
       once.add(id);
     }
   }
@@ -970,7 +1025,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of d.timeline.features) if (makesBody(f)) shapeWith(f, (id) => profiles.get(id));
   // A Move's numbers and bodies (step 35e2).
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(f, byId);
-  return withShortNames(withRuledNames(d as DesignDocument));
+  // Each dependency an id (after the Move's own check, which says what a move's should be).
+  for (const f of d.timeline.features)
+    for (const id of f.dependsOn as unknown[]) if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);
+  const read = withRuledNames(d as DesignDocument);
+  return old ? withShortNames(read) : read;
 }
 
 /**

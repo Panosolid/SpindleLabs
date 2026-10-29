@@ -1,144 +1,144 @@
 /*! SpindleLabs kernel. Copyright (c) 2026 Ben (GitHub: benpy28) and Panosolid. All rights reserved. Use only as part of SpindleLabs: see LICENSE-KERNEL.txt. */
 
-export function begin(key) {
-    const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function at4a9p(p0) {
+    const ptr0 = passStringToWasm0(p0, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.begin(ptr0, len0);
+    const ret = wasm.at4a9p(ptr0, len0);
     return ret !== 0;
 }
 
-export function body_build(spec) {
-    const ret = wasm.body_build(spec);
+export function eds3ko() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.eds3ko();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+export function f5l94l(p0, p1) {
+    const ptr0 = passStringToWasm0(p1, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.f5l94l(p0, ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function guf4qz(p0) {
+    const ret = wasm.guf4qz(p0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return ret[0];
 }
 
-export function body_count() {
-    const ret = wasm.body_count();
+export function irk2fy(p0, p1, p2) {
+    const ret = wasm.irk2fy(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function jg9yot(p0, p1, p2) {
+    const ret = wasm.jg9yot(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function jgu9kn(p0, p1) {
+    const ptr0 = passStringToWasm0(p1, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.jgu9kn(p0, ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function ld2gsx(p0, p1) {
+    const ret = wasm.ld2gsx(p0, p1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function nwekzr(p0) {
+    const ret = wasm.nwekzr(p0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function p6rou1(p0) {
+    const ret = wasm.p6rou1(p0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function pprlx7(p0) {
+    const ret = wasm.pprlx7(p0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function qmdw4c() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.qmdw4c();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+export function u3qr1f(p0, p1, p2) {
+    const ret = wasm.u3qr1f(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function urxw0w() {
+    const ret = wasm.urxw0w();
     return ret;
 }
 
-export function body_free(body) {
-    const ret = wasm.body_free(body);
+export function uxyfpl(p0, p1, p2) {
+    const ret = wasm.uxyfpl(p0, p1, p2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function vicdld(p0) {
+    const ret = wasm.vicdld(p0);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-export function body_step(body) {
-    const ret = wasm.body_step(body);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function body_stl(body, name) {
-    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.body_stl(body, ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function body_view(body) {
-    const ret = wasm.body_view(body);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function export_stl(spec, name) {
-    const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.export_stl(spec, ptr0, len0);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function kernel_build() {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.kernel_build();
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-    }
-}
-
-export function kernel_version() {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.kernel_version();
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-    }
-}
-
-export function make_box(width, depth, height) {
-    const ret = wasm.make_box(width, depth, height);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function make_cylinder(radius, height) {
-    const ret = wasm.make_cylinder(radius, height);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function make_extrude(profile, distance) {
-    const ret = wasm.make_extrude(profile, distance);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function make_sphere(radius) {
-    const ret = wasm.make_sphere(radius);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function place_freely(x, y, pixel) {
-    const ret = wasm.place_freely(x, y, pixel);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function sketch_outline(lines, circles, arcs) {
-    const ret = wasm.sketch_outline(lines, circles, arcs);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-export function snap_to_grid(x, y, spacing) {
-    const ret = wasm.snap_to_grid(x, y, spacing);
+export function xqg0dt(p0, p1) {
+    const ret = wasm.xqg0dt(p0, p1);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

@@ -53,7 +53,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
+  # waiting for a runner and no merge queue run (branch_testing.py
+  # wait-idle), or after three hours however busy, so a night is never lost.
+  # It holds one runner while it waits instead of all of them.
+  idle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 185
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/branch_testing.py wait-idle 10800
+
   project:
+    needs: idle
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -79,6 +99,7 @@ jobs:
           if-no-files-found: ignore
 
   sessions:
+    needs: idle
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -96,41 +117,23 @@ jobs:
         run: |
           case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
           FISSION_FUZZ_SECONDS=$(( MINUTES * 60 )) npm run sessions -w @fission/testing
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: always()
-        with:
-          python-version: "3.12"
-      # The oracle scripts are the private kernel repo's (prototypes/oracle).
-      - name: Check out the kernel's oracle (quietly, the log is public)
-        if: always()
-        env:
-          KERNEL_READ: ${{ secrets.KERNEL_READ }}
-          SPARSE: prototypes/oracle
-        run: .github/scripts/kernel_ci.sh checkout k main
-      - name: Compare the extrudes with exact values and OpenCascade
-        if: always()
-        env:
-          OUT: ${{ runner.temp }}/fuzz
-        working-directory: k/prototypes/oracle
-        run: |
-          [ -f "$OUT/oracle.jsonl" ] || exit 0
-          pip install -q cadquery-ocp mpmath
-          # The oracle is private kernel code: its errors (a traceback names its
-          # files and lines) go to a file of the runner's, never this public log.
-          if ! python3 sketch_extrude.py "$OUT/oracle.jsonl" "$OUT/disagreements.txt" 2>"$RUNNER_TEMP/oracle-errors.txt"; then
-            mkdir -p "$OUT/seed-oracle-${{ github.run_id }}"
-            mv "$OUT/disagreements.txt" "$OUT/seed-oracle-${{ github.run_id }}/oracle-disagreements.txt"
-            exit 1
-          fi
-      # The STEP check's self-test: a minute of sessions with a face flipped
-      # in every file, each of which the oracle must report.
-      - name: The oracle catches a planted flipped face in every session's STEP file
+      # The STEP check's self-test input: a minute of sessions with a face
+      # flipped in every file, each of which the oracle must report.
+      - name: A minute of sessions with a planted flipped face
         if: always()
         env:
           PLANTED: ${{ runner.temp }}/planted
-        run: |
-          FISSION_STEP_FAULT=1 FISSION_FUZZ_SECONDS=60 FISSION_FUZZ_OUT="$PLANTED" npm run sessions -w @fission/testing
-          cd k/prototypes/oracle && python3 sketch_extrude.py "$PLANTED/oracle.jsonl" "$PLANTED/disagreements.txt" --planted 2>>"$RUNNER_TEMP/oracle-errors.txt"
+        run: FISSION_STEP_FAULT=1 FISSION_FUZZ_SECONDS=60 FISSION_FUZZ_OUT="$PLANTED" npm run sessions -w @fission/testing
+      # The sessions' shapes for the oracle job (kept a day).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: oracle-input-sessions
+          path: |
+            ${{ runner.temp }}/fuzz/oracle.jsonl
+            ${{ runner.temp }}/planted/oracle.jsonl
+          retention-days: 1
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -141,6 +144,7 @@ jobs:
           if-no-files-found: ignore
 
   timeline:
+    needs: idle
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -166,6 +170,7 @@ jobs:
           if-no-files-found: ignore
 
   stack:
+    needs: idle
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -189,13 +194,23 @@ jobs:
         if: always()
         env:
           PLANTED: ${{ runner.temp }}/planted
+        # Every chain the planted run tried must catch it: as many failure folders as chains in its log (rounds of 25;
+        # a fast runner fits several rounds into the second, 125 of 125 on 10-29, which "exactly 25" called a failure,
+        # issue #63). A miss is written as a failure folder, so the night's issue names it.
         run: |
+          missed() {
+            echo "$1"
+            mkdir -p "$RUNNER_TEMP/fuzz/seed-stack-planted"
+            printf 'Stacked face sketches, planted bug model-long: 1 kind(s) of failure\nfailure: the planted bug check: %s | %s\n' "$2" "$1" >"$RUNNER_TEMP/fuzz/seed-stack-planted/fuzz-report.txt"
+            exit 1
+          }
           if FISSION_STACK_FAULT=model-long FISSION_FUZZ_SECONDS=1 FISSION_FUZZ_OUT="$PLANTED" npm run stack -w @fission/testing >"$RUNNER_TEMP/planted.txt"; then
-            echo "the planted bug was not caught"; exit 1
+            missed "the planted bug was not caught" "not caught"
           fi
           caught=$(ls -d "$PLANTED"/seed-stack-* | wc -l)
-          echo "planted bug caught in $caught of 25 chains"
-          [ "$caught" -eq 25 ]
+          chains=$(awk -F, 'NR > 1 { n += $3 } END { print n + 0 }' "$PLANTED/log.csv")
+          echo "planted bug caught in $caught of $chains chains"
+          [ "$chains" -ge 25 ] && [ "$caught" -eq "$chains" ] || missed "planted bug caught in $caught of $chains chains" "caught in only some chains"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -203,8 +218,73 @@ jobs:
           path: ${{ runner.temp }}/fuzz/
           if-no-files-found: ignore
 
+  # The sessions' extrudes compared with exact values and OpenCascade by the
+  # private kernel's oracle. Main only, in the "kernel" environment (main
+  # only too), so no branch's workflow can read the key that clones the
+  # kernel; no npm code runs beside it. Its findings go into a fuzz-*
+  # artifact, which collect reads like the others.
+  sessions-oracle:
+    needs: sessions
+    if: always() && needs.sessions.result != 'skipped' && github.ref == 'refs/heads/main'
+    environment: kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: oracle-input-sessions
+          path: ${{ runner.temp }}/in
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check out the kernel's oracle (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          SPARSE: prototypes/oracle
+        run: .github/scripts/kernel_ci.sh checkout k main
+      - name: Compare the extrudes with exact values and OpenCascade
+        env:
+          IN: ${{ runner.temp }}/in
+          OUT: ${{ runner.temp }}/fuzz
+        working-directory: k/prototypes/oracle
+        run: |
+          mkdir -p "$OUT"
+          [ -f "$IN/fuzz/oracle.jsonl" ] || exit 0
+          pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
+          # The oracle is private kernel code: its errors (a traceback names its
+          # files and lines) and its disagreements (they name its checks) go to
+          # files of the runner's, never this public log; only the count is shown.
+          code=0
+          python3 sketch_extrude.py "$IN/fuzz/oracle.jsonl" "$OUT/disagreements.txt" >"$RUNNER_TEMP/oracle.txt" 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
+          head -1 "$RUNNER_TEMP/oracle.txt"
+          if [ "$code" -ne 0 ]; then
+            mkdir -p "$OUT/seed-oracle-${{ github.run_id }}"
+            mv "$OUT/disagreements.txt" "$OUT/seed-oracle-${{ github.run_id }}/oracle-disagreements.txt"
+            exit 1
+          fi
+      - name: The oracle catches a planted flipped face in every session's STEP file
+        if: always()
+        env:
+          IN: ${{ runner.temp }}/in
+        working-directory: k/prototypes/oracle
+        run: |
+          code=0
+          python3 sketch_extrude.py "$IN/planted/oracle.jsonl" "$RUNNER_TEMP/planted-disagreements.txt" --planted >"$RUNNER_TEMP/oracle-planted.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
+          head -1 "$RUNNER_TEMP/oracle-planted.txt"
+          exit $code
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fuzz-sessions-oracle
+          path: ${{ runner.temp }}/fuzz/seed-*/
+          if-no-files-found: ignore
+
   collect:
-    needs: [project, sessions, timeline, stack]
+    needs: [project, sessions, sessions-oracle, timeline, stack]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -225,6 +305,9 @@ jobs:
           COMMIT: ${{ github.sha }}
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
+          # Each job's result: a red one with no failure folder (a fuzzer that
+          # crashed or ran out of time) files an issue too.
+          JOBS: ${{ toJSON(needs) }}
         # Copied out first: the script switches this checkout to test-results.
         run: |
           cp .github/scripts/collect-fuzz.sh .github/scripts/file_issues.py .github/scripts/sim_numbers.py "$RUNNER_TEMP/"

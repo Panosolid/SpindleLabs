@@ -12,9 +12,11 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { startWithBox } from "./start.mjs";
+import { TOP, clickPlane } from "./sketch-screen.mjs";
+import { untilBodies } from "./browser.mjs";
 
 const server = await preview({ preview: { port: 4206, strictPort: true }, logLevel: "error" });
-const url = "http://localhost:4206/";
+const url = "http://localhost:4206/?test-hooks"; // fissionTest.bodyCount() for the Finish Extrude check
 const browser = await launch();
 const errors = [];
 const shots = process.env.E2E_SHOTS;
@@ -118,25 +120,25 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   await page.setViewportSize({ width: 375, height: 667 });
   await page.waitForTimeout(400);
   const s = await page.evaluate(() => {
-    const b = document.getElementById("sketch-plane-XY");
+    const b = document.getElementById("float-plane-XY"); // the plane prompt's planes are on the bar over the view at phone width (iPhone notes 10-28)
     const r = b.getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return { sheet: document.getElementById("properties-toggle").getAttribute("aria-expanded"), shown: r.width > 0 && r.height > 0, hittable: hit === b || b.contains(hit) };
   });
-  assert.deepEqual(s, { sheet: "true", shown: true, hittable: true }, `15: a sketch started sideways and turned upright shows its plane prompt ${JSON.stringify(s)}`);
+  assert.deepEqual(s, { sheet: "false", shown: true, hittable: true }, `15: a sketch started sideways and turned upright shows its plane prompt, with the view clear ${JSON.stringify(s)}`);
   await page.setViewportSize({ width: 667, height: 375 });
   await page.waitForTimeout(200);
   await page.setViewportSize({ width: 375, height: 667 });
   await page.waitForTimeout(200);
-  assert.equal(await page.isVisible("#sketch-plane-XY"), true, "15: and again after turning back and forth");
+  assert.equal(await page.isVisible("#float-plane-XY"), true, "15: and again after turning back and forth");
   // 16: Menu open over the prompt, Escape: Menu closes, the prompt stays.
   await page.tap("#menu-toggle");
   assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "true");
   await page.keyboard.press("Escape");
   assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "false", "16: Escape closes Menu");
-  assert.equal(await page.isVisible("#sketch-prompt"), true, "16: and does not also cancel the plane prompt");
+  assert.equal(await page.isVisible("#float-plane-XY"), true, "16: and does not also cancel the plane prompt");
   await page.keyboard.press("Escape");
-  assert.equal(await page.isVisible("#sketch-prompt"), false, "16: a second Escape cancels the prompt as before");
+  assert.equal(await page.isVisible("#float-plane-XY"), false, "16: a second Escape cancels the prompt as before");
   await context.close();
 }
 
@@ -176,20 +178,166 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   await page.setViewportSize({ width: 375, height: 667 });
   await page.waitForTimeout(400);
   const s = await page.evaluate(() => {
-    const b = document.getElementById("sketch-plane-XY");
+    const b = document.getElementById("float-plane-XY"); // the plane prompt's planes are on the bar over the view at phone width (iPhone notes 10-28)
     const r = b.getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return { sheet: document.getElementById("properties-toggle").getAttribute("aria-expanded"), shown: r.width > 0 && r.height > 0, hittable: hit === b || b.contains(hit) };
   });
-  assert.deepEqual(s, { sheet: "true", shown: true, hittable: true }, `15: a sketch started sideways and turned upright shows its plane prompt ${JSON.stringify(s)}`);
+  assert.deepEqual(s, { sheet: "false", shown: true, hittable: true }, `15: a sketch started sideways and turned upright shows its plane prompt, with the view clear ${JSON.stringify(s)}`);
   // 16: Menu open over the prompt, Escape: Menu closes, the prompt stays.
   await page.tap("#menu-toggle");
   assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "true");
   await page.keyboard.press("Escape");
   assert.equal(await page.getAttribute("#menu-toggle", "aria-expanded"), "false", "16: Escape closes Menu");
-  assert.equal(await page.isVisible("#sketch-prompt"), true, "16: and does not also cancel the plane prompt");
+  assert.equal(await page.isVisible("#float-plane-XY"), true, "16: and does not also cancel the plane prompt");
   await page.keyboard.press("Escape");
-  assert.equal(await page.isVisible("#sketch-prompt"), false, "16: a second Escape cancels the prompt as before");
+  assert.equal(await page.isVisible("#float-plane-XY"), false, "16: a second Escape cancels the prompt as before");
+  await context.close();
+}
+
+// Ben's iPhone notes (10-28), at the iPhone 15 Pro's 393 × 852 with taps: (1) Finish Sketch and Extrude's OK were hidden (the
+// toolbar's far end, the closed Properties sheet), so the bar over the view (phone-float.ts) holds a green Finish and Cancel
+// while a tool is open, on screen and on top even with Properties open; (2) a tool ending puts the Properties sheet away;
+// (3) Create Sketch no longer opens the sheet over the view: the bar says "Tap a plane or face" with the three planes.
+{
+  const { page, context } = await open(393, 852);
+  const sheet = () => page.getAttribute("#properties-toggle", "aria-expanded");
+  /** The element's box, whether it is all inside the window, and whether a tap at its middle lands on it (nothing over it). */
+  const reach = (sel) => page.$eval(sel, (b) => {
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { onScreen: r.width > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, tappable: hit === b || b.contains(hit), height: r.height, disabled: b.disabled ?? false };
+  });
+  const sketching = (on) => page.waitForFunction((w) => document.querySelector("#viewport").dataset.sketching === String(w), on);
+  // The control first: with nothing open the bar is not shown.
+  assert.equal(await page.isVisible("#phone-float"), false, "no tool open: no bar");
+  await page.tap("#create-sketch");
+  await page.waitForSelector("#phone-float", { state: "visible" });
+  assert.equal(await sheet(), "false", "3: Create Sketch leaves the Properties sheet shut, the view clear");
+  assert.match(await page.textContent("#phone-float"), /Tap a plane or face/);
+  for (const p of ["XY", "XZ", "YZ"]) assert.deepEqual(await reach(`#float-plane-${p}`), { onScreen: true, tappable: true, height: 44, disabled: false }, `3: the ${p} plane on the bar`);
+  const cube = await page.$eval("#phone-float", (b) => b.getBoundingClientRect().right);
+  assert.ok(cube <= 393 - 96, `3: the bar stops left of the view cube (its right edge at ${cube})`);
+  // The new look floats the Browser and Properties toggles over the view's top (phone-sheet.css): the bar sits under them, never over (merging main, 10-29).
+  for (const t of ["#browser-toggle", "#properties-toggle"]) assert.equal((await reach(t)).tappable, true, `${t} still tappable with the bar shown`);
+  if (shots) await page.screenshot({ path: `${shots}/phone-float-pick-393.png` });
+  await page.tap("#float-plane-XY");
+  await sketching(true);
+  assert.equal(await page.textContent("#float-finish"), "Finish Sketch");
+  assert.deepEqual(await reach("#float-finish"), { onScreen: true, tappable: true, height: 44, disabled: false }, "1: Finish Sketch on screen and tappable");
+  // A rectangle, so there is something to extrude: the tool, then two opposite corners (snapping to the grid is off, SF1).
+  await page.tap("#sketch-tool-rectangle");
+  await clickPlane(page, [5, 5], TOP, true);
+  await clickPlane(page, [25, 20], TOP, true);
+  await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketchPoints?.split(" ").length >= 4);
+  // WebKit moves a tap's click onto a button near the finger (CI run 40805491664: a corner tapped 15 px under the bar
+  // finished the sketch). Its events, made here: a press that begins on the view, then the click on Finish. The sketch stays.
+  await page.evaluate(() => {
+    const canvas = document.querySelector("#viewport canvas");
+    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: 120, clientY: 270 }));
+    canvas.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", clientX: 120, clientY: 270 }));
+    document.getElementById("float-finish").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 120, clientY: 255 }));
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await page.$eval("#viewport", (v) => v.dataset.sketching), "true", "a tap on the view whose click WebKit moves onto Finish leaves the sketch open");
+  // Properties opened by hand (Ben's screenshot): the bar is still over it, and Finish closes it.
+  await page.tap("#properties-toggle");
+  assert.equal(await sheet(), "true");
+  assert.equal((await reach("#float-finish")).tappable, true, "1: Finish stays on top of the open sheet");
+  if (shots) await page.screenshot({ path: `${shots}/phone-float-finish-sketch-393.png` });
+  await page.tap("#float-finish");
+  await sketching(false);
+  assert.equal(await sheet(), "false", "2: Finish Sketch puts the Properties sheet away");
+  assert.equal(await page.isVisible("#phone-float"), false, "the bar goes with the tool");
+  // Extrude: Finish Extrude makes the body (two bodies, the box and the rectangle's), then the sheet is away.
+  await page.tap("#extrude");
+  await page.waitForFunction(() => document.querySelector("#float-finish")?.textContent === "Finish Extrude" && !document.querySelector("#float-finish").disabled);
+  assert.deepEqual(await reach("#float-finish"), { onScreen: true, tappable: true, height: 44, disabled: false }, "1: Finish Extrude on screen and tappable");
+  assert.equal(await page.isVisible("#float-cancel"), true, "Extrude has Cancel on the bar too");
+  await page.tap("#properties-toggle");
+  if (shots) await page.screenshot({ path: `${shots}/phone-float-finish-extrude-393.png` });
+  await page.tap("#float-finish");
+  await untilBodies(page, 2);
+  await page.waitForSelector("#phone-float", { state: "hidden" });
+  assert.equal(await sheet(), "false", "2: Finish Extrude puts the Properties sheet away");
+  // With no closed outline to use (a new, empty sketch is the newest), Finish Extrude is off, as the panel's OK is; Cancel ends it.
+  await page.tap("#create-sketch");
+  await page.tap("#float-plane-XZ");
+  await sketching(true);
+  await page.tap("#float-finish");
+  await sketching(false);
+  await page.tap("#extrude");
+  await page.waitForFunction(() => document.querySelector("#float-finish")?.textContent === "Finish Extrude");
+  await page.waitForTimeout(300);
+  assert.equal(await page.$eval("#float-finish", (b) => b.disabled), await page.$eval("#extrude-ok", (b) => b.disabled), "Finish Extrude is off exactly when OK is");
+  // Weak-spot hunt 10-29: the dimmed Finish said nothing on touch (its reason sat in the closed sheet and a title never shows):
+  // the bar now says why in words, the panel's own status line, on screen without opening anything.
+  assert.equal(await page.$eval("#float-finish", (b) => b.disabled), true, "no closed outline: Finish Extrude is off");
+  assert.equal(await sheet(), "false", "the sheet is still shut");
+  const status = (await page.textContent("#extrude-status")).trim();
+  assert.ok(status.length > 0, "the panel has a reason");
+  assert.equal((await page.textContent("#float-why")).trim(), status, "the bar says why Finish is off");
+  assert.equal((await reach("#float-why")).onScreen, true, "and it is on screen");
+  if (shots) await page.screenshot({ path: `${shots}/phone-float-why-393.png` });
+  await page.tap("#properties-toggle");
+  await page.tap("#float-cancel");
+  await page.waitForSelector("#phone-float", { state: "hidden" });
+  assert.equal(await sheet(), "false", "2: Cancel puts the sheet away too");
+  assert.equal(await page.isVisible("#extrude-panel"), false, "Cancel ended Extrude");
+  await untilBodies(page, 2);
+  // Finish Move with no body picked: Move refuses (its error in the closed sheet), and the bar shows those words.
+  await page.tap("#move");
+  await page.waitForFunction(() => document.querySelector("#float-finish")?.textContent === "Finish Move");
+  assert.equal(await page.isVisible("#float-why"), false, "nothing wrong yet: no words");
+  await page.tap("#float-finish");
+  await page.waitForSelector("#float-why", { state: "visible" });
+  assert.equal((await page.textContent("#float-why")).trim(), (await page.textContent("#move-error")).trim(), "the bar repeats Move's refusal");
+  assert.equal((await reach("#float-why")).onScreen, true, "on screen");
+  await page.tap("#float-cancel");
+  await page.waitForSelector("#phone-float", { state: "hidden" });
+  await context.close();
+}
+// Ben's rule (10-28): on a phone one tap must never suddenly cover the view when the person may not want that. Each toolbar
+// tool (not a menu's ▾, whose list is what was asked for) is tapped at 393 × 852 and at most 40% of the 3D view may be covered
+// afterwards (a 12 × 12 grid of points over the view, each covered when what is on top there is outside it). Body facts is the
+// one tool whose job is to show its numbers in the sheet; Export STL downloads a file and opens nothing.
+{
+  const SHOWS_ITS_SHEET = new Set(["inspect-facts", "tool-export_stl"]);
+  const { page, context } = await open(393, 852);
+  const covered = () => page.evaluate(() => {
+    const v = document.getElementById("viewport").getBoundingClientRect();
+    let n = 0;
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) {
+      const hit = document.elementFromPoint(v.left + ((i + 0.5) * v.width) / 12, v.top + ((j + 0.5) * v.height) / 12);
+      if (!hit || !hit.closest("#viewport")) n++;
+    }
+    return n / 144;
+  });
+  // The measure can fail: Properties opened by hand covers more than 40% (its 60% sheet, less the toggles' row).
+  await page.tap("#properties-toggle");
+  const sheetShare = await covered();
+  assert.ok(sheetShare > 0.4, `control: an open sheet counts as covering the view (${sheetShare})`);
+  await page.tap("#properties-toggle");
+  const tools = await page.$$eval("#toolbar button.toolbar-group-tool", (bs) => bs.filter((b) => b.offsetParent && !b.disabled).map((b) => b.id));
+  assert.ok(tools.includes("create-sketch") && tools.includes("extrude"), `the tools found: ${tools}`);
+  for (const id of tools.filter((t) => !SHOWS_ITS_SHEET.has(t))) {
+    await page.tap(`#${id}`);
+    await page.waitForTimeout(400);
+    const share = await covered();
+    if (shots) await page.screenshot({ path: `${shots}/one-tap-${id}-393.png` });
+    assert.ok(share <= 0.4, `one tap on ${id} covers ${Math.round(share * 100)}% of the view`);
+    if (await page.isVisible("#float-cancel")) await page.tap("#float-cancel");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#phone-float", { state: "hidden" });
+  }
+  await context.close();
+}
+// Wide screens keep the tool's own buttons in sight: no bar.
+{
+  const { page, context } = await open(1280, 800);
+  await page.click("#create-sketch");
+  await page.waitForSelector("#sketch-plane-XY", { state: "visible" });
+  assert.equal(await page.isVisible("#phone-float"), false, "1280: no bar over the view");
   await context.close();
 }
 
@@ -210,6 +358,8 @@ async function phoneLook(page) {
       undo: { w: rect("#undo").width, h: rect("#undo").height, radius: parseFloat(style("#undo").borderTopLeftRadius) },
       navHeights: [...document.querySelectorAll("#view-controls button")].map((b) => b.getBoundingClientRect().height),
       handle: { content: handle.content, w: parseFloat(handle.width), h: parseFloat(handle.height) },
+      // Read from the rules (the Properties sheet is closed): its size boxes, each at least this tall and this big a text.
+      sizeBoxes: ["#width", "#depth", "#height"].map((sel) => ({ sel, minHeight: parseFloat(style(sel).minHeight) || 0, font: parseFloat(style(sel).fontSize) })),
     };
   });
 }
@@ -220,6 +370,8 @@ function checkPhoneLook(m) {
   assert.ok(m.undo.w === 48 && m.undo.h === 48 && m.undo.radius >= 24, `Undo is a round 48 px button (${JSON.stringify(m.undo)})`);
   assert.ok(m.navHeights.length > 0 && m.navHeights.every((h) => h >= 44), `the view buttons are 44 px or more (${m.navHeights})`);
   assert.ok(m.handle.content === '""' && m.handle.w === 40 && m.handle.h === 5, `a sheet has its 40 × 5 grab handle (${JSON.stringify(m.handle)})`);
+  // 44 px to tap, and 16 px text or more, below which iOS Safari zooms the page in on a tap (weak-spot hunt A21: 29 px, 13.3 px).
+  assert.ok(m.sizeBoxes.every((b) => b.minHeight >= 44 && b.font >= 16), `the size boxes are 44 px tall with 16 px text (${JSON.stringify(m.sizeBoxes)})`);
 }
 {
   const { page, context } = await open(375, 667);
@@ -236,9 +388,32 @@ function checkPhoneLook(m) {
   const slim = await page.addStyleTag({ content: ".view-controls button.nav-button:not(#no-such-id):not(#none) { height: 30px; min-width: 30px; }" });
   await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /view buttons are 44 px/);
   await slim.evaluate((el) => el.remove());
+  const small = await page.addStyleTag({ content: "#properties label input#width:not(#none) { min-height: 0; font-size: 13px; }" });
+  await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /size boxes are 44 px tall/);
+  await small.evaluate((el) => el.remove());
   checkPhoneLook(await phoneLook(page));
   await context.close();
 }
+
+// A short phone held sideways (568 × 320 and 640 × 360, weak-spot hunt A F3): with Extrude open and its Properties sheet up
+// the Distance box was below the screen's bottom (303..347 at 320 px), so typing a distance meant scrolling the sheet
+// first. It is now on the screen and tappable as soon as the sheet opens.
+for (const [width, height] of [[568, 320], [640, 360]]) {
+  const { page, context } = await open(width, height);
+  await page.tap("#extrude");
+  await page.waitForSelector("#extrude-panel", { state: "attached" });
+  await page.tap("#properties-toggle");
+  await page.waitForTimeout(400);
+  const d = await page.$eval("#extrude-distance", (b) => {
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom), onScreen: r.height > 0 && r.top >= 0 && r.bottom <= innerHeight, tappable: hit === b };
+  });
+  if (shots) await page.screenshot({ path: `${shots}/phone-extrude-${width}x${height}.png` });
+  assert.ok(d.onScreen && d.tappable, `${width} × ${height}: Extrude's Distance box on the screen and tappable with the sheet up ${JSON.stringify(d)}`);
+  await context.close();
+}
+console.log("ok - 568 × 320 and 640 × 360: Extrude's Distance box is on the screen and tappable as the sheet opens");
 
 // Ben's iPhone (2026-10-29): dragging a sheet's handle down moved only the handle (the words bounced) and the sheet never
 // closed. With real touches (Chrome's touch input, not made-up events) at 375 and 393 px: a drag on the handle moves the

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHistory, emptyProject, projectToJson, type Project } from "@fission/core";
-import { memoryKeyValue, projectStore, startAutosave, type AutosaveStatus, type ProjectStore, type Timers } from "../src/index.ts";
+import { memoryKeyValue, projectStore, startAutosave, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type AutosaveStatus, type ProjectStore, type Timers } from "../src/index.ts";
 
 /** A fake clock: timers run only when the test moves time on with `advance`. */
 function fakeTimers() {
@@ -305,4 +305,50 @@ test("following the undo history: a project the store doesn't hold yet is stored
   await clock.advance(5000);
   assert.deepEqual(saved, [10], "once stored, the same project again is no change");
   autosave.stop();
+});
+
+// Blind spots B2b (2026-10-29): browser storage that never answers a save
+// (seen in a real browser, e2e/storage-failing.mjs: IndexedDB's put never
+// settling left "Saving…" showing for good, so the user thought the work
+// was kept). A save not answered within STORAGE_ANSWER_MS says so in words,
+// and a change made meanwhile doesn't hide it; the late answer still counts.
+test("a save storage never answers says so after STORAGE_ANSWER_MS, and a change meanwhile doesn't hide it", async () => {
+  const { store, saved, finishOne } = heldStore();
+  const { edit, clock, last } = setup(store);
+  edit(1);
+  await clock.advance(1000); // the quiet moment: the save starts, and is held
+  assert.deepEqual(saved, [1]);
+  // 0.9 × the deadline: still saving, nothing said yet.
+  await clock.advance(STORAGE_ANSWER_MS * 0.9);
+  assert.deepEqual(last(), { state: "saving" });
+  // 1.1 × the deadline: the words.
+  await clock.advance(STORAGE_ANSWER_MS * 0.2);
+  assert.deepEqual(last(), { state: "error", message: STORAGE_NOT_ANSWERING });
+  // A change while storage still says nothing: the words stay, never "Saving…" again.
+  edit(2);
+  assert.deepEqual(last(), { state: "error", message: STORAGE_NOT_ANSWERING });
+  await clock.advance(1000);
+  assert.deepEqual(last(), { state: "error", message: STORAGE_NOT_ANSWERING });
+  // Storage answers at last: the change made meanwhile is saved next, then all is saved.
+  await finishOne();
+  assert.deepEqual(saved, [1, 2]);
+  await finishOne();
+  assert.deepEqual(last(), { state: "saved" });
+  // And the next slow save is timed afresh.
+  edit(3);
+  await clock.advance(1000 + STORAGE_ANSWER_MS * 0.9);
+  assert.deepEqual(last(), { state: "saving" });
+  await finishOne();
+  assert.deepEqual(last(), { state: "saved" });
+  assert.equal(STORAGE_ANSWER_MS, 15_000, "fifteen seconds: a phone's slowest real save takes well under a second");
+});
+
+test("a stopped autosave whose save storage never answers says nothing more", async () => {
+  const { store } = heldStore();
+  const { autosave, edit, clock, statuses } = setup(store);
+  edit(1);
+  await clock.advance(1000);
+  autosave.stop();
+  await clock.advance(STORAGE_ANSWER_MS * 2);
+  assert.deepEqual(statuses, [{ state: "saving" }]);
 });

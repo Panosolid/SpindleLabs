@@ -5,7 +5,7 @@ import { MAX_PIXELS, MAX_SIDE, MAX_SIZE_MM, MIN_MM_PER_PIXEL, checkMmPerPixel, c
 import { refusal } from "./helpers.ts";
 
 test("the physical limits are the kernel's modelling range", () => {
-  // The kernel's tolerance.rs is the one place its epsilons live; ours must not drift from them. The
+  // The kernel keeps its epsilons in one place; ours must not drift from them. The
   // kernel is private now, so its release writes them into the kernel.json shipped beside the build.
   const { limits } = JSON.parse(readFileSync(new URL("../../../packages/core/src/kernel/wasm/kernel.json", import.meta.url), "utf8"));
   assert.equal(MIN_MM_PER_PIXEL, limits.LINEAR);

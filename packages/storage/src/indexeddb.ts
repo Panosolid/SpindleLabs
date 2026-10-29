@@ -26,21 +26,44 @@ function request<T>(r: IDBRequest<T>, doing: string): Promise<T> {
  */
 export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefined = globalThis.indexedDB): KeyValue {
   let db: Promise<IDBDatabase> | undefined;
+  let promise: Promise<IDBDatabase> | undefined;
   const open = () =>
-    (db ??= new Promise((resolve, reject) => {
+    (db ??= promise = new Promise((resolve, reject) => {
       if (!factory) return reject(new Error("IndexedDB is not available"));
       const r = factory.open(name, 1);
       r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-      r.onsuccess = () => resolve(r.result);
+      r.onsuccess = () => {
+        // The browser closing the database (site data cleared) or another page deleting it: let it go, and open it
+        // afresh on the next call instead of failing every call after (real-use hunt B4).
+        const opened = r.result;
+        const forget = () => {
+          if (db === promise) db = undefined;
+        };
+        opened.onclose = forget;
+        opened.onversionchange = () => {
+          opened.close();
+          forget();
+        };
+        resolve(opened);
+      };
       r.onerror = () => {
         db = undefined; // let the next call try again
         reject(failure(r.error, "open the project database"));
       };
       r.onblocked = () => reject(new Error("browser storage is busy: close other SpindleLabs tabs and try again"));
     }));
+  /** A transaction on the store; a connection the browser is closing is let go, and the failure said in words. */
+  const transaction = (opened: IDBDatabase, mode: IDBTransactionMode, doing: string) => {
+    try {
+      return opened.transaction(STORE, mode);
+    } catch (e) {
+      db = undefined; // the next call opens the database afresh
+      throw failure(e instanceof DOMException ? e : null, doing);
+    }
+  };
   /** Runs one request in its own transaction; a write resolves only once it is committed. */
   const run = async <T>(mode: IDBTransactionMode, doing: string, make: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
-    const tx = (await open()).transaction(STORE, mode);
+    const tx = transaction(await open(), mode, doing);
     const result = request(make(tx.objectStore(STORE)), doing);
     const done = new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
@@ -50,7 +73,53 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
     const [value] = await Promise.all([result, done]);
     return value;
   };
+  /** KeyValue.update: the reads, `change` and the writes in one readwrite transaction, which IndexedDB runs alone among those touching this store, in every tab. */
+  const update: KeyValue["update"] = async (keys, change) => {
+    let doing = `save "${keys.join('", "')}"`;
+    const tx = transaction(await open(), "readwrite", doing);
+    const store = tx.objectStore(STORE);
+    const values: (string | undefined)[] = [];
+    let thrown: { error: unknown } | null = null;
+    // Each write's own outcome counts too, as in run(): a write refused is a failed save even if the transaction reports complete.
+    let written: (writes: Promise<unknown>[]) => void = () => {};
+    const writes = new Promise<unknown[]>((resolve) => (written = (all) => resolve(Promise.all(all))));
+    // Nothing awaited from here to the writes: a transaction left with no request waiting commits.
+    const write = () => {
+      const puts: Promise<unknown>[] = [];
+      try {
+        const changes = Object.entries(change(values));
+        if (changes.length > 0) doing = `save "${changes.map(([k]) => k).join('", "')}"`; // a refusal names what was being written
+        for (const [k, v] of changes) puts.push(request(store.put(v, k), doing));
+        written(puts);
+      } catch (error) {
+        try {
+          thrown = { error };
+          tx.abort();
+          written([]); // the abort's own error, not the writes it cancelled
+        } catch {
+          // Already aborted (a put that failed, such as a full disk): its own error is the one to report.
+          thrown = null;
+          written(puts);
+        }
+      }
+    };
+    let left = keys.length;
+    keys.forEach((k, i) => {
+      const r = store.get(k);
+      r.onsuccess = () => {
+        values[i] = typeof r.result === "string" ? r.result : undefined;
+        if (--left === 0) write();
+      };
+    });
+    if (keys.length === 0) write();
+    const done = new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(thrown ? thrown.error : failure(tx.error, doing));
+    });
+    await Promise.all([done, writes]);
+  };
   return {
+    update,
     get: async (key) => {
       const v = await run("readonly", `read "${key}"`, (s) => s.get(key));
       return typeof v === "string" ? v : undefined;

@@ -4,6 +4,8 @@
 // tested with a fault planted in a good file that it must catch
 // (test/gcode-checks.test.ts).
 //
+// - `checkProblems`: every problem the replay itself found (an inch unit, a
+//   flow or tool change, an arc it couldn't follow…) fails the file, by line.
 // - `checkVolume`: the plastic laid down is within a stated allowance of
 //   what the part needs (walls plus the infill's share, worked out by the
 //   caller from the part).
@@ -29,10 +31,15 @@
 import { STILL, type Move, type Replay } from "./gcode.ts";
 
 export interface CheckProblem {
-  check: "volume" | "bed" | "height" | "feed" | "temperature" | "travel" | "layer-order" | "layer-height" | "open-wall";
+  check: "replay" | "volume" | "bed" | "height" | "feed" | "temperature" | "travel" | "layer-order" | "layer-height" | "open-wall";
   /** The G-code line at fault, or 0 for the whole file. */
   line: number;
   text: string;
+}
+
+/** The replay's own problems, as check problems: a file the replayer couldn't follow faithfully can't pass. */
+export function checkProblems(r: Replay): CheckProblem[] {
+  return r.problems.map((p) => ({ check: "replay", line: p.line, text: `${p.kind}: ${p.text}` }));
 }
 
 /** Decision 7's layer height limits, mm. */

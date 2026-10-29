@@ -10,7 +10,7 @@ import { BOX_VIEW, CYLINDER_VIEW } from "./views.ts";
 const side = (piece: number, boundary = 0) => ({ role: "side" as const, boundary, piece });
 
 /**
- * A rectangle's extrude as the kernel gives it (extrude.rs): faces start,
+ * A rectangle's extrude as the kernel gives it: faces start,
  * end, then the side of each piece; for each piece k its edge in the start
  * cap (walked forwards by the side), then in the end cap (forwards by the
  * end cap), then the upright at corner k, walked forwards by the side

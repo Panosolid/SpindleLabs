@@ -43,8 +43,11 @@ test("a selected face under an overlay still shows the overlay", () => {
   const plain = tint(BASE_COLOUR, SELECTION_COLOUR, SELECTED_MIX);
   const warned = tint(SEVERITY_COLOURS.warning, SELECTION_COLOUR, SELECTED_MIX);
   assert.ok(!near(plain, warned) && !near(warned, SELECTION_COLOUR));
-  // Red channel: 0.96 + (0.25 − 0.96)·0.6 = 0.534, against 0.604 + (0.25 − 0.604)·0.6 ≈ 0.392 for grey.
-  assert.ok(Math.abs(warned[0] - 0.534) < 1e-12 && warned[0] > plain[0]);
-  // The selection colour is none of the overlay colours.
-  for (const c of Object.values(SEVERITY_COLOURS)) assert.ok(!near(c, SELECTION_COLOUR));
+  // Red channel, the selection's red 74/255 ≈ 0.2902: 0.96 + (0.2902 − 0.96)·0.6 = 0.384 + 0.1741 = 0.5581,
+  // against grey's 154/255 ≈ 0.6039: 0.6039 + (0.2902 − 0.6039)·0.6 = 0.2416 + 0.1741 = 0.4157.
+  assert.ok(Math.abs(warned[0] - 0.5581) < 1e-4 && Math.abs(plain[0] - 0.4157) < 1e-4 && warned[0] > plain[0]);
+  // The selection colour is none of the overlay colours, by a margin the eye sees (0.25 in sRGB 0–1;
+  // the nearest, info's violet: √(0.37² + 0.16² + 0.05²) ≈ 0.41).
+  for (const c of Object.values(SEVERITY_COLOURS)) assert.ok(Math.hypot(...c.map((x, i) => x - SELECTION_COLOUR[i])) > 0.25, `overlay ${c} too near the selection`);
+  assert.ok(Math.abs(Math.hypot(...SEVERITY_COLOURS.info.map((x, i) => x - SELECTION_COLOUR[i])) - 0.405) < 0.01);
 });

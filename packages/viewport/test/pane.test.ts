@@ -22,6 +22,7 @@ function fakeScene() {
     showSketches: (d) => void calls.push(`showSketches ${d.length}`),
     showPlanes: (p, faces) => void calls.push(`showPlanes ${p.map((x) => x.id).join(",")}${faces ? ` faces ${faces.join(",")}` : ""}`),
     showExtrude: (show) => void calls.push(`showExtrude ${show ? show.profiles.map((p) => p.id).join(",") : "none"}`),
+    showOrigin: (shown) => void calls.push(`showOrigin ${shown.axes.join(",")} ${shown.planes.length}`),
     showMoveHandles: (show) => void calls.push(`showMoveHandles ${show ? show.centre.join(",") : "none"}`),
     onPick: null,
     onSketchPointer: null,

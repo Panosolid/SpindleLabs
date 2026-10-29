@@ -17,12 +17,14 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
+import { keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { watchKernel } from "./kernel-lost.ts";
+import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { appLoaded } from "./loading.ts";
 import { designWorkspace } from "@fission/design";
@@ -49,7 +51,11 @@ const workspaces: WorkspacePlugin[] = [
   layoutWorkspace,
 ];
 
-const kernel = new KernelClient();
+// The browser test of a kernel lost mid-call (e2e/kernel-lost.mjs) shortens its deadline with ?test-hooks&kernel-deadline=<ms>.
+const hooks = new URLSearchParams(location.search);
+const kernel = new KernelClient({ answerWithinMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
+// The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
+watchKernel(kernel);
 // The one conversion layer: every workspace says what it can hand over.
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
@@ -517,9 +523,23 @@ const local = (() => {
   }
 })();
 // Marks the project being opened, so one that froze or crashed the tab isn't
-// reopened on the next visit (audit S2, reopen.ts in @fission/storage).
-const guard = reopenGuard(local);
+// reopened on the next visit (audit S2, reopen.ts in @fission/storage). The
+// tabs ask each other over a channel, so a tab started while another is still
+// opening the project doesn't take that for a freeze (real-use hunt A3).
+const guard = reopenGuard(local, {
+  channel: (() => {
+    try {
+      return new BroadcastChannel(OPENING_KEY) as OpeningChannel; // its MessageEvent carries the `data` the guard reads
+    } catch {
+      return null; // no channel: a mark found is taken for a freeze, as before
+    }
+  })(),
+});
 window.addEventListener("pagehide", () => guard.finished());
+// A phone locked or the app switched: the OS may kill the tab later with no pagehide (real-use hunt D1).
+document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? guard.putAway() : guard.back()));
+document.addEventListener("freeze", () => guard.putAway());
+document.addEventListener("resume", () => guard.back());
 let autosave: Autosave | null = null;
 // Leaving (timeline hunt, finding 1): when the page is hidden, reloaded or
 // closed, the changes not stored yet go to the unsaved-changes journal at
@@ -552,14 +572,14 @@ let canKeep = true;
  * Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is,
  * stored at `storedAt`: a save after another tab stored it since is refused and says so (app sweep, finding 2).
  */
-function keep(id: string, stored = false, storedAt: Date | null = null) {
+function keep(id: string, stored = false, storedAt: Date | null = null, fromKept = false) {
   keepOnChange = null;
   autosave?.finish();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt });
+  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -715,9 +735,24 @@ $("open-file").addEventListener("change", async () => {
 // for a workspace not on screen asks first ("Open in Image?"; the owner's
 // ask, 2026-10-28): Cancel opens nothing and leaves you where you were.
 const elsewhere = openElsewhere(document);
+/** A file the browser can no longer read: moved or deleted after the drag began, a cloud placeholder, a permission change. */
+class Unreadable extends Error {}
+async function readBytes(file: File, part: Blob): Promise<ArrayBuffer> {
+  try {
+    return await part.arrayBuffer();
+  } catch {
+    throw new Unreadable(`Couldn't read “${file.name}”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.`);
+  }
+}
 async function receive(files: File[]) {
   await started; // or the project being reopened would replace what this opens
-  const heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await f.slice(0, HEAD_BYTES).arrayBuffer()) })));
+  let heads;
+  try {
+    heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, HEAD_BYTES))) })));
+  } catch (e) {
+    if (e instanceof Unreadable) return fileStatus(e.message);
+    throw e;
+  }
   const route = routeFiles(representations, heads);
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
@@ -728,8 +763,9 @@ async function receive(files: File[]) {
     if (!(await elsewhere.ask(file.name, formatInfo(route.format).one, workspaceName(target), here ? workspaceName(here) : null))) return;
   }
   try {
-    await route.importer.open(file.name, new Uint8Array(await file.arrayBuffer()));
+    await route.importer.open(file.name, new Uint8Array(await readBytes(file, file)));
   } catch (e) {
+    if (e instanceof Unreadable) return fileStatus(e.message);
     return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
   fileStatus("");
@@ -826,6 +862,21 @@ function showShortcuts() {
   shortcutDialog.querySelector(".close")!.addEventListener("click", () => shortcutDialog.close());
   shortcutDialog.showModal();
 }
+// Settings: a card dialog of sections (@fission/ui settings.ts), kept in this
+// browser alone. Close, Escape and a tap outside the card all leave it.
+const settingsDialog = Object.assign(document.createElement("dialog"), { id: "settings", className: "settings" });
+settingsDialog.setAttribute("aria-labelledby", "settings-title");
+document.body.append(settingsDialog);
+let browserSettings: SettingsStore | null = null;
+const settings = () => (browserSettings ??= new SettingsStore(local));
+$("settings-open").addEventListener("click", () => {
+  settings(); // read once now, so the first real setting has its place
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts });
+  settingsDialog.showModal();
+});
+settingsDialog.addEventListener("click", (e) => {
+  if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
+});
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
@@ -871,6 +922,7 @@ showUndoRedo();
 withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
+withIcon($("settings-open"), "settings", 16);
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
@@ -906,8 +958,8 @@ for (const slot of ["browser", "properties"] as const) {
   toggle.addEventListener("sheet-close", () => set(false));
 }
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (the plane to sketch on, Edit feature, Extrude's distance and OK, Move's boxes once a body is picked, so the view stays clear to
-// pick them: without the sheet open they are out of reach) and closes again, if it opened it, when
+// (Edit feature, Move's boxes once a body is picked: without the sheet open they are out of reach; not the plane prompt or
+// Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
   const toggle = $("properties-toggle");
@@ -917,7 +969,7 @@ for (const slot of ["browser", "properties"] as const) {
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#extrude-panel:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
+    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
     if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
@@ -939,6 +991,10 @@ for (const slot of ["browser", "properties"] as const) {
   phone.addEventListener("change", () => phone.matches && update(true));
   new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
 }
+// At phone width the bar over the view (phone-float.ts) ends the tool in use; a tool ending puts the Properties sheet away.
+startPhoneFloat($("workspace"), $("viewport"), () => {
+  if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
+});
 // Body facts (Inspect ▾) shows the numbers in the Properties sheet, which at phone width stays shut unless asked (demo rehearsal 10-28).
 $("workspace").addEventListener("properties-reveal", () => {
   const toggle = $("properties-toggle");
@@ -948,7 +1004,7 @@ $("workspace").addEventListener("properties-reveal", () => {
 {
   const phone = window.matchMedia("(max-width: 640px)");
   $("workspace").addEventListener("pointerdown", (e) => {
-    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport")) return;
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float")) return; // the bar over the view ends a tool, which puts the sheet away itself
     for (const slot of ["browser", "properties"]) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
@@ -973,16 +1029,20 @@ window.addEventListener("hashchange", () => show(fromHash()));
 // with a message saying so; so does one the last visit started opening and
 // never finished (it froze or crashed the tab), once: the visit after tries
 // it again. A browser that can't keep projects at all still gets a working
-// app (Save and Open use files). Never a blank app.
+// app (Save and Open use files). Never a blank app: storage that doesn't
+// answer within STORAGE_ANSWER_MS is taken as failing (blind spots B2b: an
+// IndexedDB that never answered left the app blank for good).
 async function start() {
   const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
-  // Changes the last visit left with before they were stored go back first, so the project reopens with them.
-  const unsaved = await recoverUnsaved(store, local, workspaces);
-  if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
+  const answered = <T>(asked: Promise<T>) =>
+    Promise.race([asked, new Promise<never>((_, refuse) => setTimeout(() => refuse(new Error("browser storage didn't answer")), STORAGE_ANSWER_MS))]);
   let newest: string | undefined;
   let newestAt: Date | null = null;
   try {
-    const top = (await store.list())[0];
+    // Changes the last visit left with before they were stored go back first, so the project reopens with them.
+    const unsaved = await answered(recoverUnsaved(store, local, workspaces));
+    if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
+    const top = (await answered(store.list()))[0];
     newest = top?.id;
     newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
   } catch (e) {
@@ -993,19 +1053,22 @@ async function start() {
   }
   let opened: string | undefined;
   try {
-    if (newest && guard.stuck(newest)) {
+    if (newest && (await guard.check(newest))) {
       keepOnFirstChange();
       fileStatus("The last project didn't finish opening on your last visit, so a new one was started. The old one is still kept in this browser: reload the page now, before changing anything, to try it again.");
     } else if (newest) {
       guard.opening(newest);
-      ctx.project = await store.open(newest);
-      keep(newest, true, newestAt);
-      saveStatus({ state: "saved" });
+      // Its newest state, when the store had no room for it (storage full): kept in the journal, and what the user
+      // last saw, so it is what opens and what Save writes (real-use hunt B1). Its autosave stores it once it can.
+      const kept = keptEntry(local, newest);
+      ctx.project = kept === null ? await answered(store.open(newest)) : projectFromJson(kept, workspaces);
+      keep(newest, kept === null, newestAt, kept !== null);
+      saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
     } else keep(newId());
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
-    keep(newId());
+    keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)
     fileStatus(`Couldn't open the last project (${why(e)}), so a new one was started. The old one is still kept in this browser.`);
   }
   show(fromHash());

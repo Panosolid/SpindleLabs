@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane, screenPoint } from "./sketch-screen.mjs";
-import { gridSnapOn, startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/";
@@ -52,7 +52,7 @@ async function hover(page, [x, y]) {
 /** Into a sketch on the ground plane with grid snap ticked, so clicks land on the 10 mm grid. */
 async function startSketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
-  await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await gridSnapOn(page);
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
@@ -80,7 +80,7 @@ await check("the Arc row: hover opens the three arcs beside it, another row clos
     await page.hover("#sketch-menu-group-arc");
     await until(page, () => !document.getElementById("sketch-arc-menu").hidden, null, "the arcs open on hover");
     const sub = await page.$$eval("#sketch-arc-menu [role=menuitemradio]", (els) => els.map((e) => [e.querySelector("span").textContent, e.querySelector("kbd").textContent]));
-    assert.deepEqual(sub, [["3-point arc", "A"], ["Centre arc", ""], ["Tangent arc", "T"]]);
+    assert.deepEqual(sub, [["3-point arc", "A"], ["Centre arc", ""], ["Tangent arc", ""]]);
     const row = await rect(page, "#sketch-menu-group-arc");
     const menu = await rect(page, "#sketch-arc-menu");
     assert.ok(menu.left >= row.right && menu.left - row.right <= 4 && Math.abs(menu.top - row.top) <= 6, `beside the Arc row: ${JSON.stringify(menu)} vs ${JSON.stringify(row)}`);

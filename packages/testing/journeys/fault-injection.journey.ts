@@ -1,5 +1,5 @@
 // Journey: frontier testing T6b (docs/progress/frontier-testing.md), fault
-// injection in the app, as T6a does in the kernel (kernel/src/failpoint.rs):
+// injection in the app, as T6a does in the kernel:
 // each user action below runs once cleanly, counting the kernel calls it
 // makes (C), then C times more on a fresh app, the nth call failing once
 // as an internal kernel error (design-app.ts, `failCall`), so every call

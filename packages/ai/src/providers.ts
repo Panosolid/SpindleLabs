@@ -12,7 +12,7 @@
 
 import type { Fetch } from "./http.ts";
 import { browserKeyStore, type ApiKeyStore } from "./keys.ts";
-import { builtInProvider, IN_BROWSER_MODEL, inBrowserDownloadBytes, inBrowserProvider, type BuiltInModelLike, type GpuLike, type WebLLMLike } from "./local.ts";
+import { builtInProvider, IN_BROWSER_MODEL, inBrowserDownloadBytes, inBrowserProvider, RUNNER_NOT_LOADED, type BuiltInModelLike, type GpuLike, type WebLLMLike } from "./local.ts";
 import { DEFAULT_MODELS, hostedProvider, listHostedModels } from "./hosted.ts";
 import { hasModel, isThisComputer, OLLAMA_ENDPOINT, ollamaModels, ollamaProvider } from "./ollama.ts";
 
@@ -172,7 +172,9 @@ export function createProvider(settings: ProviderSettings, deps: ProviderDeps = 
 
 /** The download size in bytes of an in-browser model (the default when none is named), read before anything downloads. */
 export async function inBrowserDownloadSize(model: string = IN_BROWSER_MODEL, deps: Pick<ProviderDeps, "fetch" | "loadWebLLM"> = {}): Promise<number> {
-  const webllm = await (deps.loadWebLLM ?? loadWebLLM)();
+  const webllm = await (deps.loadWebLLM ?? loadWebLLM)().catch(() => {
+    throw new Error(RUNNER_NOT_LOADED);
+  });
   const info = webllm.prebuiltAppConfig.model_list.find((m) => m.model_id === model);
   if (!info) throw new Error(`${model} isn't a model the in-browser runner knows`);
   return inBrowserDownloadBytes(info, deps.fetch ?? browserFetch);

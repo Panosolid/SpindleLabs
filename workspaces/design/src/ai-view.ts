@@ -13,7 +13,7 @@ import type { AIView, Command, CommandSpec } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
 import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable, RENAME_OP } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
-import { insertAt, isHidden, isMoveItem, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
+import { bodyHidden, insertAt, isMoveItem, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
 import { addSketch } from "./sketch.ts";
@@ -185,7 +185,7 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     if (isMoveItem(f)) return `${label} A move: builds no body; ${item.failed ? "failed, so it moves nothing" : "the bodies it moves are where it puts them from here on"}.`;
     if (item.failed) return `${label} Failed: builds no body${failed.has(f.id) ? "" : " (its sketch is gone)"}.`;
     const kept = keptOf(doc, f) ? " Its sketch is lost (deleted, or no longer a closed outline), so it builds from the shape it kept." : "";
-    const hidden = isHidden(doc, f.id) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";
+    const hidden = bodyHidden(doc, f.id) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";
     return `${label} Builds Body ${bodies.indexOf(f) + 1}.${kept}${hidden}${f === part && adds === null ? " This is the part set_part changes." : ""}`;
   });
   const shown = lines.length > AI_TIMELINE_ITEMS ? [`(${lines.length - AI_TIMELINE_ITEMS} earlier item${lines.length - AI_TIMELINE_ITEMS === 1 ? "" : "s"} left out)`, ...lines.slice(-AI_TIMELINE_ITEMS)] : lines;

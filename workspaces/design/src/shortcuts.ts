@@ -7,9 +7,14 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   // Also in a size field: Escape there has nothing else to do.
   { id: "clear-selection", keys: "Escape", label: "Clear the selection", inText: true },
   // UX1b: OK in the Extrude panel when the focus is elsewhere (on the view, after dragging the arrow); in its distance box Enter is the box's own.
-  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude or Move panel" },
+  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude, Move or Rotate panel" },
   // Step 35e2b: Move (Fusion's key), outside a sketch; in a sketch the key does what it would.
   { id: "move-tool", keys: "M", label: "Move bodies (outside a sketch)" },
+  // Ben, 2026-10-29: Rotate is its own tool; R is the sketch's Rectangle, so Shift+R.
+  { id: "rotate-tool", keys: "Shift+R", label: "Rotate bodies (outside a sketch)" },
+  // Ben's keys (10-29), Fusion's: E is Extrude (in a sketch too: it leaves the sketch, as the button does); S is the command search box.
+  { id: "extrude-tool", keys: "E", label: "Extrude" },
+  { id: "command-search", keys: "S", label: "Search the commands by name (outside a sketch)" },
   // Copy (the keys or the browser's Edit menu) with one profile selected.
   { id: "copy-svg", keys: "Mod+C", label: "Copy the selected profile as SVG" },
   // While a sketch is edited (steps 22a, 22c, 23b, 23c); outside a sketch the key does what it would.
@@ -17,7 +22,7 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   { id: "sketch-rectangle", keys: "R", label: "Rectangle tool (in a sketch)" },
   { id: "sketch-circle", keys: "C", label: "Circle tool (in a sketch)" },
   { id: "sketch-arc", keys: "A", label: "3-point arc tool (in a sketch)" },
-  { id: "sketch-tangent", keys: "T", label: "Tangent arc tool (in a sketch)" },
+  // T is kept for Trim (Fusion's key, Ben 10-29), which comes with step 52; the tangent arc has no key until then (Fusion gives it none).
   // Step 27d: Project (Fusion's key).
   { id: "sketch-project", keys: "P", label: "Project tool (in a sketch)" },
   // Sketch feel SF4: while a line or rectangle is part drawn, a digit, point or minus starts typing its size; otherwise the key does what it would.
@@ -28,8 +33,8 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
 export const typedSizeKey = (id: string): string | null => (/^type-size-[0-9.-]$/.test(id) ? id.slice(-1) : null);
 
 /** The sketch tool a shortcut chooses, or null for any other shortcut. */
-export function sketchToolKey(id: string): "line" | "rectangle" | "circle" | "arc" | "tangent" | "project" | null {
-  const tools = { "sketch-line": "line", "sketch-rectangle": "rectangle", "sketch-circle": "circle", "sketch-arc": "arc", "sketch-tangent": "tangent", "sketch-project": "project" } as const;
+export function sketchToolKey(id: string): "line" | "rectangle" | "circle" | "arc" | "project" | null {
+  const tools = { "sketch-line": "line", "sketch-rectangle": "rectangle", "sketch-circle": "circle", "sketch-arc": "arc", "sketch-project": "project" } as const;
   return Object.hasOwn(tools, id) ? tools[id as keyof typeof tools] : null;
 }
 

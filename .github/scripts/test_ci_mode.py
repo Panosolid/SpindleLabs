@@ -151,6 +151,19 @@ class Docs(unittest.TestCase):
         self.assertFalse(ci_mode.docs_only([]))
         self.assertFalse(ci_mode.docs_only(None))
 
+    def test_draft_is_read_now_and_doubt_means_ready(self):
+        # The API says draft: a draft run. Ready: not. Any failure, or an
+        # answer without the field: not a draft, so every check runs.
+        with mock.patch.object(ci_mode, "get", return_value={"draft": True}) as get:
+            self.assertTrue(ci_mode.read_draft(56))
+        get.assert_called_once_with("/pulls/56")
+        with mock.patch.object(ci_mode, "get", return_value={"draft": False}):
+            self.assertFalse(ci_mode.read_draft(56))
+        with mock.patch.object(ci_mode, "get", return_value={}):
+            self.assertFalse(ci_mode.read_draft(56))
+        with mock.patch.object(ci_mode, "get", side_effect=OSError("down")):
+            self.assertFalse(ci_mode.read_draft(56))
+
     def test_a_rename_out_of_code_is_code(self):
         # GitHub lists a rename once, with its old path as previous_filename;
         # read_files keeps both, so moving kernel code into docs/ is not docs only.
@@ -290,6 +303,81 @@ class Workflows(unittest.TestCase):
         self.assertIn('if [ "$DOCS" = true ]; then', ci["e2e"])
         self.assertIn("if: always()", ci["mutants-in-diff"])
         self.assertEqual(re.search(r"needs: (.*)", ci["mutants-in-diff"]).group(1), "mode")
+
+    def test_a_draft_skips_only_reported_checks_and_never_looks_ready(self):
+        # A draft's run skips phone and browsers, and marks itself with the
+        # check automerge.py waits out (DRAFT); marking it ready must start a
+        # new run (ready_for_review), or the head would wait forever. Moving
+        # it back to draft cancels its run (same group) and the heavy jobs
+        # skip only on that explicit action, never on a missing answer.
+        sys.path.insert(0, HERE)
+        import automerge  # noqa: E402
+        text = open(os.path.join(WORKFLOWS, "ci.yml")).read()
+        ci = jobs(os.path.join(WORKFLOWS, "ci.yml"))
+        types = re.search(r"(?m)^  pull_request:\n    types: \[(.*)\]$", text).group(1).split(", ")
+        for t in ("opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"):
+            self.assertIn(t, types)
+        self.assertIn(f"name: {automerge.DRAFT}\n", ci["draft"])
+        # Draft or not comes from the API when the run starts, never from the
+        # event, and only an explicit 'true' skips anything.
+        self.assertIn("    needs: mode\n    if: needs.mode.outputs.draft == 'true'\n", ci["draft"])
+        self.assertIn("draft: ${{ steps.mode.outputs.draft }}", ci["mode"])
+        self.assertNotIn("pull_request.draft", text)
+        for job in ("browsers", "phone"):
+            self.assertIn("&& needs.mode.outputs.draft != 'true' }}", ci[job], job)
+        for job in ("app", "baseline", "e2e-shard", "e2e-quick"):
+            self.assertIn("github.event.action != 'converted_to_draft'", ci[job], job)
+            self.assertNotIn("pull_request.draft", ci[job], job)
+        self.assertNotIn("draft", ci["kernel"] + ci["mutants-in-diff"])
+        self.assertIn("DRAFTED: ${{ github.event.action == 'converted_to_draft' }}", ci["e2e"])
+        self.assertNotIn("push:", text.split("\njobs:\n")[0])
+
+    def test_random_testing_and_fuzzing_wait_for_idle_ci(self):
+        # Every job of these workflows starts after `idle` (directly or through
+        # a job that needs it), which waits for no CI job queued and no merge
+        # queue run (branch_testing.py wait-idle); the kernel's coverage
+        # report runs only for main's runs.
+        for name in ("nightly.yml", "kernel-nightly.yml", "fuzz.yml", "kernel-fuzz.yml"):
+            found = jobs(os.path.join(WORKFLOWS, name))
+            self.assertRegex(found["idle"], r"run: python3 \.github/scripts/branch_testing\.py wait-idle \S+", name)
+            self.assertNotIn("needs:", found["idle"], name)
+            for job, block in found.items():
+                if job != "idle":
+                    with self.subTest(workflow=name, job=job):
+                        self.assertRegex(block, r"(?m)^    needs: ")
+        kernel = jobs(os.path.join(WORKFLOWS, "kernel-ci.yml"))
+        self.assertIn("    if: inputs.label == 'main'\n", kernel["coverage"])
+        self.assertIn("run-name: Kernel CI ${{ inputs.label }}\n", open(os.path.join(WORKFLOWS, "kernel-ci.yml")).read())
+
+
+def main_not_last(text):
+    """True when a test file's `if __name__ == "__main__"` block is not its
+    last top-level statement: run as a script, it would stop at unittest.main()
+    before the rest of the file defines its helpers and tests."""
+    import ast
+    body = ast.parse(text).body
+    for i, node in enumerate(body):
+        if isinstance(node, ast.If) and "__main__" in ast.unparse(node.test):
+            return i != len(body) - 1
+    return False
+
+
+class MainLast(unittest.TestCase):
+    """Every test file here also runs on its own (python3 test_x.py), so
+    nothing may follow its __main__ block (test_automerge.py once had helpers
+    after it: discover passed while running the file raised NameErrors)."""
+
+    def test_every_test_file(self):
+        for name in sorted(os.listdir(HERE)):
+            if name.startswith("test_") and name.endswith(".py"):
+                with self.subTest(name=name), open(os.path.join(HERE, name), encoding="utf-8") as f:
+                    self.assertFalse(main_not_last(f.read()))
+
+    def test_planted(self):
+        main = 'if __name__ == "__main__":\n    unittest.main()\n'
+        self.assertFalse(main_not_last("def f():\n    pass\n" + main))
+        self.assertTrue(main_not_last(main + "def f():\n    pass\n"))
+        self.assertFalse(main_not_last("def f():\n    pass\n"))
 
 
 if __name__ == "__main__":

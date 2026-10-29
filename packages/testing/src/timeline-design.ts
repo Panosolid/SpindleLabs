@@ -103,7 +103,7 @@ export function edgeGeometry(view: BodyView): { length: number; centroid: number
 /**
  * How far an edge measured on the display mesh may be from the model's:
  * its chords sag inside a curve by at most DISPLAY_CHORD (0.01 mm,
- * kernel/src/tolerance.rs; the cap of 256 chords a turn sags less below a
+ * the kernel's limits; the cap of 256 chords a turn sags less below a
  * radius of 133 mm, more than any shape here), which moves the centroid by
  * at most that, plus the f32 rounding of each point (2⁻²⁴ of 100 mm, ~6e-6
  * mm). Each chord is shorter than its arc by (θ/3) × its sag, θ the chord's

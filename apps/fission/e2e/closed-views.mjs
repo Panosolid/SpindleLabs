@@ -11,12 +11,28 @@
 // context and draws the box (a pixel probe at its middle), no "Too many
 // active WebGL contexts" warning, and no closed view's or guide's elements
 // left in memory (DevTools' detached nodes after a forced collection).
+// Then panels that close (found by the soak at phone width): each of the
+// Sketch, Extrude and Edit feature panels emptied itself after hiding, so a
+// button under the pointer as it was pressed (Extrude, OK) was taken out of
+// a panel no longer drawn, and Chromium kept that panel marked "under the
+// pointer" for good: once the pointer moved on (the toolbar's STL), File ▾ >
+// Open's fresh panels left the old ones in memory, one of each for every
+// design opened, with all they held. A panel now empties itself while still
+// drawn, then hides. At 375 and 1280 px, ROUNDS times: a rectangle sketched
+// and extruded, its distance changed in Edit feature, the STL exported, the
+// project saved, opened again, then emptied by New. No more of those panels
+// may be held after the last round than after the second: the page's own
+// last panels may be, not one more for every round (before: 3, 5, 7… at
+// 375 px).
 // Chromium only (the DevTools protocol).
 // Run with `node e2e/closed-views.mjs` (after `npm run build`).
 import assert from "node:assert/strict";
 import { preview } from "vite";
 import { launch, untilBodies } from "./browser.mjs";
-import { insertPreset, switchTo } from "./start.mjs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
+import { chooseFile, closePanels, gridSnapOn, insertPreset, openPanel, sheetsClearFor, switchTo } from "./start.mjs";
 
 const TIMES = 20;
 const server = await preview({ preview: { port: 4185, strictPort: true }, logLevel: "error" });
@@ -111,6 +127,87 @@ await check("the guide", async (page) => {
   await page.click(".guide-close");
   await page.waitForFunction(() => !document.querySelector("dialog.guide"));
 });
+
+const ROUNDS = 6;
+const PANELS = /id (sketch-panel|extrude-panel|feature-edit)\b/;
+const file = join(tmpdir(), `closed-panels-${process.pid}.spindle`);
+
+/** How many Sketch, Extrude and Edit feature panels are held out of the page. */
+async function held(cdp) {
+  await cdp.send("HeapProfiler.collectGarbage");
+  const { detachedNodes } = await cdp.send("DOM.getDetachedDomNodes");
+  return detachedNodes.filter((d) => PANELS.test((d.treeNode.attributes ?? []).join(" "))).length;
+}
+
+/** One round, from an empty design back to one. */
+async function round(page, first) {
+  const until = (fn, arg) => page.waitForFunction(fn, arg);
+  const bodyRows = (n) => until((k) => document.querySelectorAll('#browser [data-node^="body-"]').length === k, n);
+  await page.click("#create-sketch");
+  await page.click("#sketch-plane-XY");
+  await until(() => document.querySelector("#viewport").dataset.sketching === "true");
+  if (first) await gridSnapOn(page);
+  await closePanels(page);
+  await page.click("#sketch-tool-rectangle");
+  for (const corner of [[0, 0], [20, 10]]) await clickPlane(page, corner, EMPTY_TOP);
+  await until(() => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.");
+  await page.click("#sketch-extrude");
+  await until(() => document.querySelector("#extrude-status")?.textContent.startsWith("Sketch 1 makes a closed outline."));
+  await page.fill("#extrude-distance", "5");
+  await page.click("#extrude-ok");
+  await bodyRows(1);
+  // Edit feature from the Extrude's row menu: 5 mm becomes 7.
+  await closePanels(page);
+  const item = page.locator("#timeline [data-item]").last();
+  await item.click({ button: "right" });
+  await until(() => document.getElementById("row-menu").open);
+  await page.click("#row-menu-edit");
+  await until(() => document.getElementById("feature-edit")?.hidden === false);
+  await openPanel(page, "properties");
+  await page.fill("#feature-edit input[type=number]", "7");
+  await page.click("#feature-edit-ok");
+  await until(() => document.querySelector("#intent")?.textContent === "Extrude Sketch 1 by 7 mm");
+  // The pointer moves on to the toolbar's STL, then the project is saved, opened again and emptied.
+  await closePanels(page);
+  await Promise.all([page.waitForEvent("download"), page.click("#toolbar [data-op=export_stl]")]);
+  await until(() => document.querySelector("#save-status")?.dataset.state === "saved");
+  const [download] = await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-save")]);
+  await download.saveAs(file);
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), chooseFile(page, "open")]);
+  await chooser.setFiles(file);
+  await bodyRows(1);
+  await until(() => document.getElementById("viewport")?.dataset.rebuilding !== "true");
+  await chooseFile(page, "start-fresh");
+  await page.click("#start-fresh-confirm");
+  await until(() => document.querySelector("#viewport").dataset.shape === "none");
+  await untilBodies(page, 0);
+}
+
+for (const width of [375, 1280]) {
+  const context = await browser.newContext({ viewport: { width, height: 667 }, acceptDownloads: true });
+  try {
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    await page.goto("http://localhost:4185/?test-hooks");
+    await page.waitForSelector("#start-hint", { state: "visible" });
+    sheetsClearFor(page);
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("DOM.enable");
+    const counts = [];
+    for (let i = 1; i <= ROUNDS; i++) {
+      await round(page, i === 1);
+      counts.push(await held(cdp));
+    }
+    // Held after each round, worked from the cause: the last round's panels at most, the same number every round.
+    assert.ok(counts.at(-1) <= counts[1], `no more panels held after round ${ROUNDS} than after round 2 (held after each round: ${counts.join(", ")})`);
+    console.log(`PASS panels at ${width} px: ${ROUNDS} designs sketched, extruded, edited, exported, saved, opened and emptied; panels held after each: ${counts.join(", ")}`);
+  } catch (e) {
+    failed = true;
+    console.log(`FAIL panels at ${width} px\n  ${e.message.split("\n").join("\n  ")}`);
+  } finally {
+    await context.close();
+  }
+}
 
 await browser.close();
 await new Promise((resolve) => server.httpServer.close(resolve));

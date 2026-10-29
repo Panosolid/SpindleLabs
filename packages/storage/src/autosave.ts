@@ -65,6 +65,12 @@ export interface AutosaveOptions {
    * Left out, the first save checks nothing.
    */
   storedAt?: Date | null;
+  /**
+   * The project was opened from its kept journal entry (`keptEntry`, unsaved.ts: recovery couldn't store it, storage
+   * full): this autosave owns that entry, saving over the older stored state, and keeps each state it journals
+   * marked kept until the store has taken one (real-use hunt B1).
+   */
+  fromKept?: boolean;
   /** The clock journal entries are timed on (the store's, so the two compare); tests hand in a fake one. */
   now?: () => Date;
 }
@@ -96,6 +102,15 @@ export interface Autosave {
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
 export const QUIET_MS = 1000;
 
+/**
+ * How long a save may go unanswered before the status says storage isn't
+ * answering: fifteen seconds (a phone's real saves take well under one).
+ * Blind spots B2b: IndexedDB that never answered left "Saving…" for good.
+ */
+export const STORAGE_ANSWER_MS = 15_000;
+/** The words for a save storage hasn't answered (the status line puts "Not saved: " before them). */
+export const STORAGE_NOT_ANSWERING = "browser storage isn't answering, so your latest changes aren't stored yet (use Save to keep your work as a file)";
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
@@ -107,10 +122,12 @@ export function startAutosave(
   id: string,
   project: () => Project,
   onStatus: (status: AutosaveStatus) => void = () => {},
-  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date() }: AutosaveOptions = {},
+  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date(), fromKept = false }: AutosaveOptions = {},
 ): Autosave {
   let timer: unknown = null;
   let inFlight = false;
+  /** The save in flight went unanswered past STORAGE_ANSWER_MS: said, and kept said until it settles. */
+  let overdue = false;
   /** Settles when the save in flight (if any) has finished, either way. */
   let flight: Promise<void> = Promise.resolve();
   let again = false;
@@ -149,8 +166,14 @@ export function startAutosave(
 
   /** A journal entry's time: now, but never before this tab's last known stored state (a clock set back must not make its own entry look older than its own save). */
   const stamp = () => new Date(Math.max(now().getTime(), base?.getTime() ?? -Infinity, writtenAt?.getTime() ?? -Infinity));
+  /**
+   * This autosave's project was opened from the kept entry (`fromKept`): until it has stored once, the entry is its
+   * own (no refusal to save), and each state it journals stays marked kept, so no other tab saves over it.
+   */
+  let owner = fromKept;
   /** The last visit's unsaved changes, which recovery couldn't store, are still here: nothing may be saved over them. */
   const keptFromLastVisit = () => {
+    if (owner) return false;
     try {
       const entry = journal?.getItem(key);
       return entry != null && readJournalEntry(entry).kept;
@@ -192,7 +215,10 @@ export function startAutosave(
       return;
     }
     const v = version; // the project read next holds every change counted so far
-    const at = now();
+    // A clock set back since the last save: just after it instead, so this save is never older than the state it
+    // replaces, and a journal entry another tab stamped with that state's time is not put back over it (B5).
+    const clock = now();
+    const at = base !== undefined && clock.getTime() < base.getTime() ? new Date(base.getTime() + 1) : clock;
     let text: string;
     try {
       text = projectToJson(project()); // refuses NaN and the like before anything is written
@@ -201,7 +227,7 @@ export function startAutosave(
       return;
     }
     if (keptFromLastVisit()) {
-      report({ state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload to try again." });
+      report({ state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them." });
       return;
     }
     if (text === written) {
@@ -211,6 +237,10 @@ export function startAutosave(
     }
     inFlight = true;
     let failure: string | null = null;
+    const watch = timers.setTimeout(() => {
+      overdue = true;
+      report({ state: "error", message: STORAGE_NOT_ANSWERING });
+    }, STORAGE_ANSWER_MS);
     try {
       const saving = store.save(id, JSON.parse(text) as Project, at, base); // exactly the state checked above
       flight = saving.then(
@@ -221,11 +251,14 @@ export function startAutosave(
       written = text;
       writtenAt = at;
       base = at;
+      owner = false; // the store holds this tab's state now: the entry, if still here, is an ordinary one
       stored(v, at);
     } catch (e) {
       if (e instanceof ProjectChangedError) conflicted = true;
       failure = message(e);
     }
+    timers.clearTimeout(watch);
+    overdue = false;
     inFlight = false;
     if (again) {
       again = false;
@@ -240,7 +273,7 @@ export function startAutosave(
     version++;
     if (timer !== null) timers.clearTimeout(timer);
     timer = timers.setTimeout(() => void save(), quietMs);
-    report({ state: "saving" });
+    report(overdue ? { state: "error", message: STORAGE_NOT_ANSWERING } : { state: "saving" });
   }
   /** A history change: a change unless the project is what the store holds, with no save waiting or running. */
   function followed() {
@@ -270,7 +303,7 @@ export function startAutosave(
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
-          journal.setItem(key, journalEntry(projectToJson(project()), stamp()));
+          journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner));
           journalVersion = version;
           kept = true;
         } catch {
@@ -304,7 +337,7 @@ export function startAutosave(
       if (text === written && !inFlight) return stored(v, writtenAt);
       if (journal) {
         try {
-          journal.setItem(key, journalEntry(text, at)); // kept now, should the page go before the store's save
+          journal.setItem(key, journalEntry(text, at, owner)); // kept now, should the page go before the store's save
           journalVersion = v;
         } catch {
           // storage full: the store's save below is all there is
@@ -316,6 +349,7 @@ export function startAutosave(
           await store.save(id, JSON.parse(last) as Project, at, base);
           written = last;
           writtenAt = at;
+          owner = false;
           stored(v, at);
         } catch (e) {
           // Kept in the journal (when it could be written), put back on the next visit; unless another tab saved

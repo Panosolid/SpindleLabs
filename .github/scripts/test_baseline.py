@@ -57,6 +57,77 @@ class Compare(unittest.TestCase):
         self.assertEqual(v, {"k.gone.instructions": "missing", "k.new.instructions": "new", "k.op.nanos": "info", "k.new.nanos": "info"})
 
 
+class Rejudge(unittest.TestCase):
+    """Time judged against main measured in turns on the same runner."""
+
+    BASE = {"margins": MARGINS, "metrics": {"a.op.relative_time": 0.0088, "k.op.instructions": 1_000_000}}
+
+    def rows(self, new):
+        return compare(self.BASE, dict({"k.op.instructions": 1_000_000}, **new))
+
+    def test_a_slow_runner_alone_passes(self):
+        # 10-29: main's own code read 0.0182 against a baseline of 0.0088
+        # (+107%, past the 100% fail). Main measured beside it reads the same:
+        # ratios 0.0182/0.0180 = 1.0111 and 0.0175/0.0177 = 0.9887, median
+        # (their mean, two of them) 0.9999: -0.01%.
+        rows = self.rows({"a.op.relative_time": 0.0182})
+        self.assertEqual(baseline.needs_reference(rows), ["a.op.relative_time"])
+        ours = [{"a.op.relative_time": 0.0182}, {"a.op.relative_time": 0.0175}]
+        mains = [{"a.op.relative_time": 0.0180}, {"a.op.relative_time": 0.0177}]
+        judged = {r[0]: r for r in baseline.rejudge(self.BASE, rows, ours, mains)}
+        row = judged["a.op.relative_time (vs main)"]
+        self.assertAlmostEqual(row[3], -0.01, places=2)
+        self.assertEqual(row[4], "ok")
+        self.assertEqual(judged["k.op.instructions"][4], "ok", "other metrics keep the fixed baseline")
+
+    def test_boundaries_at_09_and_11_of_the_margins_against_main(self):
+        # Fail 100%: twice main is the edge; 1.9x (0.9 of the margin past 1)
+        # is only flagged, 2.1x fails. Flag 15%: 1.135x passes, 1.165x flags.
+        rows = self.rows({"a.op.relative_time": 0.05})
+        for ratio, want in ((1.9, "flag"), (2.1, "fail"), (1.135, "ok"), (1.165, "flag")):
+            ours = [{"a.op.relative_time": 0.01 * ratio}] * 2
+            mains = [{"a.op.relative_time": 0.01}] * 2
+            got = baseline.rejudge(self.BASE, rows, ours, mains)
+            self.assertEqual([r[4] for r in got if r[0].startswith("a.op")], [want], ratio)
+
+    def test_the_median_ratio_of_the_turns_is_used(self):
+        # Ratios 1.0, 3.0, 1.2: the median 1.2 (+20%) flags; one slow turn can't fail it.
+        rows = self.rows({"a.op.relative_time": 0.05})
+        ours = [{"a.op.relative_time": v} for v in (1.0, 3.0, 1.2)]
+        mains = [{"a.op.relative_time": 1.0}] * 3
+        got = baseline.rejudge(self.BASE, rows, ours, mains)
+        self.assertEqual([round(r[3], 6) for r in got if r[0].startswith("a.op")], [20.0])
+
+    def test_nothing_to_compare_keeps_the_fixed_verdict(self):
+        rows = self.rows({"a.op.relative_time": 0.05})
+        self.assertEqual(baseline.rejudge(self.BASE, rows, [], []), rows)
+        self.assertEqual(baseline.needs_reference(self.rows({"a.op.relative_time": 0.0089})), [])
+
+    def test_main_reaches_the_reference_only_when_time_is_past_a_margin(self):
+        base = {"margins": MARGINS, "metrics": {"a.op.relative_time": 0.0088}}
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "baseline.json")
+            with open(path, "w") as f:
+                json.dump(base, f)
+            calls = []
+            measures = iter([{"a.op.relative_time": 0.02}, {"a.op.relative_time": 0.019}, {"a.op.relative_time": 0.021},
+                             {"a.op.relative_time": 0.02}, {"a.op.relative_time": 0.02}])
+
+            def measure(root=baseline.ROOT):
+                calls.append(root)
+                return next(measures)
+            with mock.patch.object(baseline, "BASELINE", path), mock.patch.object(baseline, "measure", measure), \
+                    mock.patch.object(baseline, "reference", return_value="/ref"), mock.patch("builtins.print"):
+                self.assertEqual(baseline.main(["--reference", "main"]), 0)
+            # By hand: the first run (0.02, +127%) fails the fixed baseline; then
+            # main 0.019, ours 0.021 and 0.02, main 0.02: ratios 0.021/0.019 = 1.105
+            # and 0.02/0.02 = 1.0, median 1.053: +5%, ok.
+            self.assertEqual(calls, [baseline.ROOT, "/ref", baseline.ROOT, baseline.ROOT, "/ref"])
+            with mock.patch.object(baseline, "BASELINE", path), mock.patch.object(baseline, "measure", lambda root=None: {"a.op.relative_time": 0.02}), \
+                    mock.patch.object(baseline, "reference", return_value=None), mock.patch("builtins.print"):
+                self.assertEqual(baseline.main(["--reference", "main"]), 1, "no reference: the fixed verdict stands")
+
+
 class Main(unittest.TestCase):
     def run_main(self, base, measured, *args):
         with tempfile.TemporaryDirectory() as d:

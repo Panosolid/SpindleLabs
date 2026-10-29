@@ -137,8 +137,10 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
       gridError.hidden = message === "";
     },
     hide() {
-      box.hidden = true;
+      // Emptied while still drawn, then hidden: a button under the pointer taken out of a panel already hidden leaves Chromium
+      // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
+      box.hidden = true;
       status = gridError = help = null;
     },
   };

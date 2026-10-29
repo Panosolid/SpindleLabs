@@ -23,11 +23,12 @@
       </div>
       <nav id="workspaces" class="workspace-tabs" aria-label="Workspaces"></nav>
       <span id="save-status" role="status" aria-live="polite"></span>
-      <button id="menu-toggle" type="button" aria-expanded="false" aria-controls="topbar-actions" title="The AI assistant, the guide and Community">Menu</button>
+      <button id="menu-toggle" type="button" aria-expanded="false" aria-controls="topbar-actions" title="The AI assistant, the guide, Community and Settings">Menu</button>
       <div id="topbar-actions" class="app-bar app-bar-end">
         <button id="assistant-toggle" type="button" aria-pressed="false" title="The optional AI assistant. No AI provider is active: nothing is sent anywhere.">AI <span id="ai-status">off</span></button>
         <button id="guide-open" type="button" title="How SpindleLabs works: a scrolling 3D guide to Design and the kernel">Guide</button>
         <button id="community" type="button" title="Shared models, free to download (coming soon)">Community</button>
+        <button id="settings-open" class="settings-button" type="button" aria-haspopup="dialog" title="Settings">Settings</button>
       </div>
       <input id="open-file" type="file" hidden /><!-- accept: set from the registered importers (src/main.ts) -->
       <div id="file-notice">

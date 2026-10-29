@@ -12,6 +12,8 @@
   .phone-sheet #viewport { height: auto; flex: 1 1 0; min-height: 0; }
   .phone-sheet #browser:not(#none), .phone-sheet #properties:not(#none), .phone-sheet #assistant:not(#none) { position: absolute; left: 0; right: 0; bottom: 0; z-index: 15; width: auto; max-height: 60%; overflow-y: auto; overscroll-behavior: contain; border-radius: 20px 20px 0 0; border: 1px solid var(--look-edge); border-bottom: none; background: #161d2a; box-shadow: var(--look-top-light), 0 -8px 28px rgba(0, 0, 0, 0.55); padding-top: 22px; }
   .phone-sheet #assistant[hidden] { display: none !important; }
+  /* The Properties boxes 44 px to tap, their text 16 px: smaller text makes iOS Safari zoom the page in on a tap (weak-spot hunt A21). */
+  .phone-sheet #properties label input:not(#none), .phone-sheet #properties label select:not(#none) { min-height: 44px; font-size: 16px; }
   /* A sheet never bounces its words past its top (the bounce took the handle
      with it while the sheet stayed put); a drag on the handle moves the whole
      sheet and closes it (apps/fission/src/sheet-drag.ts). Browser and

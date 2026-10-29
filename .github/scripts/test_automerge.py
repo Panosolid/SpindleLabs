@@ -20,8 +20,13 @@ def pr(number, **kw):
     return p
 
 
-def check(name, status="completed", conclusion="success", app="github-actions"):
-    return dict(name=name, status=status, conclusion=conclusion, app=dict(slug=app))
+def check(name, status="completed", conclusion="success", app="github-actions", started=None, id=None):
+    c = dict(name=name, status=status, conclusion=conclusion, app=dict(slug=app))
+    if started:
+        c["started_at"] = started
+    if id:
+        c["id"] = id
+    return c
 
 
 class CiState(unittest.TestCase):
@@ -36,6 +41,51 @@ class CiState(unittest.TestCase):
         self.assertEqual(ci_state(docs, quick_ok=True), "success")
         # The kernel job's script tests failing (CHANGELOG.md and changelog.d/ among them) still blocks it.
         self.assertEqual(ci_state([check("kernel", conclusion="failure")] + docs[1:]), "failure")
+
+    def test_a_drafts_run_never_counts_as_green(self):
+        # ci.yml's run of a draft skips phone and browsers and marks itself
+        # with the `draft run` check: every required check passed, yet the
+        # head must wait for the run that marking it ready starts, or it
+        # could reach the queue (which never runs phone) without phone.
+        quick = [check("kernel"), check("app"), check("baseline"), check("mutants-in-diff"), check("e2e (quick)"), check("e2e")]
+        drafted = quick + [check("draft run")]
+        self.assertEqual(ci_state(drafted, quick_ok=True), "draft")
+        self.assertEqual(ci_state(drafted), "draft")
+        # The ready run: the marker is skipped and phone ran, so it is green again.
+        ready = quick + [check("draft run", conclusion="skipped"), check("phone")]
+        self.assertEqual(ci_state(ready, quick_ok=True), "success")
+        # Another app's check that happens to be called "draft run" is not ci.yml's marker.
+        self.assertEqual(ci_state(quick + [check("draft run", app="someone-else")], quick_ok=True), "success")
+        # Still running as a draft: the marker decides, not the pending jobs.
+        self.assertEqual(ci_state(quick[:-1] + [check("e2e", "in_progress", None), check("draft run")], quick_ok=True), "draft")
+
+    def test_an_older_runs_draft_marker_is_overruled_by_the_newer_run(self):
+        # #51 and #66 on 2026-10-29: a run started while the head was a draft
+        # (its `draft run` marker succeeded) and the run marking it ready
+        # both list their checks for the head, even with filter=latest. Only
+        # the newer run's checks decide: the head is green.
+        old = "2026-10-29T05:00:00Z"
+        new = "2026-10-29T05:10:00Z"
+        names = ["kernel", "app", "baseline", "mutants-in-diff", "e2e (quick)", "e2e"]
+        drafted = [check(n, started=old, id=100 + i) for i, n in enumerate(names)] + [check("draft run", started=old, id=120)]
+        ready = [check(n, started=new, id=200 + i) for i, n in enumerate(names)] + [
+            check("draft run", conclusion="skipped", started=new, id=220), check("phone", started=new, id=221)]
+        self.assertEqual(ci_state(drafted + ready, quick_ok=True), "success")
+        self.assertEqual(ci_state(ready + drafted, quick_ok=True), "success", "order of the list doesn't matter")
+        # The other way round (marked draft again after a ready run): the newer draft run decides.
+        redrafted = [check(n, started=new, id=200 + i) for i, n in enumerate(names)] + [check("draft run", started=new, id=220)]
+        oldready = [check(n, started=old, id=100 + i) for i, n in enumerate(names)] + [
+            check("draft run", conclusion="skipped", started=old, id=120), check("phone", started=old, id=121)]
+        self.assertEqual(ci_state(oldready + redrafted, quick_ok=True), "draft")
+        # A cancelled older run's failure doesn't count against a newer green run either.
+        cancelled = [check("app", conclusion="cancelled", started=old, id=99)]
+        self.assertEqual(ci_state(cancelled + ready, quick_ok=True), "success")
+        # A job of the newer run still waiting to start is newer than any finished one.
+        waiting = [c for c in ready if c["name"] != "app"] + [check("app", "queued", None, id=230)]
+        self.assertEqual(ci_state(drafted + waiting, quick_ok=True), "pending")
+        # Same name from another app: kept apart, not one overruling the other.
+        other = check("app", conclusion="failure", app="someone-else", started=new, id=300)
+        self.assertEqual(ci_state(ready + [other], quick_ok=True), "failure")
 
     def test_cases(self):
         both = [check("kernel"), check("app"), check("e2e"), check("mutants-in-diff"), check("baseline")]
@@ -435,10 +485,6 @@ class Session:
             self.t.assertTrue(stuck_ok, f"#{n} could merge but was left open")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 GRACE = automerge.CONFLICT_GRACE_S
 
 
@@ -829,6 +875,36 @@ class QueueCalls(unittest.TestCase):
         self.assertEqual(gh.writes, [])
         self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
 
+    def test_a_timed_out_head_goes_back_in_once(self):
+        # CI_TIMEOUT is busy runners, not the branch: the first one leaves no
+        # dequeued marker, so the next run queues the same head again; a
+        # second time out for that head keeps it out like any removal.
+        gh = queue_repo()
+        orig = gh.call
+
+        def call(method, path, body=None):
+            r = orig(method, path, body)
+            if method == "POST":
+                gh.table["/issues/1/comments?per_page=100"].append(bot(body["body"]))
+            return r
+        gh.call = call
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
+        first = gh.writes[0][2]["body"]
+        self.assertIn("<!-- automerge-timed-out:h1 -->", first)
+        self.assertNotIn("automerge-dequeued", first)
+        automerge.run(gh, log=lambda s: None)
+        self.assertEqual(gh.writes[1:], [("GRAPHQL", "enqueuePullRequest", {"id": "N1"}, "owner")])
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
+        self.assertIn("<!-- automerge-dequeued:h1 -->", gh.writes[-1][2]["body"])
+        n = len(gh.writes)
+        automerge.run(gh, log=lambda s: None)
+        self.assertEqual(len(gh.writes), n, "a head that timed out twice is not queued again")
+
+    def test_a_strangers_timed_out_marker_doesnt_buy_a_second_go(self):
+        gh = queue_repo(comments=[stranger(automerge.timed_out_text("h1"))])
+        automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None)
+        self.assertIn("automerge-timed-out:h1", gh.writes[0][2]["body"])
+
     def test_dequeued_note_once_per_head(self):
         gh = queue_repo()
         orig = gh.call
@@ -935,3 +1011,7 @@ class QueueSimulation(unittest.TestCase):
                     self.assertFalse(q["in_queue"], q)
                 elif can_queue and q["green"] and q["mergeable"] is not False:
                     self.assertTrue(q["in_queue"], q)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -5,7 +5,7 @@
 // kernel; the viewport is a stand-in that keeps the last mesh and the last
 // selection highlight it was asked to draw. Not a journey itself.
 import assert from "node:assert/strict";
-import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, ORIGIN_AT_FIRST, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 import { designWorkspace, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
@@ -71,6 +71,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
   let drawings: readonly SketchDrawing[] = [];
   let extrudeShown: ExtrudeShow | null = null;
   let moveHandlesShown: MoveHandlesShow | null = null;
+  let originShown: OriginShown = ORIGIN_AT_FIRST;
   /** Kernel calls since `failCall`, and the one to fail (0: none) and where it failed (T6b fault injection). */
   let calls = 0;
   let failAt = 0;
@@ -96,6 +97,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     fitSelection: () => null,
     lookAt: (plane, side = 1) => (looks.push({ plane, side }), null),
     editedScreenPoints: () => [],
+    sketchScreenPoint: () => null,
     setOverlay() {},
     clearOverlay() {},
     showSelection: (h) => void (highlight = h),
@@ -108,6 +110,7 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     showExtrude: (show) => void (extrudeShown = show),
     onExtrudePointer: null,
     showMoveHandles: (show) => void (moveHandlesShown = show),
+    showOrigin: (shown) => void (originShown = shown),
     onMovePointer: null,
   };
   let view: MountedWorkspace;
@@ -232,6 +235,8 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
     },
     /** Where Move's arrows and rings were last shown (35e2c); null when they are not. */
     moveHandlesShown: () => moveHandlesShown,
+    /** The origin's axes and planes the browser's eyes last showed (ORIGIN_AT_FIRST until Design says). */
+    originShown: () => originShown,
     /** A Move handle dragged, as the viewport hands it over: `amount` mm along an arrow or degrees round a ring since the press. */
     async movePointer(pointer: MovePointer) {
       viewport.onMovePointer?.(pointer);
@@ -269,6 +274,10 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
       gate = null;
       open();
       await settle();
+    },
+    /** The project's design replaced by `doc` while Design stays mounted, as another workspace or the assistant would change the shared project: what Design must notice when its own kernel call returns. */
+    changeDesign(doc: DesignDocument) {
+      ctx.project = { ...ctx.project, workspaces: { ...ctx.project.workspaces, design: doc } };
     },
     /** Another workspace shown, then Design again (X7: asleep, then woken). */
     async away() {

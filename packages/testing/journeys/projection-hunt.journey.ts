@@ -40,7 +40,7 @@ import {
 import type { BodyView, Plane } from "@fission/core";
 import { app, kernel } from "./design-app.ts";
 
-/** Where Design and the kernel take two ends as one (snap.ts SAME_PLACE, kernel/src/tolerance.rs LINEAR): 10 nm, in mm. */
+/** Where Design and the kernel take two ends as one (snap.ts SAME_PLACE, the kernel's LINEAR): 10 nm, in mm. */
 const SAME_PLACE = 1e-5;
 
 async function built(doc: DesignDocument) {

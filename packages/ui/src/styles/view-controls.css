@@ -12,14 +12,21 @@
 .view-controls button.nav-button:not(#no-such-id):disabled { opacity: 0.35; cursor: default; background: transparent; }
 /* Phone width: from the left edge, clear of Undo and Redo docked in the
    bottom-right corner (44 px wide, 8 px in), wrapping onto a second row
-   when it must; buttons stay at least 30 px to tap. */
+   when it must. Narrower than 361 px it would wrap into a card over the
+   view (three rows over 29% of it at 320 px, the sketch's origin under
+   them: weak-spot hunt A7), so there it stays one row and what doesn't fit
+   scrolls sideways within the bar. */
 @media (max-width: 640px) {
   .view-controls { left: 8px; transform: none; flex-wrap: wrap; max-width: calc(100% - 68px); }
 }
+@media (max-width: 360px) {
+  .view-controls { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
+  .view-controls::-webkit-scrollbar { display: none; }
+  .view-controls .nav-group { flex-shrink: 0; }
+}
 /* The clean look (UX2): a pill floating card, theme.css's shared values. */
 .view-controls:not(#none) { padding: 3px 6px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
-/* Phone (UX2b): 44 px round buttons to tap (Apple's 44 pt); wrapped onto two
-   rows the bar is a rounded box rather than a pill. */
+/* Phone (UX2b): 44 px round buttons to tap (Apple's 44 pt). */
 @media (max-width: 640px) {
   .view-controls:not(#none) { border-radius: 26px; }
   .view-controls button.nav-button:not(#no-such-id) { min-width: var(--look-target-touch); height: var(--look-target-touch); }
