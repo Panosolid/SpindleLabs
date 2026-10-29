@@ -608,12 +608,20 @@ try {
     await page.waitForFunction(() => document.querySelector("#error").textContent === "The width must be more than 0 mm.");
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
     assert.equal(await text("volume"), shown);
-    // A size the kernel refuses (under its 0.001 mm) gets the kernel's own reason.
+    // Under the modeller's 0.001 mm is refused by the panel too (app sweep 2026-10-28), in its words, not the kernel's.
     await setSize("width", 0.0001);
-    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("width must be between"));
+    await page.waitForFunction(() => document.querySelector("#error").textContent === "The width must be at least 0.001 mm, the smallest piece the modeller keeps.");
+    assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
+    // A part the kernel refuses gets the kernel's own reason: a 0.0015 mm width is a thin box, but as a cylinder it is a
+    // diameter, radius 0.00075 mm, under the kernel's 0.001.
+    await setSize("width", 0.0015);
+    await page.waitForFunction(() => document.querySelector("#error").textContent === "");
+    await page.selectOption("#shape", "cylinder");
+    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("radius must be between"));
     // The old numbers stay on screen, but marked out of date, never shown as current.
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "true");
     assert.equal(await page.isVisible("#stale-note"), true);
+    await page.selectOption("#shape", "box");
     await setSize("width", 40);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "");
     assert.equal(await text("volume"), "24,000 mm³");
