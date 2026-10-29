@@ -65,6 +65,12 @@ export interface AutosaveOptions {
    * Left out, the first save checks nothing.
    */
   storedAt?: Date | null;
+  /**
+   * The project was opened from its kept journal entry (`keptEntry`, unsaved.ts: recovery couldn't store it, storage
+   * full): this autosave owns that entry, saving over the older stored state, and keeps each state it journals
+   * marked kept until the store has taken one (real-use hunt B1).
+   */
+  fromKept?: boolean;
   /** The clock journal entries are timed on (the store's, so the two compare); tests hand in a fake one. */
   now?: () => Date;
 }
@@ -107,7 +113,7 @@ export function startAutosave(
   id: string,
   project: () => Project,
   onStatus: (status: AutosaveStatus) => void = () => {},
-  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date() }: AutosaveOptions = {},
+  { quietMs = QUIET_MS, timers = globalThis, journal = null, follows = null, stored: opened = false, storedAt = null, now = () => new Date(), fromKept = false }: AutosaveOptions = {},
 ): Autosave {
   let timer: unknown = null;
   let inFlight = false;
@@ -149,8 +155,14 @@ export function startAutosave(
 
   /** A journal entry's time: now, but never before this tab's last known stored state (a clock set back must not make its own entry look older than its own save). */
   const stamp = () => new Date(Math.max(now().getTime(), base?.getTime() ?? -Infinity, writtenAt?.getTime() ?? -Infinity));
+  /**
+   * This autosave's project was opened from the kept entry (`fromKept`): until it has stored once, the entry is its
+   * own (no refusal to save), and each state it journals stays marked kept, so no other tab saves over it.
+   */
+  let owner = fromKept;
   /** The last visit's unsaved changes, which recovery couldn't store, are still here: nothing may be saved over them. */
   const keptFromLastVisit = () => {
+    if (owner) return false;
     try {
       const entry = journal?.getItem(key);
       return entry != null && readJournalEntry(entry).kept;
@@ -201,7 +213,7 @@ export function startAutosave(
       return;
     }
     if (keptFromLastVisit()) {
-      report({ state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload to try again." });
+      report({ state: "error", message: "unsaved changes from your last visit couldn't be stored yet, so this tab won't save over them. Reload the page to see them." });
       return;
     }
     if (text === written) {
@@ -221,6 +233,7 @@ export function startAutosave(
       written = text;
       writtenAt = at;
       base = at;
+      owner = false; // the store holds this tab's state now: the entry, if still here, is an ordinary one
       stored(v, at);
     } catch (e) {
       if (e instanceof ProjectChangedError) conflicted = true;
@@ -270,7 +283,7 @@ export function startAutosave(
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
-          journal.setItem(key, journalEntry(projectToJson(project()), stamp()));
+          journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner));
           journalVersion = version;
           kept = true;
         } catch {
@@ -304,7 +317,7 @@ export function startAutosave(
       if (text === written && !inFlight) return stored(v, writtenAt);
       if (journal) {
         try {
-          journal.setItem(key, journalEntry(text, at)); // kept now, should the page go before the store's save
+          journal.setItem(key, journalEntry(text, at, owner)); // kept now, should the page go before the store's save
           journalVersion = v;
         } catch {
           // storage full: the store's save below is all there is
@@ -316,6 +329,7 @@ export function startAutosave(
           await store.save(id, JSON.parse(last) as Project, at, base);
           written = last;
           writtenAt = at;
+          owner = false;
           stored(v, at);
         } catch (e) {
           // Kept in the journal (when it could be written), put back on the next visit; unless another tab saved

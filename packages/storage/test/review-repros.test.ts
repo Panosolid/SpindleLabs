@@ -48,7 +48,7 @@ test("single tab: an entry recovery couldn't store ('kept for the next visit') i
   let full = true; // a transient quota error on the recovery save
   const store: ProjectStore = { ...real, save: (...a) => (full ? Promise.reject(new Error("quota")) : real.save(...a)) };
   const msgs = await recoverUnsaved(store, journal, []);
-  assert.equal(msgs.length, 1); // "they are kept in this browser for the next visit"
+  assert.equal(msgs.length, 1); // "they are shown, and kept in this browser until it has room"
   full = false;
   const top = (await real.list())[0];
   const timers = { setTimeout: (fn: () => void) => (queueMicrotask(fn), 1), clearTimeout: () => {} };
