@@ -96,12 +96,35 @@ def counts(check):
         " (" in check["name"] and check["name"].split(" (")[0] in SHARDS)
 
 
+def newest(check_runs):
+    """Only the newest check of each name from each app. filter=latest keeps
+    the newest per name within one workflow run, but a head tested twice
+    (a cancelled run, or one started when it was still a draft) still lists
+    the older run's checks beside the newer's: its `draft run` marker would
+    hold up a ready head for ever. Checks that can't be told apart by age
+    are all kept, so the worst of them still decides."""
+    best = {}
+    for c in check_runs:
+        key = (c.get("app", {}).get("slug"), c["name"])
+        if key not in best or order(c) > order(best[key][0]):
+            best[key] = [c]
+        elif order(c) == order(best[key][0]):
+            best[key].append(c)
+    return [c for kept in best.values() for c in kept]
+
+
+def order(check):
+    """Newer checks start later; a check not started yet is the newest, and ids grow."""
+    return (check.get("started_at") or "9999", check.get("id") or 0)
+
+
 def ci_state(check_runs, quick_ok=False):
     """'success', 'failure', 'pending', 'none', 'quick' (tested only by a
     quick run, so not for merging without the queue) or 'draft' (its latest
     run was a draft's, without the phone check) for a head's latest check
     runs. quick_ok: a quick run's success is 'success' (the queue's own run
     tests it in full)."""
+    check_runs = newest(check_runs)
     if any(c["name"] == DRAFT and c.get("app", {}).get("slug") == "github-actions"
            and c.get("conclusion") != "skipped" for c in check_runs):
         return "draft"

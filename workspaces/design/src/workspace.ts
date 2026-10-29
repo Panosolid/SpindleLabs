@@ -512,14 +512,29 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // held twice, and the ones a settle builds that no rebuild keeps are freed once it ends (BodyCache.using).
   const bodies = new BodyCache(kernel);
   // A kernel that trapped is replaced by a fresh one (kernel-client.ts): its bodies are gone, so the design is built
-  // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). Once only
-  // while that build runs: a design that traps the fresh kernel too shows the failure rather than restarting forever.
+  // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). A restart
+  // while that build runs (memory still tight, another call trapping) builds once more when it ends, or the design
+  // stayed red until the next edit (real-use hunt E2); a design that traps every fresh kernel stops after HEALS builds
+  // in a row and shows the failure, rather than restarting forever.
+  const HEALS = 3;
   let healing = false;
+  let again = false;
+  let heals = 0;
+  const heal = () => {
+    healing = true;
+    again = false;
+    heals++;
+    void show(designDoc(), shape).finally(() => {
+      healing = false;
+      if (!again) heals = 0;
+      else if (heals < HEALS) heal();
+      else heals = 0;
+    });
+  };
   const stopHealing = kernel.onRestart?.(() => {
     bodies.forget();
-    if (healing) return;
-    healing = true;
-    void show(designDoc(), shape).finally(() => (healing = false));
+    if (healing) again = true;
+    else heal();
   });
   let rebuilds: Promise<unknown> = Promise.resolve();
   const build = latestOnly((doc: DesignDocument) => {
@@ -1107,6 +1122,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
+  /** Where on the edited sketch's plane the pointer was last (the raw point, before snapping): `screen` again after the view changes size. */
+  let pointerAt: SketchXY | null = null;
   const typed = typedBoxes(viewport.element, {
     locks: (next) => ((locks = next), drawSketches()),
     enter: () => placeTyped(),
@@ -1378,6 +1395,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = designDoc();
     if (!editingSketch || !doc.sketches.some((s) => s.id === editingSketch!.id)) return void (editingSketch = null);
     mode = { kind: "edit", tool: startTool(editingSketch.tool, editingSketch.id), grid: editingSketch.grid, pointer: null, snap: null };
+    pointerAt = null;
     toolChanges++;
     sketchBox.showEditing(sketchItem(doc, editingSketch.id).provenance.self.label, editingSketch.typed, gridSnap, editingSketch.tool);
     modelling(false);
@@ -2131,6 +2149,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const onSketchPointer = (pointer: SketchPointer) => {
     if (mode.kind !== "edit") return;
     const at = pointer.at;
+    if (at) pointerAt = at;
     // Step 27d: the Project tool snaps nothing and places nothing; a click projects what the viewport says is under it.
     if (mode.tool.kind === "project") {
       ++moves;
@@ -2342,6 +2361,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     else if (c.change === "clear") ctx.selection.clear();
   };
   let stopWatching = () => {};
+  // The phone turned or the window resized (a keyboard, a panel): the line's point moved on screen, so the typed
+  // boxes and the hint go beside it again rather than staying where they were, maybe past the view's edge (hunt D2).
+  // The viewer's own observer, made first, has already fitted the camera to the new size. (None outside a browser: the journeys.)
+  const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+    if (mode.kind !== "edit" || !pointerAt) return;
+    const at = viewport.sketchScreenPoint(pointerAt);
+    if (at) screen = at;
+    drawSketches();
+  });
   /** Listens to picks and the selection: from mount, and again on each wake. Keys come from the shell (X7b), only while shown. */
   function listen() {
     viewport.onPick = onPick;
@@ -2352,6 +2380,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showMoveHandles();
     viewport.element.addEventListener("pointermove", onViewportMove);
     viewport.element.addEventListener("pointerdown", onViewportMove); // a tap moves no pointer first
+    resized?.observe(viewport.element);
     globalThis.addEventListener?.("keydown", onHeldKey);
     globalThis.addEventListener?.("keyup", onHeldKey);
     if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
@@ -2379,6 +2408,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.showMoveHandles(null);
     viewport.element.removeEventListener("pointermove", onViewportMove);
     viewport.element.removeEventListener("pointerdown", onViewportMove);
+    resized?.disconnect();
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
     clearTimeout(heldShow);

@@ -1384,6 +1384,11 @@ export class Viewer implements SharedViewport {
     return this.main.screenPoints(this.editedWorld).filter((p): p is { x: number; y: number } => p !== null);
   }
 
+  /** A point of the edited sketch's plane on screen, in the main view's pixels (where the pointer now is after the view changed size). */
+  sketchScreenPoint(at: SketchXY): { x: number; y: number } | null {
+    return this.editedPlane ? this.main.screenPoints([toWorld(this.editedPlane, at)])[0] : null;
+  }
+
   /** Says on the element whether a sketch is being edited with the pointer on it (read by the e2e test). */
   private labelSketches() {
     this.element.dataset.sketching = String(this.sketchHandler !== null && this.editedPlane !== null);
