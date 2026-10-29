@@ -115,6 +115,13 @@ async function framesAdvance(page) {
   const before = await frames(page);
   await page.waitForFunction((n) => Number(document.querySelector("dialog.guide").dataset.frames) > n + 3, before, { timeout: 5000 });
 }
+/** Frames the "turns slowly" check waits between its two pictures: 1.2 s at 60 frames a second. */
+const TURN_FRAMES = 72;
+/** Waits until the guide has drawn `n` more frames, however long a busy machine takes to draw them. */
+async function framesPass(page, n) {
+  const before = await frames(page);
+  await page.waitForFunction((want) => Number(document.querySelector("dialog.guide").dataset.frames) >= want, before + n, { timeout: 30000 });
+}
 /** Waits until no glide is moving the page and no scene is fading into another. */
 async function settled(page) {
   await page.waitForFunction(() => {
@@ -382,19 +389,23 @@ try {
   });
 
   await check("reduced motion: the picture holds still; with motion allowed it turns slowly", async () => {
+    // The turn is a step per drawn frame (guide.ts: yaw += SPIN / 60), so both pictures wait on frames drawn, not on
+    // the clock: a busy runner draws fewer frames a second, and 1.2 s of it turned too little (it dequeued #70).
+    // 72 frames is the 1.2 s at 60 frames a second the check always meant; a scene that doesn't turn still fails.
     const still = await fresh({ reducedMotion: "reduce", query: "?guide" });
     await still.waitForSelector("dialog.guide[data-frames]");
+    await settled(still);
     await framesAdvance(still);
     const a = await shot(still, WIDE_STAGE);
-    await still.waitForTimeout(1200);
-    await framesAdvance(still);
+    await framesPass(still, TURN_FRAMES);
     const b = await shot(still, WIDE_STAGE);
     assert.ok(compareImages(a, b, { channel: 24, maxPixels: 0 }).differing < 50, "the scene moved under reduced motion");
     const moving = await fresh({ query: "?guide" });
     await moving.waitForSelector("dialog.guide[data-frames]");
-    await moving.waitForTimeout(1000); // let the sky settle
+    await settled(moving); // the first scene, and the sky, in place
+    await framesPass(moving, 60);
     const c = await shot(moving, WIDE_STAGE);
-    await moving.waitForTimeout(1200);
+    await framesPass(moving, TURN_FRAMES);
     const d = await shot(moving, WIDE_STAGE);
     assert.ok(compareImages(c, d, { channel: 24, maxPixels: 0 }).differing > 500, "the scene should turn when motion is allowed");
   });
