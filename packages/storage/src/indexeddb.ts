@@ -85,8 +85,13 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
       try {
         for (const [k, v] of Object.entries(change(values))) store.put(v, k);
       } catch (error) {
-        thrown = { error };
-        tx.abort();
+        try {
+          thrown = { error };
+          tx.abort();
+        } catch {
+          // Already aborted (a put that failed, such as a full disk): its own error is the one to report.
+          thrown = null;
+        }
       }
     };
     let left = keys.length;
