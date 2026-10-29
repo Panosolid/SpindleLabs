@@ -2115,6 +2115,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     else if (!chord) show();
     if (!now) chord = false;
   };
+  /** The window lost focus (Alt-Tab, Ctrl+Tab): a held Ctrl or Cmd's release will never arrive here, so it counts as let go now. */
+  const onLostFocus = () => {
+    clearTimeout(heldShow);
+    chord = false;
+    if (!modHeld) return;
+    modHeld = false;
+    if (shown && mode.kind === "edit" && lastHover) onSketchPointer(lastHover);
+  };
   /** Clicks are handled one after another, each on the document the last one left. */
   let clicks = Promise.resolve();
   /** How many clicks (typed Enters and projections too) wait their turn: Finish Sketch waits for them. */
@@ -2361,6 +2369,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     resized?.observe(viewport.element);
     globalThis.addEventListener?.("keydown", onHeldKey);
     globalThis.addEventListener?.("keyup", onHeldKey);
+    globalThis.addEventListener?.("blur", onLostFocus);
     if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
     drawSketches();
     showMoveHint();
@@ -2389,6 +2398,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     resized?.disconnect();
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
+    globalThis.removeEventListener?.("blur", onLostFocus);
     clearTimeout(heldShow);
     typed.hide();
     hint.hide();
