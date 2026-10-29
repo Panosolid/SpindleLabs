@@ -291,6 +291,31 @@ class Workflows(unittest.TestCase):
         self.assertIn("if: always()", ci["mutants-in-diff"])
         self.assertEqual(re.search(r"needs: (.*)", ci["mutants-in-diff"]).group(1), "mode")
 
+    def test_a_draft_skips_only_reported_checks_and_never_looks_ready(self):
+        # A draft's run skips phone and browsers, and marks itself with the
+        # check automerge.py waits out (DRAFT); marking it ready must start a
+        # new run (ready_for_review), or the head would wait forever. Moving
+        # it back to draft cancels its run (same group) and the heavy jobs
+        # skip only on that explicit action, never on a missing answer.
+        sys.path.insert(0, HERE)
+        import automerge  # noqa: E402
+        text = open(os.path.join(WORKFLOWS, "ci.yml")).read()
+        ci = jobs(os.path.join(WORKFLOWS, "ci.yml"))
+        types = re.search(r"(?m)^  pull_request:\n    types: \[(.*)\]$", text).group(1).split(", ")
+        for t in ("opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft"):
+            self.assertIn(t, types)
+        self.assertIn(f"name: {automerge.DRAFT}\n", ci["draft"])
+        self.assertIn("if: github.event_name == 'pull_request' && github.event.pull_request.draft\n", ci["draft"])
+        self.assertNotIn("needs:", ci["draft"])
+        for job in ("browsers", "phone"):
+            self.assertIn("&& !github.event.pull_request.draft }}", ci[job], job)
+        for job in ("app", "baseline", "e2e-shard", "e2e-quick"):
+            self.assertIn("github.event.action != 'converted_to_draft'", ci[job], job)
+            self.assertNotIn("pull_request.draft", ci[job], job)
+        self.assertNotIn("draft", ci["kernel"] + ci["mutants-in-diff"])
+        self.assertIn("DRAFTED: ${{ github.event.action == 'converted_to_draft' }}", ci["e2e"])
+        self.assertNotIn("push:", text.split("\njobs:\n")[0])
+
 
 if __name__ == "__main__":
     unittest.main()
