@@ -7,3 +7,10 @@
 @media (max-width: 640px) {
   .pointer-hint { transform: translate(-50%, -48px); }
 }
+/* Why the last click did nothing (a refused click's note, beginner play-test
+   2026-10-28): it wraps, and sits wholly above the pointer so it never
+   covers the spot clicked. */
+.pointer-hint.pointer-hint-note { white-space: normal; width: max-content; max-width: min(300px, calc(100% - 16px)); transform: translate(18px, calc(-100% - 14px)); color: #8a1c12; background: rgba(255, 244, 242, 0.97); border-color: #c4554a; }
+@media (max-width: 640px) {
+  .pointer-hint.pointer-hint-note { transform: translate(-50%, calc(-100% - 32px)); }
+}

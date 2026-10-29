@@ -67,7 +67,7 @@ export const SNAP_PIXELS = 10;
 
 /**
  * Points this close (mm) are one place for snapping (step 27c): the
- * kernel's linear tolerance (kernel/src/tolerance.rs LINEAR, 10 nm), the
+ * kernel's linear tolerance (LINEAR, 10 nm), the
  * distance below which it takes two points to be one. A body's points
  * seen along a sketch's normal that differ by less are one point rounded
  * two ways (an upright edge seen end on from a slanted face).

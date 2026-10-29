@@ -14,7 +14,7 @@
 // Everything here is plain arithmetic on small integers and closed-form
 // formulas, so it cannot share a mistake with the kernel:
 // - Sketches are on XY, corners on the 1 mm grid within ±60 mm. A polygon
-//   is valid (the kernel's profile rules, ops/profile.rs check_profile)
+//   is valid (the kernel's profile rules)
 //   exactly when no corner doubles back and no two sides that are not
 //   neighbours touch; both are decided with exact integer orientation
 //   tests. Why that matches the kernel's MIN_FEATURE (1 µm) clearance
@@ -488,7 +488,7 @@ function extrudeEdges(s: ModelShape, sides: readonly FaceName[], start: FaceName
   ];
 }
 
-/** A preset's body. The box has a corner at the origin and the opposite one at (w, d, h); the cylinder and sphere are on the Z axis, the cylinder standing on z = 0, the sphere's centre `centreZ` above the origin (the kernel builds it round the origin, kernel/src/ops/primitives.rs, and Design lifts it). */
+/** A preset's body. The box has a corner at the origin and the opposite one at (w, d, h); the cylinder and sphere are on the Z axis, the cylinder standing on z = 0, the sphere's centre `centreZ` above the origin (the kernel builds it round the origin and Design lifts it). */
 function presetBody(item: Extract<ModelItem, { kind: PresetKind }>, faults: ReadonlySet<ModelFault>): ModelBody {
   const f = (role: FaceRole, area: number, centroid: Vec3): ModelFace => ({ name: { feature: item.id, role }, area, centroid });
   const e = (a: FaceRole, b: FaceRole, length: number, centroid: Vec3): ModelEdge => ({ name: edgeName({ feature: item.id, role: a }, { feature: item.id, role: b }, false), length, centroid });

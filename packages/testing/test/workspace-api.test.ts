@@ -316,7 +316,7 @@ test("every workspace, put to sleep and woken twice, keeps the same slot nodes, 
 
 /**
  * A kernel that builds only boxes, answering with a box's view as the
- * kernel gives it (primitives.rs): faces bottom, top, front, back, left,
+ * kernel gives it: faces bottom, top, front, back, left,
  * right; edge 4 the top front edge, joining the top (1) and the front (2).
  */
 function boxKernel(): KernelCalls {

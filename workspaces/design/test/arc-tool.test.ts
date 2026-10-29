@@ -171,7 +171,7 @@ function rng(seed: number) {
 }
 
 test("seeded sessions of three clicks on whole and decimal grids match a model that works in whole grid steps", () => {
-  // The kernel's nodes: k·s, or k / n when s = 1/n (sketch.rs snap_to_grid).
+  // The kernel's nodes: k·s, or k / n when s = 1/n (the kernel's grid snap).
   const grids: { node: (k: number) => number; size: number }[] = [
     { node: (k) => k * 10, size: 10 },
     { node: (k) => k * 1, size: 1 },

@@ -1,10 +1,9 @@
 ISO-10303-21;
 /* A 1 x 1 x 1 cube from (0,0,0) to (1,1,1), as make_box(1, 1, 1) builds it,
-   written by step_write::write and checked line by line by hand
-   (kernel/src/step_write.rs, unit_cube_file_is_the_hand_checked_one, strips
-   these comments and needs the rest to match the writer's output exactly;
-   prototypes/oracle/test_step_check.py reads this file with OpenCascade:
-   valid, volume 1, area 6, six faces). Vertex k is (bit 0, bit 1, bit 2 of
+   written by the kernel's STEP writer and checked line by line by hand
+   (the kernel's own test strips these comments and needs the rest to match
+   the writer's output exactly; OpenCascade reads this file as valid,
+   volume 1, area 6, six faces). Vertex k is (bit 0, bit 1, bit 2 of
    k): v0 (0,0,0), v1 (1,0,0), v2 (0,1,0), v3 (1,1,0), v4 (0,0,1),
    v5 (1,0,1), v6 (0,1,1), v7 (1,1,1). */
 /* No date or author, so the same body always gives the same file. The

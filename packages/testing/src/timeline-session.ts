@@ -233,7 +233,7 @@ export type EdgeClose = (got: { length: number; centroid: readonly number[] }, w
 /**
  * Relative tolerance for volumes, areas and centroid coordinates, with a
  * floor of 1 mm: |a − b| ≤ MATCH_REL × max(1, |a|, |b|). It is the kernel's
- * MASS_PROPS_REL (kernel/src/tolerance.rs), the accuracy it promises for
+ * MASS_PROPS_REL (the kernel's), the accuracy it promises for
  * volume and area; it changes only with that constant.
  */
 export const MATCH_REL = 1e-6;

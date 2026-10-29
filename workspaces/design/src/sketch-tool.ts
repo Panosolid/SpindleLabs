@@ -111,6 +111,32 @@ function pendingClicks(tool: SketchTool): SketchXY[] {
   return at ? [at] : [];
 }
 
+/**
+ * Why Extrude or Finish sketch (`verb`) waits for a second press while the
+ * tool has a shape half drawn (a circle's centre, a first corner, an arc's
+ * ends): pressed once, the shape was dropped without a word (beginner
+ * play-test 2026-10-28). Null when nothing would be lost: a line's start
+ * alone is only where a line would begin, and a chain going has drawn its
+ * lines already.
+ */
+export function unfinishedWords(tool: SketchTool, verb: string): string | null {
+  if (tool.kind === "line" || pendingClicks(tool).length === 0) return null;
+  const next = (): [string, string] => {
+    switch (tool.kind) {
+      case "rectangle":
+        return ["rectangle", "its opposite corner"];
+      case "arc":
+        return ["arc", tool.end === null ? "its end, then a point on the arc" : "a point on the arc"];
+      case "centre":
+        return ["arc", tool.start === null ? "its start, then its end" : "its end"];
+      default:
+        return ["circle", "a point on the circle"];
+    }
+  };
+  const [shape, click] = next();
+  return `The ${shape} isn't finished: click ${click} to finish it, or press ${verb} again to go on without it.`;
+}
+
 /** The grid a new sketch starts with (mm), as Design's grid in the viewport. */
 export const DEFAULT_GRID = 10;
 /** Whether points snap to the grid until you tick it (sketch feel SF1): off, so points go where you click, as in other CAD sketchers. */
@@ -210,7 +236,9 @@ function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY):
  */
 const distance = (a: SketchXY, b: SketchXY): number => Math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2);
 
-const NO_RADIUS = "A circle needs a radius: click a point on the circle away from its centre.";
+export const NO_RADIUS = "A circle needs a radius: click a point on the circle away from its centre.";
+/** NO_RADIUS when Snap to grid pulled the second click onto the centre (a small circle at phone zoom; beginner play-test 2026-10-28). */
+export const GRID_ATE_RADIUS = "The grid pulled that point onto the circle's centre, so it has no radius: click further out, make the grid smaller, or turn off Snap to grid.";
 
 /**
  * Why a circle on one already there draws nothing: the same centre point

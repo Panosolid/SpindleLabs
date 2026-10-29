@@ -20,7 +20,7 @@ import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS,
 import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { watchKernel } from "./kernel-lost.ts";
@@ -569,14 +569,14 @@ let canKeep = true;
  * Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is,
  * stored at `storedAt`: a save after another tab stored it since is refused and says so (app sweep, finding 2).
  */
-function keep(id: string, stored = false, storedAt: Date | null = null) {
+function keep(id: string, stored = false, storedAt: Date | null = null, fromKept = false) {
   keepOnChange = null;
   autosave?.finish();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt });
+  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -1033,9 +1033,12 @@ async function start() {
       fileStatus("The last project didn't finish opening on your last visit, so a new one was started. The old one is still kept in this browser: reload the page now, before changing anything, to try it again.");
     } else if (newest) {
       guard.opening(newest);
-      ctx.project = await store.open(newest);
-      keep(newest, true, newestAt);
-      saveStatus({ state: "saved" });
+      // Its newest state, when the store had no room for it (storage full): kept in the journal, and what the user
+      // last saw, so it is what opens and what Save writes (real-use hunt B1). Its autosave stores it once it can.
+      const kept = keptEntry(local, newest);
+      ctx.project = kept === null ? await store.open(newest) : projectFromJson(kept, workspaces);
+      keep(newest, kept === null, newestAt, kept !== null);
+      saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
     } else keep(newId());
   } catch (e) {
