@@ -16,9 +16,21 @@ part of the metric's name):
   one is listed; a kind with no margin (the kernel's wall time, `nanos`)
   is only shown, and not kept in the baseline.
 
-`compare` is pure (tested in test_baseline.py); `measure` runs things.
+Time against main on the same runner: a runner's speed moves the time
+metrics by more than their fail margin from one run to the next (10-29: the
+same code read 0.0088 and 0.0182), so a time metric that is flagged or
+fails against the fixed baseline is measured again, in turns with main's
+code checked out beside it (--reference REF): main, this, this, main. Its
+verdict is then the median of the two this/main ratios against the same
+margins, so only code slower than main's on the same machine fails, and
+the fixed baseline still catches the rest (memory, counts). Without a
+reference (it couldn't be built), the fixed baseline's verdict stands.
 
-Usage: baseline.py [--update] [--measured FILE] [--only PREFIX] [--save FILE]
+`compare` and `rejudge` are pure (tested in test_baseline.py); `measure` runs things.
+
+Usage: baseline.py [--update] [--measured FILE] [--only PREFIX] [--save FILE] [--reference REF]
+  --reference REF  re-judge flagged or failing time metrics against REF
+                   (a branch, fetched and built beside this checkout)
   --measured FILE  compare metrics saved earlier instead of measuring
   --only PREFIX    judge only the metrics whose names start with PREFIX
                    (the nightly golden run measures only app.golden*, so
@@ -84,6 +96,61 @@ def compare(baseline, measured, only=None):
     return rows
 
 
+TIME = "relative_time"
+
+
+def median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return None if n == 0 else xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def needs_reference(rows):
+    """The time metrics worth measuring again against main: flagged or failed."""
+    return [r[0] for r in rows if kind_of(r[0]) == TIME and r[4] in ("fail", "flag")]
+
+
+def rejudge(baseline, rows, ours, mains):
+    """Rows with each re-measured time metric judged by this code against
+    main's on the same runner: `ours` and `mains` are lists of measurements
+    taken in turns (ours[i] beside mains[i]). The row's old value becomes
+    main's median and its change the median ratio's; its verdict takes the
+    margins as compare does, from that change. Other rows are kept."""
+    out = []
+    for metric, old, new, change, verdict in rows:
+        pairs = [(o[metric], m[metric]) for o, m in zip(ours, mains) if o.get(metric) and m.get(metric)]
+        if kind_of(metric) != TIME or verdict not in ("fail", "flag") or not pairs:
+            out.append((metric, old, new, change, verdict))
+            continue
+        rule = baseline["margins"][TIME]
+        ratio = median([a / b for a, b in pairs])
+        change = (ratio - 1) * 100
+        fail, flag = rule.get("fail"), rule.get("flag")
+        if fail is not None and change > fail:
+            verdict = "fail"
+        elif flag is not None and change > flag:
+            verdict = "flag"
+        else:
+            verdict = "ok"
+        out.append((f"{metric} (vs main)", median([m for _, m in pairs]), median([a for a, _ in pairs]), change, verdict))
+    return out
+
+
+def reference(ref):
+    """A checkout of `ref` beside this one with its packages installed, or None."""
+    where = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "baseline-reference")
+    try:
+        run(["git", "fetch", "--depth=1", "origin", ref], cwd=ROOT)
+        if os.path.exists(where):
+            run(["git", "worktree", "remove", "--force", where], cwd=ROOT)
+        run(["git", "worktree", "add", "--detach", where, "FETCH_HEAD"], cwd=ROOT)
+        run(["npm", "ci", "--no-audit", "--no-fund"], cwd=where)
+    except (subprocess.CalledProcessError, OSError) as e:
+        print(f"No reference build of {ref} ({e}); the fixed baseline's verdict stands")
+        return None
+    return where
+
+
 def fmt(x):
     if x is None:
         return "-"
@@ -103,9 +170,9 @@ def run(cmd, **kw):
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
 
 
-def measure():
+def measure(root=ROOT):
     metrics = {}
-    app = run(["node", "--expose-gc", "--experimental-strip-types", "--no-warnings", "packages/testing/baseline/app.ts"], cwd=ROOT).stdout
+    app = run(["node", "--expose-gc", "--experimental-strip-types", "--no-warnings", "packages/testing/baseline/app.ts"], cwd=root).stdout
     for op, m in json.loads(app).items():
         for name, value in m.items():
             metrics[f"app.{op}.{name}"] = value
@@ -128,6 +195,16 @@ def main(argv):
         print("--only judges part of the baseline; --update writes all of it, so they don't go together")
         return 2
     rows = compare(baseline, measured, only)
+    again = needs_reference(rows)
+    if again and "--reference" in argv and "--measured" not in argv:
+        ref = argv[argv.index("--reference") + 1]
+        where = reference(ref)
+        if where is not None:
+            print(f"Time past its margin ({', '.join(again)}): measuring again in turns with {ref} on this runner")
+            mains, ours = [measure(where)], []
+            ours += [measure(), measure()]
+            mains.append(measure(where))
+            rows = rejudge(baseline, rows, ours, mains)
     text = table(rows)
     print(text)
     if os.environ.get("GITHUB_STEP_SUMMARY"):
@@ -135,11 +212,11 @@ def main(argv):
             f.write("## Speed and memory against tests/baseline.json\n\n" + text + "\n")
     for metric, old, new, change, verdict in rows:
         if verdict == "fail":
-            print(f"::error title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({change:+.1f}%), past the {baseline['margins'][kind_of(metric)]['fail']}% margin")
+            print(f"::error title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({change:+.1f}%), past the {baseline['margins'][kind_of(metric.split(' ')[0])]['fail']}% margin")
         elif verdict == "missing":
             print(f"::error title=Baseline: {metric}::{metric} is in tests/baseline.json but was not measured")
         elif verdict == "flag":
-            print(f"::warning title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({change:+.1f}%), slower than the {baseline['margins'][kind_of(metric)]['flag']}% margin (time is noisy: check before acting)")
+            print(f"::warning title=Baseline: {metric}::{metric} is {fmt(new)}, baseline {fmt(old)} ({change:+.1f}%), slower than the {baseline['margins'][kind_of(metric.split(' ')[0])]['flag']}% margin (time is noisy: check before acting)")
     print("\nMeasured (for --update or a new baseline):\n" + json.dumps(measured, indent=2, sort_keys=True))
     if "--update" in argv:
         baseline["metrics"] = {m: v for m, v in sorted(measured.items()) if kind_of(m) in baseline["margins"]}
