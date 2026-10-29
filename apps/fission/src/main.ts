@@ -20,9 +20,10 @@ import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS,
 import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
+import { localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { designWorkspace } from "@fission/design";
@@ -50,6 +51,8 @@ const workspaces: WorkspacePlugin[] = [
 ];
 
 const kernel = new KernelClient();
+// The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
+watchKernel(kernel);
 // The one conversion layer: every workspace says what it can hand over.
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
@@ -517,9 +520,23 @@ const local = (() => {
   }
 })();
 // Marks the project being opened, so one that froze or crashed the tab isn't
-// reopened on the next visit (audit S2, reopen.ts in @fission/storage).
-const guard = reopenGuard(local);
+// reopened on the next visit (audit S2, reopen.ts in @fission/storage). The
+// tabs ask each other over a channel, so a tab started while another is still
+// opening the project doesn't take that for a freeze (real-use hunt A3).
+const guard = reopenGuard(local, {
+  channel: (() => {
+    try {
+      return new BroadcastChannel(OPENING_KEY) as OpeningChannel; // its MessageEvent carries the `data` the guard reads
+    } catch {
+      return null; // no channel: a mark found is taken for a freeze, as before
+    }
+  })(),
+});
 window.addEventListener("pagehide", () => guard.finished());
+// A phone locked or the app switched: the OS may kill the tab later with no pagehide (real-use hunt D1).
+document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? guard.putAway() : guard.back()));
+document.addEventListener("freeze", () => guard.putAway());
+document.addEventListener("resume", () => guard.back());
 let autosave: Autosave | null = null;
 // Leaving (timeline hunt, finding 1): when the page is hidden, reloaded or
 // closed, the changes not stored yet go to the unsaved-changes journal at
@@ -1011,7 +1028,7 @@ async function start() {
   }
   let opened: string | undefined;
   try {
-    if (newest && guard.stuck(newest)) {
+    if (newest && (await guard.check(newest))) {
       keepOnFirstChange();
       fileStatus("The last project didn't finish opening on your last visit, so a new one was started. The old one is still kept in this browser: reload the page now, before changing anything, to try it again.");
     } else if (newest) {
@@ -1023,7 +1040,7 @@ async function start() {
     } else keep(newId());
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
-    keep(newId());
+    keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)
     fileStatus(`Couldn't open the last project (${why(e)}), so a new one was started. The old one is still kept in this browser.`);
   }
   show(fromHash());
