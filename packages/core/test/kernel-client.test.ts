@@ -2,7 +2,7 @@
 // Run with `npm test` (Node's built-in test runner).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isTrap, KERNEL_RESTARTED, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -233,4 +233,67 @@ test("a refusal is only a refusal: the kernel is kept, and a listener that stopp
     worker.reply(stoppedReply(2));
     assert.equal(heard, 0, "stopped listening");
     assert.equal(FakeWorker.made, made + 1, "the kernel is still replaced");
+  }));
+
+const missingReply = (id: number): KernelResponse => ({ id, ok: false, error: { kind: "internal", inputs: [], message: KERNEL_NOT_DOWNLOADED }, missing: true });
+
+test("a kernel whose .wasm didn't download is told once; retry starts a fresh one, and the design's listeners hear of it", () =>
+  withFakeWorker(async (client, old) => {
+    let missing = 0;
+    let restarted = 0;
+    client.onMissing(() => missing++);
+    client.onRestart(() => restarted++);
+    // A working kernel is never replaced by retry.
+    const made = FakeWorker.made;
+    client.retry();
+    assert.equal(FakeWorker.made, made, "retry leaves a working kernel alone");
+    const a = client.call("body_count");
+    const b = client.call("kernel_version");
+    old.reply(missingReply(1));
+    old.reply(missingReply(2));
+    await assert.rejects(a, (e: KernelError) => e.message === KERNEL_NOT_DOWNLOADED);
+    await assert.rejects(b, (e: KernelError) => e.message === KERNEL_NOT_DOWNLOADED);
+    assert.equal(missing, 1, "told once, however many calls fail");
+    assert.equal(restarted, 0, "nothing rebuilds on a kernel that isn't there");
+    // A plain failure is not a missing kernel.
+    const c = client.call("make_box", -1, 1, 1);
+    old.reply({ id: 3, ok: false, error: { kind: "invalid-input", inputs: [], message: "width must be positive" } });
+    await assert.rejects(c, /width must be positive/);
+    assert.equal(missing, 1);
+
+    client.retry();
+    assert.equal(old.terminated, true, "the old worker is let go");
+    assert.equal(FakeWorker.made, made + 1, "one fresh worker");
+    assert.equal(restarted, 1, "the design is built again on it");
+    const fresh = FakeWorker.last;
+    const d = client.call("body_count");
+    fresh.answer(4, 0);
+    assert.equal(await d, 0);
+    // The fresh worker failing too is told again.
+    const e = client.call("body_count");
+    fresh.reply(missingReply(5));
+    await assert.rejects(e);
+    assert.equal(missing, 2);
+  }));
+
+test("a worker script that didn't load (a deploy took it away) is a missing kernel: retry clears the failure", () =>
+  withFakeWorker(async (client, old) => {
+    let missing = 0;
+    client.onMissing(() => missing++);
+    old.fail(undefined);
+    assert.equal(missing, 1);
+    await assert.rejects(client.call("body_count"), /didn't load/);
+    // A worker that crashed with a message did load: it is not a missing file.
+    await withFakeWorker(async (c2, w2) => {
+      let m2 = 0;
+      c2.onMissing(() => m2++);
+      w2.fail("SyntaxError: unexpected token");
+      assert.equal(m2, 0);
+    });
+    client.retry();
+    const fresh = FakeWorker.last;
+    const p = client.call("body_count");
+    assert.equal(fresh.posted.length, 1, "calls go to the fresh worker, the old failure forgotten");
+    fresh.answer((fresh.posted[0] as { id: number }).id, 2);
+    assert.equal(await p, 2);
   }));

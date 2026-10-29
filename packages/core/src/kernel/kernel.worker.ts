@@ -11,17 +11,30 @@ import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't match its kernel.json keeps
 // its own. Handled here once, so a failed start is never an uncaught error
-// before the first call awaits it (app sweep 2026-10-28, finding 7).
+// before the first call awaits it (app sweep 2026-10-28, finding 7). A
+// download that fails is tried again twice, after half a second and two
+// seconds, so a phone's network blinking never leaves the kernel out
+// (blind spots B2); then the replies say `missing`, and the client tells
+// the app (kernel-client.ts, onMissing).
 let memory: WebAssembly.Memory | null = null;
-const ready = init().then(
-  (exports) => {
-    memory = exports.memory;
-    return startKernel(kernel.begin, release);
-  },
-  () => {
-    throw new Error(KERNEL_NOT_DOWNLOADED);
-  },
-);
+let missing = false;
+const DOWNLOAD_RETRIES_MS = [500, 2000];
+async function download() {
+  for (const wait of [...DOWNLOAD_RETRIES_MS, null]) {
+    try {
+      return await init();
+    } catch {
+      if (wait === null) break;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+  missing = true;
+  throw new Error(KERNEL_NOT_DOWNLOADED);
+}
+const ready = download().then((exports) => {
+  memory = exports.memory;
+  return startKernel(kernel.begin, release);
+});
 ready.catch(() => {});
 
 const ops = {
@@ -52,7 +65,8 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
     reply = { id, ok: true, value: fn(...args) };
   } catch (e) {
     // A trap leaves this kernel unfit for another call: the client replaces this worker (kernel-client.ts, restart).
-    reply = isTrap(e) ? { id, ok: false, error: kernelFailure(e), stopped: true } : { id, ok: false, error: kernelFailure(e) };
+    // A kernel that never downloaded says so, so the client can tell the app (kernel-client.ts, onMissing).
+    reply = isTrap(e) ? { id, ok: false, error: kernelFailure(e), stopped: true } : { id, ok: false, error: kernelFailure(e), ...(missing && { missing: true as const }) };
   }
   self.postMessage(reply);
 };
