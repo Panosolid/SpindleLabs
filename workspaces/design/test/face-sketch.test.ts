@@ -310,6 +310,9 @@ test("a sketch on a face is written to a file and read back exactly", () => {
   assert.deepEqual(doc.sketches[0].face!.held, held);
   assert.equal(doc.timeline.features[2].intent.parameters.flip, true);
   assert.deepEqual(doc.kept!["feature-5"], kept);
+  // Drawn on a moved body (35e2h): where its Moves had put the body is read back too.
+  const body = { origin: [7, -3, 0], xAxis: [0, 1, 0], normal: [0, 0, 1] };
+  assert.deepEqual(opened((d) => (d.sketches[0].face.body = body))().sketches[0].face!.body, body);
   // Its box deleted: the sketch stays, held with its plane lost (Q1), so the file opens.
   assert.doesNotThrow(opened((d) => (d.timeline.features = d.timeline.features.slice(1))));
 });
@@ -328,6 +331,8 @@ test("a file's sketch on a face is checked when it is opened: each way it can be
     ["side missing", (d) => delete d.sketches[0].face.side, /sketch-2's side must be 1 or -1/],
     ["a held plane with no frame", (d) => (d.sketches[0].face.held = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 0] }), /sketch-2's held plane has no frame/],
     ["a held plane of null", (d) => (d.sketches[0].face.held = null), /sketch-2's held plane needs an origin/],
+    ["a body frame with no frame (35e2h)", (d) => (d.sketches[0].face.body = { origin: [5, 0, 0], xAxis: [0, 0, 1], normal: [0, 0, 2] }), /sketch-2's body frame has no frame/],
+    ["a body frame of numbers as text (35e2h)", (d) => (d.sketches[0].face.body = { origin: n("5"), xAxis: [1, 0, 0], normal: [0, 0, 1] }), /sketch-2's body frame needs an origin/],
     ["on a sketch's face", (d) => {
       d.timeline.features[1].intent.parameters.plane = "face:sketch-2/end";
       d.timeline.features[1].dependsOn = ["sketch-2"];

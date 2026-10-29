@@ -484,8 +484,11 @@ function resultDiff(a: ItemResult, b: ItemResult, edgeClose: EdgeClose = exactEd
   const warned = (r: typeof a) => (r.warning ? `kept, warning ${r.warning.cause} ${r.warning.input}` : "no warning");
   if (warned(a) !== warned(b)) return `${warned(a)} vs ${warned(b)}`;
   // 26e: where a face sketch lies, whether it is held, and an extrude's lost source.
-  const placed = (r: typeof a) => (r.lift === undefined ? "on XY" : `at z ${r.lift}${r.plane ? `, ${r.plane}` : ""}`);
-  if ((a.lift === undefined) !== (b.lift === undefined) || a.plane !== b.plane || (a.lift !== undefined && !close(a.lift, b.lift!))) return `${placed(a)} vs ${placed(b)}`;
+  const placed = (r: typeof a) => (r.lift === undefined ? "on XY" : `at z ${r.lift}${r.turn ? ` along (${r.turn.x.join(", ")}) from (${r.turn.at.join(", ")})` : ""}${r.plane ? `, ${r.plane}` : ""}`);
+  // 35e2h: and where along its face a Move carried it (left out: where drawn, x along X from over the world's origin).
+  const along = (r: typeof a) => [...(r.turn?.x ?? [1, 0]), ...(r.turn?.at ?? [0, 0])];
+  const carried = (r: typeof a) => r.lift !== undefined && !along(a).every((x, k) => close(x, along(b)[k]));
+  if ((a.lift === undefined) !== (b.lift === undefined) || a.plane !== b.plane || (a.lift !== undefined && !close(a.lift, b.lift!)) || carried(a)) return `${placed(a)} vs ${placed(b)}`;
   if (a.source !== b.source) return `source lost ${a.source ?? "no"} vs ${b.source ?? "no"}`;
   if (!a.body || !b.body) return a.body || b.body ? `a body vs ${a.body ? "none" : "a body"}` : null;
   if (!close(a.body.volume, b.body.volume)) return `volume ${a.body.volume} vs ${b.body.volume}`;

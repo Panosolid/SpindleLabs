@@ -19,11 +19,17 @@ import {
   featureNames,
   insertMove,
   insertPreset,
+  joinBodies,
+  movedPoint,
   moveMarker,
   NO_MOVE,
   partDocument,
   rebuildTimeline,
+  shownBodies,
+  sketchSpot,
   suppressItem,
+  unmovedPoint,
+  changedMove,
   type DesignDocument,
   type FeatureResult,
   type MoveValues,
@@ -115,15 +121,77 @@ test("a move past the edge of model space fails with the kernel's words and move
 test("a sketch on the moved box's top lies on the top where the Move put it", async () => {
   // Box moved up 5: its top at z = 25. A 10 × 10 square drawn on the top and extruded 10 spans z 25..35.
   const moved = insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc;
-  const s = addFaceSketch(moved, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
+  const s = addFaceSketch(moved, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1, body: { origin: [0, 0, 5], xAxis: [1, 0, 0], normal: [0, 0, 1] } });
   const drawn = drawRectangle(s.doc, s.id, [5, 5], [15, 15]).doc;
   const e = extrudeSketch(drawn, s.id, 10);
   near((await built(e.doc)).views.get(e.id)!.bounds, [[5, 5, 25], [15, 15, 35]], "the extrude on the moved top");
-  // The Move edited to 15 up: the top at 35, and the sketch follows its plane, so the extrude spans 35..45.
-  // (A tracked compromise, step 35e2: a face sketch follows its face's plane, rule 8, but keeps its place in it, so a
-  // Move along the face, or a turn about its normal, doesn't carry the sketch with it; pinned points do.)
-  const { changedMove } = await import("@fission/design");
+  // The Move edited to 15 up: the top at 35, and the sketch follows it up, so the extrude spans 35..45.
   near((await built(changedMove(e.doc, "feature-2", v({ z: 15 })))).views.get(e.id)!.bounds, [[5, 5, 35], [15, 15, 45]], "followed the top up");
+});
+
+/** `doc` with a sketch on the top of `feature` picked as the app picks it (the bodies on screen after a rebuild, `sketchSpot`), a square from `a` to `c` on it, extruded `h`. */
+async function squareOnTop(doc: DesignDocument, feature: string, a: [number, number], c: [number, number], h: number): Promise<{ doc: DesignDocument; extrude: string }> {
+  const kernel = nodeKernel();
+  const cache = new BodyCache(kernel);
+  try {
+    const scene = joinBodies(await shownBodies(doc, await rebuildTimeline(doc, cache, kernel), cache));
+    const b = scene.bodies.findIndex((x) => x.feature === feature);
+    const face = scene.bodies[b].names.faces.findIndex((n) => n === "top");
+    const spot = sketchSpot({ face: scene.faceStart[b] + face, shift: false }, scene);
+    assert.ok(spot?.kind === "face", JSON.stringify(spot));
+    const s = addFaceSketch(doc, spot.face, spot.drawn);
+    const e = extrudeSketch(drawRectangle(s.doc, s.id, a, c).doc, s.id, h);
+    return { doc: e.doc, extrude: e.id };
+  } finally {
+    await cache.close();
+  }
+}
+
+test("35e2h: a sketch on a moved face slides and turns with it when the Move is edited (picked as the app picks it)", async () => {
+  // Drawn on the top after a Move of 5 up: the square spans x, y 5..15 (rule 8: the top's coordinates are the world's).
+  const { doc, extrude } = await squareOnTop(insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc, "feature-1", [5, 5], [15, 15], 10);
+  near((await built(doc)).views.get(extrude)!.bounds, [[5, 5, 25], [15, 15, 35]], "as drawn");
+  // The Move edited to slide 20 along x too: the face slides 20, and the square with it, x 25..35 (before 35e2h it stayed at 5..15).
+  near((await built(changedMove(doc, "feature-2", v({ x: 20, z: 5 })))).views.get(extrude)!.bounds, [[25, 5, 25], [35, 15, 35]], "slid with its face");
+  // Edited to a quarter turn about Z through the origin, (x, y) → (−y, x): the square's x 5..15, y 5..15 go to x −15..−5, y 5..15.
+  near((await built(changedMove(doc, "feature-2", v({ turnZ: 90, z: 5 })))).views.get(extrude)!.bounds, [[-15, 5, 25], [-5, 15, 35]], "turned with its face");
+  // Edited to half a turn about X through the box's middle line (y 15, z 10), then up 5 (turns come first): (y, z) → (30 − y, 20 − z),
+  // so the top (z 20) turns over to look down at z 0, then rises to 5; the square's y 5..15 goes to 15..25; the extrude, out of the
+  // face, built at z 20..30 on the unmoved box, goes to 0..−10, then −5..5.
+  near((await built(changedMove(doc, "feature-2", v({ turnX: 180, pivotY: 15, pivotZ: 10, z: 5 })))).views.get(extrude)!.bounds, [[5, 15, -5], [15, 25, 5]], "turned over with its face");
+
+  // A sketch from a file made before 35e2h keeps no body frame: where its body was when drawn isn't known, so it isn't
+  // carried (a guess would move it on opening), and slides as it always did: not at all, x 5..15.
+  const old = addFaceSketch(insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
+  const oldExtrude = extrudeSketch(drawRectangle(old.doc, old.id, [5, 5], [15, 15]).doc, old.id, 10);
+  near((await built(changedMove(oldExtrude.doc, "feature-2", v({ x: 20, z: 5 })))).views.get(oldExtrude.id)!.bounds, [[5, 5, 25], [15, 15, 35]], "an old file's sketch stays");
+});
+
+test("35e2h seeded: sketches drawn on a box's top after a random slide and turn about Z land where a random edit of that Move takes the face (FISSION_SEED)", async () => {
+  const seed = BigInt(process.env.FISSION_SEED ?? "35");
+  const r = seeded(seed);
+  const between = (lo: number, hi: number) => lo + (hi - lo) * r.next();
+  const anyMove = (): MoveValues => v({ x: between(-80, 80), y: between(-80, 80), z: between(-80, 80), turnX: between(-180, 180), turnY: between(-180, 180), turnZ: between(-180, 180), pivotX: between(-50, 50), pivotY: between(-50, 50), pivotZ: between(-50, 50) });
+  for (let i = 0; i < 12; i++) {
+    // Drawn after a Move that keeps the top looking up (a slide and a turn about Z), so its coordinates are the world's x and y.
+    const first = v({ x: between(-80, 80), y: between(-80, 80), z: between(-80, 80), turnZ: between(-180, 180), pivotX: between(-50, 50), pivotY: between(-50, 50) });
+    const w = 40 + Math.floor(r.next() * 40);
+    const d = 30 + Math.floor(r.next() * 30);
+    const box = partDocument("box", w, d, 20);
+    const at = (p: readonly number[]) => movedPoint(p, first);
+    // A square well inside the top as moved: round the top's middle, 6 mm across.
+    const mid = at([w / 2, d / 2, 20]);
+    const a: [number, number] = [mid[0] - 3, mid[1] - 3];
+    const h = between(1, 10);
+    const { doc, extrude } = await squareOnTop(insertMove(box, ["feature-1"], first).doc, "feature-1", a, [a[0] + 6, a[1] + 6], h);
+    // The model: the prism's corners back on the unmoved box (the first Move undone), then through the edited Move.
+    const edit = anyMove();
+    const corners = [0, 1].flatMap((dx) => [0, 1].flatMap((dy) => [0, 1].map((dz) => unmovedPoint([a[0] + 6 * dx, a[1] + 6 * dy, mid[2] + h * dz], first)))).map((p) => movedPoint(p, edit));
+    const want: Box3 = [[0, 1, 2].map((k) => Math.min(...corners.map((p) => p[k]))) as [number, number, number], [0, 1, 2].map((k) => Math.max(...corners.map((p) => p[k]))) as [number, number, number]];
+    const got = (await built(changedMove(doc, "feature-2", edit))).views.get(extrude)!.bounds;
+    // Scaled for points up to ~300 mm out (the kernel's LINEAR is for a part's own size).
+    got.flat().forEach((x, k) => assert.ok(Math.abs(x - want.flat()[k]) <= 1e-4, `seed ${seed} case ${i}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`));
+  }
 });
 
 test("seeded: random moves of random boxes put every corner where plain arithmetic does (FISSION_SEED)", async () => {
