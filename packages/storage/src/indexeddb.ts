@@ -75,22 +75,31 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
   };
   /** KeyValue.update: the reads, `change` and the writes in one readwrite transaction, which IndexedDB runs alone among those touching this store, in every tab. */
   const update: KeyValue["update"] = async (keys, change) => {
-    const doing = `save "${keys.join('", "')}"`;
+    let doing = `save "${keys.join('", "')}"`;
     const tx = transaction(await open(), "readwrite", doing);
     const store = tx.objectStore(STORE);
     const values: (string | undefined)[] = [];
     let thrown: { error: unknown } | null = null;
+    // Each write's own outcome counts too, as in run(): a write refused is a failed save even if the transaction reports complete.
+    let written: (writes: Promise<unknown>[]) => void = () => {};
+    const writes = new Promise<unknown[]>((resolve) => (written = (all) => resolve(Promise.all(all))));
     // Nothing awaited from here to the writes: a transaction left with no request waiting commits.
     const write = () => {
+      const puts: Promise<unknown>[] = [];
       try {
-        for (const [k, v] of Object.entries(change(values))) store.put(v, k);
+        const changes = Object.entries(change(values));
+        if (changes.length > 0) doing = `save "${changes.map(([k]) => k).join('", "')}"`; // a refusal names what was being written
+        for (const [k, v] of changes) puts.push(request(store.put(v, k), doing));
+        written(puts);
       } catch (error) {
         try {
           thrown = { error };
           tx.abort();
+          written([]); // the abort's own error, not the writes it cancelled
         } catch {
           // Already aborted (a put that failed, such as a full disk): its own error is the one to report.
           thrown = null;
+          written(puts);
         }
       }
     };
@@ -103,10 +112,11 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
       };
     });
     if (keys.length === 0) write();
-    await new Promise<void>((resolve, reject) => {
+    const done = new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onabort = () => reject(thrown ? thrown.error : failure(tx.error, doing));
     });
+    await Promise.all([done, writes]);
   };
   return {
     update,
