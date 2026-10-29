@@ -118,7 +118,9 @@ export function addFaceSketch(doc: DesignDocument, face: { plane: string; featur
   const frame = squared(drawn.plane);
   if (frame === null || (drawn.side !== 1 && drawn.side !== -1)) throw new Error("a sketch on a face needs a frame and a side of 1 or -1");
   const label = on.provenance.self.label;
-  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side });
+  const body = drawn.body === undefined ? null : squared(drawn.body);
+  if (drawn.body !== undefined && body === null) throw new Error("a sketch on a moved face needs a frame for where its body was moved to");
+  return newSketch(doc, (n) => `Sketch ${n} on a face of ${label}`, { plane: face.plane }, [face.feature], [{ workspace: "design", id: face.feature, label }], { frame, side: drawn.side, ...(body ? { body } : {}) });
 }
 
 function newSketch(doc: DesignDocument, summary: (n: number) => string, parameters: Feature["intent"]["parameters"], dependsOn: string[], from: Feature["provenance"]["from"] = [], face?: SketchFace): { doc: DesignDocument; id: string } {

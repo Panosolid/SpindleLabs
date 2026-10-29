@@ -624,6 +624,9 @@ try {
     await page.selectOption("#shape", "box");
     await setSize("width", 40);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "");
+    // The error clears as soon as the size is checked, before the 40 mm box's rebuild lands (the 0.0015 mm box's 0.9 mm³
+    // can still be on screen then): wait for the rebuild, then the number must be the 40·30·20 = 24000 box's.
+    await page.waitForFunction(() => document.querySelector("#volume")?.textContent !== "0.9 mm³", null, { timeout: 8000 }).catch(() => {});
     assert.equal(await text("volume"), "24,000 mm³");
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
     assert.equal(await page.isVisible("#stale-note"), false);

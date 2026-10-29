@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
-import { startWithBox } from "./start.mjs";
+import { closePanels, openPanel, startWithBox } from "./start.mjs";
 import { TOP, clickPlane } from "./sketch-screen.mjs";
 import { untilBodies } from "./browser.mjs";
 
@@ -519,6 +519,29 @@ if (browserName === "chromium") {
     }
     await context.close();
   }
+}
+
+// The checks' own sheet helpers (start.mjs) when the app moves a sheet just before their press lands: the app shuts
+// Properties as a tool ends, so a sheet read as open can be shut by the time the press arrives and the press opens it
+// again. Merge-queue flake 2026-10-29 (extrude-drag at 375 px): the helper then waited 30 s for a state that never came.
+// Here a one-off listener shuts (or opens) the sheet as the press begins, before the toggle's own click.
+{
+  const { page, context } = await open(375, 667);
+  const flipFirst = (closed) => page.evaluate((c) => {
+    const t = document.getElementById("properties-toggle");
+    t.addEventListener("pointerdown", () => (c ? t.dispatchEvent(new CustomEvent("sheet-close")) : t.click()), { once: true, capture: true });
+  }, closed);
+  await openPanel(page, "properties", true);
+  await flipFirst(true); // the app shuts it as the press begins; the press then opens it again
+  await closePanels(page, true);
+  assert.equal(await isOpen(page, "properties"), false, "closePanels leaves Properties shut though the app shut it first");
+  await flipFirst(false); // the app opens it as the press begins; the press then shuts it again
+  await openPanel(page, "properties", true);
+  assert.equal(await isOpen(page, "properties"), true, "openPanel leaves Properties open though the app opened it first");
+  // It can fail: a toggle whose press never arrives is reported after three presses, with the state it kept.
+  await page.evaluate(() => document.getElementById("properties-toggle").addEventListener("click", (e) => e.stopImmediatePropagation(), { capture: true }));
+  await assert.rejects(closePanels(page, true), /#properties-toggle: 3 presses and still aria-expanded="true", not "false"/);
+  await context.close();
 }
 
 // Rules off, the old layout: Properties stacked under the view and the page scrolled.

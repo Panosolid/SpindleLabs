@@ -300,6 +300,12 @@ export const PLANTS: Record<ModelFault, Plant> = {
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
+  "sketch-not-carried": {
+    what: "a sketch on a moved face follows its height but not a Move's slide along it or turn about it (35e2h's compromise back)",
+    edits: [{ file: REBUILD, find: "const carry = p.body === undefined ? null : carried(", replace: "const carry = Number(\"1\") ? null : carried(" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
 };
 
 const FACE = "workspaces/design/src/face-sketch.ts";
@@ -330,7 +336,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "plane-stays-put": {
     fault: "plane-stays-put",
     what: "a face sketch stays on the plane it was drawn on, whatever its face does",
-    edits: [{ file: REBUILD, find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: p.side };", replace: "const placement = { plane: squared(p.frame)!, side: p.side };" }],
+    edits: [{ file: REBUILD, find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };", replace: "const placement = { plane: squared(p.frame)!, side: p.side };" }],
     run: ["naming"],
     caught: "Fusion answers",
   },
@@ -340,8 +346,8 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
     edits: [
       {
         file: REBUILD,
-        find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: p.side };",
-        replace: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: frameNow(squared(p.frame)!, outward, view.face_centroids[face]).normal.reduce((a, x, k) => a + x * outward[k], 0) < 0 ? -1 : 1 };",
+        find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };",
+        replace: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry).normal.reduce((a, x, k) => a + x * outward[k], 0) < 0 ? -1 : 1 };",
       },
     ],
     run: ["naming"],
