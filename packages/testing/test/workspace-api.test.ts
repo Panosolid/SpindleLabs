@@ -508,10 +508,11 @@ test("Design shows a kernel failure in its panel rather than throwing", async ()
   assert.deepEqual(groups.filter((g) => !g.hidden).map((g) => g.getAttribute("aria-label")), ["Create", "Modify", "Construct", "Inspect", "Insert", "Export"]);
   // The sketch's own toolbar (SF3b) is there too, hidden until a sketch is edited: its Create menu and tools first, Finish Sketch last.
   assert.deepEqual(groups.map((g) => [g.getAttribute("aria-label"), g.hidden]), [["Create", true], ["Create", false], ["Modify", false], ["Construct", false], ["Inspect", false], ["Insert", false], ["Export", false], ["Snapping", true], ["Finish", true]]);
-  // Its File ▾ entries (U0f2a): New is on (the box is there to clear); Export STL is off, saying why, as the failed kernel built nothing.
+  // Its File ▾ entries (U0f2a): New is on (the box is there to clear); Export STL and Slice for printing (H2a) are off, saying why, as the failed kernel built nothing.
   const file = view.fileEntries!();
   assert.deepEqual([file.new?.id, file.new?.label, file.new?.off], ["start-fresh", "New", undefined]);
-  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", "There is no body to download: nothing in the timeline builds."]]);
+  const none = "There is no body to download: nothing in the timeline builds.";
+  assert.deepEqual(file.exports?.map((e) => [e.id, e.label, e.off]), [["file-export-stl", "Export STL", none], ["file-slice-print", "Slice for printing", none]]);
   assert.match(file.exports![0].title, /^Export STL: Download every body shown/);
   // The part's shape is the panel's Shape choice now: the box.
   assert.equal(ctx.properties.querySelector<HTMLSelectElement>("#shape")!.value, "box");

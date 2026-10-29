@@ -18,6 +18,8 @@ export interface SaveKind {
 export const PROJECT_KIND: SaveKind = { description: "SpindleLabs project", mime: "application/json", extension: ".spindle" };
 /** A binary STL mesh. */
 export const STL_KIND: SaveKind = { description: "STL mesh", mime: "model/stl", extension: ".stl" };
+/** A 3D printer's instructions (plain-text G-code). */
+export const GCODE_KIND: SaveKind = { description: "G-code for a 3D printer", mime: "text/plain", extension: ".gcode" };
 
 export interface SaveRequest {
   /** The name offered, with or without the ending. */
