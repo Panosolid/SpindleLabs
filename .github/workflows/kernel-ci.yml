@@ -65,14 +65,11 @@ jobs:
         env:
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
         run: .github/scripts/kernel_ci.sh status kernel-ci/checks pending "Running on SpindleLabs' runners"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ inputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ inputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: wasm32-unknown-unknown
@@ -125,13 +122,11 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ inputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ inputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: llvm-tools-preview
@@ -164,14 +159,11 @@ jobs:
         env:
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
         run: .github/scripts/kernel_ci.sh status kernel-ci/mutants pending "Counting the mutants in the changed lines"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ inputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ inputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
@@ -205,14 +197,11 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ inputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ inputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF" "$BASE"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
