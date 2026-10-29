@@ -201,7 +201,7 @@ try {
     const page = await fresh(1280, false);
     await startWithBox(page);
     await insertPreset(page, "cylinder");
-    await until(page, () => document.querySelectorAll('#browser [data-eye]').length === 2, null, "two bodies");
+    await until(page, () => document.querySelectorAll('#browser [data-eye^="body-"]').length === 2, null, "two bodies");
     await page.click('#browser [data-eye="body-2"]');
     await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "Body 2 hidden");
     await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-export-stl")]);

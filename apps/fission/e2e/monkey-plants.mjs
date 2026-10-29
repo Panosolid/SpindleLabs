@@ -62,7 +62,7 @@ export const MONKEY_PLANTS = {
     expect: "selection agrees",
     // Since #192 (no Body rows for failed features) the first seed to catch it at 120 steps is 31 (then 36, 38; 1-40 hunted 2026-10-19).
     seeds: 40,
-    edits: [{ file: "workspaces/design/src/browser.ts", find: "  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (isHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));", replace: "  const rows = new Map(bodyRows(doc, failed).flatMap((r, i, all) => (isHidden(doc, r.feature.id) ? [] : [[r.id, all[(i + 1) % all.length].feature.id] as const])));" }],
+    edits: [{ file: "workspaces/design/src/browser.ts", find: "  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));", replace: "  const rows = new Map(bodyRows(doc, failed).flatMap((r, i, all) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, all[(i + 1) % all.length].feature.id] as const])));" }],
   },
   "failed-body-rows": {
     what: "a feature the kernel refused still gets a Body row (bug hunt 2026-10-19, finding 5)",
