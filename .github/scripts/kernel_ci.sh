@@ -18,7 +18,8 @@
 #       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code
 #   kernel_ci.sh checkout DIR REF [ALSO]
 #       fetches the kernel commit or branch REF (and commit ALSO, e.g. the
-#       mutants' base) into DIR, depth 1, and checks REF out, printing
+#       mutants' base) into DIR with its history (no other branch or
+#       tag), and checks REF out, printing
 #       nothing: actions/checkout prints the commit's subject and, with
 #       fetch-depth 0, every kernel branch and tag name. KERNEL_READ goes
 #       in a header for the fetch only, never into DIR/.git; SPARSE (paths)
@@ -88,11 +89,17 @@ run)
 checkout)
   dir=$2 ref=$3 also=${4:-}
   [[ $ref =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && ( -z $also || $also =~ ^[0-9a-f]{40}$ ) ]] || { echo "bad kernel ref"; exit 1; }
+  # The whole history of REF (and ALSO), and nothing else: the release
+  # build numbers itself from main's merge order, which a shallow clone
+  # can't give (release-build failed on every run after depth 1, 10-29).
+  # Only a SPARSE checkout (the oracle's scripts) takes depth 1.
+  depth=""
+  [ -n "${SPARSE:-}" ] && depth="--depth 1"
   auth=()
   [ -z "${KERNEL_SOURCE:-}" ] && auth=(-c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$KERNEL_READ" | base64 -w0)")
   {
     git init -q "$dir" &&
-      git -C "$dir" "${auth[@]}" fetch -q --no-tags --depth 1 "${KERNEL_SOURCE:-https://github.com/Panosolid/kernel.git}" "$ref" $also &&
+      git -C "$dir" "${auth[@]}" fetch -q --no-tags $depth "${KERNEL_SOURCE:-https://github.com/Panosolid/kernel.git}" "$ref" $also &&
       git -C "$dir" update-ref refs/heads/tested "$(git -C "$dir" rev-parse FETCH_HEAD)" &&
       { [ -z "${SPARSE:-}" ] || git -C "$dir" sparse-checkout set $SPARSE; } &&
       git -C "$dir" checkout -q tested
