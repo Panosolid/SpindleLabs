@@ -217,9 +217,12 @@ try {
         await hover(page, [20, 15, 20]);
         assert.equal(await data(page, "hover"), "face 1");
         assert.equal(await data(page, "hoverPlane"), "");
-        // Pixel probe: that point of the front plane, in front of the top, shows the box, not the plane's blue.
+        // Pixel probe: that point of the front plane, in front of the top, shows the box, not the plane's blue. Both
+        // are blue now (the hover tints the top 40% towards the selection's (74, 168, 255): (122, 167, 213) before
+        // lighting, about (100, 174) lit in red and blue), so the red tells them apart: with the plane drawn over the
+        // top instead (tried by drawing the planes last) the pixel measured (168, 255). The line is halfway, 134.
         const [r, , b] = await pixelAt(page, [20, 15, 20]);
-        assert.ok(b - r < 60, `the top, not the plane, is drawn there: rgb ${r}, ${b}`);
+        assert.ok(r < 134, `the top, not the plane, is drawn there: rgb ${r}, ${b}`);
       }
       // From the top view nothing is in front of the top.
       await press(page, '[data-view="top"]', tap);

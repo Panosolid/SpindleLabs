@@ -18,8 +18,8 @@ export type Rgb = [number, number, number];
 export const SELECTION_COLOUR: Rgb = [0x4a / 255, 0xa8 / 255, 0xff / 255];
 /** How far a selected face moves from its own colour towards SELECTION_COLOUR. */
 export const SELECTED_MIX = 0.6;
-/** The same for a hovered face: lighter, so hover and selection tell apart. */
-export const HOVER_MIX = 0.3;
+/** The same for a hovered face: lighter, so hover and selection tell apart (0.4, not 0.3, since the blue is nearer the grey-blue body than the old green was). */
+export const HOVER_MIX = 0.4;
 /** A face's colour when nothing marks it, sRGB 0–1 (0x9aa7b8). */
 export const BASE_COLOUR: Rgb = [0x9a / 255, 0xa7 / 255, 0xb8 / 255];
 /** An edge's colour when not selected or hovered: dark grey (0x282b31), not black, so a thin line reads soft as Fusion's do. */
