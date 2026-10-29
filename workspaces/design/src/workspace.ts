@@ -505,7 +505,25 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       else heals = 0;
     });
   };
+  /** Kernel restarts so far: a panel's question cut off by one is asked again on the fresh kernel (onceMoreAfterRestart). */
+  let restarts = 0;
+  /**
+   * `ask`, and once more if the kernel restarted while it was asked: the answer it gave (often "the geometry kernel ...
+   * was started again", or a body the restart left unbuilt) is the old kernel's, not the question's (weak-spot hunt C3:
+   * Extrude's outline check stuck with OK off, Move's OK saying the box was not built though it was drawn again).
+   */
+  async function onceMoreAfterRestart<T>(ask: () => Promise<T>): Promise<T> {
+    const seen = restarts;
+    try {
+      const answer = await ask();
+      if (restarts === seen) return answer;
+    } catch (e) {
+      if (restarts === seen) throw e;
+    }
+    return ask();
+  }
   const stopHealing = kernel.onRestart?.(() => {
+    restarts++;
     bodies.forget();
     if (healing) again = true;
     else heal();
@@ -1724,7 +1742,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extrudeBox.showStatus(sketch.curves.length === 0 ? `${name} has nothing drawn yet.` : `Checking ${name}…`, false);
     if (sketch.curves.length === 0) return;
     try {
-      const { current, value } = await extrudeOutline(sketchCurves(sketch));
+      const { current, value } = await onceMoreAfterRestart(() => extrudeOutline(sketchCurves(sketch)));
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
         // A face's extrude is a new body until Combine (35f): said plainly (UX1c).
@@ -2062,7 +2080,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     moveBox.busy(true);
     let refused: string | null;
     try {
-      refused = await refusedMove(kernel, next, moved);
+      refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, moved));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
