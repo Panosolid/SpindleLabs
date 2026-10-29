@@ -99,14 +99,14 @@ class Watcher(unittest.TestCase):
 class KernelWatcher(unittest.TestCase):
     """stop-on-merge.sh for the private kernel's branches (KERNEL_REPO set): GitHub's compare of main with the branch."""
 
-    def watch(self, gh_body, seconds=1.0):
+    def watch(self, gh_body, seconds=1.0, branch="claude/k"):
         with tempfile.TemporaryDirectory() as d:
             fake(d, "gh", gh_body)
             stop = os.path.join(d, "stop")
             env = dict(os.environ, PATH=d + os.pathsep + os.environ["PATH"], STOP_POLL_SECONDS="0.05", GITHUB_REPOSITORY="o/r",
                        KERNEL_REPO="o/k", KERNEL_READ="key")
             try:
-                out = subprocess.run(["bash", WATCHER, "claude/k", stop], env=env, capture_output=True, text=True, timeout=seconds)
+                out = subprocess.run(["bash", WATCHER, branch, stop], env=env, capture_output=True, text=True, timeout=seconds)
                 stopped = True
             except subprocess.TimeoutExpired as e:
                 out, stopped = e, False
@@ -133,6 +133,19 @@ class KernelWatcher(unittest.TestCase):
             self.assertTrue(stopped)
             with open(args) as f:
                 self.assertEqual(f.read().strip(), "key api repos/o/k/compare/main...claude/k --jq .status")
+
+    def test_tonights_run_on_main_stops_only_for_starved_ci(self):
+        # main...main is "identical", which would stop a branch's run at once; on main it is never asked.
+        stopped, made, _ = self.watch('case "$2" in repos/o/k/*) echo identical;; *) exit 1;; esac\n', branch="main")
+        self.assertFalse(stopped or made)
+        # A CI job queued since 2020: the night gives that job's runner back.
+        runs = '{"workflow_runs":[{"id":5,"status":"in_progress","event":"pull_request","head_branch":"claude/y","head_repository":{"full_name":"o/r"}}]}'
+        jobs = '{"jobs":[{"name":"kernel","status":"queued","created_at":"2020-01-01T00:00:00Z"}]}'
+        body = (f'case "$*" in *repos/o/k/*) echo identical;; *nightly.yml*) echo \'{{"workflow_runs":[]}}\';; '
+                f'*ci.yml*) echo \'{runs}\';; *runs/5/jobs*) echo \'{jobs}\';; *) exit 1;; esac\n')
+        stopped, made, out = self.watch(body, seconds=5, branch="main")
+        self.assertTrue(stopped and made, out)
+        self.assertIn('Random testing on main stops after the round in progress: CI job "kernel" has waited', out.stdout)
 
 
 if __name__ == "__main__":

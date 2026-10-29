@@ -37,6 +37,23 @@ class CiState(unittest.TestCase):
         # The kernel job's script tests failing (CHANGELOG.md and changelog.d/ among them) still blocks it.
         self.assertEqual(ci_state([check("kernel", conclusion="failure")] + docs[1:]), "failure")
 
+    def test_a_drafts_run_never_counts_as_green(self):
+        # ci.yml's run of a draft skips phone and browsers and marks itself
+        # with the `draft run` check: every required check passed, yet the
+        # head must wait for the run that marking it ready starts, or it
+        # could reach the queue (which never runs phone) without phone.
+        quick = [check("kernel"), check("app"), check("baseline"), check("mutants-in-diff"), check("e2e (quick)"), check("e2e")]
+        drafted = quick + [check("draft run")]
+        self.assertEqual(ci_state(drafted, quick_ok=True), "draft")
+        self.assertEqual(ci_state(drafted), "draft")
+        # The ready run: the marker is skipped and phone ran, so it is green again.
+        ready = quick + [check("draft run", conclusion="skipped"), check("phone")]
+        self.assertEqual(ci_state(ready, quick_ok=True), "success")
+        # Another app's check that happens to be called "draft run" is not ci.yml's marker.
+        self.assertEqual(ci_state(quick + [check("draft run", app="someone-else")], quick_ok=True), "success")
+        # Still running as a draft: the marker decides, not the pending jobs.
+        self.assertEqual(ci_state(quick[:-1] + [check("e2e", "in_progress", None), check("draft run")], quick_ok=True), "draft")
+
     def test_cases(self):
         both = [check("kernel"), check("app"), check("e2e"), check("mutants-in-diff"), check("baseline")]
         self.assertEqual(ci_state(both), "success")

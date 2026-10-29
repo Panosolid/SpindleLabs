@@ -223,7 +223,8 @@ try {
         await press(page, "#move-ok", tap);
         await closed(page);
         await rebuilt(page);
-        assert.equal(await viewData(page, "moveHandles"), undefined, "OK takes the handles away");
+        // OK takes the handles away (the view takes them off on its next frame).
+        await until(page, () => document.getElementById("viewport").dataset.moveHandles === undefined, null, "OK takes the handles away");
         near(await stlBounds(page, tap), [[20, 50], [-5, 35], [0, 20]], "the STL after the dragged Move");
       } finally {
         await page.context().close();
