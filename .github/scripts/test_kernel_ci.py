@@ -289,5 +289,56 @@ class NoNoisyKernelCheckout(unittest.TestCase):
         self.assertEqual(self.noisy("repository: Panosolid/kernel-results\n"), [])
 
 
+def jobs(text):
+    """{job name: its lines} of a workflow, read by hand (no YAML library on
+    the runners): each job starts at a two-space-indented key under jobs:."""
+    body = text[text.index("\njobs:\n"):]
+    found = {}
+    for part in re.split(r"(?m)^(?=  [a-z][a-z0-9-]*:\n)", body)[1:]:
+        found[part.split(":", 1)[0].strip()] = part
+    return found
+
+
+class SecretsOnlyOnMain(unittest.TestCase):
+    """Every job that uses the kernel's keys or the merge queue's token names
+    the environment holding them, which only main may use: as plain
+    repository secrets, any branch's workflow could read them (and the key
+    clones the private kernel). No such job runs npm, so no npm package's
+    install or test code ever runs beside the key."""
+
+    WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
+    NEEDS = {"KERNEL_READ": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
+
+    def problems(self, name, text):
+        out = []
+        for job, lines in jobs(text).items():
+            used = {env for secret, env in self.NEEDS.items() if f"secrets.{secret}" in lines}
+            if not used:
+                continue
+            m = re.search(r"(?m)^    environment: (\S+)$", lines)
+            if len(used) > 1 or not m or m.group(1) not in used:
+                out.append(f"{name} {job}: needs environment {'/'.join(sorted(used))}")
+            if re.search(r"\bnpm (ci|install|run|exec)\b", lines):
+                out.append(f"{name} {job}: runs npm beside a key")
+        return out
+
+    def test_every_workflow(self):
+        found = []
+        for name in sorted(os.listdir(self.WORKFLOWS)):
+            with open(os.path.join(self.WORKFLOWS, name)) as f:
+                found += self.problems(name, f.read())
+        self.assertEqual(found, [])
+
+    def test_the_check_catches_each_break(self):
+        def wf(job):
+            return "on: push\njobs:\n  a:\n    runs-on: x\n" + job
+        ok = "    environment: kernel\n    steps:\n      - env:\n          K: ${{ secrets.KERNEL_READ }}\n"
+        self.assertEqual(self.problems("w", wf(ok)), [])
+        # No environment, the wrong one, and npm beside the key.
+        self.assertEqual(self.problems("w", wf(ok.replace("    environment: kernel\n", ""))), ["w a: needs environment kernel"])
+        self.assertEqual(self.problems("w", wf(ok.replace("kernel", "merge"))), ["w a: needs environment kernel"])
+        self.assertEqual(self.problems("w", wf(ok + "      - run: npm ci\n")), ["w a: runs npm beside a key"])
+
+
 if __name__ == "__main__":
     unittest.main()

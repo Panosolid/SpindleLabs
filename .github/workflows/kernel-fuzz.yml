@@ -45,6 +45,7 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
@@ -63,6 +64,7 @@ jobs:
   stl:
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,6 +97,7 @@ jobs:
     # entry points, one job per target, from the committed seeds.
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -170,6 +173,7 @@ jobs:
     needs: [plan, stl, kernel]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
