@@ -24,7 +24,7 @@
 // 2. Sketch 2 is drawn where it is beside the body and hidden where it
 //    passes behind it.
 // 3. The visible front edge, where Sketch 1's line lies on the body's edge,
-//    shows the edge's selection green once the edge is clicked, and the
+//    shows the edge's selection blue once the edge is clicked, and the
 //    hovered tint before (the body's edges keep their highlight when a
 //    sketch line lies on them).
 // At 1280 px with the mouse and 375 px with taps. In `npm run e2e` and
@@ -262,26 +262,27 @@ try {
         const [cx, cy] = [box.x + spot.at[0] / img.dpr, box.y + spot.at[1] / img.dpr];
         const under = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [cx, cy]);
         assert.equal(under, "CANVAS", "the front edge's middle is under the canvas, not a panel");
-        const greenest = (r) => Math.max(...r.flatMap((p) => p.strip.map(([red, g, b]) => g - (red + b) / 2)));
-        const plain = greenest(probe(img, ...front, ts));
-        assert.ok(plain < 15, `the front edge is not green before it is hovered or picked (${plain})`);
+        const bluest = (r) => Math.max(...r.flatMap((p) => p.strip.map(([red, g, b]) => b - red)));
+        const plain = bluest(probe(img, ...front, ts));
+        // Plain: the dark edge on the grey-blue body, whose blue is at most 184 − 154 = 30 above its red (BASE_COLOUR); measured 22.
+        assert.ok(plain < 40, `the front edge is not blue before it is hovered or picked (${plain})`);
         if (!touch) {
           await page.mouse.move(cx, cy);
           await page.waitForFunction(() => /^edge \d+$/.test(document.querySelector("#viewport").dataset.hover ?? ""), null, { timeout: 5000 });
-          // Hovered: EDGE_COLOUR halfway to SELECTION_COLOUR, about (34, 117, 60): green 70 above red and blue's mean.
+          // Hovered: EDGE_COLOUR (40, 43, 49) halfway to SELECTION_COLOUR (74, 168, 255), about (57, 106, 152): blue 95 above red.
           const hoverImg = await grab(page);
-          if (MEASURE) console.log(`hovered ${await page.evaluate(() => document.querySelector("#viewport").dataset.hover)}\n  ${say(probe(hoverImg, ...front, ts))}`);
-          const hovered = greenest(probe(hoverImg, ...front, ts));
-          assert.ok(hovered > 35, `the hovered front edge is drawn in the hover tint, not under the sketch line (green ${hovered})`);
+          if (MEASURE) console.log(`blue ${bluest(probe(hoverImg, ...front, ts))} hovered ${await page.evaluate(() => document.querySelector("#viewport").dataset.hover)}\n  ${say(probe(hoverImg, ...front, ts))}`);
+          const hovered = bluest(probe(hoverImg, ...front, ts));
+          assert.ok(hovered > 65, `the hovered front edge is drawn in the hover tint, not under the sketch line (blue ${hovered})`);
           await page.mouse.click(cx, cy);
         } else await page.touchscreen.tap(cx, cy);
         await page.waitForFunction(() => /edges \d+$/.test(document.querySelector("#viewport").dataset.highlight ?? ""), null, { timeout: 5000 });
-        // Picked: SELECTION_COLOUR, (64, 230, 115): green 140 above red and blue's mean.
+        // Picked: SELECTION_COLOUR, (74, 168, 255): blue 181 above red.
         const pickedImg = await grab(page);
         if (shots) await page.locator("#viewport canvas").screenshot({ path: `${shots}/hidden-edges-picked-${width}.png` });
         if (MEASURE) console.log(`picked ${await page.evaluate(() => document.querySelector("#viewport").dataset.highlight)}\n  ${say(probe(pickedImg, ...front, ts))}`);
-        const picked = greenest(probe(pickedImg, ...front, ts));
-        assert.ok(picked > 90, `the picked front edge is drawn in the selection green, not under the sketch line (green ${picked})`);
+        const picked = bluest(probe(pickedImg, ...front, ts));
+        assert.ok(picked > 130, `the picked front edge is drawn in the selection blue, not under the sketch line (blue ${picked})`);
       } finally {
         await page.context().close();
       }

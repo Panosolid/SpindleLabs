@@ -26,7 +26,7 @@ import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { MAGIC_JOURNEYS, baselineLine, compareToBaseline, judge, parseBaselines, reportLine } from "../../../packages/testing/src/magic.ts";
 import { pinProperties } from "./properties.mjs";
-import { chooseFile, fileItem, gridSnapOn, startWithBox } from "./start.mjs";
+import { chooseFile, fileItem, gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 /** Walks per journey; the slowest one is judged, so a limit holds every time. */
 const WALKS = 5;
@@ -171,7 +171,7 @@ async function designSketchToStl(on) {
   try {
     // Snap to grid lives in the sketch panel and lasts for the page: tick it in a sketch, then Undo that sketch.
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await gridSnapOn(page);
     await page.keyboard.press("ControlOrMeta+z");
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true" && document.getElementById("undo").title === "Nothing to undo");
@@ -179,7 +179,7 @@ async function designSketchToStl(on) {
 
     const t0 = performance.now();
     await page.click("#create-sketch"); // start a sketch on the ground
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
     await page.click("#sketch-tool-rectangle"); // draw a rectangle
     for (const corner of [[0, 0], [40, 30]]) await clickPlane(page, corner, EMPTY_TOP); // the design is empty, so the sketch is framed round the origin

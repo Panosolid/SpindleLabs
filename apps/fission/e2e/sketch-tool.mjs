@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
-import { closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4183, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4183/";
@@ -227,7 +227,7 @@ try {
   await check("the grid size is typeable; a refused one keeps the grid and says why; Escape ends a chain; Finish sketch leaves it drawn", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.fill("#sketch-grid", "0");
@@ -259,7 +259,7 @@ try {
     // kernel judged a typed grid size closed the sketch, then the answer threw "Cannot set properties of null (setting 'grid')".
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.evaluate(() => ((window.kernelDelay = 400), (window.kernelHeld = 0)));
     await page.fill("#sketch-grid", "0.5");
@@ -277,9 +277,9 @@ try {
   await check("at 375 px wide with taps: the prompt, the plane, a closed triangle, Undo, and nothing wider than the screen", async () => {
     const page = await fresh(375, true);
     await page.tap("#create-sketch");
-    assert.equal(await page.isVisible("#sketch-prompt"), true);
+    assert.equal(await page.isVisible("#phone-float"), true, "the plane prompt on the bar over the view (phone-float.ts)");
     if (shots) await page.screenshot({ path: `${shots}/sketch-pick-375.png` });
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     for (const p of [[0, 0], [30, 0], [30, 20], [0, 0]]) await at(page, p, TOP, true);
     await status(page, "3 lines, a closed outline.");
@@ -297,7 +297,7 @@ try {
   await check("at 375 px wide with taps: the typed Length/Angle box keeps clear of the corners, so a four-sided outline closes by tapping the first corner again (beginner hunt 10-28)", async () => {
     const page = await fresh(375, true);
     await page.tap("#create-sketch");
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const corners = [[0, 0], [30, 0], [30, 20], [0, 20]];
     for (const p of corners) await at(page, p, TOP, true);
@@ -319,7 +319,7 @@ try {
   await check("the rectangle tool: R, two corners make four lines as one undo step, a corner on the row says why, Escape, L, extruded 10 mm is 12,000 mm³", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "true", "Line is the tool a sketch starts with");
@@ -389,7 +389,7 @@ try {
   await check("an invalid grid size's message doesn't move Extrude from under the click: a closed rectangle still opens Extrude with OK on", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.mouse.move(0, 0);
     await page.keyboard.press("r");
@@ -408,7 +408,7 @@ try {
   await check("a hover still being rounded when Ctrl+Z is pressed doesn't bring back the click the undo dropped", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await page.mouse.move(0, 0);
@@ -439,7 +439,7 @@ try {
   await check("the rectangle tool at 375 px with taps: the tool buttons fit and are 44 px, two taps make a closed rectangle", async () => {
     const page = await fresh(375, true);
     await page.tap("#create-sketch");
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.tap("#sketch-tool-rectangle");
     const button = await page.locator("#sketch-tool-rectangle").boundingBox();
@@ -454,7 +454,7 @@ try {
   await check("the circle tool: C, a centre then a point on the circle as one undo step, the preview, a click on the centre says why, Escape, extruded 10 mm is 4000π mm³", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.mouse.move(0, 0);
@@ -521,7 +521,7 @@ try {
   await check("the circle tool at 375 px with taps: three tool buttons fit and are 44 px, two taps make a closed circle", async () => {
     const page = await fresh(375, true);
     await page.tap("#create-sketch");
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await page.tap("#sketch-tool-circle");
     for (const id of ["sketch-tool-line", "sketch-tool-rectangle", "sketch-tool-circle"]) {
@@ -539,7 +539,7 @@ try {
   await check("the 3-point arc tool: A, start, end, then a point on it as one undo step, the previews, notes for no end and no bend, a half disc extruded 10 mm is 2000π mm³", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     // The flat side first: a line (0, 0) → (40, 0), its chain ended with Escape.
@@ -605,7 +605,7 @@ try {
   await check("the arc tool at 375 px with taps: four tool buttons fit and are 44 px, three taps draw an arc", async () => {
     const page = await fresh(375, true);
     await page.tap("#create-sketch");
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
@@ -627,7 +627,7 @@ try {
   await check("the tangent arc tool: T carries on from a line, a slot of two lines and two tangent arcs as one undo step each, notes for no free end and no turn, extruded 10 mm is 8000 + 1000π mm³", async () => {
     const page = await fresh();
     await page.click("#create-sketch");
-    await page.click("#sketch-plane-XY");
+    await pickPlane(page, "XY", false);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
@@ -690,7 +690,7 @@ try {
   await check("the tangent arc tool at 375 px with taps: six tool buttons fit and are 44 px, a line then a tangent arc", async () => {
     const page = await fresh(375, true);
     await page.tap("#create-sketch");
-    await page.tap("#sketch-plane-XY");
+    await pickPlane(page, "XY", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     await gridSnapOn(page); // drawn on the 10 mm grid: grid snap, off by default since SF1 (Firefox clicks land on whole pixels, 0.1 mm off)
     await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width

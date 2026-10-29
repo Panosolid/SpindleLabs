@@ -235,6 +235,19 @@ class Checkout(unittest.TestCase):
         config = open(os.path.join(self.dest, ".git", "config")).read()
         self.assertNotIn("the-secret-key", config)
 
+    def test_the_history_comes_along(self):
+        # Regression: a depth-1 checkout broke the release build, which
+        # numbers itself from the merge order in main's history (every
+        # Kernel CI run's release-build failed, 2026-10-29). Merge's history
+        # holds three commits: base, feature and merge itself.
+        self.assert_quiet_ok(self.checkout(self.merge))
+        self.assertEqual(git("rev-parse", "--is-shallow-repository", cwd=self.dest), "false")
+        self.assertEqual(git("rev-list", "--count", "HEAD", cwd=self.dest), "3")
+
+    def test_a_sparse_checkout_stays_shallow(self):
+        self.assert_quiet_ok(self.checkout("main", SPARSE="prototypes/oracle"))
+        self.assertEqual(git("rev-parse", "--is-shallow-repository", cwd=self.dest), "true")
+
     def test_a_branch_name_works(self):
         self.assert_quiet_ok(self.checkout("main"))
         self.assertEqual(git("rev-parse", "HEAD", cwd=self.dest), self.merge)

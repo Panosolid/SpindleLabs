@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4184, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4184/";
@@ -106,8 +106,7 @@ async function drawn(page, pts, tap = false) {
   if (tap) await page.tap("#create-sketch");
   else await page.click("#create-sketch");
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  if (tap) await page.tap("#sketch-plane-XY");
-  else await page.click("#sketch-plane-XY");
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   // On the grid: grid snap is off by default since SF1, and Firefox's clicks land on whole pixels, 0.1 mm off.
   await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5)
@@ -242,8 +241,10 @@ try {
     await drawn(page, [[0, 0], [30, 0], [30, 20], [0, 0]], true);
     await status(page, "3 lines, a closed outline.");
     await page.tap("#extrude");
-    // The Extrude panel is in the Properties sheet on a phone, which opens by itself (demo rehearsal 10-28): OK and the distance box are on screen.
-    await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "Extrude opens the Properties sheet");
+    // On a phone Extrude leaves the Properties sheet shut, the view clear (Ben's rule, 10-28): Finish Extrude and Cancel are on the bar over the view.
+    await until(page, () => document.getElementById("float-finish")?.textContent === "Finish Extrude", null, "Finish Extrude on the bar over the view");
+    assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "Extrude leaves the sheet shut");
+    await openPanel(page, "properties", true); // the panel's own boxes, opened by hand
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-flip", "#extrude-clear"]) {
       const box = await page.locator(id).boundingBox();
@@ -362,7 +363,7 @@ try {
       // Sketch 2 (sketch-12), left empty: nothing is built from it.
       await top();
       await press("#create-sketch");
-      await press("#sketch-plane-XY");
+      await pickPlane(page, "XY");
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       await top();
       await press("#finish-sketch");

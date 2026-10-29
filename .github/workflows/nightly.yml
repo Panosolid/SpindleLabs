@@ -345,6 +345,8 @@ jobs:
           COMMIT: ${{ github.sha }}
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
+          # Each job's result: a red one with no failure folder files an issue too.
+          JOBS: ${{ toJSON(needs) }}
         # Copied out first: the script switches this checkout to test-results.
         run: |
           # The golden-step job's line and failure folder join the golden ones.
