@@ -33,7 +33,7 @@ WORKFLOWS = os.path.join(os.path.dirname(HERE), "workflows")
 TRIGGERS = {
     "ai-eval.yml": {"pull_request", "workflow_dispatch"},
     "auto-merge.yml": {"pull_request_target", "schedule", "workflow_dispatch", "workflow_run"},
-    "ci.yml": {"merge_group", "pull_request", "push", "schedule", "workflow_dispatch"},
+    "ci.yml": {"merge_group", "pull_request", "schedule", "workflow_dispatch"},
     "fuzz.yml": {"schedule", "workflow_dispatch"},
     "kernel-ci.yml": {"workflow_dispatch"},
     "kernel-fuzz.yml": {"schedule", "workflow_dispatch"},

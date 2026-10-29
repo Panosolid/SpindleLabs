@@ -359,6 +359,7 @@ jobs:
   # before, one issue here names the key and the date (token_expiry.py; it
   # prints nothing else). Nightly runs only.
   keys:
+    needs: idle
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     environment: kernel
