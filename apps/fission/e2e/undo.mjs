@@ -8,8 +8,11 @@
 // at phone width the pair sits in the viewport's corner.
 // Every volume is worked out by hand from V = width · depth · height with
 // the default depth 30 and height 20.
+// Real-use hunt C1, C2 (2026-10-28): two quick Undos or Redos free every body the put-away Design built, and the
+// rebuilding flag holds until the last rebuild lands.
 // Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
@@ -21,7 +24,7 @@ const url = "http://localhost:4180/";
 const browser = await launch();
 const errors = [];
 
-async function fresh(hash = "#design", { box = true } = {}) {
+async function fresh(hash = "#design", { box = true, hooks = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -29,7 +32,7 @@ async function fresh(hash = "#design", { box = true } = {}) {
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  await page.goto(url + hash);
+  await page.goto(url + (hooks ? "?test-hooks" : "") + hash); // hooks: window.fissionTest, the kernel's body count
   if (hash === "#design" && box) await startWithBox(page); // a new project starts empty (U0c): the 40 · 30 · 20 box, inserted
   await pinProperties(page); // the size boxes are in the panel, folded at the start on a wide screen (U0b)
   return page;
@@ -414,6 +417,98 @@ try {
       assert.deepEqual(errors.slice(before), [], "no page error");
       // Undo took the sketch out (Redo would bring it back); the click drew nothing.
       assert.match(await page.getAttribute("#redo", "title"), /^Redo Create sketch/);
+    } finally {
+      errors.length = before;
+      await page.close();
+    }
+  });
+
+  await check("two quick Undos and two quick Redos say rebuilding until the last one lands (real-use hunt C2)", async () => {
+    // Every Undo and Redo remounts Design while the put-away one's rebuild may still run. Before the fix that rebuild's end
+    // set data-rebuilding false while the new Design's rebuild still ran, so a check read the page too early. Each kernel
+    // message is held 150 ms, so a second press 60 ms after the first always lands while the first's rebuild runs.
+    const page = await fresh("#design", { hooks: true });
+    const before = errors.length;
+    try {
+      await page.fill("#width", "50");
+      await volume(page, "30,000 mm³"); // 50 · 30 · 20
+      await page.fill("#depth", "40"); // another box, so another step (typing on in one box is one step)
+      await volume(page, "40,000 mm³"); // 50 · 40 · 20
+      await page.evaluate(() => {
+        const send = Worker.prototype.postMessage;
+        Worker.prototype.postMessage = function (message, ...rest) {
+          setTimeout(() => send.call(this, message, ...rest), 150);
+        };
+      });
+      const twice = async (id) => {
+        await page.click(id);
+        await page.waitForTimeout(60);
+        await page.click(id);
+        await page.waitForFunction(() => document.querySelector("#viewport").dataset.rebuilding === "false", null, { timeout: 15000 });
+        // Read the moment the flag says done: what is shown then must be the last press's design, and it must stay.
+        const now = () => page.evaluate(async () => [document.querySelector("#volume")?.textContent, await window.fissionTest.bodyCount()]);
+        const atFlag = await now();
+        await page.waitForTimeout(1500);
+        return [atFlag, await now()];
+      };
+      for (let round = 1; round <= 3; round++) {
+        // Undo, Undo: back to the 40 · 30 · 20 box, 24,000 mm³, one body in the kernel (nothing kept from the put-away rebuilds).
+        assert.deepEqual(await twice("#undo"), [["24,000 mm³", 1], ["24,000 mm³", 1]], `round ${round}: two quick Undos, [volume, kernel bodies] at the flag and 1.5 s later`);
+        // Redo, Redo: the 50 · 40 · 20 box again, 40,000 mm³, one body.
+        assert.deepEqual(await twice("#redo"), [["40,000 mm³", 1], ["40,000 mm³", 1]], `round ${round}: two quick Redos, [volume, kernel bodies] at the flag and 1.5 s later`);
+      }
+      assert.deepEqual(errors.slice(before), [], "no page error");
+    } finally {
+      errors.length = before;
+      await page.close();
+    }
+  });
+
+  await check("two quick Undos of a 30-item project leave the kernel holding what it held before the edits (real-use hunt C1)", async () => {
+    // Every Undo remounts Design and closes the old cache while its rebuild runs; before the fix that rebuild's own keepOnly
+    // at its end kept its bodies for good, about 13 more each time on this project. Each kernel message is held 20 ms, so the
+    // rebuild of its 16 bodies is still running when the second Undo comes 150 ms after the first.
+    const page = await fresh("#design", { box: false, hooks: true });
+    const before = errors.length;
+    try {
+      await page.waitForSelector("#start-hint", { state: "visible" });
+      const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.evaluate(() => document.getElementById("open-file").click())]);
+      await chooser.setFiles({ name: "thirty.spindle", mimeType: "application/json", buffer: readFileSync(new URL("../../../tests/golden/thirty-features.panosolid.json", import.meta.url)) });
+      /** [Bodies rows, kernel bodies] once the page has stopped changing. */
+      const quiet = async () => {
+        let last = "";
+        for (;;) {
+          await page.waitForTimeout(300);
+          const now = await page.evaluate(async () => JSON.stringify([document.querySelector("#viewport").dataset.rebuilding, document.querySelectorAll('#browser [data-node^="body-"]').length, await window.fissionTest.bodyCount()]));
+          if (now === last && !now.startsWith('["true"')) return JSON.parse(now).slice(1);
+          last = now;
+        }
+      };
+      const opened = await quiet();
+      assert.ok(opened[1] > 5, `the project built its bodies (${opened})`);
+      await page.evaluate(() => {
+        const send = Worker.prototype.postMessage;
+        Worker.prototype.postMessage = function (message, ...rest) {
+          setTimeout(() => send.call(this, message, ...rest), 20);
+        };
+      });
+      const edit = async (key, v) => {
+        await page.click('#timeline li[data-item="feature-1"]', { button: "right" });
+        await page.click("#row-menu-edit");
+        await page.fill(`#edit-${key}`, String(v));
+        await page.click("#feature-edit-ok");
+        await quiet();
+      };
+      for (let round = 1; round <= 3; round++) {
+        await edit("depth", 15 + round);
+        await edit("height", 5 + round);
+        await page.click("#undo");
+        await page.waitForTimeout(150);
+        await page.click("#undo");
+        // Both edits taken back: the same rows and the same kernel bodies as when the project was opened.
+        assert.deepEqual(await quiet(), opened, `round ${round}: [Bodies rows, kernel bodies] after two quick Undos, as opened`);
+      }
+      assert.deepEqual(errors.slice(before), [], "no page error");
     } finally {
       errors.length = before;
       await page.close();

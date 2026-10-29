@@ -168,7 +168,9 @@ export class BodyCache {
 
   /** Frees every body but these: now, or once the last use running ends. */
   async keepOnly(handles: Iterable<BodyHandle>): Promise<void> {
-    this.wanted = new Set(handles);
+    // A closed cache keeps nothing: a rebuild still running when Design closed (two quick Undos) ends with its own
+    // keepOnly, whose bodies no cache would ever free otherwise (real-use hunt C1, 2026-10-28).
+    this.wanted = this.closed ? new Set() : new Set(handles);
     await this.freeUnwanted();
   }
 

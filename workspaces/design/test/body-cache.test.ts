@@ -188,6 +188,27 @@ test("closed during a use: everything is freed once the use ends, and nothing mo
   await assert.rejects(cache.body(box(25)), /closed/);
 });
 
+test("closed during a rebuild: the rebuild's own keepOnly at its end keeps nothing (two quick Undos, real-use hunt C1)", async () => {
+  // rebuildTimeline is cache.using(build, then keepOnly(what it built)). Every Undo remounts Design, closing the old cache
+  // while its rebuild runs. Worked by hand: handle 1 is built, the cache is closed (it frees nothing yet, the use runs),
+  // then the rebuild asks to keep [1]. A closed cache keeps nothing, so when the use ends handle 1 is freed: live is [].
+  // Before the fix keepOnly put [1] back as wanted and the end of the use kept it, out of reach of any cache, for good.
+  const k = standIn();
+  const cache = new BodyCache(k.kernel);
+  const goesOn = later();
+  const rebuild = cache.using(async () => {
+    const h = await cache.body(box(20));
+    await goesOn.p;
+    await cache.keepOnly([h]);
+  });
+  await new Promise((r) => setImmediate(r));
+  await cache.close();
+  assert.deepEqual(k.live(), [1], "still in use");
+  goesOn.done();
+  await rebuild;
+  assert.deepEqual(k.live(), [], "the closed cache's body is freed");
+});
+
 test("a fresh kernel: forget drops every old handle unfreed, and each body is built again", async () => {
   const k = standIn();
   const cache = new BodyCache(k.kernel);
