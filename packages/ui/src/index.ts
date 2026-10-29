@@ -16,3 +16,4 @@ export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type Fi
 export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";
 export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
 export { askName, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
+export { adoptSkeleton, holdSkeleton, leaveAfter, skeleton, whileLoading, SKELETON_DELAY_MS, SKELETON_FADE_MS, type HeldSkeleton, type SkeletonShape } from "./skeleton.ts";
