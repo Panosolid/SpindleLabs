@@ -231,8 +231,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     caught: "the rebuild differs from the model",
   },
   "full-replay": {
-    what: "rebuildTimeline empties the body cache first, so every body is built again",
-    edits: [{ file: REBUILD, find: "  const { features, marker } = doc.timeline;", replace: "  await cache.clear();\n  const { features, marker } = doc.timeline;" }],
+    what: "rebuildTimeline empties the body cache first (before its use starts: inside it the cache only frees once the use ends, so a clear there changes nothing), so every body is built again",
+    edits: [{ file: REBUILD, find: "  return cache.using(async () => {\n    const build = await buildTimeline(doc, cache, calls);", replace: "  await cache.clear();\n  return cache.using(async () => {\n    const build = await buildTimeline(doc, cache, calls);" }],
     run: ["timeline"],
     caught: "an edit rebuilt bodies that didn't change",
   },
@@ -287,6 +287,18 @@ export const PLANTS: Record<ModelFault, Plant> = {
     ],
     run: ["timeline"],
     caught: "outcome differs from the model",
+  },
+  "move-shift-then-turn": {
+    what: "a Move shifts its bodies first and turns them about the pivot after",
+    edits: [{ file: "workspaces/design/src/move.ts", find: "  return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [...turns, { move: [v.x, v.y, v.z] }];", replace: "  return v.x === 0 && v.y === 0 && v.z === 0 ? turns : [{ move: [v.x, v.y, v.z] }, ...turns];" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
+  },
+  "move-not-held": {
+    what: "a Move builds its moved bodies but leaves the timeline's bodies where they were",
+    edits: [{ file: REBUILD, find: "  for (const [id, r] of moved) done[id] = r;", replace: "" }],
+    run: ["timeline"],
+    caught: "the rebuild differs from the model",
   },
 };
 
@@ -484,15 +496,16 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
     what: "a corner is named with naming.ts's order of the side edges meeting there (27a's plan for 27b), so a corner moved across the outline (turning it over) loses its pin",
     edits: [{ file: EDGES, find: "  return names.edges[e] === null ? null : (names.ends?.[e] ?? unordered(names.edges[e]));", replace: "  return names.edges[e];" }],
     run: ["naming"],
-    caught: "seeded",
+    caught: "every one of Ben's Fusion answers",
+    why: "the naming journey's Fusion-answers check (R12) fires first; its seeded sessions and the half disc's 27b tests still fail on this plant when run alone (checked 2026-10-28)",
   },
   // ---- Step 27b: a half disc's corners named by the ends of the curves meeting there. ----
   "corner-unordered": {
     what: "a corner is named as 26f named it, the sides' order left out, so a half disc's two corners share a name and neither is offered",
     edits: [{ file: EDGES, find: "  return names.edges[e] === null ? null : (names.ends?.[e] ?? unordered(names.edges[e]));", replace: "  return unordered(names.edges[e]);" }],
     run: ["naming"],
-    caught: "half-disc: 27b regression",
-    why: "the naming model's outlines are polygons, whose corners the unordered names tell apart; only the half disc's journey has two curves meeting at both ends",
+    caught: "every one of Ben's Fusion answers",
+    why: "the naming journey's Fusion-answers check (R12) fires first; the half disc's 27b regression test and the seeded outlines still fail on this plant when run alone (checked 2026-10-28). The naming model's outlines are polygons, whose corners the unordered names tell apart; only the half disc's journey has two curves meeting at both ends",
   },
   "corner-order-as-given": {
     what: "a corner's ends are read off the kernel's order of its two sides as if it were always the outline's own, so an outline the kernel turned round (drawn clockwise, or flipped) names each corner by the far ends",
@@ -526,8 +539,8 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
     what: "the middle of an edge between two sides is offered under naming.ts's ordered name, so a flipped half disc sends its pin to the other upright",
     edits: [{ file: EDGES, find: "      const middle = edge === null ? null : (names.ends?.[e] ?? edge);", replace: "      const middle = edge;" }],
     run: ["naming"],
-    caught: "half-disc: 27b, hand-worked: flipping",
-    why: "the naming model pins only on caps, which have no upright edges",
+    caught: "every one of Ben's Fusion answers",
+    why: "the naming journey's Fusion-answers check (R11) fires first; the half disc's 27b flipping test still fails on this plant when run alone (checked 2026-10-28). The naming model pins only on caps, which have no upright edges",
   },
   "pin-not-settled": {
     what: "neither the settle nor the app writes a pinned point's new place into the sketch, so what is drawn and saved stays behind what is built",

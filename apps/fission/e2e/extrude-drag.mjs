@@ -13,7 +13,7 @@
 // with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch, untilBodies } from "./browser.mjs";
-import { sheetsClearFor } from "./start.mjs";
+import { closePanels, sheetsClearFor } from "./start.mjs";
 import { preview } from "vite";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
@@ -132,6 +132,8 @@ async function hoverAt(page, p, want) {
 
 /** The arrow's foot and tip on screen, as the main view says. */
 async function arrow(page) {
+  // The panel's preview volume is set before the viewer next draws the arrow, so wait for it rather than read at once.
+  await until(page, () => (document.querySelector("#viewport").dataset.arrow ?? "") !== "", null, "the arrow drawn");
   const said = await view(page, "arrow");
   assert.ok(said, "the arrow is drawn");
   const [foot, tip] = said.split(" ").map((xy) => xy.split(",").map(Number));
@@ -203,6 +205,7 @@ try {
       const page = await fresh(width, touch);
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await press("#extrude");
+      if (touch) await closePanels(page, true); // the view clear to tap and drag in (Extrude leaves the sheet shut; a no-op then)
       // Both sketches, then the box's six flat faces (UX1c).
       await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces", panelState);
       // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.
@@ -308,6 +311,7 @@ try {
       const page = await fresh(width, touch);
       const before = await undoTitle(page);
       await (touch ? page.tap("#extrude") : page.click("#extrude"));
+      if (touch) await closePanels(page, true); // as above
       await until(page, () => document.querySelector("#extrude-panel")?.dataset.previewVolume !== "", null, "a preview");
       await until(page, () => document.querySelector("#viewport").dataset.arrow, null, "the arrow");
       await dragArrow(page, 60, touch);

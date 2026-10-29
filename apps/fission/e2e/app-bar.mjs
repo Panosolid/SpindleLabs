@@ -57,8 +57,10 @@ const NEW_ON = "New: clear the whole design and start again from an empty one. I
  * least 16 px on screen), a name (its words, or its aria-label), and, for
  * Save, its words out of sight. Empty when all is well.
  */
+// Measured once the menu's opening slide has finished: mid-slide a 16 px icon reads 15.999996 px.
 const barProblems = (page) =>
-  page.evaluate(() => {
+  page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {})));
     const out = [];
     const sels = ["#save", "#undo", "#redo", "#file-menu-menu [role=menuitem]", "#assistant-toggle", "#guide-open", "#community"];
     for (const b of document.querySelectorAll(sels.join(","))) {
@@ -139,7 +141,7 @@ try {
         assert.deepEqual(m, [16, "13px", true], id);
       }
       assert.equal(await page.textContent("#ai-status"), "off", "the AI's state still shows, inside its button");
-      assert.equal(await page.getAttribute("#save", "title"), "Save the whole project as a .spindlelabs.json file");
+      assert.equal(await page.getAttribute("#save", "title"), "Save the whole project as a .spindle file");
       // Again in DejaVu Sans, the wide font CI's Linux uses for system-ui.
       await page.addStyleTag({ content: "html, body { font-family: 'DejaVu Sans' !important; }" });
       assert.equal((await rect(page, "#topbar")).height, 44, "one row in DejaVu Sans");
@@ -161,7 +163,7 @@ try {
   for (const [width, tap] of [[1280, false], [375, true]]) {
     const at = `${width} px${tap ? ", taps" : ""}`;
 
-    await check(`${at}: File ▾ lists New, Open…, Save, Export STL with icons; on an empty design New and Export STL are off, saying why; Open… opens the picker; Save downloads the project`, async () => {
+    await check(`${at}: File ▾ lists New, Open…, Save, Save As…, Export STL with icons; on an empty design New and Export STL are off, saying why; Open… opens the picker; Save downloads the project`, async () => {
       const page = await fresh(width, tap);
       try {
         await press(page, "#file-menu", tap);
@@ -169,9 +171,10 @@ try {
           ["start-fresh", "new", true],
           ["open", "open", false],
           ["file-save", "save", false],
+          ["file-save-as", "save", false],
           ["file-export-stl", "export", true],
         ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Export STL"]);
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Save As…", "Export STL"]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
         assert.deepEqual(await barProblems(page), [], "every item's icon drawn");
@@ -193,7 +196,7 @@ try {
         assert.equal(await page.getAttribute("#file-menu", "aria-expanded"), "false", "a choice closes the menu");
         // Save downloads the project, the same file as the Save icon's (two ways agreeing; at phone width the icon is File ▾'s).
         const [download] = await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-save", tap)]);
-        assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
+        assert.equal(download.suggestedFilename(), "Untitled.spindle");
         const fromMenu = JSON.parse(readFileSync(await download.path(), "utf8"));
         assert.equal(fromMenu.workspaces.design.timeline.features.length, 0, "the empty design");
         if (!tap) {
@@ -227,10 +230,11 @@ try {
         await chooseFile(page, "start-fresh", tap);
         await until(page, () => document.getElementById("start-fresh-dialog").open, null, "the dialog");
         assert.match(await page.textContent("#start-fresh-words"), /\(1 feature\)/);
-        // Its own styles (start-fresh.css), not the browser's white box: the dark panel #1c1f24 = rgb(28, 31, 36) and
-        // the warning-red confirm #6b2328 = rgb(107, 35, 40), hex to decimal by hand (Ben's screenshot, 0.32.x: unstyled).
+        // Its own styles (start-fresh.css), not the browser's white box: the near-black blue panel #161d2a =
+        // rgb(22, 29, 42) (UX2) and the warning-red confirm #6b2328 = rgb(107, 35, 40), hex to decimal by hand
+        // (Ben's screenshot, 0.32.x: unstyled).
         const look = await page.evaluate(() => [getComputedStyle(document.getElementById("start-fresh-dialog")).backgroundColor, getComputedStyle(document.getElementById("start-fresh-confirm")).backgroundColor]);
-        assert.deepEqual(look, ["rgb(28, 31, 36)", "rgb(107, 35, 40)"]);
+        assert.deepEqual(look, ["rgb(22, 29, 42)", "rgb(107, 35, 40)"]);
         if (shots) await page.screenshot({ path: `${shots}/file-menu-${width}-new-ask.png` });
         await press(page, "#start-fresh-confirm", tap);
         await until(page, () => document.getElementById("start-hint")?.hidden === false, null, "the empty design's hint");
@@ -339,7 +343,7 @@ try {
       await page.keyboard.press("ArrowDown");
       assert.equal(await page.evaluate(() => document.activeElement?.id), "file-save");
       const [download] = await Promise.all([page.waitForEvent("download"), page.keyboard.press("Enter")]);
-      assert.equal(download.suggestedFilename(), "Untitled.spindlelabs.json");
+      assert.equal(download.suggestedFilename(), "Untitled.spindle");
       await page.focus("#file-menu");
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("Escape");
@@ -350,7 +354,7 @@ try {
     }
   });
 
-  await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as 44 px icons; AI, Guide and Community behind Menu", async () => {
+  await check("375 px, taps: File ▾ on the bar and nothing wider than the screen; Undo and Redo docked as round 48 px icons; AI, Guide and Community behind Menu", async () => {
     const page = await fresh(375, true);
     try {
       assert.deepEqual(await barOrder(page), ["#topbar h1", "#file-menu", "#workspace-menu"]);
@@ -358,7 +362,7 @@ try {
       assert.equal(await page.evaluate(() => document.getElementById("undo-redo").classList.contains("docked")), true);
       for (const id of ["undo", "redo"]) {
         const b = await rect(page, `#${id}`);
-        assert.deepEqual([b.width, b.height], [44, 44], id);
+        assert.deepEqual([b.width, b.height], [48, 48], id); // round 48 px floating buttons (UX2b)
         assert.equal(await page.$eval(`#${id} svg.icon`, (s) => s.dataset.icon), id);
       }
       await page.tap("#menu-toggle");

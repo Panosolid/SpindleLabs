@@ -44,6 +44,7 @@ import {
   survivors,
   drawLine,
   drawRectangle,
+  specOf,
   type DesignDocument,
 } from "@fission/design";
 import { applyOp, createModel, edgeKey, faceKey, rebuild, shoelace, type ConcreteOp, type ModelBody, type ModelShape, type PresetKind } from "../src/timeline-model.ts";
@@ -169,9 +170,9 @@ async function kernelExtrude(kernel: KernelCalls, feature: string, shape: ModelS
 }
 
 async function kernelPreset(kernel: KernelCalls, feature: string, kind: PresetKind, sizes: number[]): Promise<Named> {
-  const view =
-    kind === "box" ? await kernel.call("make_box", sizes[0], sizes[1], sizes[2]) : kind === "cylinder" ? await kernel.call("make_cylinder", sizes[0] / 2, sizes[1]) : await kernel.call("make_sphere", sizes[0] / 2);
-  return named(feature, view);
+  // As Design builds a new preset (a sphere lifted onto the floor, Ben 2026-10-28): its spec from a part document.
+  const doc = kind === "box" ? partDocument("box", sizes[0], sizes[1], sizes[2]) : kind === "cylinder" ? partDocument("cylinder", sizes[0], sizes[0], sizes[1]) : partDocument("sphere", sizes[0], sizes[0], sizes[0]);
+  return named(feature, await buildSpec(kernel, specOf(doc, lastFeature(doc))));
 }
 
 /** The same names, each face's area and centroid within MATCH_REL, each edge's length and centroid within EDGE_SLACK. */
@@ -258,7 +259,8 @@ test("the kernel reports each face's role (an extrude's start, end and the side 
   sameBody(k4, r4.body, "circle");
   // Presets: a 40 × 30 × 20 box (its front, −Y, is 40 × 20 = 800 at
   // (20, 0, 10)), a cylinder of diameter 20 and height 10, a sphere of
-  // diameter 10 (each half 2πr² = 50π at r/2 = 2.5 from the centre).
+  // diameter 10 (each half 2πr² = 50π at r/2 = 2.5 from the centre, which
+  // is r = 5 up: it rests on the floor, Ben 2026-10-28).
   for (const [kind, sizes] of [["box", [40, 30, 20]], ["cylinder", [20, 10]], ["sphere", [10]]] as [PresetKind, number[]][]) {
     const want = modelPreset(kind, sizes);
     sameBody(await kernelPreset(kernel, want.feature, kind, sizes), want.body, kind);
@@ -267,7 +269,7 @@ test("the kernel reports each face's role (an extrude's start, end and the side 
   const front = face(box, "b/front");
   assert.ok(close(front.area, 800) && close(front.centroid[0], 20) && close(front.centroid[1], 0) && close(front.centroid[2], 10));
   const upper = face(await kernelPreset(kernel, "s", "sphere", [10]), "s/upper");
-  assert.ok(close(upper.area, 50 * Math.PI) && close(upper.centroid[2], 2.5));
+  assert.ok(close(upper.area, 50 * Math.PI) && close(upper.centroid[2], 5 + 2.5));
 });
 
 test("seeded: 5 seeds × 40 random sketches drawn shuffled and backwards, extruded on the real kernel, name, measure and place every face as the model does", async () => {
@@ -548,7 +550,9 @@ async function designSession(seed: bigint, steps: number, faults: DesignFault[] 
   }
 }
 
-const SEEDS = process.env.FISSION_SEED ? [BigInt(process.env.FISSION_SEED)] : Array.from({ length: 12 }, (_, k) => BigInt(k + 1));
+// Seeds 4 to 15 from 35e2: with Moves drawn too, seed 15 is the first to save a design with nothing built and to
+// extrude a sketch whose face is gone (all of 1 to 30 pass).
+const SEEDS = process.env.FISSION_SEED ? [BigInt(process.env.FISSION_SEED)] : Array.from({ length: 12 }, (_, k) => BigInt(k + 4));
 const STEPS = Number(process.env.FISSION_TIMELINE_STEPS ?? 150);
 
 test("seeded sessions: Design's timeline on the real kernel passes runSession for 12 seeds × 150 steps against the model, reaching every outcome and warning, and frees every body", async () => {
@@ -566,7 +570,7 @@ test("seeded sessions: Design's timeline on the real kernel passes runSession fo
   }
   if (process.env.FISSION_SEED) return;
   const wanted = [
-    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref"].map((o) => `op:${o}`),
+    ...["add-sketch", "add-face-sketch", "add-extrude", "add-preset", "set-size", "move-corner", "delete-curve", "redraw-curve", "delete-item", "reorder", "suppress", "marker", "undo", "redo", "save-open", "hold-ref", "add-move", "set-move"].map((o) => `op:${o}`),
     // 26e: built on a suppressed item is greyed (Q3), so a session's extrudes never fail (hand-worked above).
     ...["built", "suppressed", "greyed", "rolled-back"].map((x) => `status:${x}`),
     // 26e: sketches on a face followed, held when their face goes, and extrudes of held ones saying their source is lost.

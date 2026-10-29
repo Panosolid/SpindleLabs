@@ -109,7 +109,9 @@ await check("the bar: one slim strip centred along the bottom of the view, Orbit
     const bar = await page.locator("#view-controls").boundingBox();
     const view = await page.locator("#viewport").boundingBox();
     assert.ok(Math.abs(bar.x + bar.width / 2 - (view.x + view.width / 2)) <= 1, `centred: ${JSON.stringify(bar)} in ${JSON.stringify(view)}`);
-    assert.ok(view.y + view.height - (bar.y + bar.height) <= 10 && bar.height <= 40, `slim, along the bottom: ${JSON.stringify(bar)}`);
+    // Slim: one row of 36 px round buttons (UX2's mouse target) in a pill with 3 px padding and a 1 px edge,
+    // 36 + 2 × 3 + 2 × 1 = 44 px tall (two rows would be over 80).
+    assert.ok(view.y + view.height - (bar.y + bar.height) <= 10 && bar.height <= 44, `slim, along the bottom: ${JSON.stringify(bar)}`);
     assert.equal(await page.getAttribute("#view-controls [data-nav=orbit]", "aria-pressed"), "true");
     assert.equal(await page.getAttribute("#view-controls [data-nav=pan]", "aria-pressed"), "false");
     assert.equal(await page.isDisabled("[data-view=look-at]"), true);

@@ -97,6 +97,7 @@ const extrudeStatus = (page, want) => until(page, (w) => document.querySelector(
  */
 async function extrudeEnter(page) {
   await until(page, () => document.querySelector("#extrude-ok")?.disabled === false, null, "Extrude's OK on");
+  assert.match((await page.getAttribute("#extrude-ok", "title")) ?? "", /Enter/, "OK's tooltip names Enter");
   await page.press("#extrude-distance", "Enter");
 }
 
@@ -240,7 +241,10 @@ try {
     await drawn(page, [[0, 0], [30, 0], [30, 20], [0, 0]], true);
     await status(page, "3 lines, a closed outline.");
     await page.tap("#extrude");
-    await openPanel(page, "properties", true); // the Extrude panel is in the Properties sheet on a phone (U5)
+    // On a phone Extrude leaves the Properties sheet shut, the view clear (Ben's rule, 10-28): Finish Extrude and Cancel are on the bar over the view.
+    await until(page, () => document.getElementById("float-finish")?.textContent === "Finish Extrude", null, "Finish Extrude on the bar over the view");
+    assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "Extrude leaves the sheet shut");
+    await openPanel(page, "properties", true); // the panel's own boxes, opened by hand
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-flip", "#extrude-clear"]) {
       const box = await page.locator(id).boundingBox();
@@ -469,7 +473,7 @@ try {
         }
         return [dl.suggestedFilename(), n, six / 6];
       };
-      assert.deepEqual(await stl("#toolbar [data-op=export_stl]"), ["fission-2-bodies.stl", 12 + tris, 24000 + vol]);
+      assert.deepEqual(await stl("#toolbar [data-op=export_stl]"), ["spindlelabs-2-bodies.stl", 12 + tris, 24000 + vol]);
       // The browser (a drawer at phone width): Body 1's row, then Shift for Body 2 as well.
       const openBrowser = async () => {
         if (await page.isVisible("#browser-toggle")) {
@@ -482,13 +486,13 @@ try {
       await until(page, () => document.body.dataset.selection === "body:feature-1", null, "Body 1 selected");
       const verb = "#selection-actions [data-action='design.download-stl']";
       await openPanel(page, "properties", tap); // phone: the selection's verbs are in the Properties sheet (U5)
-      assert.deepEqual(await stl(verb), ["fission-box.stl", 12, 24000]);
+      assert.deepEqual(await stl(verb), ["spindlelabs-box.stl", 12, 24000]);
       await openBrowser();
       await page.click('#browser [data-node="body-2"]', { modifiers: ["Shift"] });
       await until(page, () => document.body.dataset.selection?.split(" ").length === 2, null, "both bodies selected");
       await openPanel(page, "properties", tap);
-      assert.deepEqual(await stl(verb), ["fission-2-bodies.stl", 12 + tris, 24000 + vol]);
-      assert.equal(await page.textContent("#action-note"), "");
+      assert.deepEqual(await stl(verb), ["spindlelabs-2-bodies.stl", 12 + tris, 24000 + vol]);
+      assert.equal(await page.textContent("#action-note"), "Exported spindlelabs-2-bodies.stl.");
       if (shots) await page.screenshot({ path: `${shots}/two-body-stl-${width}.png`, fullPage: true });
       if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
       await page.context().close();

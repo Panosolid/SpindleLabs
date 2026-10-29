@@ -43,6 +43,8 @@ import {
   facePlane,
   isFaceSketch,
   insertPreset,
+  insertMove,
+  changedMove,
   isSketchExtrude,
   moveMarker,
   movePoint,
@@ -58,9 +60,11 @@ import {
   settleKept,
   shownBodies,
   shapeOf,
+  shapeSpec,
   suppressItem,
   type DesignDocument,
   type LineEnd,
+  type MoveValues,
   type Scene,
   type SketchCurve,
   type SketchPlacement,
@@ -68,6 +72,19 @@ import {
 } from "@fission/design";
 import { edgeName, faceKey, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
 import type { EdgeClose, TimelineSubject } from "./timeline-session.ts";
+
+/** A model Move's numbers as Design's (35e2): the sessions turn about Z only, through a pivot on the floor. */
+const moveValues = (op: { shift: readonly number[]; turnZ: number; pivot: readonly number[] }): MoveValues => ({
+  x: op.shift[0],
+  y: op.shift[1],
+  z: op.shift[2],
+  turnX: 0,
+  turnY: 0,
+  turnZ: op.turnZ,
+  pivotX: op.pivot[0],
+  pivotY: op.pivot[1],
+  pivotZ: 0,
+});
 
 /** Each edge's length and centroid (the mean point along it), measured on the display mesh's edge lines. */
 export function edgeGeometry(view: BodyView): { length: number; centroid: number[] }[] {
@@ -347,6 +364,13 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       case "marker":
         // Planted bug: the marker at the start is read as no marker, so everything builds.
         return { state: { doc: moveMarker(doc, fs.has("marker-start-ignored") && op.at === "start" ? null : op.at), meta }, made: [] };
+      case "add-move": {
+        // 35e2: Design's Move, as the Move panel's OK will put it in.
+        const m = insertMove(doc, op.bodies, moveValues(op));
+        return { state: { doc: m.doc, meta }, made: [m.id] };
+      }
+      case "set-move":
+        return { state: { doc: changedMove(doc, op.item, moveValues(op)), meta }, made: [] };
     }
   }
 
@@ -373,7 +397,9 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         const key = fs.has("cache-by-feature") ? id : `${id}|${r.body}|${JSON.stringify(r.curves ?? null)}`;
         let body = keep ? bodies.get(key) : undefined;
         if (body === undefined) {
-          body = measure(id, shown.get(id)!, r.spec && "extrude" in r.spec ? outlineCurves(r.spec.extrude.profile, r.curves) : () => null);
+          // 35e2: a moved body's sides are named by the shape inside the move.
+          const shape = r.spec && shapeSpec(r.spec);
+          body = measure(id, shown.get(id)!, shape && "extrude" in shape ? outlineCurves(shape.extrude.profile, r.curves) : () => null);
           if (keep) bodies.set(key, body);
         }
         results[id] = { status: "built", body, ...(r.warning && { warning: { cause: r.warning.cause, input: r.warning.sketch } }), ...(r.source && { source: r.source.sketch }) };

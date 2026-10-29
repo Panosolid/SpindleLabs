@@ -9,7 +9,7 @@
 import type { KernelCalls, Outline, Plane, Producible, Producer, RepresentationRegistry, SourceLookup } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
 import type { DesignDocument } from "./document.ts";
-import { featureSpec } from "./extrude.ts";
+import { endSpec } from "./move-tool.ts";
 import { outline } from "./profiles.ts";
 import { readDesignReference, readProfileReference } from "./references.ts";
 import { bodyOf, findInScene, type Scene } from "./scene.ts";
@@ -101,7 +101,7 @@ export function registerDesign(registry: RepresentationRegistry, kernel: KernelC
     const feature = document.timeline.features.find((f) => f.id === o.id);
     if (!feature) throw new Error(`feature ${o.id} is not in the design`);
     // An extrude of a sketch asks the kernel for the outline, now.
-    return featureSpec(kernel, document, feature);
+    return endSpec(kernel, document, feature); // where the timeline puts it: moved by any Move (35e2b)
   };
   registry.registerProducer("design.feature", "solid", async (o) => ({ kind: "solid", spec: await spec(o) }));
   registry.registerProducer("design.feature", "mesh", async (o) => {

@@ -116,8 +116,10 @@ await check("picking a plane swaps the modelling buttons for the sketch's toolba
     // The toolbar's padding is 12 px each side.
     assert.ok(Math.abs(bar.right - 12 - finish.right) <= 1, `Finish Sketch flush right: ends at ${finish.right}, the bar at ${bar.right}`);
     assert.ok(finish.left - (await rect(page, "#extrude")).right > 200, "a wide gap before Finish Sketch, so it stands apart");
-    const look = await page.$eval("#finish-sketch", (el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).fontWeight]);
-    assert.deepEqual(look, ["rgb(31, 95, 63)", "600"], "Finish Sketch is the green, bold button");
+    const look = await page.$eval("#finish-sketch", (el) => [getComputedStyle(el).backgroundImage, getComputedStyle(el).fontWeight]);
+    // UX2c: the sketch's one main action is the bright blue fill (the gradient #62b6ff to #3d98f2), not the old green.
+    assert.ok(look[0].includes("rgb(98, 182, 255)") && look[0].includes("rgb(61, 152, 242)"), `Finish Sketch is filled bright blue (${look[0]})`);
+    assert.equal(look[1], "600", "Finish Sketch is bold");
     assert.equal(await page.getAttribute("#sketch-tool-line", "aria-pressed"), "true", "a sketch starts with Line");
     assert.equal(await page.textContent("#finish-sketch"), "Finish Sketch");
     assert.equal(await page.$eval("#finish-sketch", (b) => b.querySelector("svg.icon")?.dataset.icon), "finish", "its tick is the finish icon (U0f)");

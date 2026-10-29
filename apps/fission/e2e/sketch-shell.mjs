@@ -50,6 +50,14 @@ async function fresh(width = 1280, touch = false) {
   return page;
 }
 
+/** Answers the shell's "Open in Image?" (asked when a file belongs to a workspace not on screen): its confirm, or Cancel. */
+async function answer(page, yes, tap = false) {
+  await page.waitForSelector("#open-elsewhere", { state: "visible" });
+  const sel = yes ? "#open-elsewhere-confirm" : "#open-elsewhere-cancel";
+  await (tap ? page.tap(sel) : page.click(sel));
+  await page.waitForSelector("#open-elsewhere", { state: "hidden" });
+}
+
 /** Fires a drag of `files` over the viewport and drops it there, as a desktop drag would. */
 const drop = (page, files) =>
   page.evaluate(
@@ -157,6 +165,7 @@ try {
       assert.match(before.status, /^2 lines, not closed/);
       // A dropped PNG: Image opens it; the sketch waits in Design, unchanged, the undo step still the last line.
       assert.equal(await drop(page, [{ name: "grey.png", bytes: png }]), "taken");
+      await answer(page, true);
       await onScreen(page, "image");
       await until(page, () => document.querySelector("#layer-list")?.textContent.includes("Layer 1"), null, "the image's layer");
       await switchTo(page, "design");
@@ -182,6 +191,7 @@ try {
       const pasted = await paste(page, [{ name: "pasted.png", bytes: png }]);
       if (!emptied("a pasted image", pasted)) {
         assert.equal(pasted.taken, true);
+        await answer(page, true);
         await onScreen(page, "image");
         await switchTo(page, "design");
         await onScreen(page, "design");
@@ -209,6 +219,7 @@ try {
       const before = await chain(page, true);
       await page.tap("#menu-toggle");
       await page.setInputFiles("#open-file", { name: "grey.png", mimeType: "image/png", buffer: png });
+      await answer(page, true, true);
       await onScreen(page, "image");
       await switchTo(page, "design", true);
       await onScreen(page, "design");

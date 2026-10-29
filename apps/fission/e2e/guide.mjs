@@ -304,7 +304,7 @@ try {
     const words = await (await page.request.get(`${url}privacy.html`)).text();
     const assistant = await import("node:fs").then((fs) => fs.readFileSync(new URL("../src/assistant.ts", import.meta.url), "utf8"));
     assert.match(assistant, />Remove key</);
-    for (const said of ["choose Remove key", "Anthropic, OpenAI", "Ollama", "in-browser model", "no analytics", 'href="third-party-licences.txt"', 'href="kernel-licence.txt"', "panosolid.github.io"]) assert.ok(words.includes(said), said);
+    for (const said of ["choose Remove key", "Anthropic, OpenAI", "Ollama", "in-browser model", "no analytics", 'href="third-party-licences.txt"', 'href="kernel-licence.txt"', "spindlelabs.app"]) assert.ok(words.includes(said), said);
     // The kernel licence the page links is served beside the app, as the release ships it.
     const licence = await page.request.get(`${url}kernel-licence.txt`);
     assert.equal(licence.status(), 200);

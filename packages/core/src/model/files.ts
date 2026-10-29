@@ -40,7 +40,7 @@ export interface FileFormatInfo {
 
 /** Every format SpindleLabs knows, in the order lists name them. */
 export const FILE_FORMATS: readonly FileFormatInfo[] = [
-  { format: "project", one: "a SpindleLabs project", many: "SpindleLabs projects (.spindlelabs.json)", extensions: [".spindlelabs.json", ".panosolid.json", ".fission.json"], representation: null, planned: { workspaces: [], as: "projects" } },
+  { format: "project", one: "a SpindleLabs project", many: "SpindleLabs projects (.spindle)", extensions: [".spindle", ".spindlelabs.json", ".panosolid.json", ".fission.json"], representation: null, planned: { workspaces: [], as: "projects" } },
   { format: "png", one: "a PNG image", many: "PNG images", extensions: [".png"], representation: "image", planned: { workspaces: ["image"], as: "images" } },
   { format: "jpeg", one: "a JPEG image", many: "JPEG images", extensions: [".jpg", ".jpeg"], representation: "image", planned: { workspaces: ["image"], as: "images" } },
   { format: "svg", one: "an SVG drawing", many: "SVG drawings", extensions: [".svg"], representation: "outline", planned: { workspaces: ["vector", "laser"], as: "outlines" } },

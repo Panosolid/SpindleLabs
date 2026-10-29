@@ -2,12 +2,15 @@
    in the middle of the 3D view, its words over three buttons, ✕ in its
    corner. ":not(#none)" lifts a rule over the base layout's "#workspace
    button" while every selector still starts with .start-hint. */
-.start-hint { position: absolute; z-index: 3; left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); box-sizing: border-box; padding: 12px 40px 14px 16px; background: rgba(28, 31, 36, 0.96); color: #e6e9ee; border: 1px solid #353a43; border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); }
+.start-hint { position: absolute; z-index: 3; left: 50%; top: 40%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); box-sizing: border-box; padding: 18px 44px 18px 20px; background: var(--look-float); color: #e6e9ee; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .start-hint[hidden] { display: none; }
-.start-hint h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.start-hint h2 { margin: 0 0 14px; font-size: 17px; font-weight: 600; }
 .start-hint .start-hint-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.start-hint .start-hint-close:not(#none) { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0; background: none; border: 1px solid transparent; border-radius: 4px; color: #8a919c; font-size: 14px; line-height: 1; cursor: pointer; }
-.start-hint .start-hint-close:not(#none):hover, .start-hint .start-hint-close:not(#none):focus-visible { color: #e6e9ee; background: #2e333b; border-color: #353a43; }
+/* Pill buttons (UX2); the first, Create sketch, is the card's main action: bright blue. */
+.start-hint .start-hint-actions > button:not(#none) { padding: 9px 16px; background: var(--look-float-raised); border-color: var(--look-edge); border-radius: var(--look-radius-pill); }
+.start-hint .start-hint-actions > button:first-child:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
+.start-hint .start-hint-close:not(#none) { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--look-radius-pill); color: #8a919c; font-size: 14px; line-height: 1; cursor: pointer; }
+.start-hint .start-hint-close:not(#none):hover, .start-hint .start-hint-close:not(#none):focus-visible { color: #e6e9ee; background: #263142; border-color: #2c3749; }
 @media (max-width: 640px) {
   .start-hint { top: 16px; transform: translateX(-50%); width: calc(100% - 32px); }
   .start-hint button:not(#none) { min-height: 44px; }

@@ -11,11 +11,13 @@ const SEEDS = Array.from({ length: 12 }, (_, i) => BigInt(2401 + i));
 // saved and opened about once in ten sessions (it was once in two): enough seeds that it happens at least five times.
 const REACH_SEEDS = Array.from({ length: 72 }, (_, i) => BigInt(2401 + i));
 const STEPS = 150;
+// The steps these sessions skip, Moves (35e2) among them, drawn as before they landed, so the seeds reach what they always did.
+const NOTHING_LANDED = new Set<string>();
 
 test("Design's timeline data matches the model over 72 seeds × 150 steps, reaching every kind of step", () => {
   const total: Record<string, number> = {};
   for (const seed of REACH_SEEDS) {
-    const counts = runDataSession(randomSession(seed, STEPS));
+    const counts = runDataSession(randomSession(seed, STEPS, NOTHING_LANDED));
     for (const [k, v] of Object.entries(counts)) total[k] = (total[k] ?? 0) + v;
   }
   for (const k of ["op:add-sketch", "op:add-face-sketch", "op:add-extrude", "op:add-preset", "op:set-size", "op:suppress", "op:marker", "op:undo", "op:redo", "op:save-open", "nothing-built", "save-open:nothing-built"])
@@ -24,7 +26,7 @@ test("Design's timeline data matches the model over 72 seeds × 150 steps, reach
 
 test("each bug planted on the Design side is caught by its own check", () => {
   for (const fault of DATA_FAULTS) {
-    const failure = SEEDS.map((seed) => dataFailure(randomSession(seed, STEPS), [fault])).find((f) => f !== null);
+    const failure = SEEDS.map((seed) => dataFailure(randomSession(seed, STEPS, NOTHING_LANDED), [fault])).find((f) => f !== null);
     assert.ok(failure, `${fault} was not caught`);
     assert.ok(DATA_FAULT_CHECK[fault].includes(failure.check), `${fault}: ${failure.message}`);
   }

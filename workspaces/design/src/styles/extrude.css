@@ -16,6 +16,8 @@
 .extrude .extrude-status { color: #b7c0cc; }
 .extrude .extrude-note { color: #8b95a3; font-size: 0.9em; }
 .extrude .extrude-buttons { display: flex; gap: 6px; margin-top: 4px; }
+/* OK is the box's main action (UX2): bright blue, the one filled button. */
+.extrude #extrude-ok { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
 .extrude button:disabled { opacity: 0.45; cursor: default; }
 /* Flip (26c; UX1b a button turning the distance's sign), after the distance. */
 .extrude .extrude-flip { margin-left: 4px; }

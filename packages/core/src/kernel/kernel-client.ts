@@ -30,7 +30,21 @@ export type KernelRequest = {
   [K in keyof KernelOps]: { id: number; op: K; args: KernelOps[K]["args"] };
 }[keyof KernelOps];
 
-export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure };
+/** A failed reply's `stopped`: the call trapped (`isTrap`), so the worker's kernel can't be trusted with another call. */
+export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure; stopped?: true };
+
+/**
+ * Whether a kernel call stopped the WebAssembly itself (a trap: running out
+ * of memory, or an internal fault) rather than refusing its input. After a
+ * trap the module's memory is left part way through the call, and every
+ * later call can fail the same way, even a 10 mm box (Ben's phone project,
+ * 2026-10-28: every item red at once). Such a kernel is replaced, never
+ * asked again.
+ */
+export const isTrap = (e: unknown): boolean => typeof WebAssembly !== "undefined" && e instanceof WebAssembly.RuntimeError;
+
+/** What the call that stopped the kernel answers (and every call still waiting on it): the app then starts a fresh kernel and builds again. */
+export const KERNEL_RESTARTED = "The geometry kernel ran out of memory or stopped on an internal error, so it was started again.";
 
 /**
  * What every call answers when the kernel's own file (the .wasm) didn't
@@ -73,18 +87,34 @@ export function kernelFailure(e: unknown): KernelFailure {
 /** Anything that answers kernel calls: the worker client in the app, the WASM module directly in tests. */
 export interface KernelCalls {
   call<K extends keyof KernelOps>(op: K, ...args: KernelOps[K]["args"]): Promise<KernelOps[K]["result"]>;
+  /**
+   * Calls `listener` each time the kernel was replaced by a fresh one (the
+   * old one trapped): every body it kept is gone, its handles mean nothing
+   * now, and what is shown is built again. Returns the way to stop listening.
+   * The app's client has it; a kernel that is never replaced (tests) may not.
+   */
+  onRestart?(listener: () => void): () => void;
 }
 
 export class KernelClient implements KernelCalls {
-  private worker = new Worker(new URL("./kernel.worker.ts", import.meta.url), { type: "module" });
+  private worker!: Worker;
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   /** Set once the worker is gone (its error event): every call fails with it. */
   private failed: KernelError | null = null;
+  private restartListeners = new Set<() => void>();
 
   constructor() {
-    this.worker.onmessage = (event: MessageEvent<KernelResponse>) => {
+    this.start();
+  }
+
+  private start() {
+    const worker = new Worker(new URL("./kernel.worker.ts", import.meta.url), { type: "module" });
+    this.worker = worker;
+    worker.onmessage = (event: MessageEvent<KernelResponse>) => {
+      if (worker !== this.worker) return; // a kernel already replaced
       const reply = event.data;
+      if (!reply.ok && reply.stopped) return this.restart();
       const p = this.pending.get(reply.id);
       if (!p) return;
       this.pending.delete(reply.id);
@@ -96,13 +126,36 @@ export class KernelClient implements KernelCalls {
     // the worker is gone. Every call waiting and every later one fails with
     // the same words, never waits for an answer that can't come, and the
     // event is taken as handled (the app says it, not the browser's console).
-    this.worker.onerror = (event) => {
+    worker.onerror = (event) => {
       event.preventDefault();
+      if (worker !== this.worker) return;
       const why = event.message ? `stopped (kernel worker crashed: ${event.message})` : "didn't start (its worker didn't load)";
       this.failed = new KernelError({ kind: "internal", inputs: [], message: `The geometry kernel ${why}. Reload the page to try again.` });
       this.pending.forEach((p) => p.reject(this.failed!));
       this.pending.clear();
     };
+  }
+
+  /**
+   * A call trapped: that kernel is let go and a fresh one started. The call
+   * and every other one sent to the old kernel fail with KERNEL_RESTARTED
+   * (none of them can be trusted, and the old kernel never answers again);
+   * then the listeners hear of it, so the bodies the old one kept are
+   * forgotten and the design is built again on the new one.
+   */
+  private restart() {
+    this.worker.terminate();
+    const stopped = new KernelError({ kind: "internal", inputs: [], message: KERNEL_RESTARTED });
+    const waiting = [...this.pending.values()];
+    this.pending.clear();
+    this.start();
+    waiting.forEach((p) => p.reject(stopped));
+    this.restartListeners.forEach((listener) => listener());
+  }
+
+  onRestart(listener: () => void): () => void {
+    this.restartListeners.add(listener);
+    return () => void this.restartListeners.delete(listener);
   }
 
   call<K extends keyof KernelOps>(op: K, ...args: KernelOps[K]["args"]): Promise<KernelOps[K]["result"]> {

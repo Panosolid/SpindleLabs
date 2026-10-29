@@ -69,8 +69,9 @@ test("hand-worked: an edit changes its item alone and keeps its id, place, flags
   for (const [i, x] of cyl.timeline.features.entries()) if (x.id !== "feature-12") assert.equal(x, d.timeline.features[i], `${x.id} is the same object`);
   // A depth typed for a cylinder is not one of its boxes: ignored.
   assert.equal(edit.editFeature(d, "feature-12", { depth: 99 }), d);
-  // The sphere made ⌀8: one diameter.
-  assert.deepEqual(edit.editFeature(d, "feature-13", { width: 8 }).timeline.features.find((x) => x.id === "feature-13")!.intent.parameters, { diameter: 8 });
+  // The sphere made ⌀8: one diameter, its centre left where it was: inserted ⌀12 resting on the floor, its
+  // centre 12 / 2 = 6 up, it stays 6 up (Ben, 2026-10-28: a size change never snaps it back to the floor).
+  assert.deepEqual(edit.editFeature(d, "feature-13", { width: 8 }).timeline.features.find((x) => x.id === "feature-13")!.intent.parameters, { diameter: 8, centreZ: 6 });
   // The plate made 25 deep: its profile keeps its id (profile-15) and takes the new sizes.
   const plate = edit.editFeature(d, "feature-14", { depth: 25 });
   assert.deepEqual(plate.profiles.map((p) => [p.id, p.width, p.depth]), [["profile-15", 60, 25]]);

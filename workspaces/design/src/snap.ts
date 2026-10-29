@@ -27,6 +27,28 @@
 // own, then the one on the sketch's plane: face-edges.ts orders them), so
 // which one a click pins never turns on the last bit of rounding.
 //
+// Snapping onto an edge anywhere along it (the snapping thread, 10-28):
+// within SNAP_PIXELS of a body edge seen from the sketch (`curves`, the
+// lines, circles and arcs projection.ts `edgeShape` makes of every edge
+// a corner is offered from), and no point within reach, the click lands
+// on the edge's nearest point ("on edge"): on a line the foot of the
+// perpendicular, clamped to its ends; on a circle or arc the point on the
+// ray from the centre, r away (an arc only within its sweep). It is placed
+// there, not pinned: nothing yet keeps a point on an edge part way along
+// (that is a coincident constraint, step 47), so it stays where it landed
+// when the body changes, as a lined-up point does. The bodies' corners
+// that lie in the sketch's plane (a face sketch's face's corners, a box's
+// bottom corners from XY) are columns and rows to line up with, as the
+// sketch's own points are; corners off the plane are not, so a sketch
+// under a tall model isn't crossed by guides from every corner above it.
+// Points win over an edge, and an edge over lining up.
+//
+// Snapping off (Fusion's Ctrl): `snapsNow` says what snaps. Holding Ctrl
+// (Cmd on a Mac) while moving or clicking places the point where the
+// pointer is, with no snaps and no grid; the Snap button on the sketch's
+// toolbar turns the snaps to points, edges and line-ups off until turned
+// on again (grid snap keeps its own tick box).
+//
 // Snapping is only where the click lands: nothing is remembered as a rule
 // (a line drawn horizontal is not kept horizontal); that is what the
 // constraints of step 47 add. The reach is in screen pixels, turned into mm
@@ -37,6 +59,7 @@
 import type { SketchDrawing, SketchXY } from "@fission/core";
 import type { DesignDocument, Sketch } from "./document.ts";
 import type { EdgeTarget } from "./face-edges.ts";
+import type { EdgeShape } from "./projection.ts";
 import type { SketchTool } from "./sketch-tool.ts";
 
 /** How near on screen (px) the pointer must come to a point, or to a point's column or row, to snap to it. */
@@ -70,14 +93,28 @@ export interface SnapTargets {
   rows: SketchXY[];
   /** The tool's own clicks so far, never landed on by lining up (a click there draws nothing). */
   own: SketchXY[];
+  /** Body edges seen from the sketch, landed on anywhere along them ("on edge"); never pinned. */
+  curves: EdgeCurve[];
 }
+
+/** A body edge as the sketch sees it, to land on part way along: a line, a circle or an arc (projection.ts `edgeShape`). */
+export type EdgeCurve = Exclude<EdgeShape, { kind: "point" }>;
+
+/** What bodies offer a sketch besides their points: edges to land on part way along, and corners in the sketch's plane to line up with. */
+export interface BodySnaps {
+  curves: readonly EdgeCurve[];
+  corners: readonly SketchXY[];
+}
+const NO_BODY: BodySnaps = { curves: [], corners: [] };
 
 /** Where the pointer landed and why: on the grid, on a point, or lined up with a point's column, row or both. */
 export type Snap =
   | { kind: "grid"; at: SketchXY }
   /** `edge`: a point of the face's edges (26f), not of the sketch. */
   | { kind: PointKind; at: SketchXY; edge?: true }
-  | { kind: "aligned"; at: SketchXY; column: SketchXY | null; row: SketchXY | null };
+  | { kind: "aligned"; at: SketchXY; column: SketchXY | null; row: SketchXY | null }
+  /** On a body's edge part way along (not pinned). */
+  | { kind: "on"; at: SketchXY };
 
 const same = (a: SketchXY, b: SketchXY) => a[0] === b[0] && a[1] === b[1];
 
@@ -110,9 +147,11 @@ function ownClicks(sketch: Sketch, tool: SketchTool): SketchXY[] {
  * vertical), except for the rectangle, where a
  * second corner on the first corner's column or row draws nothing, so
  * neither the first corner nor any point on its column (or row) is
- * offered as a column (or row).
+ * offered as a column (or row). `body`: the body edges to land on part
+ * way along (`curves`), and the bodies' corners lying in the sketch's
+ * plane (`corners`), columns and rows too, after the sketch's own.
  */
-export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly EdgeTarget[] = []): SnapTargets {
+export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly EdgeTarget[] = [], body: BodySnaps = NO_BODY): SnapTargets {
   const own = ownClicks(sketch, tool);
   const isEnd = new Set(sketch.curves.flatMap((c) => (c.kind === "circle" ? [] : [c.start, c.end])));
   const at = new Map(sketch.points.map((p) => [p.id, [p.x, p.y] as SketchXY]));
@@ -127,13 +166,40 @@ export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly Ed
   for (const e of edges) points.push({ at: e.at, kind: e.kind, pin: e });
   const refs: SketchXY[] = sketch.points.map((p) => [p.x, p.y]);
   for (const o of own) if (!refs.some((r) => same(r, o))) refs.push(o);
+  for (const c of body.corners) if (!refs.some((r) => same(r, c))) refs.push(c);
   const corner = tool.kind === "rectangle" ? (own[0] ?? null) : null;
   return {
     points: points.filter((t) => !own.some((o) => same(t.at, o))),
     columns: corner ? refs.filter((r) => r[0] !== corner[0]) : refs,
     rows: corner ? refs.filter((r) => r[1] !== corner[1]) : refs,
     own,
+    curves: [...body.curves],
   };
+}
+
+/**
+ * The point of edge `c` nearest `p`, in the sketch: on a line from a to b
+ * the foot of the perpendicular, a + t(b − a) with t = (p − a)·(b − a) /
+ * |b − a|², clamped to [0, 1]; on a circle the point r from the centre
+ * towards p; on an arc the same when that point is within its sweep
+ * (counter-clockwise from start to end), else null (its ends are points
+ * to snap to already). Null for p on a round edge's centre (no direction).
+ */
+export function nearestOn(c: EdgeCurve, p: SketchXY): SketchXY | null {
+  if (c.kind === "line") {
+    const [dx, dy] = [c.b[0] - c.a[0], c.b[1] - c.a[1]];
+    const t = Math.min(1, Math.max(0, ((p[0] - c.a[0]) * dx + (p[1] - c.a[1]) * dy) / (dx * dx + dy * dy)));
+    return t === 0 ? c.a : t === 1 ? c.b : [c.a[0] + t * dx, c.a[1] + t * dy];
+  }
+  const [dx, dy] = [p[0] - c.centre[0], p[1] - c.centre[1]];
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (!(d > 0)) return null;
+  const r = c.kind === "circle" ? c.radius : Math.sqrt((c.start[0] - c.centre[0]) ** 2 + (c.start[1] - c.centre[1]) ** 2);
+  const at: SketchXY = [c.centre[0] + (dx / d) * r, c.centre[1] + (dy / d) * r];
+  if (c.kind === "circle") return at;
+  const angle = (q: SketchXY) => Math.atan2(q[1] - c.centre[1], q[0] - c.centre[0]);
+  const ccw = (from: number, to: number) => (((to - from) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  return ccw(angle(c.start), angle(p)) <= ccw(angle(c.start), angle(c.end)) ? at : null;
 }
 
 /** The one of `refs` nearest the pointer by `off`, if it is within `reach`; the first listed on a tie. */
@@ -158,7 +224,10 @@ function nearest(refs: readonly SketchXY[], off: (r: SketchXY) => number, reach:
  * row both lands on that point, and is called that point; lining up onto
  * one of the tool's own clicks (not a target) gives the grid point instead.
  * Of the points within SAME_PLACE of the nearest, the first listed is the
- * one taken (27c).
+ * one taken (27c). With no point in reach, an edge in reach (its nearest
+ * point at most `reach` away, `nearestOn`) comes before lining up: the
+ * point on the nearest edge nearest the rounded point (`grid`, so it reads
+ * as rounded along the edge), unless it is one of the tool's own clicks.
  */
 export function snapPointer(raw: SketchXY, grid: SketchXY, targets: SnapTargets, pixel: number | undefined): Snap {
   if (pixel === undefined || !(pixel > 0) || !Number.isFinite(pixel)) return { kind: "grid", at: grid };
@@ -175,21 +244,46 @@ export function snapPointer(raw: SketchXY, grid: SketchXY, targets: SnapTargets,
     const near = point.at;
     return found(targets.points.find((t) => Math.sqrt((t.at[0] - near[0]) ** 2 + (t.at[1] - near[1]) ** 2) <= SAME_PLACE)!);
   }
+  let on: { edge: EdgeCurve; at: SketchXY } | null = null;
+  let onOff = Infinity;
+  for (const c of targets.curves) {
+    const q = nearestOn(c, raw);
+    if (!q) continue;
+    const d = Math.sqrt((q[0] - raw[0]) ** 2 + (q[1] - raw[1]) ** 2);
+    if (d <= reach && d < onOff) [on, onOff] = [{ edge: c, at: q }, d];
+  }
+  if (on) {
+    // Placed at the rounded point's foot on that edge (a free click is rounded to the pixel, so along an edge it reads as typed, 7 and
+    // not 6.9999994); the pointer's own foot when the rounded point has none there (past an arc's end).
+    const at = nearestOn(on.edge, grid) ?? on.at;
+    if (!targets.own.some((o) => same(o, at))) return { kind: "on", at: [at[0], at[1]] };
+  }
   const column = nearest(targets.columns, (r) => Math.abs(r[0] - raw[0]), reach);
   const row = nearest(targets.rows, (r) => Math.abs(r[1] - raw[1]), reach);
   if (!column && !row) return { kind: "grid", at: grid };
   const at: SketchXY = [column ? column[0] : grid[0], row ? row[1] : grid[1]];
   // Lined up onto one of the tool's own clicks is being on it, not lined up with anything.
   if (targets.own.some((o) => same(at, o))) return { kind: "grid", at: grid };
-  const on = targets.points.find((t) => same(t.at, at));
-  return on ? found(on) : { kind: "aligned", at, column, row };
+  const landed = targets.points.find((t) => same(t.at, at));
+  return landed ? found(landed) : { kind: "aligned", at, column, row };
 }
 
-/** The snap for a pointer on the sketch a tool is drawing on (snapTargets, then snapPointer). */
-export function snapOnSketch(doc: DesignDocument, tool: SketchTool, raw: SketchXY, grid: SketchXY, pixel: number | undefined, edges: readonly EdgeTarget[] = []): Snap {
+/**
+ * What snaps now: `points` (to points, edges and line-ups) unless the
+ * Snap button is off (`snapOn` false) or Ctrl or Cmd is held (`held`);
+ * the grid as its tick box says (`gridSnap`), but never while held, so a
+ * held click goes exactly where the pointer is (Fusion's Ctrl).
+ */
+export function snapsNow(snapOn: boolean, held: boolean, gridSnap: boolean): { points: boolean; grid: boolean } {
+  return { points: snapOn && !held, grid: gridSnap && !held };
+}
+
+/** The snap for a pointer on the sketch a tool is drawing on (snapTargets, then snapPointer); with `points` false, just the rounded point. */
+export function snapOnSketch(doc: DesignDocument, tool: SketchTool, raw: SketchXY, grid: SketchXY, pixel: number | undefined, edges: readonly EdgeTarget[] = [], body: BodySnaps = NO_BODY, points = true): Snap {
   const sketch = doc.sketches.find((s) => s.id === tool.sketch);
   if (!sketch) throw new Error(`there is no sketch ${tool.sketch} in the design`);
-  return snapPointer(raw, grid, snapTargets(sketch, tool, edges), pixel);
+  if (!points) return { kind: "grid", at: grid };
+  return snapPointer(raw, grid, snapTargets(sketch, tool, edges, body), pixel);
 }
 
 const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
@@ -197,6 +291,7 @@ const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
 /** The snap in words, for the viewport's data (read by the e2e test): "endpoint 10,0", "edge endpoint 40,30" (26f), "vertical from 0,0 and horizontal from 10,20", "" on the grid. */
 export function snapLabel(snap: Snap): string {
   if (snap.kind === "grid") return "";
+  if (snap.kind === "on") return `on edge ${xy(snap.at)}`;
   if (snap.kind !== "aligned") return `${snap.edge ? "edge " : ""}${snap.kind} ${xy(snap.at)}`;
   const words = [snap.column && `vertical from ${xy(snap.column)}`, snap.row && `horizontal from ${xy(snap.row)}`];
   return words.filter(Boolean).join(" and ");
@@ -230,7 +325,8 @@ const loop = (c: SketchXY[]): Segment[] => c.map((p, i) => [p, c[(i + 1) % c.len
 /**
  * The snap's marks on the plane, sized in screen pixels (pixel = mm per
  * pixel): a square round an endpoint, a triangle round a midpoint, a
- * circle round a centre (MARK_PIXELS out from the point), and for lining
+ * circle round a centre (MARK_PIXELS out from the point), a diamond on an
+ * edge part way along, and for lining
  * up a dashed guide from each point lined up with, running on PAST_PIXELS
  * past the pointer, and a small cross at the pointer. Nothing on the grid.
  */
@@ -240,6 +336,7 @@ export function snapMarks(snap: Snap, pixel: number): Segment[] {
   if (snap.kind === "endpoint") return loop([[x - m, y - m], [x + m, y - m], [x + m, y + m], [x - m, y + m]]);
   if (snap.kind === "midpoint") return loop([[x - m, y - m], [x + m, y - m], [x, y + m]]);
   if (snap.kind === "centre") return loop(Array.from({ length: 16 }, (_, k): SketchXY => [x + m * Math.cos((Math.PI * k) / 8), y + m * Math.sin((Math.PI * k) / 8)]));
+  if (snap.kind === "on") return loop([[x, y - m], [x + m, y], [x, y + m], [x - m, y]]);
   if (snap.kind !== "aligned") return [];
   const out: Segment[] = [[[x - m, y - m], [x + m, y + m]], [[x - m, y + m], [x + m, y - m]]];
   const past = PAST_PIXELS * pixel;

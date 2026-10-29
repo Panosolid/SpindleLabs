@@ -176,19 +176,19 @@ function downloading(file: (name: string) => StlFile, scene?: Scene | null) {
 
 test("hand-worked: an earlier body downloads alone, as its own shape (Body 1 is not the part)", async () => {
   const d = downloading(() => ({ bytes: stl("box", 1, 5), rounding: 0, warning: null }));
-  assert.deepEqual(await d.run([body("feature-1")]), { message: "", bad: false });
+  assert.deepEqual(await d.run([body("feature-1")]), { message: "Exported spindlelabs-box.stl.", bad: false });
   // The box's own spec: feature-1's, not the part's (the slot, feature-17).
   assert.deepEqual(d.calls, [["export_stl", specOf(doc, doc.timeline.features[0]), "box"]]);
-  assert.deepEqual(d.saved, [{ name: "fission-box.stl", bytes: [...stl("box", 1, 5)] }]);
+  assert.deepEqual(d.saved, [{ name: "spindlelabs-box.stl", bytes: [...stl("box", 1, 5)] }]);
 });
 
 test("hand-worked: two bodies picked slot first come out in build order, joined into one file", async () => {
   // The box answers 1 triangle of 30s, the slot's extrude 2 of 40, 41.
   const d = downloading((name) => ({ bytes: name === "box" ? stl(name, 1, 30) : stl(name, 2, 40), rounding: 0, warning: null }));
-  assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "", bad: false });
+  assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "Exported spindlelabs-2-bodies.stl.", bad: false });
   assert.deepEqual(d.calls.map((c) => c[2]), ["box", "slot"]);
   assert.equal(d.saved.length, 1);
-  assert.equal(d.saved[0].name, "fission-2-bodies.stl");
+  assert.equal(d.saved[0].name, "spindlelabs-2-bodies.stl");
   assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 30), stl("slot", 2, 40)], "2 bodies")]);
   assert.deepEqual(d.overlays, [`clear ${STL_OVERLAY}`]);
 });
@@ -211,7 +211,7 @@ test("a warning on one of two bodies names it by its row, marks it alone, and th
   const warning = "single-precision numbers: this part's corners move by up to 1.250e-2 mm";
   const d = downloading((name) => ({ bytes: stl(name, 1, 1), rounding: name === "extrude" ? 0.0125 : 0, warning: name === "extrude" ? warning : null }), twoShown);
   // Picked Extrude 1 first; the file is still in build order, and the message names its row.
-  assert.deepEqual(await d.run([body("feature-11"), body("feature-1")]), { message: `Body 2: ${warning}`, bad: true });
+  assert.deepEqual(await d.run([body("feature-11"), body("feature-1")]), { message: `Exported spindlelabs-2-bodies.stl. Body 2: ${warning}`, bad: true });
   assert.equal(d.saved.length, 1, "the file is still saved: the warning says how far it is off");
   assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 1), stl("extrude", 1, 1)], "2 bodies")]);
   // Only Extrude 1's six faces, 6 to 11, are marked.

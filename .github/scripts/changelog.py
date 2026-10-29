@@ -36,8 +36,9 @@ Commands (ROOT defaults to the repository root):
                     test_changelog.py)
   pr BASE HEAD      what a pull request did to the changelog files, from git
                     (CI's kernel job on pull requests): it adds exactly one
-                    fragment, or folds; it never edits a merged fragment or
-                    writes a version heading itself
+                    fragment, or folds (writing just what fold writes); it
+                    never edits a merged fragment or writes a version
+                    heading itself
   show [ROOT]       the whole changelog, numbered (needs main's full history:
                     git fetch --unshallow origin main)
   version [ROOT]    just the current version
@@ -59,6 +60,33 @@ from check_version import HEADING_RE, check_changelog  # noqa: E402
 FRAGMENTS = "changelog.d"
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9._-]*\.md")
 BUMP_RE = re.compile(r"fix|none|step (0|[1-9]\d*)")
+
+# The changelog is public; the geometry kernel is private. A public entry
+# says WHAT changed for the user, never HOW the kernel does it. These are the
+# high-signal tells of kernel internals leaking into an entry: a Rust source
+# file (the public app is TypeScript, so a ".rs" name is always the kernel's),
+# the private source trees, and the internal names a reader could search on.
+# Kept tight so a plain user-facing entry never trips it.
+LEAKS = [
+    (re.compile(r"\b[\w./-]*\.rs\b"), "a kernel source file name"),
+    (re.compile(r"\bprototypes/"), "a private source path"),
+    (re.compile(r"\bkernel/(?:src|tests)\b"), "a private kernel source path"),
+    (re.compile(r"\bfacts[ _-]?model\b", re.I), "an internal algorithm name"),
+    (re.compile(r"\bfacts table\b", re.I), "an internal data-structure name"),
+    (re.compile(r"\bspade\b", re.I), "a third-party library the kernel is built on"),
+]
+
+
+def leaks(where, text):
+    """Problems where `text` (a fragment's content) describes kernel internals
+    instead of what changed for the user, one sentence each."""
+    found = []
+    for pattern, what in LEAKS:
+        m = pattern.search(text)
+        if m:
+            found.append(f"{where}: {m.group(0)!r} is {what}; the public changelog says what changed "
+                         "for the user, never how the kernel works — drop the kernel-internal detail")
+    return found
 
 
 class Fragment:
@@ -245,6 +273,8 @@ def check(root):
     problems = check_changelog(changelog)
     fragments, bad = read_fragments(root)
     problems += bad
+    for f in fragments.values():
+        problems += leaks(f"{FRAGMENTS}/{f.name}", f.text)
     if os.path.exists(os.path.join(root, "VERSION")):
         problems.append("VERSION is gone: the version is worked out from CHANGELOG.md and changelog.d/ "
                         "(.github/scripts/changelog.py version)")
@@ -257,6 +287,29 @@ def check(root):
     return problems
 
 
+def fold_problem(base_changelog, head_changelog, folded):
+    """None when head_changelog is what fold writes from base_changelog with
+    the fragments `folded`, else the problem. The merge order isn't in a
+    pull request's shallow clone, so it is read from where fold put each
+    entry (the oldest lowest), and each new heading's date from the heading
+    above the entry; everything else must match fold byte for byte."""
+    preamble, sections = parse_changelog(base_changelog)
+    head_sections = parse_changelog(head_changelog)[1]
+    for f in folded:
+        f.date = next((s.date for s in head_sections if f.text in s.raw), "0000-00-00")
+    try:
+        want = number(sections, sorted(folded, key=lambda f: -head_changelog.find(f.text)))
+    except ValueError as e:
+        return str(e)
+    if render(preamble, want) == head_changelog:
+        return None
+    for got, exp in zip(head_sections, want):
+        if (got.version, got.date) != (exp.version, exp.date):
+            return (f"CHANGELOG.md isn't what fold writes from main's: it has the heading {heading(got.version, got.date)[3:]} "
+                    f"where fold writes {heading(exp.version, exp.date)[3:]}; run changelog.py fold on a fresh main")
+    return "CHANGELOG.md isn't what fold writes from main's (an entry or a heading changed by hand); run changelog.py fold on a fresh main"
+
+
 def check_pr(diff, base_file, head_file):
     """What a pull request did to the changelog files. diff: (status, path)
     pairs from git diff --name-status --no-renames BASE HEAD; base_file(path)
@@ -266,6 +319,8 @@ def check_pr(diff, base_file, head_file):
     fragment = [p for p in status if p.startswith(FRAGMENTS + "/") and p.endswith(".md")]
     added = [p for p in fragment if status[p] == "A"]
     deleted = [p for p in fragment if status[p] == "D"]
+    for p in added:
+        problems += leaks(p, head_file(p))
     for p in fragment:
         if status[p] not in ("A", "D"):
             problems.append(f"{p} is already on main, so its entry is fixed; add a new fragment instead of changing it")
@@ -278,6 +333,7 @@ def check_pr(diff, base_file, head_file):
         if new:
             problems.append(f"CHANGELOG.md gains the heading {heading(new[0].version, new[0].date)[3:]}: don't write "
                             f"version headings, add {FRAGMENTS}/<name>.md (the numbers are given at merge time)")
+    folded = []
     for p in deleted:
         if head_changelog is None:
             problems.append(f"{p} is deleted but CHANGELOG.md isn't changed: only a fold deletes fragments")
@@ -285,6 +341,13 @@ def check_pr(diff, base_file, head_file):
         f, _ = parse_fragment(p.split("/", 1)[1], base_file(p))
         if f is not None and f.text not in head_changelog:
             problems.append(f"{p} is deleted but its entry isn't in CHANGELOG.md: only a fold deletes fragments")
+        elif f is not None:
+            folded.append(f)
+    # A fold writes headings, so it must write exactly fold's.
+    if deleted and not problems and head_changelog is not None:
+        problem = fold_problem(base_file("CHANGELOG.md"), head_changelog, folded)
+        if problem:
+            problems.append(problem)
     if deleted and added:
         problems.append("a fold only folds: add this pull request's own fragment in a pull request of its own")
     elif not deleted and len(added) != 1:

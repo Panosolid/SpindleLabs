@@ -6,4 +6,5 @@
 // model and Design must then answer them). A step's thread adds its
 // number here the day it lands.
 
-export const LANDED: ReadonlySet<string> = new Set<string>();
+/** 35e2: Move (its session moves, add-move and set-move). */
+export const LANDED: ReadonlySet<string> = new Set<string>(["35e2"]);
