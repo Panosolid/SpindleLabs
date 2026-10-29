@@ -472,18 +472,26 @@ try {
   });
 
   await check("the reader's own scrolling takes over from a glide", async () => {
-    const page = await fresh({ query: "?guide" });
+    // On the hand-turned clock, so the wheel always lands part-way through the glide: on real time a slow runner could
+    // finish the glide before the wheel came and the check tested nothing (it failed about 1 run in 4 on main).
+    const page = await fresh({ query: "?guide", clock: true });
     await page.waitForSelector("dialog.guide[data-frames]");
-    await page.click(".guide-next");
-    await page.waitForFunction(() => document.querySelector(".guide-scroll").scrollTop > 40);
+    await settled(page);
+    await page.evaluate(() => window.stepper.hold());
+    await page.evaluate(() => {
+      document.querySelector(".guide-next").click();
+      window.stepper.run(10); // 160 ms of a glide of at least 600 ms
+    });
+    assert.ok(await page.$eval(".guide-scroll", (s) => s.scrollTop > 40), "part-way through the glide before the wheel");
+    assert.equal(await page.$eval("dialog.guide", (d) => d.dataset.gliding), "", "still gliding when the wheel comes");
     await page.mouse.move(900, 400);
     await page.mouse.wheel(0, 30);
     await page.waitForFunction(() => document.querySelector("dialog.guide").dataset.gliding === undefined, null, { timeout: 2000 });
-    // Well after the glide would have ended, the page is not at the next chapter's words: the wheel's 30 px moved it
-    // from part-way, and nothing pulled it on.
-    await page.waitForTimeout(1500);
-    const y = await page.$eval(".guide-scroll", (s) => s.scrollTop);
-    assert.ok(Math.abs(y - (await restOf(page, 1))) > 20, `the glide carried on to ${y} after the wheel`);
+    // Well after the glide would have ended (90 frames, 1.44 s, past the longest glide), the page is not at the next
+    // chapter's words: the wheel's 30 px moved it from part-way, and nothing pulled it on.
+    const ys = await page.evaluate(() => window.stepper.run(90));
+    assert.ok(Math.abs(ys.at(-1) - (await restOf(page, 1))) > 20, `the glide carried on to ${ys.at(-1)} after the wheel`);
+    await page.evaluate(() => window.stepper.release());
   });
 
   for (const [width, height] of [[1280, 800], [1280, 720], [375, 667], [375, 740]]) {
