@@ -1,12 +1,15 @@
 name: CI
 
 on:
-  # Branches are tested by their pull request's run: a push run of the same
-  # commit would repeat kernel, app, e2e, baseline and both browsers and hold nine
-  # of the account's 20 runners for nothing.
-  push:
-    branches: [main]
+  # Branches are tested by their pull request's run, and main by the merge
+  # queue's run of the exact commit that lands on it (merge_group below), so
+  # there is no push run: one repeated that commit's whole suite after every
+  # merge (38 of 39 push runs on 2026-10-28, an eighth of all runner time).
+  # The daily run below still tests main itself.
+  # A draft's run skips the browsers and phone checks (`draft run` below);
+  # marking it ready runs them, and moving it back to draft cancels its run.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   # Once a day on main (6:45am Perth, after the night's random testing): the
   # whole suite on main itself, and the build caches every pull request's run
   # starts from (a cache saved on main is visible to every branch).
@@ -20,8 +23,9 @@ on:
   workflow_dispatch:
 
 # A newer commit on the same branch cancels the run still testing an older
-# one: auto-merge only looks at the head's checks, so the old run's answer
-# can't matter, and its runners go to the new run. main's runs always finish.
+# one, and a pull request moved back to draft cancels its run: auto-merge
+# only looks at the head's checks, so the old run's answer can't matter,
+# and its runners go to the new run. main's runs always finish.
 # The group names the repository the branch lives in, so a fork's pull
 # request from a branch called main or claude/x can't cancel our runs, and
 # the event, so a run started by hand can't cancel a pull request's own run
@@ -52,6 +56,7 @@ jobs:
       full: ${{ steps.mode.outputs.full }}
       ui: ${{ steps.mode.outputs.ui }}
       docs: ${{ steps.mode.outputs.docs }}
+      draft: ${{ steps.mode.outputs.draft }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,7 +118,7 @@ jobs:
   # checks, 2026-10-27.)
   baseline:
     needs: mode
-    if: ${{ !cancelled() && needs.mode.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && needs.mode.outputs.docs != 'true' && github.event.action != 'converted_to_draft' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -134,7 +139,7 @@ jobs:
 
   app:
     needs: mode
-    if: ${{ !cancelled() && needs.mode.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && needs.mode.outputs.docs != 'true' && github.event.action != 'converted_to_draft' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -152,19 +157,20 @@ jobs:
       - run: npm run journeys
 
   # The Chromium browser checks (`npm run e2e`), split by e2e/shard.mjs into
-  # shares that run side by side: one after another they took 15 minutes,
-  # most of the wait for a merge. Every check runs in exactly one share
-  # (e2e/shard.test.mjs, part of npm test above).
+  # shares that run side by side: one after another they took 43 minutes
+  # (2026-10-29), most of the wait for a merge, so five shares of about 8
+  # (GitHub Team's 60 runners make the fifth runner cheap). Every check
+  # runs in exactly one share (e2e/shard.test.mjs, part of npm test above).
   e2e-shard:
-    name: e2e (${{ matrix.shard }}/3)
+    name: e2e (${{ matrix.shard }}/5)
     needs: mode
-    if: ${{ !cancelled() && needs.mode.outputs.full != 'false' && needs.mode.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && needs.mode.outputs.full != 'false' && needs.mode.outputs.docs != 'true' && github.event.action != 'converted_to_draft' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -180,7 +186,7 @@ jobs:
         working-directory: apps/fission
         timeout-minutes: 27
         run: ../../.github/scripts/install-browser.sh chromium
-      - run: node e2e/shard.mjs ${{ matrix.shard }} 3
+      - run: node e2e/shard.mjs ${{ matrix.shard }} 5
         working-directory: apps/fission
       # A golden image that no longer matches leaves the actual image and a diff (red where different).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -196,7 +202,7 @@ jobs:
   e2e-quick:
     name: e2e (quick)
     needs: mode
-    if: needs.mode.outputs.full == 'false' && needs.mode.outputs.docs != 'true'
+    if: needs.mode.outputs.full == 'false' && needs.mode.outputs.docs != 'true' && github.event.action != 'converted_to_draft'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -226,7 +232,9 @@ jobs:
   # The one e2e check auto-merge and main's ruleset wait for (REQUIRED_CHECKS
   # in .github/scripts/automerge.py). Full: green only when every share
   # passed. Quick: green when the smoke test passed. A failed, cancelled or
-  # skipped job it needs, or a failed mode job, fails it. Docs only: green.
+  # skipped job it needs, or a failed mode job, fails it. Docs only, or a
+  # pull request just moved back to draft (nothing tested; `draft run` keeps
+  # auto-merge from queueing it): green.
   e2e:
     needs: [mode, e2e-shard, e2e-quick]
     if: always()
@@ -238,8 +246,11 @@ jobs:
           SHARDS: ${{ needs.e2e-shard.result }}
           QUICK: ${{ needs.e2e-quick.result }}
           DOCS: ${{ needs.mode.outputs.docs }}
+          DRAFTED: ${{ github.event.action == 'converted_to_draft' }}
         run: |
-          if [ "$DOCS" = true ]; then
+          if [ "$DRAFTED" = true ]; then
+            echo "moved back to draft: nothing tested until it is ready again"
+          elif [ "$DOCS" = true ]; then
             echo "docs only: no browser check needed"
           elif [ "$FULL" = false ]; then
             test "$QUICK" = success || { echo "the quick e2e check did not pass ($QUICK)"; exit 1; }
@@ -247,17 +258,34 @@ jobs:
             test "$SHARDS" = success || { echo "an e2e share did not pass ($SHARDS)"; exit 1; }
           fi
 
+  # Marks a draft's run, which skips the phone and browsers checks:
+  # automerge.py (DRAFT) never queues a head whose latest run was a draft's,
+  # so no head reaches the queue without the phone check it needs (that
+  # check never runs in the queue). Marking the pull request ready starts a
+  # run in which this job is skipped, and the full pull request checks.
+  # Draft or not is the pull request's state when `mode` ran, not the
+  # event's (ci_mode.py, draft).
+  draft:
+    name: draft run
+    needs: mode
+    if: needs.mode.outputs.draft == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: |
+          echo "A draft's run: the phone and browsers checks run once it is marked ready, and auto-merge waits for them."
+
   # A phone's conditions in Safari's engine (owner's decision, 2026-10-28,
   # after the kernel ran out of memory on Ben's iPhone): WebKit at an
   # iPhone's screen with the kernel's memory capped, run out and restarted
   # (e2e/kernel-restart.mjs), and the start card clear of what floats over
   # the view (e2e/phone-start.mjs). Unlike browsers' reports it gates the merge
   # once it has run (automerge.py, GATES_WHEN_RUN); on the same pull
-  # requests as browsers, so never in the merge queue.
+  # requests as browsers, so never in the merge queue, and not on drafts.
   phone:
     name: phone
     needs: mode
-    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' && needs.mode.outputs.draft != 'true' }}
     timeout-minutes: 40
     runs-on: ubuntu-latest
     steps:
@@ -297,11 +325,11 @@ jobs:
   # all three; golden images are Chromium's only (testing catch-up TC4).
   # Reported, not required: on pull requests that change app files (ci_mode.py,
   # `ui`), and on main's daily run; not in the merge queue, which only
-  # waits for the required checks.
+  # waits for the required checks; not on drafts.
   browsers:
     name: browsers (${{ matrix.browser }})
     needs: mode
-    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' && needs.mode.outputs.draft != 'true' }}
     timeout-minutes: 45
     runs-on: ubuntu-latest
     strategy:

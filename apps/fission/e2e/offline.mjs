@@ -16,7 +16,8 @@
 //   reload still gives A, whole (A's .wasm), and says a new version is
 //   ready; Reload gives B, whole (B's .wasm, the kernel handshake passes,
 //   kernel_version answers, the box kept); the other tab (375 px) says it
-//   was updated elsewhere and its Reload (a tap) gives B. Build C after
+//   was updated elsewhere, still finds A's files the server no longer has
+//   (a 404 answered from A's cache), and its Reload (a tap) gives B. Build C after
 //   it: A's cache goes, B's stays for a tab still on it. A broken build D
 //   (its list names a file the server doesn't have) never installs, and C
 //   runs on untouched.
@@ -281,6 +282,10 @@ try {
       const box = await two.$eval("#app-update", (e) => e.getBoundingClientRect().toJSON());
       assert.ok(box.left >= 0 && box.right <= 375, `the notice fits 375 px (${box.left}…${box.right})`);
       if (shots) await two.screenshot({ path: `${shots}/update-elsewhere-375.png` });
+      // Until then it still finds its own build's files, gone from the server (a 404 there), in A's cache:
+      // a kernel restart in that tab loads A's kernel again (real-use hunt A2).
+      assert.equal(await two.evaluate((p) => fetch(p).then((r) => r.status), `assets/${wasmA}`), 200, "the old tab's own .wasm, from A's cache");
+      assert.equal(await two.evaluate(() => fetch("assets/nothing-here.js").then((r) => r.status)), 404, "a file no build has is still a 404");
       await Promise.all([two.waitForNavigation(), two.tap("#app-update-reload")]);
       await kernelUp(two);
       assert.equal(await buildMark(two), "B");
