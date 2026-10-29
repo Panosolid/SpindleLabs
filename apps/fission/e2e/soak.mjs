@@ -378,13 +378,18 @@ const seconds = (Date.now() - t0) / 1000;
 await browser.close();
 await new Promise((resolve) => server.httpServer.close(resolve));
 
-if (process.env.SOAK_REPORT) {
+/** The readings and every problem found, for the nightly's issue filing (file_issues.py reads `problems`). */
+const writeReport = () => {
+  if (!process.env.SOAK_REPORT) return;
   mkdirSync(dirname(process.env.SOAK_REPORT), { recursive: true });
   writeFileSync(process.env.SOAK_REPORT, JSON.stringify({ seed: SEED, cycles: CYCLES, seconds, readings, problems, errors }, null, 2));
-}
+};
 for (const p of problems) console.log(`FAIL ${p}`);
 if (failure) {
-  console.log(`FAIL the soak's cycle stopped (seed ${SEED}): ${failure.message.split("\n").slice(0, 3).join(" ")}`);
+  const stopped = `the soak's cycle stopped (seed ${SEED}): ${failure.message.split("\n").slice(0, 3).join(" ")}`;
+  console.log(`FAIL ${stopped}`);
+  problems = [...problems, stopped];
+  writeReport();
   process.exit(1);
 }
 // Reading 0 is reported but not judged: taken straight after the warm-up's tour, it held more than any cycle's end
@@ -392,5 +397,7 @@ if (failure) {
 const more = [...judgeSoak(readings.filter((r) => r.cycle > 0)), ...errors.map((e) => `the page said: ${e}`)];
 for (const p of more) console.log(`FAIL ${p}`);
 problems = [...problems, ...more];
+// Written once judged: written before, the file left out the judge's problems (weak-spot hunt 10-29).
+writeReport();
 console.log(`${problems.length ? "FAIL" : "PASS"} soak: seed ${SEED}, ${CYCLES} cycles in ${seconds.toFixed(0)} s`);
 process.exit(problems.length ? 1 : 0);
