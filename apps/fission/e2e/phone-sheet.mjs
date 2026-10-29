@@ -358,6 +358,8 @@ async function phoneLook(page) {
       undo: { w: rect("#undo").width, h: rect("#undo").height, radius: parseFloat(style("#undo").borderTopLeftRadius) },
       navHeights: [...document.querySelectorAll("#view-controls button")].map((b) => b.getBoundingClientRect().height),
       handle: { content: handle.content, w: parseFloat(handle.width), h: parseFloat(handle.height) },
+      // Read from the rules (the Properties sheet is closed): its size boxes, each at least this tall and this big a text.
+      sizeBoxes: ["#width", "#depth", "#height"].map((sel) => ({ sel, minHeight: parseFloat(style(sel).minHeight) || 0, font: parseFloat(style(sel).fontSize) })),
     };
   });
 }
@@ -368,6 +370,8 @@ function checkPhoneLook(m) {
   assert.ok(m.undo.w === 48 && m.undo.h === 48 && m.undo.radius >= 24, `Undo is a round 48 px button (${JSON.stringify(m.undo)})`);
   assert.ok(m.navHeights.length > 0 && m.navHeights.every((h) => h >= 44), `the view buttons are 44 px or more (${m.navHeights})`);
   assert.ok(m.handle.content === '""' && m.handle.w === 40 && m.handle.h === 5, `a sheet has its 40 × 5 grab handle (${JSON.stringify(m.handle)})`);
+  // 44 px to tap, and 16 px text or more, below which iOS Safari zooms the page in on a tap (weak-spot hunt A21: 29 px, 13.3 px).
+  assert.ok(m.sizeBoxes.every((b) => b.minHeight >= 44 && b.font >= 16), `the size boxes are 44 px tall with 16 px text (${JSON.stringify(m.sizeBoxes)})`);
 }
 {
   const { page, context } = await open(375, 667);
@@ -384,6 +388,9 @@ function checkPhoneLook(m) {
   const slim = await page.addStyleTag({ content: ".view-controls button.nav-button:not(#no-such-id):not(#none) { height: 30px; min-width: 30px; }" });
   await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /view buttons are 44 px/);
   await slim.evaluate((el) => el.remove());
+  const small = await page.addStyleTag({ content: "#properties label input#width:not(#none) { min-height: 0; font-size: 13px; }" });
+  await assert.rejects(async () => checkPhoneLook(await phoneLook(page)), /size boxes are 44 px tall/);
+  await small.evaluate((el) => el.remove());
   checkPhoneLook(await phoneLook(page));
   await context.close();
 }
