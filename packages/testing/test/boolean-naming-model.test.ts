@@ -252,13 +252,16 @@ const CASES: { name: string; features: BooleanFeature[] }[] = [
   { name: "edge touch", features: [block("feature-1", [0, 0, 10, 10], [0, 10]), block("feature-2", [10, 10, 20, 20], [0, 10]), combine("feature-3", "body:feature-1", ["body:feature-2"], "join")] },
 ];
 
+/** The faults of rules 1, 2 and 4 and the refusals; rules 3 and 5's are test/boolean-naming-split.test.ts's. */
+const RULE_1_2_4_FAULTS = BOOLEAN_FAULTS.slice(0, BOOLEAN_FAULTS.indexOf("pinch-allowed") + 1);
+
 /** Everything the hand-worked cases look at, as text, so a fault shows as a difference. */
 const seen = (r: BooleanRebuild) =>
   JSON.stringify({ bodies: r.bodies.map((b) => ({ ...b, faces: b.faces.map((f) => [f.names, f.facing, f.at, f.area]) })), failed: [...r.failed] });
 
 test("every planted fault changes a hand-worked case's answer", () => {
   const caught = new Map<BooleanFault, string[]>();
-  for (const fault of BOOLEAN_FAULTS)
+  for (const fault of RULE_1_2_4_FAULTS)
     caught.set(
       fault,
       CASES.filter((c) => seen(rebuildBooleans(c.features, [fault])) !== seen(rebuildBooleans(c.features))).map((c) => c.name),
@@ -269,7 +272,7 @@ test("every planted fault changes a hand-worked case's answer", () => {
   // the two bars' pieces never both piece 1; F6 keeps feature-1 and its top
   // lists feature-1 first; F2's lump is a new id; the hole's wall is the
   // tool's; the swallowed target fails; the edge touch is refused.
-  const expect: Record<BooleanFault, string> = {
+  const expect: Partial<Record<BooleanFault, string>> = {
     "keep-largest": "F1 smaller",
     "keep-first-reached": "F1",
     "number-by-volume": "slabs",
@@ -282,5 +285,5 @@ test("every planted fault changes a hand-worked case's answer", () => {
     "empty-allowed": "swallowed",
     "pinch-allowed": "edge touch",
   };
-  for (const fault of BOOLEAN_FAULTS) assert.ok(caught.get(fault)!.includes(expect[fault]), `${fault} is caught by ${expect[fault]} (caught by: ${caught.get(fault)!.join(", ") || "nothing"})`);
+  for (const fault of RULE_1_2_4_FAULTS) assert.ok(caught.get(fault)!.includes(expect[fault]), `${fault} is caught by ${expect[fault]} (caught by: ${caught.get(fault)!.join(", ") || "nothing"})`);
 });
