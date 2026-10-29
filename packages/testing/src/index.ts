@@ -1,6 +1,6 @@
 // @fission/testing: the test harness shared by every workspace. PLACEHOLDER.
 //
-// The kernel's own harness (kernel/tests/stateful.rs: seeded random
+// The kernel's own harness (seeded random
 // operation chains, minimal failing chains kept forever, failure dumps,
 // the OpenCascade oracle) stays in Rust. This package will give the
 // TypeScript workspaces the same habits: every random test seeded and

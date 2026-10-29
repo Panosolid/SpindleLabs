@@ -9,7 +9,7 @@ export interface KernelRelease {
   version: string;
   build: string;
   handshake: string | null;
-  /** The modelling range, in mm: the kernel's tolerance.rs LINEAR and MAX_SIZE. */
+  /** The modelling range, in mm: the kernel's linear tolerance and largest size. */
   limits: { LINEAR: number; MAX_SIZE: number };
 }
 

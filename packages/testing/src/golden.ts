@@ -122,7 +122,7 @@ export const REL = 1e-9;
 export const POINT_ABS = 1e-6;
 /** A unit normal's components agree to the kernel's angular tolerance (ANGULAR, 1e-9 rad). */
 export const NORMAL_ABS = 1e-9;
-/** The kernel's linear tolerance (kernel/src/tolerance.rs LINEAR): the default every vertex and edge carries until an intersection grows its own (step 31a gave each one a field; growth starts at 32a). */
+/** The kernel's linear tolerance (LINEAR in kernel.json): the default every vertex and edge carries until an intersection grows its own (step 31a gave each one a field; growth starts at 32a). */
 export const LINEAR = 1e-5;
 
 /**

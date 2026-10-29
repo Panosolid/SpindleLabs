@@ -213,11 +213,17 @@ done
 # up (file_issues.py, next to this script). Every run, not only one with a
 # failure folder: a journey FAIL, an unexplained mutant, a mutants shard
 # that stopped or a red job (JOBS) leaves none, and is filed all the same.
-RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$(dirname "$0")/file_issues.py" "$IN" ||
+# A kind that couldn't be filed turns the job red at the end (the results are on test-results all the same), so a
+# night's unfiled kinds are seen on the Actions tab instead of passing quietly (weak-spot hunt 10-29).
+filing=0
+RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$(dirname "$0")/file_issues.py" "$IN" || {
+  filing=1
   echo "Filing issues failed; the results are on test-results all the same."
+}
 if [ "$new_missed" -gt 0 ]; then
   body="Run: $RUN_URL (commit $short on $BRANCH)"$'\n\n'
   body="$body$new_missed mutant(s) survived that the previous complete mutation run caught or did not have (new code, or a test that got weaker):"$'\n'"$(printf '%s\n' "$new_list" | head -50 | sed 's/^/- /')"$'\n\n'"Every survivor is in mutants/missed.txt on the test-results branch."$'\n'
   title="Mutation testing: $new_missed new survivor(s)"
   if [ -n "${GH_TOKEN:-}" ]; then gh issue create --title "$title" --body "$body"; else printf '%s\n\n%s' "$title" "$body"; fi
 fi
+[ "$filing" = 0 ] || { echo "Some kinds were not filed (see above)."; exit 1; }
