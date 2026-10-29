@@ -259,6 +259,17 @@ class WorkflowsTest(unittest.TestCase):
                 found += problems(os.path.basename(path), f.read())
         self.assertEqual(found, [])
 
+    def test_the_live_site_is_built_from_main_alone_without_a_cache(self):
+        # Pages publishes what its build job builds: a run started by hand on
+        # another branch must build nothing, and npm must not restore a cache
+        # some other run saved.
+        with open(os.path.join(WORKFLOWS, "pages.yml")) as f:
+            text = f.read()
+        build = text.split("\n  build:\n", 1)[1].split("\n  deploy:\n", 1)[0]
+        self.assertIn("    if: github.ref == 'refs/heads/main'\n", build)
+        self.assertNotRegex(build, r"\bcache\b")
+        self.assertIn("group: pages-${{ github.ref }}", text, "another branch's run would cancel main's deploy")
+
 
 if __name__ == "__main__":
     unittest.main()
