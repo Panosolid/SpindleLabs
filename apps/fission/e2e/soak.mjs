@@ -40,7 +40,7 @@ import { launch, untilBodies } from "./browser.mjs";
 import { rng } from "./monkey-core.mjs";
 import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { pinProperties } from "./properties.mjs";
-import { chooseFile, closePanels, gridSnapOn, insertPreset, openPanel, sheetsClearFor, switchTo } from "./start.mjs";
+import { chooseFile, closePanels, gridSnapOn, insertPreset, openPanel, pickPlane, sheetsClearFor, switchTo } from "./start.mjs";
 import { judgeSoak, WARM_UP } from "./soak-judge.mjs";
 import { expected, matchesModel, sameState, stlFacts } from "./soak-model.mjs";
 
@@ -84,10 +84,10 @@ const until = (p, fn, arg) => p.waitForFunction(fn, arg);
 const saveFile = join(tmpdir(), `soak-${process.pid}.spindle`);
 const resaved = join(tmpdir(), `soak-${process.pid}-fresh.spindle`);
 
-/** A sketch on the ground plane: Create Sketch, then the XY plane. */
+/** A sketch on the ground plane: Create Sketch, then the XY plane (on a phone, from the bar over the view). */
 async function sketchOnGround(p) {
   await p.click("#create-sketch");
-  await p.click("#sketch-plane-XY");
+  await pickPlane(p, "XY", false);
   await until(p, () => document.querySelector("#viewport").dataset.sketching === "true");
 }
 

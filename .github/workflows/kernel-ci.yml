@@ -14,8 +14,9 @@ name: Kernel CI
 # kernel commit as statuses kernel-ci/checks and kernel-ci/mutants, which the
 # kernel repo's auto-merge waits for.
 #
-# Secrets (Ben adds them; only workflows on this repo's own branches see
-# them, never a fork's pull request): KERNEL_READ, a fine-grained key with
+# Secrets, in the "kernel" environment, which only main may use (Ben adds
+# them; every job that needs them names it, so no other branch's workflow
+# and no fork can read them; test_kernel_ci.py checks): KERNEL_READ, a fine-grained key with
 # read-only contents and read-write commit statuses on Panosolid/kernel;
 # RESULTS_WRITE, contents and issues read-write on Panosolid/kernel-results.
 on:
@@ -52,6 +53,7 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 60
     steps:
       - name: Inputs are commit ids and a label, nothing else
@@ -81,8 +83,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q mpmath cadquery-ocp >/dev/null 2>&1
-      # callgrind, for the kernel's speed baseline check.
-      - run: sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq valgrind >/dev/null 2>&1
+      # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
+      # slicing engine's oracle (Ubuntu noble ships 2.7.2).
+      - run: sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq valgrind prusa-slicer >/dev/null 2>&1
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: wasm-pack
@@ -116,6 +119,7 @@ jobs:
   # status, so it never holds a merge.
   coverage:
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -146,6 +150,7 @@ jobs:
   mutants-plan:
     if: inputs.base != ''
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 20
     outputs:
       count: ${{ steps.plan.outputs.count }}
@@ -187,6 +192,7 @@ jobs:
     needs: mutants-plan
     if: needs.mutants-plan.outputs.count != '0'
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -223,6 +229,7 @@ jobs:
     needs: [mutants-plan, mutants-shard]
     if: always() && inputs.base != ''
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

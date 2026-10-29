@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
-import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4195, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4195/?test-hooks";
@@ -217,9 +217,12 @@ try {
         await hover(page, [20, 15, 20]);
         assert.equal(await data(page, "hover"), "face 1");
         assert.equal(await data(page, "hoverPlane"), "");
-        // Pixel probe: that point of the front plane, in front of the top, shows the box, not the plane's blue.
+        // Pixel probe: that point of the front plane, in front of the top, shows the box, not the plane's blue. Both
+        // are blue now (the hover tints the top 40% towards the selection's (74, 168, 255): (122, 167, 213) before
+        // lighting, about (100, 174) lit in red and blue), so the red tells them apart: with the plane drawn over the
+        // top instead (tried by drawing the planes last) the pixel measured (168, 255). The line is halfway, 134.
         const [r, , b] = await pixelAt(page, [20, 15, 20]);
-        assert.ok(b - r < 60, `the top, not the plane, is drawn there: rgb ${r}, ${b}`);
+        assert.ok(r < 134, `the top, not the plane, is drawn there: rgb ${r}, ${b}`);
       }
       // From the top view nothing is in front of the top.
       await press(page, '[data-view="top"]', tap);
@@ -339,7 +342,7 @@ try {
   await check("375 px, taps: the front plane from its button is looked at from the front, a rectangle tapped on it and extruded", async () => {
     const page = await fresh(375, true);
     await createSketch(page, true);
-    await page.tap("#sketch-plane-XZ");
+    await pickPlane(page, "XZ", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const cam = await settle(page);
     near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking from the front");

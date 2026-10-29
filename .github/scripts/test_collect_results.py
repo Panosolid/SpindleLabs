@@ -25,7 +25,7 @@ def git(cwd, *args):
 
 
 class CollectGolden(unittest.TestCase):
-    def collect(self, report, failing, extra=None):
+    def collect(self, report, failing, extra=None, jobs=None):
         """Runs collect-results.sh on one golden night (plus `extra`, {path in the incoming folder: text}); returns (stdout, the test-results branch's files)."""
         with tempfile.TemporaryDirectory() as d:
             origin, work, incoming = (os.path.join(d, x) for x in ("origin.git", "work", "in"))
@@ -45,6 +45,9 @@ class CollectGolden(unittest.TestCase):
                 with open(os.path.join(incoming, path), "w") as f:
                     f.write(text)
             env = {k: v for k, v in os.environ.items() if k not in ("GH_TOKEN", "GITHUB_STEP_SUMMARY")}
+            env.pop("JOBS", None)
+            if jobs is not None:
+                env["JOBS"] = jobs
             env.update(IN=incoming, RUN_URL="https://example.invalid/runs/1", COMMIT="abcdef1234567", BRANCH="main",
                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
             # The workflow copies both scripts out first; so does this.
@@ -100,6 +103,29 @@ class CollectTsMutants(unittest.TestCase):
         _, files = self.collect(CLEAN, None)
         self.assertNotIn("ts-mutants/latest.txt", files)
         self.assertNotIn("TypeScript mutation", files["summary.txt"])
+
+class CollectChecks(unittest.TestCase):
+    """Failures without a failure folder are filed too (test-the-tests
+    hunt, 2026-10-28: on main's scripts each of these printed nothing)."""
+    collect = CollectGolden.collect
+
+    def test_a_journey_fail_files_an_issue(self):
+        stdout, _ = self.collect(CLEAN, None, {"journeys/report.txt": "FAIL sketch a box: 6 clicks, limit 4\n"})
+        self.assertIn("create  check journeys: sketch a box: # clicks, limit #", stdout)
+
+    def test_an_unexplained_ts_mutant_files_an_issue(self):
+        stdout, _ = self.collect(CLEAN, None, {"ts-mutants-core/core.txt": "UNEXPLAINED survivor at src/a.ts:3: BooleanLiteral\n"})
+        self.assertIn("create  check TypeScript mutants: UNEXPLAINED survivor at src/a.ts:#: BooleanLiteral", stdout)
+
+    def test_a_red_job_without_a_folder_files_an_issue(self):
+        stdout, _ = self.collect(CLEAN, None, jobs='{"golden": {"result": "failure"}, "monkey": {"result": "success"}}')
+        self.assertIn("create  check the golden job failed with nothing more specific reported", stdout)
+        self.assertNotIn("monkey job", stdout)
+
+    def test_a_clean_run_with_green_jobs_files_nothing(self):
+        stdout, _ = self.collect(CLEAN, None, {"journeys/report.txt": "PASS a: 3 clicks\n"}, jobs='{"golden": {"result": "success"}}')
+        self.assertNotIn("create", stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
