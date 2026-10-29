@@ -79,6 +79,12 @@ class CiState(unittest.TestCase):
         # and the nightly fuzzing's kernel targets, whatever their name starts with.
         self.assertEqual(ci_state(both + [check("browsers (firefox)", "in_progress", None),
                                           check("kernel (extrude)", conclusion="failure")]), "success")
+        # The phone check (WebKit, on pull requests that change the app)
+        # gates the merge once it has run, and its absence is no gap.
+        self.assertEqual(ci_state(both + [check("phone", conclusion="failure")]), "failure")
+        self.assertEqual(ci_state(both + [check("phone", "in_progress", None)]), "pending")
+        self.assertEqual(ci_state(both + [check("phone", conclusion="skipped")]), "success")
+        self.assertEqual(ci_state(both + [check("phone")]), "success")
         # On a push run the job is skipped, which passes; the coverage
         # report never blocks.
         self.assertEqual(ci_state(both + [check("mutants-in-diff", conclusion="skipped"),
@@ -427,10 +433,6 @@ class Session:
                         or not self.green(head | self.main)
                         or (p["base_ref"] != "main" and not self.branches[p["base_ref"]] <= self.main))
             self.t.assertTrue(stuck_ok, f"#{n} could merge but was left open")
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 GRACE = automerge.CONFLICT_GRACE_S
@@ -929,3 +931,7 @@ class QueueSimulation(unittest.TestCase):
                     self.assertFalse(q["in_queue"], q)
                 elif can_queue and q["green"] and q["mergeable"] is not False:
                     self.assertTrue(q["in_queue"], q)
+
+
+if __name__ == "__main__":
+    unittest.main()

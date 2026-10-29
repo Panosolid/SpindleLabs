@@ -13,6 +13,7 @@ import { featureEditPanel } from "./feature-edit-panel.ts";
 import { changedMove, insertMove, MOVE_STEP, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
 import { draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
+import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
 import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
@@ -36,7 +37,7 @@ import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from ".
 import { BodyCache, followedDoc, rebuildTimeline, settleKept, type TimelineBuild } from "./rebuild.ts";
 import { isFaceSketch } from "./face-sketch.ts";
 import { droppedNote, highlightOf, panelFocus, selectionRows, survivors } from "./selection.ts";
-import { bodyOf, joinBodies, shownBodies, type Scene, type ShownBody } from "./scene.ts";
+import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
@@ -44,7 +45,7 @@ import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
 import { rounding, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
-import { aimOf, anchorOf, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
+import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
 import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, type SketchTool, type ToolKind } from "./sketch-tool.ts";
@@ -606,7 +607,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return update(`Change shape to ${SHAPE_LABELS[kind] ?? kind}`);
   }
 
-  /** Why the panel's sizes for `kind` can't be taken (the first shown box that isn't more than 0 mm), or null. */
+  /** Why the panel's sizes for `kind` can't be taken (the first shown box that isn't from 0.001 mm to 1 km), or null. */
   function refusedSize(kind: PartKind): string | null {
     for (const r of parameterRows(kind)) {
       if (!r.shown) continue;
@@ -615,6 +616,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const v = Number(text);
       if (text.trim() === "" || !Number.isFinite(v)) return `Type the ${label} in mm.`;
       if (v <= 0) return `The ${label} must be more than 0 mm.`;
+      // Under 0.001 mm or over 1 km: the sketch boxes' and the AI's one rule (typed-entry.ts), in the box's own name (app sweep 2026-10-28).
+      const refused = lengthRefused(v);
+      if (refused !== null) return `The ${label}${refused.slice("A length".length)}`;
     }
     return null;
   }
@@ -636,7 +640,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // no file can hold ("Infinity" where the box takes it as typed; hunt 26g: it took the size, its undo step couldn't
     // be saved, and nothing said so), and an empty box, 0 or below (Ben's Fusion answer 8: -5 and 0 are not accepted;
     // hunt 26h: they went to the kernel and the failed part was recorded and saved). Leaving the box puts the last
-    // size back (`restoreRefused`). The kernel judges the rest (under 0.001 mm, over its largest size).
+    // size back (`restoreRefused`). Under 0.001 mm or over 1 km is refused there too (`lengthRefused`); the kernel judges the rest.
     if (next === undefined && loaded === undefined) {
       const refused = refusedSize(kind);
       if (refused !== null) return panel.showError(refused);
@@ -974,6 +978,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
       const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines);
       lastScene = scene;
+      // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
+      if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
       if (picksBodies()) pickMoveBodies();
       else if (moveBox.shown) previewMove();
@@ -1711,6 +1717,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     typed: () => previewMove(),
     ok: (typed) => void finishMove(typed),
     cancel: () => leaveMove(),
+    snap: () => (snapping ? stopSnap() : startSnap()),
     centre: () => {
       moveBox.setPivot(startPivot(moveBodies, lastScene));
       previewMove();
@@ -1727,7 +1734,20 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   moveHint.textContent = "Move: click or tap the bodies to move";
   moveHint.hidden = true;
   viewport.element.append(moveHint);
-  const showMoveHint = () => (moveHint.hidden = !(shown && picksBodies() && moveBodies.length === 0));
+  /** What the hint says while Snap picks (35e2d): first what to snap, then where it lands. */
+  const SNAP_FROM = "Snap: click or tap a face or edge to move";
+  const SNAP_TO = "Now click or tap where it lands, on another body";
+  /** Words when a snap pick is on the wrong body. */
+  const SNAP_NOT_MOVING = "Pick a face or edge of the bodies being moved first.";
+  const SNAP_MOVING = "That body is being moved: pick where it lands on another body.";
+  /** Snap (35e2d) while it picks: null when off, else the face or edge to snap once picked (on body `body`, as the scene shows it). */
+  let snapping: { from: { body: string; part: SnapPart } | null } | null = null;
+  function showMoveHint() {
+    moveHint.textContent = snapping ? (snapping.from === null ? SNAP_FROM : SNAP_TO) : "Move: click or tap the bodies to move";
+    if (moveBox.shown) moveBox.snapping(snapping && moveHint.textContent);
+    moveHint.hidden = !(shown && moveBox.shown && (snapping !== null || (picksBodies() && moveBodies.length === 0)));
+    viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
+  }
   const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === id)!));
 
   // The panel folds away until something is selected or a tool's box is in it (U0b); the user's pin is kept across mounts.
@@ -1825,6 +1845,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const items = ctx.selection.items;
     if (items.length !== refs.length || items.some((r, i) => r.kind !== "body" || r.id !== refs[i].id)) return ctx.selection.set(refs); // comes back here
     moveBodies = picked;
+    if (snapping?.from && !picked.includes(snapping.from.body)) snapping.from = null;
+    if (snapping && picked.length === 0) snapping = null;
     showMoveHint();
     moveBox.setBodies(bodyLabels(picked));
     moveBox.setPivot(startPivot(picked, lastScene));
@@ -1855,7 +1877,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function showMoveHandles() {
     const read = readMoveBoxes(moveBox.typed);
-    const on = shown && moveBox.shown && moveBodies.length > 0 && "values" in read;
+    // Not while Snap picks (35e2d): a click on the bodies is a pick then, never a grab of an arrow or ring over them.
+    const on = shown && moveBox.shown && moveBodies.length > 0 && snapping === null && "values" in read;
     viewport.showMoveHandles(on ? { centre: handlesCentre(read.values) } : null);
   }
 
@@ -1879,12 +1902,60 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     previewMove();
   };
 
+  function startSnap() {
+    if (!moveBox.shown || moveBodies.length === 0) return;
+    snapping = { from: null };
+    moveBox.showError("");
+    showMoveHint();
+    showMoveHandles();
+  }
+  function stopSnap() {
+    snapping = null;
+    showMoveHint();
+    showMoveHandles();
+  }
+  /**
+   * A click while Snap picks: the first, a face or edge of a body the Move
+   * moves; the second, one of another body, where it lands. The boxes are
+   * then set to the numbers that lay the one on the other (move-snap.ts,
+   * on top of the turn they held) and the preview follows; OK records them
+   * as typed numbers. A curved face, a body on the wrong side or a face
+   * onto an edge says why and waits for another pick; empty space does
+   * nothing.
+   */
+  function snapPick(pick: Parameters<NonNullable<SharedViewport["onPick"]>>[0]) {
+    const at = pick.edge != null ? ({ kind: "edge", index: pick.edge } as const) : pick.face !== null ? ({ kind: "face", index: pick.face } as const) : null;
+    const hit = at && lastScene ? sceneHit(lastScene, at.kind, at.index) : null;
+    if (!snapping || !at || !hit || !lastScene) return;
+    const body = lastScene.bodies[hit.body];
+    const got = snapPart(body.view, at.kind, hit.index);
+    if ("refused" in got) return moveBox.showError(got.refused);
+    const moving = moveBodies.includes(body.feature);
+    if (snapping.from === null) {
+      if (!moving) return moveBox.showError(SNAP_NOT_MOVING);
+      snapping.from = { body: body.feature, part: got.part };
+      moveBox.showError("");
+      return showMoveHint();
+    }
+    if (moving) return moveBox.showError(SNAP_MOVING);
+    const read = readMoveBoxes(moveBox.typed);
+    if ("bad" in read) return moveBox.showError(`Type the ${MOVE_BOX_WORDS[read.bad]}.`);
+    const ends = snapEnds(designDoc(), resultsNow, moveBox.editing, snapping.from.body, snapping.from.part, got.part);
+    const r = snappedValues(read.values, ends.from, ends.to);
+    if ("refused" in r) return moveBox.showError(r.refused);
+    moveBox.setValues(r.values);
+    moveBox.showError("");
+    stopSnap();
+    previewMove();
+  }
+
   /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected. */
   function leaveMove() {
     if (!moveBox.shown) return;
     moveBox.hide();
     moveBodies = [];
     dragFrom = null;
+    snapping = null;
     showMoveHint();
     viewport.showMoveHandles(null);
     if (lastScene) viewport.showBody(lastScene.mesh);
@@ -2181,6 +2252,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       else if (spot) pickFace(spot);
       return;
     }
+    // Snap (35e2d): the click picks what to snap, then where it lands, and picks no bodies.
+    if (moveBox.shown && snapping) return snapPick(pick);
     // A new Move (35e2b): a click on a body adds it or takes it out; empty space keeps what is picked. An edited Move's bodies are its own.
     if (moveBox.shown) {
       const c = pickChange({ ...pick, shift: true }, lastScene);
@@ -2312,6 +2385,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         return true;
       }
       if (id === "clear-selection" && editBox.editing !== null) return leaveEdit(), true;
+      // Escape while Snap picks stops the snap, and only that (35e2d).
+      if (id === "clear-selection" && moveBox.shown && snapping) return stopSnap(), true;
       if (id === "clear-selection" && moveBox.shown) return leaveMove(), true;
       // M opens Move outside a sketch (Fusion's key); in a sketch the key does what it would.
       if (id === "move-tool") return mode.kind === "none" ? (startMove(), true) : false;

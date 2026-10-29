@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4188, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4188/";
@@ -108,7 +108,7 @@ const settle = (page) => page.waitForTimeout(400);
 
 async function startSketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
-  await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await settle(page);
 }

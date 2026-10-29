@@ -3,18 +3,23 @@
 //
 // A selected or hovered face is tinted towards the selection colour rather
 // than painted over, so an analysis overlay under it stays visible. Edges
-// are drawn in the selection colour itself (black otherwise).
+// are drawn in the selection colour itself (dark grey otherwise).
 
 import type { ViewportHighlight } from "@fission/core";
 
 export type Rgb = [number, number, number];
 
-/** Green, apart from the overlays' blue, orange and red (SEVERITY_COLOURS), sRGB 0–1. */
-export const SELECTION_COLOUR: Rgb = [0.25, 0.9, 0.45];
+/**
+ * The app's accent blue (theme.css --look-accent, #4aa8ff), as the glow on
+ * a selected tool is (Ben, 2026-10-28: the old bright green clashed with the
+ * new look), apart from the overlays' violet, orange and red
+ * (SEVERITY_COLOURS), sRGB 0–1.
+ */
+export const SELECTION_COLOUR: Rgb = [0x4a / 255, 0xa8 / 255, 0xff / 255];
 /** How far a selected face moves from its own colour towards SELECTION_COLOUR. */
 export const SELECTED_MIX = 0.6;
-/** The same for a hovered face: lighter, so hover and selection tell apart. */
-export const HOVER_MIX = 0.3;
+/** The same for a hovered face: lighter, so hover and selection tell apart (0.4, not 0.3, since the blue is nearer the grey-blue body than the old green was). */
+export const HOVER_MIX = 0.4;
 /** A face's colour when nothing marks it, sRGB 0–1 (0x9aa7b8). */
 export const BASE_COLOUR: Rgb = [0x9a / 255, 0xa7 / 255, 0xb8 / 255];
 /** An edge's colour when not selected or hovered: dark grey (0x282b31), not black, so a thin line reads soft as Fusion's do. */

@@ -25,7 +25,7 @@ import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { withPropertiesFolded, pinProperties } from "./properties.mjs";
-import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4211, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4211/?test-hooks";
@@ -56,6 +56,15 @@ async function fresh(width, touch) {
     if (sessionStorage.getItem("store-cleared")) return;
     indexedDB.deleteDatabase("fission");
     sessionStorage.setItem("store-cleared", "1");
+  });
+  // A size the panel takes but the kernel refuses: the panel refuses under 0.001 mm itself (app sweep 2026-10-28), and every
+  // size it takes builds, so a check that needs a refused part types 777 and the kernel is sent 0.0001 in its place.
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    const swap = (v) => (v === 777 ? 0.0001 : Array.isArray(v) ? v.map(swap) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)])) : v);
+    Worker.prototype.postMessage = function (message, ...rest) {
+      return send.call(this, message?.op === "body_build" ? { ...message, args: swap(message.args) } : message, ...rest);
+    };
   });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
@@ -190,7 +199,7 @@ async function clickModel(page, [x, y], tap) {
 async function addSquare(page, tap, layout, live = false) {
   await press(page, "#create-sketch", tap);
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  await press(page, "#sketch-plane-XY", tap);
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5)
   await gridSnapOn(page);
@@ -676,7 +685,7 @@ try {
       // 7. While a new sketch is edited (Sketch 2, last), going to the start would roll it back: off, with why, and
       // a drag there is refused with the same words; stepping back to just after it is still allowed.
       await press(page, "#create-sketch", dragTap);
-      await press(page, "#sketch-plane-XY", dragTap);
+      await pickPlane(page, "XY", dragTap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       const words = "The marker can't go before Sketch 2 while it is being edited: finish the sketch first";
       assert.equal(await page.getAttribute('#timeline [data-button="start"]', "aria-disabled"), "true");
@@ -885,12 +894,12 @@ try {
       const square = { heading: "Body 2", volume: layout.volume, intent: `Extrude Sketch 1 by ${layout.distance} mm`, stale: "false" };
 
       // 1. The box's width -5: the box (the part) fails. No Body row; nothing drawn; its last numbers stay, marked out of date.
-      await page.fill("#width", "0.0001"); // under the kernel's 0.001 mm (0 and -5 the panel refuses, 26h)
+      await page.fill("#width", "777"); // sent to the kernel as 0.0001 mm, under its 0.001 (see fresh)
       await until(page, () => /width/.test(document.querySelector("#error")?.textContent ?? ""), null, "the kernel's refusal of the width");
       await until(page, () => document.querySelector('#timeline [data-item="feature-1"]')?.dataset.failed !== undefined, null, "the box marked failed");
       assert.deepEqual(await bar(page), ["feature-1 failed", "|"]);
       assert.deepEqual(await rows(), []);
-      assert.deepEqual(await panel(), { heading: "Body 1", volume: "24,000 mm³", intent: "Box: 0.0001 × 30 × 20 mm", stale: "true" });
+      assert.deepEqual(await panel(), { heading: "Body 1", volume: "24,000 mm³", intent: "Box: 777 × 30 × 20 mm", stale: "true" });
       assert.equal(await page.isVisible("#stale-note"), true);
       // 2. Then Sketch 1's square, extruded: Extrude 1 builds. The hunt's repro: before the fix the rows were Body 1 and Body 2.
       // Nothing is drawn, so Look at centres on the origin: clicks through the app's camera.
@@ -921,13 +930,13 @@ try {
       assert.deepEqual(await rows(), ["body-1 Body 1"]);
       await browserClosed();
 
-      // 4. A failed part with another body: the square again, Body 1 selected, then the square's distance 0.0001 mm (the height box edits the part's distance).
+      // 4. A failed part with another body: the square again, Body 1 selected, then the square's distance 777 mm, which the kernel is sent as 0.0001 (the height box edits the part's distance).
       await addSquare(page, failTap, layout);
       await browserOpen();
       await press(page, '#browser [data-node="body-1"]', failTap);
       await until(page, () => document.body.dataset.selection === "body:feature-1", null, "Body 1 selected");
       await browserClosed();
-      await page.fill("#height", "0.0001"); // under the kernel's 0.001 mm (0 the panel refuses, 26h)
+      await page.fill("#height", "777"); // sent to the kernel as 0.0001 mm, under its 0.001 (see fresh)
       await until(page, () => document.querySelector('#timeline [data-item="feature-11"]')?.dataset.failed !== undefined, null, "Extrude 1 marked failed");
       assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11 failed", "|"]);
       await browserOpen();
@@ -941,7 +950,7 @@ try {
       // Nothing selected: the part, Extrude 1, with the numbers it last built, marked out of date.
       await page.keyboard.press("Escape");
       await until(page, () => !document.body.dataset.selection, null, "nothing selected");
-      assert.deepEqual(await panel(), { heading: "Body 2", volume: layout.volume, intent: "Extrude Sketch 1 by 0.0001 mm", stale: "true" });
+      assert.deepEqual(await panel(), { heading: "Body 2", volume: layout.volume, intent: "Extrude Sketch 1 by 777 mm", stale: "true" });
       await openPanel(page, "properties", failTap); // phone: the note is in the Properties sheet (U5)
       assert.equal(await page.isVisible("#stale-note"), true);
       if (shots) await page.screenshot({ path: `${shots}/failed-part-${width}.png` });
@@ -1447,7 +1456,7 @@ try {
 
       // Finding 4: Go to the start while Sketch 1 is being edited is refused, and the words are on the screen beside the bar.
       await press(page, "#create-sketch", tap);
-      await press(page, "#sketch-plane-XY", tap);
+      await pickPlane(page, "XY", tap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       // Off (aria-disabled) but still pressable, saying why: Playwright waits for an enabled element unless forced.
       await (tap ? page.tap('#timeline [data-button="start"]', { force: true }) : page.click('#timeline [data-button="start"]', { force: true }));

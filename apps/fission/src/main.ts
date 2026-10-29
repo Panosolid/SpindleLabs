@@ -23,6 +23,7 @@ import { communityPage } from "@fission/community";
 import { localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
@@ -917,8 +918,8 @@ for (const slot of ["browser", "properties"] as const) {
   toggle.addEventListener("sheet-close", () => set(false));
 }
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (the plane to sketch on, Edit feature, Extrude's distance and OK, Move's boxes once a body is picked, so the view stays clear to
-// pick them: without the sheet open they are out of reach) and closes again, if it opened it, when
+// (Edit feature, Move's boxes once a body is picked: without the sheet open they are out of reach; not the plane prompt or
+// Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
   const toggle = $("properties-toggle");
@@ -928,7 +929,7 @@ for (const slot of ["browser", "properties"] as const) {
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#extrude-panel:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
+    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
     if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
@@ -950,6 +951,10 @@ for (const slot of ["browser", "properties"] as const) {
   phone.addEventListener("change", () => phone.matches && update(true));
   new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
 }
+// At phone width the bar over the view (phone-float.ts) ends the tool in use; a tool ending puts the Properties sheet away.
+startPhoneFloat($("workspace"), $("viewport"), () => {
+  if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
+});
 // Body facts (Inspect ▾) shows the numbers in the Properties sheet, which at phone width stays shut unless asked (demo rehearsal 10-28).
 $("workspace").addEventListener("properties-reveal", () => {
   const toggle = $("properties-toggle");
@@ -959,7 +964,7 @@ $("workspace").addEventListener("properties-reveal", () => {
 {
   const phone = window.matchMedia("(max-width: 640px)");
   $("workspace").addEventListener("pointerdown", (e) => {
-    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport")) return;
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float")) return; // the bar over the view ends a tool, which puts the sheet away itself
     for (const slot of ["browser", "properties"]) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();

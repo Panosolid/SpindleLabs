@@ -247,6 +247,45 @@ jobs:
             test "$SHARDS" = success || { echo "an e2e share did not pass ($SHARDS)"; exit 1; }
           fi
 
+  # A phone's conditions in Safari's engine (owner's decision, 2026-10-28,
+  # after the kernel ran out of memory on Ben's iPhone): WebKit at an
+  # iPhone's screen with the kernel's memory capped, run out and restarted
+  # (e2e/kernel-restart.mjs), and the start card clear of what floats over
+  # the view (e2e/phone-start.mjs). Unlike browsers' reports it gates the merge
+  # once it has run (automerge.py, GATES_WHEN_RUN); on the same pull
+  # requests as browsers, so never in the merge queue.
+  phone:
+    name: phone
+    needs: mode
+    if: ${{ !cancelled() && github.event_name != 'merge_group' && needs.mode.outputs.ui != 'false' && needs.mode.outputs.docs != 'true' }}
+    timeout-minutes: 40
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build
+        working-directory: apps/fission
+      # Retries and time limits for apt's stalls: see the script.
+      - name: Install the browser (webkit)
+        working-directory: apps/fission
+        timeout-minutes: 27
+        run: ../../.github/scripts/install-browser.sh webkit
+      - run: node e2e/kernel-restart.mjs
+        working-directory: apps/fission
+        env:
+          E2E_BROWSER: webkit
+      # The first screen's start card clear of the floating buttons at every phone width (#44).
+      - run: node e2e/phone-start.mjs
+        if: ${{ !cancelled() }}
+        working-directory: apps/fission
+        env:
+          E2E_BROWSER: webkit
+
   # The sketch browser tests (and, reported only, the smoke test) in the other two engines
   # people use: Firefox and WebKit (Safari's engine). Pixel probes run in
   # all three; golden images are Chromium's only (testing catch-up TC4).
