@@ -96,6 +96,16 @@ test("Save again writes the same handle without asking; if that fails the picker
   assert.equal(asks, 1);
 });
 
+test("a picked file that can't be written fails with its name and why, and nothing downloads (weak-spot hunt 10-29)", async () => {
+  let asks = 0;
+  const { doc, downloads } = page({ picker: async () => (asks++, handle("Full.stl", [], true)) });
+  const r = await saveFile(doc, { suggestedName: "x", kind: STL_KIND, bytes: "S" });
+  assert.deepEqual(r, { status: "failed", message: 'Couldn\'t write "Full.stl": gone. Nothing was saved there; try again, or pick another place.' });
+  assert.equal(asks, 1);
+  assert.deepEqual(downloads, [], "no quiet download elsewhere");
+  assert.equal(doc.querySelector(".save-name"), null, "and no name box");
+});
+
 test("closing the picker cancels: nothing written, nothing downloaded, no error", async () => {
   const { doc, downloads } = page({
     picker: async () => {
