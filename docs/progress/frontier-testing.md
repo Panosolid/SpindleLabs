@@ -38,3 +38,11 @@ Where each idea comes from (checked against the sources on 2026-10-26): swarm te
 - [ ] L3. Before Combine (35f), once 35c gives the kernel's boolean answers (Ben 10-27; one of the gates in `docs/progress/booleans.md`): Manifold (`pip install manifold3d`) as a second outside oracle on cases with nothing touching (Manifold decides touching cases by symbolic perturbation, which our tolerance bands deliberately don't), so OpenCascade and Manifold can outvote each other.
 - [ ] L4. Anytime: Thingi10K's 10,000 meshes through the STL reader and its checks (45% of them self-intersect).
 - [ ] L5. Once the repository is public: apply to Google's OSS-Fuzz with the kernel's fuzz targets.
+
+## The app's blind spots (owner's ask, 2026-10-28)
+
+Ben's phone project went all red (the kernel jammed after running out of memory, PR #40), and the app's checks hadn't seen it coming: real-phone conditions, failure paths and long sessions were the gaps. One pull request each, every new check shown to fail on a planted break.
+
+- [x] B1 phone conditions: the kernel's memory capped in any engine (`apps/fission/e2e/kernel-cap.mjs` writes the cap into the .wasm; Chromium's own switch works in Chromium only), `kernel-restart.mjs` (from #40) on it at an iPhone's screen (DPR 3, touch, mobile viewport) with a box inserted by taps after the restart, and CI's new `phone` job runs it in WebKit, gating the merge once run (`automerge.py` GATES_WHEN_RUN). Ben's project itself uses about 1.2 MB of kernel memory however often it is opened, so the phone's real cause is still open; one lead for B2: a deploy while the tab sleeps leaves the old page asking for a kernel file that is gone, which shows the same all-red screen.
+- [ ] B2 failure paths, starting from `packages/testing/journeys/fault-injection.journey.ts` (T6b) and `e2e/storage.mjs`: the kernel file fails to download (also after a restart), the worker lost mid-job, storage full (IndexedDB QuotaExceededError) or failing, Save failing; each recovers or says so in words, and the design is never lost (autosave and reopen keep it).
+- [ ] B3 long sessions: `e2e/soak.mjs` seeded (the order and sizes of each cycle from `SOAK_SEED`), with Move, workspace switches and phone width, the design's state checked each cycle (volumes, items, file round trip), as well as memory.

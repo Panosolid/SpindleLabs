@@ -11,8 +11,28 @@
 .start-hint .start-hint-actions > button:first-child:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); font-weight: 600; box-shadow: var(--look-primary-glow); }
 .start-hint .start-hint-close:not(#none) { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--look-radius-pill); color: #8a919c; font-size: 14px; line-height: 1; cursor: pointer; }
 .start-hint .start-hint-close:not(#none):hover, .start-hint .start-hint-close:not(#none):focus-visible { color: #e6e9ee; background: #263142; border-color: #2c3749; }
+/* Phone width (640 px and under): the view's top holds the floating Browser
+   and Properties pills (left, 50 px tall, phone-sheet.css) and the view cube
+   (right, 8 + 96 px, theme.css), its bottom the view controls and Undo/Redo.
+   Upright, the card sits under the cube (top 112 px) across the view, its
+   buttons two to a row (Create sketch across both) so it stays short enough
+   to end above the view controls at 320 × 568. Sideways (a short view),
+   there is no room under the cube: the card is one row of buttons under the
+   pills and left of the cube, its words read out but not shown. Before
+   (Ben's iPhone, 2026-10-28) the card sat at the view's top, under the
+   pills and over the cube. Checked by e2e/phone-start.mjs. */
 @media (max-width: 640px) {
-  .start-hint { top: 16px; transform: translateX(-50%); width: calc(100% - 32px); }
+  .start-hint:not(#none) { top: 112px; left: 8px; right: 8px; transform: none; width: auto; max-width: none; padding: 14px; }
+  .start-hint h2 { margin: 0 44px 10px 0; font-size: 16px; }
+  .start-hint .start-hint-actions:not(#none) { display: grid; grid-template-columns: 1fr 1fr; }
+  .start-hint .start-hint-actions > button:not(#none) { padding: 0 10px; }
+  .start-hint .start-hint-actions > button:first-child:not(#none) { grid-column: 1 / -1; }
   .start-hint button:not(#none) { min-height: 44px; }
-  .start-hint .start-hint-close:not(#none) { width: 44px; height: 44px; top: 0; right: 0; }
+  .start-hint .start-hint-close:not(#none) { width: 44px; height: 44px; top: 4px; right: 4px; }
+}
+@media (max-width: 640px) and (max-height: 480px) {
+  .start-hint:not(#none) { top: 56px; right: 112px; padding: 8px 52px 8px 8px; }
+  .start-hint h2 { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .start-hint .start-hint-actions:not(#none) { display: flex; flex-wrap: nowrap; gap: 6px; }
+  .start-hint .start-hint-actions > button:first-child:not(#none) { grid-column: auto; }
 }
