@@ -78,7 +78,7 @@ export interface HistoryOptions {
   restore(snapshot: string): void;
   /** Most undo steps kept; the oldest go first. Default UNDO_LIMIT. */
   limit?: number;
-  /** Steps with one merge key closer together than this (ms) are one step. Default MERGE_MS. */
+  /** Steps with one merge key closer together than this (ms) are one step (never across a clock set back). Default MERGE_MS. */
   mergeMs?: number;
   /** The clock, in ms (tests pass a fake one). */
   now?(): number;
@@ -151,7 +151,7 @@ export function createHistory(options: HistoryOptions): History {
       const t = now();
       const top = entries[index];
       entries.length = index + 1; // nothing to redo after a new step
-      if (lastWasRecord && index > 0 && mergeKey !== undefined && top.mergeKey === mergeKey && t - top.at < mergeMs) {
+      if (lastWasRecord && index > 0 && mergeKey !== undefined && top.mergeKey === mergeKey && t - top.at >= 0 && t - top.at < mergeMs) {
         if (snapshot === entries[index - 1].snapshot) {
           // Folded back to where the step started: the step is gone.
           entries.pop();
