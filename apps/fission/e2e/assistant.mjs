@@ -327,12 +327,16 @@ try {
         await seen(page, "Asking the AI… 5%");
         assert.equal(await page.getAttribute("#ai-progress", "aria-valuenow"), "5");
         assert.equal((await page.evaluate(() => globalThis.heldAsked[0])).stream, true, "Ollama is asked to stream");
+        // Until the first words, skeleton lines shimmer where they will be: there at once, seen only after 200 ms.
+        assert.ok(await page.$("#ai-progress > .skeleton.skeleton-lines"), "skeleton lines while nothing is written");
+        await page.waitForFunction(() => getComputedStyle(document.querySelector("#ai-progress > .skeleton")).opacity === "1", null, { timeout: 2000 });
         await page.evaluate(() => (globalThis.allowLines = 1));
         await seen(page, "Writing the commands (1 so far)… 24%");
         assert.equal(await page.$("#ai-progress .ai-working"), null, "no working out yet");
         await page.evaluate(() => (globalThis.allowLines = 4));
         await seen(page, "Writing its working out… 65%");
         assert.equal(await page.textContent("#ai-progress .ai-working-text"), "The box becomes 50 mm");
+        assert.equal(await page.$("#ai-progress .skeleton"), null, "the skeleton gives way to the words");
         const fill = await page.$eval("#ai-progress .ai-progress-fill", (e) => e.style.width);
         assert.equal(fill, "65%");
         assert.equal(await page.$eval("#ai-progress", (e) => e.scrollWidth <= e.clientWidth), true, "no sideways scroll");

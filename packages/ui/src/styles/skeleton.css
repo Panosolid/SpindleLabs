@@ -1,0 +1,70 @@
+/* Skeleton placeholders (src/skeleton.ts): soft shapes in the clean look's
+   blue-grey, a light sweeping across them all together (the gradient is
+   fixed to the window, so every shape on screen shimmers as one, as
+   Instagram's do). A skeleton is invisible for its first 200 ms
+   (SKELETON_DELAY_MS) and fades in over 160 ms, so a quick load shows
+   nothing; .skeleton-leaving fades it out over 160 ms (SKELETON_FADE_MS).
+   Under prefers-reduced-motion nothing sweeps and nothing fades: the shapes
+   appear after the same wait, still. Never takes a click: what is under it
+   is the app, and a click there must not be lost. */
+.skeleton {
+  --skeleton-base: rgba(120, 165, 230, 0.075);
+  --skeleton-shine: rgba(150, 195, 255, 0.17);
+  opacity: 0;
+  pointer-events: none;
+  animation: skeleton-in 160ms cubic-bezier(0.23, 1, 0.32, 1) 200ms forwards;
+}
+.skeleton.skeleton-leaving { opacity: 1; animation: skeleton-out 160ms ease-out forwards; }
+@keyframes skeleton-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes skeleton-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes skeleton-sweep { from { background-position: 100vw 0; } to { background-position: -100vw 0; } }
+
+.skeleton .skeleton-bone {
+  display: block;
+  border-radius: var(--look-radius-s, 8px);
+  background-color: var(--skeleton-base);
+  background-image: linear-gradient(100deg, transparent 40%, var(--skeleton-shine) 50%, transparent 60%);
+  background-size: 200vw 100%;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.5s linear infinite;
+}
+
+/* Lines of words being written (the AI panel's working out). */
+.skeleton.skeleton-lines { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+.skeleton.skeleton-lines .skeleton-line { height: 10px; border-radius: var(--look-radius-pill, 999px); }
+.skeleton.skeleton-lines .skeleton-line:nth-child(2) { width: 88%; }
+.skeleton.skeleton-lines .skeleton-short { width: 56%; }
+
+/* A 3D view being filled: the view cube's square, a card in the middle and a pill for the view bar. */
+.skeleton:is(.skeleton-view, .skeleton-app) .skeleton-cube { position: absolute; top: 16px; right: 16px; width: 72px; height: 72px; border-radius: var(--look-radius-m, 12px); }
+.skeleton:is(.skeleton-view, .skeleton-app) .skeleton-card { position: absolute; left: 50%; top: 45%; width: min(320px, 70%); height: 168px; transform: translate(-50%, -50%); border-radius: var(--look-radius-l, 16px); }
+.skeleton:is(.skeleton-view, .skeleton-app) .skeleton-pill { position: absolute; left: 50%; bottom: 20px; width: min(240px, 60%); height: 36px; transform: translateX(-50%); border-radius: var(--look-radius-pill, 999px); }
+.skeleton.skeleton-view { position: absolute; inset: 0; z-index: 4; background: #0f141c; }
+
+/* The whole workspace while the app starts: the toolbar's groups, the browser's rows and the view, over the
+   workspace's grid (every row and column) on a wide screen, and over the whole column at phone width. */
+.skeleton.skeleton-app { grid-area: 1 / 1 / -1 / -1; z-index: 20; position: relative; display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); background: radial-gradient(ellipse at 50% 40%, #162030 0%, #0f141c 70%); }
+.skeleton.skeleton-app .skeleton-toolbar { grid-column: 1 / -1; display: flex; gap: 20px; padding: 8px 12px; border-bottom: 1px solid var(--look-edge, rgba(120, 165, 230, 0.16)); background: linear-gradient(180deg, #161d2a, #121824); }
+.skeleton.skeleton-app .skeleton-tool-group { display: grid; grid-template-columns: repeat(3, 32px); gap: 6px; justify-items: center; }
+.skeleton.skeleton-app .skeleton-tool { width: 32px; height: 32px; }
+.skeleton.skeleton-app .skeleton-tool-name { grid-column: 1 / -1; width: 56px; height: 8px; border-radius: var(--look-radius-pill, 999px); }
+.skeleton.skeleton-app .skeleton-browser { display: flex; flex-direction: column; gap: 12px; padding: 16px 12px; border-right: 1px solid var(--look-edge, rgba(120, 165, 230, 0.16)); }
+.skeleton.skeleton-app .skeleton-heading { width: 50%; height: 12px; border-radius: var(--look-radius-pill, 999px); }
+.skeleton.skeleton-app .skeleton-row { width: 85%; height: 20px; }
+.skeleton.skeleton-app .skeleton-row-short { width: 62%; }
+.skeleton.skeleton-app .skeleton-view { position: relative; }
+@media (max-width: 640px) {
+  /* A phone: no browser column (it is a sheet there), one row of tools. */
+  .skeleton.skeleton-app { position: absolute; inset: 0; grid-template-columns: minmax(0, 1fr); }
+  .skeleton.skeleton-app .skeleton-browser { display: none; }
+  .skeleton.skeleton-app .skeleton-toolbar { gap: 12px; overflow: hidden; }
+  .skeleton.skeleton-app .skeleton-tool-name { display: none; }
+  .skeleton:is(.skeleton-view, .skeleton-app) .skeleton-cube { width: 56px; height: 56px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation-duration: 1ms; }
+  .skeleton.skeleton-leaving { animation-duration: 1ms; }
+  .skeleton .skeleton-bone { animation: none; background-image: none; }
+}
