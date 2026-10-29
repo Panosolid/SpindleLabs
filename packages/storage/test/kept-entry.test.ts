@@ -20,7 +20,8 @@ function storage(): JournalStorage & { m: Map<string, string> } {
   const m = new Map<string, string>();
   return { m, get length() { return m.size; }, key: (i) => [...m.keys()][i] ?? null, getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k) };
 }
-const timers = { setTimeout: (fn: () => void) => (queueMicrotask(fn), 1), clearTimeout: () => {} };
+// The quiet moment (0 here) comes at once; no time passes otherwise, so storage's answer deadline (STORAGE_ANSWER_MS) never does.
+const timers = { setTimeout: (fn: () => void, ms: number) => (ms === 0 && queueMicrotask(fn), 1), clearTimeout: () => {} };
 
 /** The story up to the reload: 40 stored at 500, 50 journalled at 900, and recovery refused (storage full). */
 async function fullAfterReload() {

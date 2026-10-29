@@ -36,6 +36,9 @@ export type KernelRequest = {
  */
 export type KernelResponse = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: KernelFailure; stopped?: true; missing?: true };
 
+/** What the worker says once, when its kernel has downloaded and started: from then on each call is timed (KernelClient, `answerWithinMs`). */
+export type KernelReady = { ready: true };
+
 /**
  * Whether a kernel call stopped the WebAssembly itself (a trap: running out
  * of memory, or an internal fault) rather than refusing its input. After a
@@ -48,6 +51,21 @@ export const isTrap = (e: unknown): boolean => typeof WebAssembly !== "undefined
 
 /** What the call that stopped the kernel answers (and every call still waiting on it): the app then starts a fresh kernel and builds again. */
 export const KERNEL_RESTARTED = "The geometry kernel ran out of memory or stopped on an internal error, so it was started again.";
+
+/**
+ * What every call still waiting answers when the kernel said nothing for its
+ * deadline (a kernel stuck in a loop, or a worker the browser closed, which
+ * says nothing at all): the app then starts a fresh kernel and builds again.
+ */
+export const KERNEL_NOT_ANSWERING = "The geometry kernel stopped answering, so it was started again.";
+
+/**
+ * How long a started kernel may say nothing while a call waits on it before
+ * it is taken as lost: a minute. The kernel's longest calls take seconds on a
+ * phone (its limits: 2,000 corners a sketch), so only a kernel that is stuck
+ * or gone waits this long.
+ */
+export const KERNEL_ANSWER_WITHIN_MS = 60_000;
 
 /**
  * What every call answers when the kernel's own file (the .wasm) didn't
@@ -131,22 +149,56 @@ export class KernelClient implements KernelCalls {
   private nextBody = 1;
   /** Handles whose kernel was replaced: their bodies are gone, so freeing one is done at once (once), and nothing else is asked of them. */
   private retired = new Set<BodyHandle>();
+  /**
+   * Blind spots B2b: the worker lost in the middle of a call. Once its kernel
+   * has started (its `ready`), a worker that says nothing for `answerWithinMs`
+   * while a call waits is let go, as a trapped one is. The download before
+   * that is never timed (a slow phone network), and each answer starts the
+   * time again, so only silence counts, never how long the calls take
+   * together; a call sent while the time runs never puts it back.
+   */
+  private readonly answerWithinMs: number;
+  private started = false;
+  private watch: ReturnType<typeof setTimeout> | null = null;
 
-  constructor() {
+  constructor(options: { answerWithinMs?: number } = {}) {
+    this.answerWithinMs = options.answerWithinMs ?? KERNEL_ANSWER_WITHIN_MS;
     this.start();
+  }
+
+  /** Times the kernel's silence while a call waits on a started kernel; stops when none waits. */
+  private watchSilence(fresh: boolean) {
+    if (!this.started || this.pending.size === 0) {
+      if (this.watch !== null) clearTimeout(this.watch);
+      this.watch = null;
+      return;
+    }
+    if (this.watch !== null && !fresh) return;
+    if (this.watch !== null) clearTimeout(this.watch);
+    this.watch = setTimeout(() => {
+      this.watch = null;
+      this.restart(KERNEL_NOT_ANSWERING);
+    }, this.answerWithinMs);
   }
 
   private start() {
     const worker = new Worker(new URL("./kernel.worker.ts", import.meta.url), { type: "module" });
     this.worker = worker;
-    worker.onmessage = (event: MessageEvent<KernelResponse>) => {
+    this.started = false;
+    this.watchSilence(true);
+    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady>) => {
       if (worker !== this.worker) return; // a kernel already replaced
+      if ("ready" in event.data) {
+        this.started = true;
+        return this.watchSilence(true);
+      }
       const reply = event.data;
       if (!reply.ok && reply.stopped) return this.restart();
       if (!reply.ok && reply.missing) this.lost();
       const p = this.pending.get(reply.id);
       if (!p) return;
       this.pending.delete(reply.id);
+      this.watchSilence(true);
       if (reply.ok) p.resolve(reply.value);
       else p.reject(new KernelError(reply.error));
     };
@@ -155,27 +207,34 @@ export class KernelClient implements KernelCalls {
     // the worker is gone. Every call waiting and every later one fails with
     // the same words, never waits for an answer that can't come, and the
     // event is taken as handled (the app says it, not the browser's console).
+    // A kernel that had started and then crashes (an uncaught error in the
+    // middle of a call) is started again instead, as a trapped one is: a
+    // fresh one works (B2b), and one that fails as it starts never loops.
     worker.onerror = (event) => {
       event.preventDefault();
       if (worker !== this.worker) return;
+      if (this.started && event.message) return this.restart();
       const why = event.message ? `stopped (kernel worker crashed: ${event.message})` : "didn't start (its worker didn't load)";
       this.failed = new KernelError({ kind: "internal", inputs: [], message: `The geometry kernel ${why}. Reload the page to try again.` });
       this.pending.forEach((p) => p.reject(this.failed!));
       this.pending.clear();
+      this.watchSilence(false);
       if (!event.message) this.lost();
     };
   }
 
   /**
-   * A call trapped: that kernel is let go and a fresh one started. The call
-   * and every other one sent to the old kernel fail with KERNEL_RESTARTED
+   * A call trapped (or the started kernel crashed, or said nothing past its
+   * deadline: `message` then KERNEL_NOT_ANSWERING): that kernel is let go and
+   * a fresh one started. The call and every other one sent to the old kernel
+   * fail with `message`
    * (none of them can be trusted, and the old kernel never answers again);
    * then the listeners hear of it, so the bodies the old one kept are
    * forgotten and the design is built again on the new one.
    */
-  private restart() {
+  private restart(message = KERNEL_RESTARTED) {
     this.worker.terminate();
-    const stopped = new KernelError({ kind: "internal", inputs: [], message: KERNEL_RESTARTED });
+    const stopped = new KernelError({ kind: "internal", inputs: [], message });
     const waiting = [...this.pending.values()];
     this.pending.clear();
     this.retire();
@@ -252,6 +311,7 @@ export class KernelClient implements KernelCalls {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
+      this.watchSilence(false);
       this.worker.postMessage({ id, op, args } as KernelRequest);
     });
   }
