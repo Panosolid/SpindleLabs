@@ -619,6 +619,7 @@ function checkFaceSketch(f: Feature, content: Sketch, byId: ReadonlyMap<string, 
   checkPlane(face.frame, `${at}'s frame`);
   if (face.side !== 1 && face.side !== -1) throw new Error(`${at}'s side must be 1 or -1, not ${shown(face.side)}`);
   if (Object.hasOwn(face, "held")) checkPlane(face.held, `${at}'s held plane`);
+  if (Object.hasOwn(face, "body")) checkPlane(face.body, `${at}'s body frame`);
   const there = byId.get(feature);
   if (there !== undefined && (there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at} is on a face of ${shown(feature)}, which is not a solid item before it in the timeline`);
   if (!Array.isArray(f.dependsOn) || !f.dependsOn.includes(feature)) throw new Error(`${at} is on a face of ${feature} but does not depend on it`);

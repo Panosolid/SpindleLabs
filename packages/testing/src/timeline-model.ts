@@ -58,6 +58,9 @@
 // its face's feature, so it can't move before it, and it is greyed while
 // that feature is suppressed or greyed. An extrude of it starts on the
 // face and goes up: its body is the XY one lifted by the face's height.
+// From 35e2h it is also carried along its face by what the Moves did to
+// the face's body since it was drawn (`OnFace.motion`, `turnSince`), so an
+// edited Move's slide or turn about Z takes it, and its extrude, along.
 // - New items go in just after the marker, and the marker moves onto them.
 // - Deleting the item the marker is on moves the marker to the item before
 //   it ("start" if there is none).
@@ -94,6 +97,27 @@ export interface OnFace {
   role: CapRole;
   drawn: number;
   held?: number;
+  /** 35e2h: where the Moves before it had turned and shifted the face's body when it was drawn (left out: not moved). */
+  motion?: Motion2;
+  /** 35e2h: the turn and shift along its face it holds while its face is lost, with `held` (left out: none). */
+  heldTurn?: Turn;
+}
+
+/** How a body's Moves have turned it about Z (`a`, radians) and shifted it across (`t`, mm): a point (x, y) goes to R(a)(x, y) + t (35e2h). */
+export interface Motion2 {
+  a: number;
+  t: [number, number];
+}
+
+/**
+ * Where a face sketch lies along its face (35e2h): its x axis (`x`, unit,
+ * in the world's XY) and its origin's world (x, y) (`at`), carried by the
+ * body's Moves since it was drawn; left out where it was drawn (x along X,
+ * origin over the world's).
+ */
+export interface Turn {
+  x: [number, number];
+  at: [number, number];
 }
 
 export type ModelItem =
@@ -115,6 +139,7 @@ export interface Kept {
   shape: ModelShape;
   curves: string[];
   lift?: number;
+  turn?: Turn;
 }
 
 /** null: everything is built; "start": nothing is; an id: built up to and including that item. */
@@ -177,6 +202,8 @@ export interface ModelBody {
   volume: number;
   faces: ModelFace[];
   edges: ModelEdge[];
+  /** 35e2h: how its Moves have turned and shifted it so far (left out: never moved). */
+  motion?: Motion2;
 }
 
 export type FailCause = "deleted-input" | "failed-input" | "open-outline" | "invalid-outline";
@@ -196,7 +223,7 @@ export type ItemResult =
    * there, "plane-lost"; an extrude of a held sketch names it as its lost
    * `source` (26e).
    */
-  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; plane?: "plane-lost"; source?: string }
+  | { status: "built"; body?: ModelBody; warning?: KeptWarning; lift?: number; turn?: Turn; plane?: "plane-lost"; source?: string }
   | { status: "suppressed" }
   /** Built on a suppressed item (`by`), directly or through others: off, with no warning (Q3, 26e). */
   | { status: "greyed"; by: string }
@@ -268,7 +295,8 @@ export type ModelFault =
   | "lost-plane-not-held"
   | "face-sketch-unbound"
   | "move-shift-then-turn"
-  | "move-not-held";
+  | "move-not-held"
+  | "sketch-not-carried";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -301,6 +329,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "face-sketch-unbound",
   "move-shift-then-turn",
   "move-not-held",
+  "sketch-not-carried",
 ];
 
 /** "item-3/side:curve-5": a face name as one string, for maps and messages. */
@@ -601,13 +630,13 @@ function build(item: ModelItem, byId: Map<string, ModelItem>, done: Record<strin
   if (problem !== null) return { ...lost(item, problem, faults), ...source };
   // Planted bug: the kept shape is used even once the sketch makes an outline again.
   if (faults.has("kept-not-forgotten") && item.kept) return { ...lost(item, "open-outline", faults), ...source };
-  return { status: "built", body: lifted(extrudeBody(item.id, sketch.shape, sketch.curves as string[], item.distance, faults), input.lift), ...source };
+  return { status: "built", body: lifted(extrudeBody(item.id, sketch.shape, sketch.curves as string[], item.distance, faults), input.lift, input.turn), ...source };
 }
 
 /** An extrude whose sketch is lost: its kept shape (where it lay) with a warning, or failed with the cause when it has none. */
 function lost(item: Extract<ModelItem, { kind: "extrude" }>, cause: LostCause, faults: ReadonlySet<ModelFault>): ItemResult {
   if (item.kept === undefined) return { status: "failed", cause, input: item.sketch };
-  const body = lifted(extrudeBody(item.id, item.kept.shape, item.kept.curves, item.distance, faults), item.kept.lift);
+  const body = lifted(extrudeBody(item.id, item.kept.shape, item.kept.curves, item.distance, faults), item.kept.lift, item.kept.turn);
   // Planted bug: the kept shape is built, but nothing says so.
   return faults.has("warning-dropped") ? { status: "built", body } : { status: "built", body, warning: { cause, input: item.sketch } };
 }
@@ -652,7 +681,10 @@ function moved(body: ModelBody, m: MoveItem, faults: ReadonlySet<ModelFault>): M
   const shift = (p: Vec3): Vec3 => [p[0] + m.shift[0], p[1] + m.shift[1], p[2] + m.shift[2]];
   // Planted bug ("move-shift-then-turn"): shifted first, then turned about the pivot.
   const at = (p: Vec3): Vec3 => (faults.has("move-shift-then-turn") ? turn(shift(p)) : shift(turn(p)));
-  return { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: at(e.centroid) })) };
+  // 35e2h: its motion so far followed by this one: R(m)(R(a) p + t) + … turns by a + m and takes t where `at` takes the point t.
+  const was = body.motion ?? { a: 0, t: [0, 0] };
+  const t = at([was.t[0], was.t[1], 0]);
+  return { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: at(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: at(e.centroid) })), motion: { a: was.a + a, t: [t[0], t[1]] } };
 }
 
 /** What the kernel is asked to do for a Move, as Design asks it (move.ts `moveMotions`): the turn when there is one, then the shift when there is one. */
@@ -661,10 +693,17 @@ const motionsOf = (m: MoveItem): unknown[] => [
   ...(m.shift.some((x) => x !== 0) ? [["move", ...m.shift]] : []),
 ];
 
-/** A body moved up by `z` (an extrude of a sketch on a face, 26e): every face's and edge's centroid; volumes, areas and lengths stay. */
-function lifted(body: ModelBody, z: number | undefined): ModelBody {
+/**
+ * The body of an extrude of a sketch on a face (26e), built as if on XY,
+ * moved where the sketch lies: turned and shifted along the face as `turn`
+ * says (35e2h), then up by `z`. Every face's and edge's centroid moves;
+ * volumes, areas and lengths stay.
+ */
+function lifted(body: ModelBody, z: number | undefined, turn?: Turn): ModelBody {
   if (z === undefined) return body;
-  const up = (c: Vec3): Vec3 => [c[0], c[1], c[2] + z];
+  const [c, s] = turn?.x ?? [1, 0];
+  const [ox, oy] = turn?.at ?? [0, 0];
+  const up = (p: Vec3): Vec3 => (turn ? [ox + c * p[0] - s * p[1], oy + s * p[0] + c * p[1], p[2] + z] : [p[0], p[1], p[2] + z]);
   return { volume: body.volume, faces: body.faces.map((f) => ({ ...f, centroid: up(f.centroid) })), edges: body.edges.map((e) => ({ ...e, centroid: up(e.centroid) })) };
 }
 
@@ -682,9 +721,27 @@ function placeSketch(item: SketchItem, done: Record<string, ItemResult>, faults:
   if (by !== null && !faults.has("greyed-warns")) return { status: "greyed", by };
   if (on?.status === "built" && on.body) {
     const face = on.body.faces.find((f) => f.name.role === item.on!.role);
-    if (face) return { status: "built", lift: face.centroid[2] };
+    // 35e2h: carried along the face by what its body's Moves did since it was drawn. Planted bug ("sketch-not-carried"): only its height follows.
+    const turn = faults.has("sketch-not-carried") ? undefined : turnSince(on.body.motion, item.on.motion);
+    if (face) return { status: "built", lift: face.centroid[2], ...(turn && { turn }) };
   }
-  return { status: "built", lift: item.on.held ?? item.on.drawn, plane: "plane-lost" };
+  const held = item.on.held === undefined ? undefined : item.on.heldTurn;
+  return { status: "built", lift: item.on.held ?? item.on.drawn, ...(held && { turn: held }), plane: "plane-lost" };
+}
+
+/**
+ * Where a face sketch lies along its face (35e2h) when its body has moved
+ * by `now` and had moved by `drawn` when it was drawn: the motion since,
+ * now after drawn undone, turns by now.a − drawn.a and takes the world's
+ * origin to now.t − R(that) drawn.t. Left out when that is no motion.
+ */
+function turnSince(now: Motion2 | undefined, drawn: Motion2 | undefined): Turn | undefined {
+  const n = now ?? { a: 0, t: [0, 0] };
+  const d = drawn ?? { a: 0, t: [0, 0] };
+  const a = n.a - d.a;
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  const at: [number, number] = [n.t[0] - (c * d.t[0] - s * d.t[1]), n.t[1] - (s * d.t[0] + c * d.t[1])];
+  return a === 0 && at[0] === 0 && at[1] === 0 ? undefined : { x: [c, s], at };
 }
 
 /**
@@ -701,7 +758,7 @@ function settle(before: ModelDoc, doc: ModelDoc, faults: ReadonlySet<ModelFault>
   const liftBefore = (id: string) => {
     was ??= rebuild(opened(before), faults);
     const r = was.results[id];
-    return r?.status === "built" ? r.lift : undefined;
+    return r?.status === "built" && r.lift !== undefined ? { lift: r.lift, ...(r.turn && { turn: r.turn }) } : undefined;
   };
   for (const item of doc.items) {
     if (item.kind !== "extrude") continue;
@@ -713,7 +770,7 @@ function settle(before: ModelDoc, doc: ModelDoc, faults: ReadonlySet<ModelFault>
     const sketch = sketchIn(before, item.sketch);
     if (item.kept !== undefined || sketch === undefined || outlineProblem(sketch) !== null || faults.has("lost-sketch-fails")) continue;
     const lift = sketch.on ? liftBefore(sketch.id) : undefined;
-    item.kept = { shape: JSON.parse(JSON.stringify(sketch.shape)), curves: [...(sketch.curves as string[])], ...(lift === undefined ? {} : { lift }) };
+    item.kept = { shape: JSON.parse(JSON.stringify(sketch.shape)), curves: [...(sketch.curves as string[])], ...(lift === undefined ? {} : lift) };
   }
   // A face sketch whose face is gone (with nothing suppressed and no marker) holds the height it had in `before`, if it
   // holds none yet; one whose face is there forgets it (the naming model's `settle`).
@@ -722,11 +779,17 @@ function settle(before: ModelDoc, doc: ModelDoc, faults: ReadonlySet<ModelFault>
   for (const item of doc.items) {
     if (item.kind !== "sketch" || item.on === undefined) continue;
     const r = now.results[item.id];
-    if (r?.status !== "built" || r.plane === undefined) delete item.on.held;
+    if (r?.status !== "built" || r.plane === undefined) {
+      delete item.on.held;
+      delete item.on.heldTurn;
+    }
     // Planted bug ("lost-plane-not-held"): nothing is held, so a lost sketch goes back to where it was drawn.
     else if (item.on.held === undefined && !faults.has("lost-plane-not-held")) {
       const lift = liftBefore(item.id);
-      if (lift !== undefined) item.on.held = lift;
+      if (lift !== undefined) {
+        item.on.held = lift.lift;
+        if (lift.turn) item.on.heldTurn = lift.turn;
+      }
     }
   }
 }
@@ -780,7 +843,10 @@ export function bodyKeys(doc: ModelDoc, r: Rebuild): Map<string, { spec: string;
       if (from === undefined) throw new Error(`harness: ${id} is built from nothing`);
       // Where it is built (26e): its kept shape's height, or its sketch's now; null on XY.
       const sketch = r.results[item.sketch];
-      const lift = (res.warning ? item.kept?.lift : sketch?.status === "built" ? sketch.lift : undefined) ?? null;
+      // 35e2h: and where along the face, when its sketch has been carried.
+      const lifted = res.warning ? item.kept?.lift : sketch?.status === "built" ? sketch.lift : undefined;
+      const turn = res.warning ? item.kept?.turn : sketch?.status === "built" ? sketch.turn : undefined;
+      const lift = lifted === undefined ? null : turn ? [lifted, turn.x, turn.at] : lifted;
       out.set(id, {
         spec: JSON.stringify(["extrude", from.shape, from.curves, item.distance, lift]),
         shape: JSON.stringify(["extrude", solid(from.shape), item.distance, lift]),
@@ -911,7 +977,9 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       const res = rebuild(doc, faults).results[op.face.feature];
       const face = res?.status === "built" ? res.body?.faces.find((f) => faceKey(f.name) === faceKey(op.face)) : undefined;
       if (face === undefined || (op.face.role !== "top" && op.face.role !== "end")) throw new Error(`no flat face ${faceKey(op.face)} to sketch on`);
-      const on: OnFace = { feature: op.face.feature, role: op.face.role, drawn: face.centroid[2] };
+      // 35e2h: with where its body's Moves had put it, as the app's pick records it.
+      const motion = res?.status === "built" ? res.body?.motion : undefined;
+      const on: OnFace = { feature: op.face.feature, role: op.face.role, drawn: face.centroid[2], ...(motion && { motion: { a: motion.a, t: [...motion.t] as [number, number] } }) };
       const item: SketchItem = { id: newId(doc, "item", faults), kind: "sketch", shape: JSON.parse(JSON.stringify(op.shape)), curves: [], suppressed: false, on };
       insert(doc, item);
       for (let k = 0; k < curveCount(op.shape); k++) item.curves.push(newId(doc, "curve", faults));

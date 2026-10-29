@@ -96,6 +96,9 @@ test("hand-worked: a box's six faces are offered; its top face, extruded 10 then
   const top = faceAt(a, [0, 0, 1], [0, 0, 20]);
   await a.extrudePointer({ kind: "pick", profile: top.id });
   assert.equal(shown(a).chosen, top.id);
+  // Extrude starts at 0 mm (Ben, 2026-10-28): nothing previewed until a distance is typed or dragged.
+  assert.equal(shown(a).preview, null);
+  await type(a, "10");
   assert.equal(a.$("#extrude-profile")!.textContent, "Face of Box 1");
   assert.match(a.$("#extrude-status")!.textContent!, /^Face of Box 1 makes a closed outline\. Joining the new body to the one under the face comes with the Combine tool\.$/);
   // 40 · 30 · 10 = 12,000 mm³ going up from the top; the arrow from the face's centre (20, 15, 20), straight up.
@@ -141,6 +144,7 @@ test("hand-worked: sketches come before faces; the bottom face goes down, a side
   assert.equal(shown(a).chosen, s1.id, "the newest sketch is chosen to start, as before");
   // The bottom, z = 0: outward is down. 10 mm: z −10 to 0.
   await a.extrudePointer({ kind: "pick", profile: faceAt(a, [0, 0, 1], [0, 0, 0]).id });
+  await type(a, "10"); // Extrude starts at 0 mm (Ben, 2026-10-28)
   near(previewVolume(a), 12000, "the bottom's preview");
   const down = shown(a).arrow!;
   nearAll([down.base, down.direction], [[20, 15, 0], [0, 0, -1]], "the bottom's arrow points out of the box");
@@ -188,6 +192,7 @@ test("hand-worked: a plate's faces with holes are refused in words until regions
   assert.equal(shown(c).chosen, null, "nothing chosen by the refused click");
   const cap = shown(c).profiles[0];
   await c.extrudePointer({ kind: "pick", profile: cap.id });
+  await type(c, "10"); // Extrude starts at 0 mm (Ben, 2026-10-28)
   near(previewVolume(c), 100 * Math.PI * 10, "a cap, 10 mm");
   assert.ok(await c.close());
 });
@@ -202,6 +207,7 @@ test("a face selected before Extrude is chosen; Escape after a drag leaves nothi
   await openExtrude(a);
   const top = faceAt(a, [0, 0, 1], [0, 0, 20]);
   assert.equal(shown(a).chosen, top.id, "the face picked first is the one chosen");
+  await type(a, "10"); // Extrude starts at 0 mm (Ben, 2026-10-28)
   near(previewVolume(a), 12000, "its preview");
   await a.extrudePointer({ kind: "drag", distance: 30, done: true });
   near(previewVolume(a), 36000, "dragged to 30");
@@ -219,6 +225,7 @@ test("regression: Extrude opened before the body is drawn (a slow kernel after a
   const a = await app(box());
   await openExtrude(a);
   await a.extrudePointer({ kind: "pick", profile: faceAt(a, [0, 0, 1], [0, 0, 20]).id });
+  await type(a, "10"); // Extrude starts at 0 mm (Ben, 2026-10-28)
   await ok(a);
   assert.equal(a.history.undoLabel(), "Extrude Face of Box 1");
   // The kernel held: Undo puts the box back and Design is mounted afresh on it, with nothing drawn yet.
@@ -232,6 +239,7 @@ test("regression: Extrude opened before the body is drawn (a slow kernel after a
   assert.equal(offeredFaces(a).length, 6, `the box's faces offered once it is drawn: ${offeredFaces(a)}`);
   const top = faceAt(a, [0, 0, 1], [0, 0, 20]);
   await a.extrudePointer({ kind: "pick", profile: top.id });
+  await type(a, "10"); // Extrude starts at 0 mm (Ben, 2026-10-28)
   // 40 · 30 · 10 = 12,000 mm³ previewed.
   near(previewVolume(a), 12000, "the top face's preview");
   await a.key("clear-selection");

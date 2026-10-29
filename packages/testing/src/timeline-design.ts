@@ -37,6 +37,7 @@ import {
   drawCircle,
   drawLine,
   drawnOnFace,
+  worldFrame,
   editFeature,
   extrudeSketch,
   deleteItem,
@@ -70,7 +71,7 @@ import {
   type SketchPlacement,
   type TimelineBuild,
 } from "@fission/design";
-import { edgeName, faceKey, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
+import { edgeName, faceKey, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type Turn, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
 import type { EdgeClose, TimelineSubject } from "./timeline-session.ts";
 
 /** A model Move's numbers as Design's (35e2): the sessions turn about Z only, through a pivot on the floor. */
@@ -254,7 +255,8 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
   /**
    * Where a sketch on face `name` would be drawn now (26e), as the app's
    * pick does it: the face found on the scene by its name (`findInScene`)
-   * and its frame from the kernel's normal and centroid (`drawnOnFace`).
+   * and its frame from the kernel's normal and centroid (`drawnOnFace`),
+   * with where its body's Moves had put it (35e2h).
    */
   async function drawnOn(name: FaceName) {
     const s = await scene();
@@ -263,7 +265,8 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     const hit = sceneHit(s, "face", found.index)!;
     const drawn = drawnOnFace(s.bodies[hit.body].view, hit.index);
     if (drawn === null) throw new Error(`harness: ${faceKey(name)} is curved`);
-    return drawn;
+    // 35e2h: with where the Moves had put the body, as the pick records it (face-pick.ts `sketchSpot`).
+    return { ...drawn, body: s.bodies[hit.body].frame ?? worldFrame() };
   }
 
   /** The edit on Design's side: the new state and the ids it made, or a refusal. */
@@ -390,7 +393,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       else if (r.status === "failed") results[id] = { status: "failed", cause: r.cause as never, input: r.input };
       else if (r.status === "greyed") results[id] = { status: "greyed", by: r.by };
       // 26e: a sketch on a face says how high it lies (the sessions' faces all face +Z, so it is XY lifted) and whether it is held.
-      else if (isFaceSketchId(id)) results[id] = { status: "built", lift: liftOf(id, r.placement), ...(r.plane && { plane: r.plane.cause as "plane-lost" }) };
+      else if (isFaceSketchId(id)) results[id] = { status: "built", ...liftOf(id, r.placement), ...(r.plane && { plane: r.plane.cause as "plane-lost" }) };
       else if (r.body === undefined || !shown.has(id)) results[id] = { status: "built", ...(r.source && { source: r.source.sketch }) };
       else {
         // Planted bug ("cache-by-feature"): a body read once per feature id, so later edits never reach it.
@@ -413,13 +416,19 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
     return f !== undefined && isFaceSketch(f);
   };
 
-  /** A face sketch's height: its frame's origin's z, after checking the frame is XY lifted (every face the sessions draw on is a top or an end). */
-  function liftOf(id: string, at: SketchPlacement | undefined): number {
+  /**
+   * A face sketch's height (its frame's origin's z) and, once a Move has
+   * carried it along its face (35e2h), its x axis and origin across (`turn`),
+   * after checking the frame faces +Z (every face the sessions draw on is a
+   * top or an end, and their Moves turn only about Z).
+   */
+  function liftOf(id: string, at: SketchPlacement | undefined): { lift: number; turn?: Turn } {
     if (at === undefined) throw new Error(`${id} is built but lies nowhere`);
     const { origin, xAxis, normal } = at.plane;
-    const off = Math.max(Math.abs(origin[0]), Math.abs(origin[1]), Math.abs(xAxis[0] - 1), Math.abs(xAxis[1]), Math.abs(xAxis[2]), Math.abs(normal[0]), Math.abs(normal[1]), Math.abs(normal[2] - 1));
-    if (off > 1e-12 || at.side !== 1) throw new Error(`${id} lies in a frame that is not XY lifted: ${JSON.stringify(at)}`);
-    return origin[2];
+    const off = Math.max(Math.abs(xAxis[2]), Math.abs(normal[0]), Math.abs(normal[1]), Math.abs(normal[2] - 1));
+    if (off > 1e-12 || at.side !== 1) throw new Error(`${id} lies in a frame that does not face +Z: ${JSON.stringify(at)}`);
+    const moved = origin[0] !== 0 || origin[1] !== 0 || xAxis[0] !== 1 || xAxis[1] !== 0;
+    return { lift: origin[2], ...(moved && { turn: { x: [xAxis[0], xAxis[1]], at: [origin[0], origin[1]] } }) };
   }
 
   /** Design's rebuild on the subject's cache, with the planted bugs that reach it. */

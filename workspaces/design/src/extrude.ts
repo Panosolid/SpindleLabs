@@ -15,8 +15,13 @@ import { freshName, insertAt, insertItem, isSketchExtrude, takenNames, partFeatu
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 
-/** How far a new extrude goes until the user types another distance (mm). */
-export const DEFAULT_DISTANCE = 10;
+/**
+ * How far a new extrude goes until the user drags the arrow or types a
+ * distance (mm): 0 (Ben, 2026-10-28: "instead of defaulting to 10mm just
+ * start at extrude of 0"), so nothing is built until the user says how far;
+ * the arrow stands on the profile, ready to drag.
+ */
+export const DEFAULT_DISTANCE = 0;
 
 /** What the Extrude panel says when every sketch is after the rollback marker or suppressed, so none is offered. */
 export const NO_USABLE_SKETCH = "No sketch can be extruded here: each comes after the rollback marker or is suppressed. Move the marker past one, or unsuppress it.";
@@ -27,8 +32,11 @@ export const NO_SKETCH = "There is no sketch to extrude yet: draw one with Creat
 /** What it says while no sketch or face is chosen (UX1b: ✕ cleared it, or none was offered first; UX1c: flat faces too). */
 export const PICK_PROFILE_STATUS = "Click a closed sketch or a flat face in the view, or a sketch's row in the browser, to extrude it.";
 
-/** Why OK does nothing with a distance of 0 (UX1b: a negative one goes the other way, so only 0 builds nothing). */
+/** Why an extrude command does nothing with a distance of 0 (UX1b: a negative one goes the other way, so only 0 builds nothing). */
 export const ZERO_DISTANCE = "Type a distance other than 0 mm: a negative one goes the other way.";
+
+/** What the Extrude panel's OK says at 0 mm, where Extrude starts (Ben, 2026-10-28): what to do next, in plain words. */
+export const ZERO_OK = "Drag the arrow or type a distance first: at 0 mm there is nothing to make. A negative distance goes the other way.";
 
 /** The undo step an extrude is recorded as: "Extrude Sketch 1". */
 export const extrudeStep = (doc: DesignDocument, sketchId: string) => `Extrude ${sketchItem(doc, sketchId).provenance.self.label}`;

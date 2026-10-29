@@ -29,7 +29,7 @@
 
 import { KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
-import { faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
+import { bodyFrame, carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
@@ -544,7 +544,8 @@ const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
  * A sketch item's result: where it lies. On an origin plane, that plane.
  * On a face (rule 8): greyed while the face's feature is suppressed or
  * greyed (Q3); else the face its name finds on that feature's body, as
- * built just before, with the frame drawn turned onto it (`frameNow`);
+ * built just before, with the frame drawn carried by the Moves since
+ * (35e2h) and turned onto it (`frameNow`);
  * else held (the placement kept by `settleKept`, or the frame as drawn
  * when a file has none) with "plane lost" (no face of that name, the
  * feature gone or not built, or the face no longer flat) or "plane
@@ -578,7 +579,9 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, cach
     const face = resolveReference(ref, names);
     const outward = face === null ? null : view.face_normals[face];
     if (face !== null && outward) {
-      const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: p.side };
+      // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
+      const carry = p.body === undefined ? null : carried(p.body, bodyFrame(on.spec) ?? undefined);
+      const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
       return { status: "built", placement, ...(await follow(f, index, done, cache, placement.plane, featureId)) };
     }
     if (sharedBy(ref, names) > 1) cause = "plane-ambiguous";
