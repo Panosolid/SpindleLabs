@@ -20,7 +20,7 @@ import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS,
 import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { watchKernel } from "./kernel-lost.ts";
@@ -50,7 +50,9 @@ const workspaces: WorkspacePlugin[] = [
   layoutWorkspace,
 ];
 
-const kernel = new KernelClient();
+// The browser test of a kernel lost mid-call (e2e/kernel-lost.mjs) shortens its deadline with ?test-hooks&kernel-deadline=<ms>.
+const hooks = new URLSearchParams(location.search);
+const kernel = new KernelClient({ answerWithinMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
 // The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
 watchKernel(kernel);
 // The one conversion layer: every workspace says what it can hand over.
@@ -1008,16 +1010,20 @@ window.addEventListener("hashchange", () => show(fromHash()));
 // with a message saying so; so does one the last visit started opening and
 // never finished (it froze or crashed the tab), once: the visit after tries
 // it again. A browser that can't keep projects at all still gets a working
-// app (Save and Open use files). Never a blank app.
+// app (Save and Open use files). Never a blank app: storage that doesn't
+// answer within STORAGE_ANSWER_MS is taken as failing (blind spots B2b: an
+// IndexedDB that never answered left the app blank for good).
 async function start() {
   const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
-  // Changes the last visit left with before they were stored go back first, so the project reopens with them.
-  const unsaved = await recoverUnsaved(store, local, workspaces);
-  if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
+  const answered = <T>(asked: Promise<T>) =>
+    Promise.race([asked, new Promise<never>((_, refuse) => setTimeout(() => refuse(new Error("browser storage didn't answer")), STORAGE_ANSWER_MS))]);
   let newest: string | undefined;
   let newestAt: Date | null = null;
   try {
-    const top = (await store.list())[0];
+    // Changes the last visit left with before they were stored go back first, so the project reopens with them.
+    const unsaved = await answered(recoverUnsaved(store, local, workspaces));
+    if (unsaved.length > 0) fileStatus(`${unsaved.join(". ")}.`.replace(/^./, (c) => c.toUpperCase()));
+    const top = (await answered(store.list()))[0];
     newest = top?.id;
     newestAt = top && !top.problem ? top.modified : null; // a summary that can't be read gives no save time to expect
   } catch (e) {
@@ -1036,7 +1042,7 @@ async function start() {
       // Its newest state, when the store had no room for it (storage full): kept in the journal, and what the user
       // last saw, so it is what opens and what Save writes (real-use hunt B1). Its autosave stores it once it can.
       const kept = keptEntry(local, newest);
-      ctx.project = kept === null ? await store.open(newest) : projectFromJson(kept, workspaces);
+      ctx.project = kept === null ? await answered(store.open(newest)) : projectFromJson(kept, workspaces);
       keep(newest, kept === null, newestAt, kept !== null);
       saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
