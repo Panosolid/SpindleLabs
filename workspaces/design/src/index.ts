@@ -7,7 +7,7 @@ export { bodyFeatures, bodyRows, browserTree, rowReference, rowReferences, type 
 export { parameterRows, propertiesPanel, SIZE_KEYS, type ParameterRow, type Verb, type PropertiesPanel, type SizeKey } from "./properties.ts";
 export { toolbarGroups, type ToolButton, type ToolGroup } from "./toolbar.ts";
 export { buildSpec, specFor } from "./spec.ts";
-export { changedMove, insertMove, MOVE_STEP, moveMotions, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
+export { changedMove, insertMove, MOVE_STEP, moveKindOf, moveMotions, ROTATE_STEP, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
 export { boxCentre, boxText, draggedValues, editedMoveMesh, endSpec, handlesCentre, MOVE_BOX_WORDS, movedMesh, movedPoint, pickedBodies, readMoveBoxes, refusedMove, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "./move-tool.ts";
 export { SNAP_CURVED_FACE, mappedPart, PARALLEL, SNAP_NO_FLAT, snapEnds, snappedValues, snapPart, turnAngles, turnBetween, turnMatrix, type SnapPart } from "./move-snap.ts";
 export { builds, buildingItems, changePreset, greyedBy, greyedItems, curvePoints, idNumber, keptOf, type KeptShape, insertAt, insertItem, insertPreset, isMoveItem, isSketchExtrude, isSketchItem, lastFeature, makesBody, MOVE_PARAMS, partFeature, migrateDesignV1, migrateDesignV2, partDocument, partOf, shapeOf, profileLabel, readDesignDocument, SKETCH_PLANES, specOf, withPart, withRuledNames, withShortNames, type DesignDocument, type Marker, type PartKind, type PartSizes, type ReadyProfile, type Sketch, type SketchArcCurve, type SketchCircleCurve, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";

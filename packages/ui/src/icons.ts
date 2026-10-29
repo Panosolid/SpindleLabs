@@ -30,6 +30,8 @@ export const ICONS = {
   modify: [tone("M4 20V4H11A9 9 0 0 1 20 13V20Z"), line("M4 20V4H11A9 9 0 0 1 20 13V20Z")],
   // Four arrows out from a small square: Move (step 35e2b).
   move: [tone("M9.5 9.5H14.5V14.5H9.5Z"), line("M9.5 9.5H14.5V14.5H9.5ZM12 3V9.5M12 14.5V21M3 12H9.5M14.5 12H21M9.5 5.5 12 3 14.5 5.5M9.5 18.5 12 21 14.5 18.5M5.5 9.5 3 12 5.5 14.5M18.5 9.5 21 12 18.5 14.5")],
+  // A circle turning round its centre, a short arrow at its end: Rotate (Ben, 2026-10-29, its own tool beside Move).
+  rotate: [tone("M10 12A2 2 0 1 0 14 12A2 2 0 1 0 10 12Z"), line("M19 12A7 7 0 1 1 15.5 5.94M15.5 2.5 15.5 5.94 19 6.5")],
   insert: [tone("M4 4H20V20H4Z"), line("M4 4H20V20H4ZM12 8V16M8 12H16")],
   inspect: [tone("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4Z"), line("M10.5 4A6.5 6.5 0 1 1 10.5 17A6.5 6.5 0 1 1 10.5 4ZM15.5 15.5 20 20")],
   // The presets (Insert ▾), one per shape.

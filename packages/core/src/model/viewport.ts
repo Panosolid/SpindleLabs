@@ -86,6 +86,15 @@ export interface OriginPlane {
   offered: boolean;
 }
 
+/** What the origin draws in the view (showOrigin): each axis shown or not, X, Y, Z, and the planes shown, by id ("origin-xy") with where each lies. */
+export interface OriginShown {
+  axes: readonly [boolean, boolean, boolean];
+  planes: readonly { id: string; plane: Plane }[];
+}
+
+/** Every axis and no plane: the origin until a workspace says otherwise. */
+export const ORIGIN_AT_FIRST: OriginShown = { axes: [true, true, true], planes: [] };
+
 /**
  * The pointer over the sketch being edited: where it meets the sketch's
  * plane in its frame, or null (off the view, or looking along the plane),
@@ -149,9 +158,13 @@ export type ExtrudePointer = { kind: "pick"; profile: string | null; face?: numb
 /** A handle of the Move tool's gizmo (35e2c): the arrow along X, Y or Z, or the ring turning about it. */
 export type MoveHandle = "x" | "y" | "z" | "turnX" | "turnY" | "turnZ";
 
-/** What the Move tool shows in the view while its panel is open (35e2c): three arrows along X, Y and Z and three rings about them, at `centre` (mm), where the pivot ends up. */
+/** Which tool's handles are shown (Ben, 2026-10-29: Move and Rotate are separate tools): Move's arrows or Rotate's grips. */
+export type MoveKind = "move" | "rotate";
+
+/** What the Move or Rotate tool shows in the view while its panel is open (35e2c): Move's three arrows along X, Y and Z, or Rotate's three grips turning about them, at `centre` (mm), where the pivot ends up. */
 export interface MoveHandlesShow {
   centre: [number, number, number];
+  kind: MoveKind;
 }
 
 /**
@@ -234,6 +247,15 @@ export interface SharedViewport {
    * offered plane or one of these faces, never an edge.
    */
   showPlanes(planes: readonly OriginPlane[], faces?: readonly number[]): void;
+  /**
+   * Which of the origin's axes and planes the browser's eyes show
+   * (Ben, 2026-10-29: an eye on everything): `axes` X, Y and Z, each drawn
+   * from the origin as before or not; `planes` drawn as faint squares
+   * from the origin (none at first, as in Fusion). Until called, every
+   * axis shows and no plane does; a workspace that calls it puts that back
+   * when it is put away.
+   */
+  showOrigin(shown: OriginShown): void;
   /**
    * Draws Extrude's outlines to pick, its preview and its arrow (UX1b);
    * null takes them away. While shown, clicks and arrow drags in the

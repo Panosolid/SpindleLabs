@@ -10,8 +10,7 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 import type { MoveHandle } from "@fission/core";
 import { HOT_MIX, MOVE_COLOURS, MOVE_STYLE, MoveLayer, handleColour } from "../src/move-layer.ts";
-import { MOVE_HANDLES, MOVE_PX } from "../src/move-handles.ts";
-import { ARROW_GRAB_PX } from "../src/extrude-pick.ts";
+import { MOVE_GRAB_PX, MOVE_HANDLES, MOVE_PX } from "../src/move-handles.ts";
 import { BASE_COLOUR, SELECTED_MIX, SELECTION_COLOUR, tint } from "../src/highlight.ts";
 
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
@@ -41,21 +40,54 @@ test("the lit handle is its axis colour moved 40% towards white, worked by hand"
 test("the arrows are slim with small heads, ending where the hit test says, worked by hand", () => {
   const layer = new MoveLayer();
   // Z arrow along +Z: its width is the head's diameter 2·4.5 = 9 px; its reach from the shaft's start (58) to
-  // the head's tip (110), 52 px. The cone's base polygon has 20 sides, so its width is 9·cos(0) to 9·cos(9°).
+  // the head's tip (136), 78 px. The cone's base polygon has 20 sides, so its width is 9·cos(0) to 9·cos(9°).
   const z = sizeOf(layers(layer, "z").drawn);
   assert.ok(z.x <= 9 + 1e-9 && z.x >= 9 * Math.cos(Math.PI / 20) - 1e-9, `width ${z.x}`);
   assert.ok(near(z.z, MOVE_PX.arrowTo - MOVE_PX.arrowFrom, 1e-9), `length ${z.z}`);
   const box = new THREE.Box3().setFromObject(layers(layer, "z").drawn);
-  assert.ok(near(box.max.z, 110, 1e-9) && near(box.min.z, 58, 1e-9));
-  // A ring is the 45 px circle with a 1.5 px line: 2·45 + 1.5 = 91.5 px across, 1.5 px thick (turnZ lies in XY).
-  const ring = sizeOf(layers(layer, "turnZ").drawn);
-  assert.ok(near(ring.x, 91.5, 1e-6) && near(ring.z, 1.5, 1e-6), `${ring.x} × ${ring.z}`);
+  assert.ok(near(box.max.z, 136, 1e-9) && near(box.min.z, 58, 1e-9));
+});
+
+test("a Rotate grip is a dot on a short arc where the hit test says, placed on its quarter, worked by hand", () => {
+  const layer = new MoveLayer();
+  layer.show({ centre: [0, 0, 0], kind: "rotate" });
+  // turnZ on quarter 0: the arc's middle at 45° on the 72 px circle in XY, its dot of radius 5 there:
+  // (72 cos 45°, 72 sin 45°) = (50.91, 50.91), so the dot's box runs 45.91 to 55.91 on X and Y, −5 to 5 on Z.
+  layer.placeAt(1, [{ handle: "turnZ", sign: 1, quarter: 0 }]);
+  const dot = (h: MoveHandle) => {
+    const meshes: THREE.Mesh[] = [];
+    layers(layer, h).drawn.traverse((o) => o instanceof THREE.Mesh && o.geometry.type === "SphereGeometry" && meshes.push(o));
+    return meshes[0];
+  };
+  layer.group.updateWorldMatrix(true, true);
+  const c = new THREE.Box3().setFromObject(dot("turnZ")).getCenter(new THREE.Vector3());
+  const m = 72 * Math.SQRT1_2;
+  assert.ok(near(c.x, m, 1e-6) && near(c.y, m, 1e-6) && near(c.z, 0, 1e-6), `dot at ${c.toArray()}`);
+  // The arc spans 22.5° each side of the dot: a 72 px torus 45° long, 2 px thick, started 22.5° before the dot's direction.
+  const torus: THREE.Mesh[] = [];
+  layers(layer, "turnZ").drawn.traverse((o) => o instanceof THREE.Mesh && o.geometry.type === "TorusGeometry" && torus.push(o));
+  const t = torus[0].geometry as THREE.TorusGeometry;
+  assert.ok(near(t.parameters.radius, 72) && near(t.parameters.arc, Math.PI / 4) && near(t.parameters.tube, 1), JSON.stringify(t.parameters));
+  assert.ok(near(torus[0].rotation.z, -Math.PI / 8), `arc starts ${torus[0].rotation.z}`);
+  // turnX on quarter 2: the circle in YZ (u = Y, v = Z), its middle at 225°: (0, −50.91, −50.91).
+  layer.placeAt(1, [{ handle: "turnX", sign: 1, quarter: 2 }]);
+  layer.group.updateWorldMatrix(true, true);
+  const x = new THREE.Box3().setFromObject(dot("turnX")).getCenter(new THREE.Vector3());
+  assert.ok(near(x.x, 0, 1e-6) && near(x.y, -m, 1e-6) && near(x.z, -m, 1e-6), `X grip's dot at ${x.toArray()}`);
+  // Only what is placed is drawn: turnZ, left out of this frame's list, is hidden.
+  const visible = (h: MoveHandle) => layer.group.children.find((p) => p.userData.handle === h)!.visible;
+  assert.deepEqual(MOVE_HANDLES.map(visible), [false, false, false, true, false, false]);
+  // An arrow placed the other way: the Y arrow's tip at −136 px on Y.
+  layer.placeAt(1, [{ handle: "y", sign: -1, quarter: 0 }]);
+  layer.group.updateWorldMatrix(true, true);
+  const y = new THREE.Box3().setFromObject(layers(layer, "y").drawn);
+  assert.ok(near(y.min.y, -136, 1e-6) && near(y.max.y, -58, 1e-6), `Y arrow from ${y.max.y} to ${y.min.y}`);
 });
 
 test("drawn thinner than before, but no handle is wider than a finger's or a mouse's press area", () => {
-  // The press area reaches ARROW_GRAB_PX each side of the line (10 mouse, 22 touch), so 20 and 44 px wide;
-  // the drawn head is 9 px wide and the shaft 1.5 px, so the press area is always the larger.
-  assert.ok(2 * MOVE_STYLE.head.radius < 2 * ARROW_GRAB_PX.mouse && 2 * ARROW_GRAB_PX.mouse < 2 * ARROW_GRAB_PX.touch);
+  // The press area reaches MOVE_GRAB_PX each side of the line (14 mouse, 24 touch), so 28 and 48 px wide;
+  // the drawn head is 9 px wide, a grip's dot 10 and the shaft 1.5 px, so the press area is always the larger.
+  assert.ok(2 * MOVE_STYLE.head.radius < 2 * MOVE_GRAB_PX.mouse && 2 * MOVE_STYLE.grip < 2 * MOVE_GRAB_PX.mouse && MOVE_GRAB_PX.mouse < MOVE_GRAB_PX.touch);
   assert.ok(MOVE_STYLE.shaft <= 2 && MOVE_STYLE.ring <= 2, "lines are slim");
   assert.ok(MOVE_STYLE.head.radius <= 5 && MOVE_STYLE.head.length <= 12, "heads are small");
 });
@@ -74,7 +106,9 @@ test("only the lit handle glows and brightens; clearing it puts every handle bac
   const glowing = () => MOVE_HANDLES.filter((h) => layers(layer, h).glow.visible);
   const colour = (h: MoveHandle) => {
     // Read back in sRGB: Three's own round trip is good to about 1e-5, a ten-thousandth of a level of 255.
-    const c = ((layers(layer, h).drawn.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
+    let mesh: THREE.Mesh | undefined;
+    layers(layer, h).drawn.traverse((o) => (mesh ??= o instanceof THREE.Mesh ? o : undefined));
+    const c = (mesh!.material as THREE.MeshBasicMaterial).color.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
     return [c.r, c.g, c.b];
   };
   assert.deepEqual(glowing(), []);

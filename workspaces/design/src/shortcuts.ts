@@ -7,9 +7,11 @@ export const DESIGN_SHORTCUTS: readonly ShortcutSpec[] = [
   // Also in a size field: Escape there has nothing else to do.
   { id: "clear-selection", keys: "Escape", label: "Clear the selection", inText: true },
   // UX1b: OK in the Extrude panel when the focus is elsewhere (on the view, after dragging the arrow); in its distance box Enter is the box's own.
-  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude or Move panel" },
+  { id: "extrude-ok", keys: "Enter", label: "OK in the Extrude, Move or Rotate panel" },
   // Step 35e2b: Move (Fusion's key), outside a sketch; in a sketch the key does what it would.
   { id: "move-tool", keys: "M", label: "Move bodies (outside a sketch)" },
+  // Ben, 2026-10-29: Rotate is its own tool; R is the sketch's Rectangle, so Shift+R.
+  { id: "rotate-tool", keys: "Shift+R", label: "Rotate bodies (outside a sketch)" },
   // Ben's keys (10-29), Fusion's: E is Extrude (in a sketch too: it leaves the sketch, as the button does); S is the command search box.
   { id: "extrude-tool", keys: "E", label: "Extrude" },
   { id: "command-search", keys: "S", label: "Search the commands by name (outside a sketch)" },

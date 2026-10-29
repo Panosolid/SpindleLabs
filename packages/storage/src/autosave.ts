@@ -215,7 +215,10 @@ export function startAutosave(
       return;
     }
     const v = version; // the project read next holds every change counted so far
-    const at = now();
+    // A clock set back since the last save: just after it instead, so this save is never older than the state it
+    // replaces, and a journal entry another tab stamped with that state's time is not put back over it (B5).
+    const clock = now();
+    const at = base !== undefined && clock.getTime() < base.getTime() ? new Date(base.getTime() + 1) : clock;
     let text: string;
     try {
       text = projectToJson(project()); // refuses NaN and the like before anything is written

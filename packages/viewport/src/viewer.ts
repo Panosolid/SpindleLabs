@@ -3,7 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
@@ -15,7 +15,7 @@ import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, 
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
-import { handleAxis, handleLines, handleNear, isRing, ringAngle, turnBetween } from "./move-handles.ts";
+import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
 import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
@@ -109,6 +109,8 @@ export class ViewportView {
    * centre at the press, where along the arrow (mm) or round the ring
    * (radians) the press was and the pointer last was, and the turn so far.
    */
+  /** The kind of pointer last pressed on the view, whose reach places and grabs the Move handles (a finger's wider); a coarse pointer's at first. */
+  private pointerKind: "mouse" | "touch" = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
@@ -190,7 +192,7 @@ export class ViewportView {
         // Move's handles (35e2c): one under the pointer lights, and nothing else does; held, it stays lit.
         if (this.host.moving()) {
           if (this.moveDrag) return;
-          const handle = pointer ? this.handleAt(pointer.x, pointer.y, "mouse") : null;
+          const handle = pointer ? this.handleAt(pointer.x, pointer.y, this.pointerKind) : null;
           this.host.setMoveHot(handle);
           if (handle) return this.host.setHover(null, null);
         }
@@ -409,7 +411,7 @@ export class ViewportView {
 
   /**
    * Dragging a Move handle (35e2c), as Extrude's arrow is dragged: a press
-   * within ARROW_GRAB_PX of one (more room for a finger) grabs it, whatever
+   * within MOVE_GRAB_PX of one (more room for a finger) grabs it, whatever
    * the navigation mode, and neither the camera nor the click picker hears
    * it. An arrow hands on how far the point of its line nearest the
    * pointer's ray has gone since the press (extrude-pick.ts arrowDistance);
@@ -423,7 +425,8 @@ export class ViewportView {
     this.element.addEventListener("pointerdown", (e) => {
       const centre = this.host.move.state?.centre;
       if (e.target !== canvas || this.moveDrag || !e.isPrimary || e.button !== 0 || !this.host.moving() || !centre) return;
-      const handle = this.handleAt(e.clientX, e.clientY, e.pointerType === "touch" ? "touch" : "mouse");
+      this.pointerKind = e.pointerType === "touch" ? "touch" : "mouse";
+      const handle = this.handleAt(e.clientX, e.clientY, this.pointerKind);
       const at = handle === null ? null : this.alongHandle(handle, centre, e.clientX, e.clientY);
       if (handle === null || at === null) return;
       e.preventDefault(); // keeps the focus where it was, so Enter after a drag is the panel's OK
@@ -476,37 +479,46 @@ export class ViewportView {
     return mm === null ? null : mm / ARROW_PX;
   }
 
-  /** Each Move handle's line on screen (client pixels, NaN for a point behind the camera); empty while none are shown. */
-  private handleScreen(): { handle: MoveHandle; screen: { x: number; y: number }[] }[] {
+  /**
+   * Where each Move or Rotate handle sits in this view now (move-handles.ts
+   * placeHandles: none whose press area overlaps another's, at the reach of
+   * the last pointer used) and its line on screen (client pixels, NaN for a
+   * point behind the camera); empty while none are shown.
+   */
+  private handleScreen(): { handle: MoveHandle; placed: Placed; screen: { x: number; y: number }[] }[] {
     const pixel = this.movePixel();
-    const centre = this.host.move.state?.centre;
+    const state = this.host.move.state;
     const rect = this.renderer.domElement.getBoundingClientRect();
-    if (pixel === null || !centre || rect.width === 0 || rect.height === 0) return [];
-    return handleLines(centre, pixel).map(({ handle, points }) => ({
-      handle,
-      screen: points.map((p) => {
-        const v = new THREE.Vector3(...p).project(this.camera);
-        return v.z >= -1 && v.z <= 1 ? ndcToClient(v, rect) : { x: NaN, y: NaN };
-      }),
+    if (pixel === null || !state || rect.width === 0 || rect.height === 0) return [];
+    const project = (p: readonly number[]) => {
+      const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
+      return v.z >= -1 && v.z <= 1 ? ndcToClient(v, rect) : null;
+    };
+    const view = new THREE.Vector3(...state.centre).sub(this.camera.position).toArray();
+    return placeHandles(state.kind, state.centre, pixel, view, project, MOVE_GRAB_PX[this.pointerKind]).map((placed) => ({
+      handle: placed.handle,
+      placed,
+      screen: placedLine(state.centre, pixel, placed).map((p) => project(p) ?? { x: NaN, y: NaN }),
     }));
   }
 
-  /** The Move handle under a point on screen (within ARROW_GRAB_PX), or null. */
+  /** The Move or Rotate handle under a point on screen (within MOVE_GRAB_PX), or null. */
   private handleAt(clientX: number, clientY: number, pointer: "mouse" | "touch"): MoveHandle | null {
-    return this.host.moving() ? handleNear(this.handleScreen(), { x: clientX, y: clientY }, ARROW_GRAB_PX[pointer]) : null;
+    return this.host.moving() ? handleNear(this.handleScreen(), { x: clientX, y: clientY }, MOVE_GRAB_PX[pointer]) : null;
   }
 
   /**
-   * Sizes Move's handles for this view as it draws, and says on the element
-   * where a press grabs each (`data-move-handles`: "x 412.0,300.5 y …",
-   * client pixels, an arrow's middle and a point an eighth of the way round
-   * a ring; read by the e2e test).
+   * Sizes and places the Move or Rotate handles for this view as it draws,
+   * and says on the element where a press grabs each (`data-move-handles`:
+   * "x 412.0,300.5 y …", client pixels, an arrow's middle and a grip's
+   * dot; read by the e2e test).
    */
   private placeMoveHandles() {
     const pixel = this.movePixel();
-    if (pixel !== null) this.host.move.placeAt(pixel);
-    const said = pixel === null ? "" : this.handleScreen().flatMap(({ handle, screen }) => {
-      const p = isRing(handle) ? screen[screen.length >> 3] : { x: (screen[0].x + screen[1].x) / 2, y: (screen[0].y + screen[1].y) / 2 };
+    const lines = pixel === null ? [] : this.handleScreen();
+    if (pixel !== null) this.host.move.placeAt(pixel, lines.map((l) => l.placed));
+    const said = lines.flatMap(({ handle, screen }) => {
+      const p = gripPoint(screen, handle);
       return Number.isFinite(p.x) && Number.isFinite(p.y) ? [`${handle} ${p.x.toFixed(1)},${p.y.toFixed(1)}`] : [];
     }).join(" ");
     if ((this.element.dataset.moveHandles ?? "") === said) return;
@@ -974,7 +986,9 @@ export class Viewer implements SharedViewport {
   private host: ViewHost;
   /** The ground grid and the model's axes, hidden while a sketch with its own grid and axes is edited. */
   private grid: THREE.GridHelper;
-  private axes = new THREE.AxesHelper(20);
+  private axes = new THREE.Group();
+  /** The origin's planes the browser's eyes show (showOrigin): faint squares, none at first. */
+  private originPlanes = new THREE.Group();
   /** The edited sketch's grid and axes (redrawn when the main view's camera moves), what it was drawn for, and its minor lines' material (faded by zoom). */
   private sketchGridGroup = new THREE.Group();
   private gridFor: { plane: Plane; step: number | null } | null = null;
@@ -1013,15 +1027,23 @@ export class Viewer implements SharedViewport {
     // Blue-grey lines on the blue backdrop (UX2): the middle pair stronger.
     const grid = (this.grid = new THREE.GridHelper(200, 20, 0x46536a, 0x2a3242));
     grid.rotation.x = Math.PI / 2; // lay the grid on the XY plane
-    for (const ground of [grid, this.axes]) {
+    // The model's axes, three.js's own, one helper per axis (each drawing only its own two points) so an eye can hide one.
+    for (let k = 0; k < 3; k++) {
+      const axis = new THREE.AxesHelper(20);
+      axis.geometry.setDrawRange(2 * k, 2);
+      axis.userData.axis = k;
+      this.axes.add(axis);
+    }
+    for (const ground of [grid, ...this.axes.children as THREE.AxesHelper[]]) {
       ground.renderOrder = GROUND_ORDER;
       (ground.material as THREE.Material).depthWrite = false;
     }
+    this.element.dataset.origin = "x y z"; // read by the e2e test
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
+    this.scene.add(grid, this.axes, this.originPlanes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
 
     this.host = {
       scene: this.scene,
@@ -1285,7 +1307,7 @@ export class Viewer implements SharedViewport {
       }
       if (d.editing.snap) segments(d.editing.snap.marks, SKETCH_COLOURS.snap, 7);
     }
-    this.grid.visible = this.axes.visible = this.editedPlane === null;
+    this.grid.visible = this.axes.visible = this.originPlanes.visible = this.editedPlane === null;
     this.gridCamera = this.gridKey = ""; // drawn again on the next frame, for this sketch
     if (!this.gridFor) this.drawGrid(null);
     this.fadeBody();
@@ -1431,6 +1453,34 @@ export class Viewer implements SharedViewport {
     this.element.dataset.planes = planes.map((p) => `${p.id}${p.offered ? "" : " (not offered)"}`).join(", "); // read by the e2e test
     this.element.dataset.pickFaces = faces.join(" "); // read by the e2e test
     delete this.element.dataset.hoverPlane;
+  }
+
+  /**
+   * The origin's axes and planes the browser's eyes show (Ben, 2026-10-29):
+   * each axis drawn or not; each plane shown a faint square from the
+   * origin, as an offered plane is drawn but quieter (never clicked: the
+   * planes offered for a sketch are showPlanes'). Hidden with the grid while
+   * a sketch is edited, which has its own axes.
+   */
+  showOrigin(shown: OriginShown) {
+    for (const a of this.axes.children) a.visible = shown.axes[a.userData.axis as number];
+    clearGroup(this.originPlanes);
+    const half = Math.max(10, 0.8 * this.bodyFraming().radius);
+    const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
+    for (const { plane } of shown.planes) {
+      const world = ([[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]] as SketchXY[]).map((c) => toWorld(plane, c));
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      const fill = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: SKETCH_COLOURS.planeOff, opacity: PLANE_OPACITY.off, side: THREE.DoubleSide, ...behindBody }));
+      const outline = new THREE.BufferGeometry();
+      outline.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
+      const rim = new THREE.LineLoop(outline, new THREE.LineBasicMaterial({ color: SKETCH_COLOURS.planeOff, opacity: 0.4, ...behindBody }));
+      fill.renderOrder = rim.renderOrder = PLANE_ORDER;
+      this.originPlanes.add(fill, rim);
+    }
+    const names = ["x", "y", "z"].filter((_, k) => shown.axes[k]);
+    this.element.dataset.origin = [...names, ...shown.planes.map((p) => p.id)].join(" "); // read by the e2e test
   }
 
   /** The offered plane under the pointer drawn brighter (PLANE_OPACITY.hover); said on the element for the e2e test. */

@@ -6,13 +6,15 @@ import { DESIGN_SHORTCUTS, designShortcut } from "../src/shortcuts.ts";
 const profile: Selected = { kind: "outline", id: "outline:feature-1/profile-1" };
 const face: Selected = { kind: "face", id: "face:feature-1/1" };
 
-test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK, M is Move, Copy is Mod+C, L, R, C, A, T and P choose sketch tools, all but Escape only in the page", () => {
+test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK, M is Move, Shift+R is Rotate, Copy is Mod+C, L, R, C, A, T and P choose sketch tools, all but Escape only in the page", () => {
   assert.deepEqual(DESIGN_SHORTCUTS.map((s) => [s.id, parseChord(s.keys), s.inText ?? false]), [
     ["clear-selection", "Escape", true],
     // UX1b: in the distance box Enter is the box's own OK; never twice.
     ["extrude-ok", "Enter", false],
     // 35e2b: Move, Fusion's key, outside a sketch.
     ["move-tool", "M", false],
+    // Ben, 2026-10-29: Rotate its own tool; R is the sketch's Rectangle, so Shift+R.
+    ["rotate-tool", "Shift+R", false],
     // Ben's keys (10-29), Fusion's: E Extrude, S the command search box. T is kept for Trim (step 52): no key yet.
     ["extrude-tool", "E", false],
     ["command-search", "S", false],

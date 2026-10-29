@@ -5,7 +5,7 @@
 
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { buildingItems, isHidden, isSketchItem, makesBody, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -21,12 +21,19 @@ export interface BrowserNode {
   startsFolded?: boolean;
   /** The icon before its words (U0f3, like Fusion's browser): a folder for a group, the item's own for a row. */
   icon: IconName;
-  /** A Body row's eye (U0f3): whether the body is hidden. Left out on every other row. */
+  /**
+   * The row's eye (U0f3; Ben 2026-10-29, on everything that is drawn, as in
+   * Fusion): whether its own eye is shut. On Body, sketch and origin rows
+   * and the Sketches, Bodies and Origin folders; left out on the Timeline
+   * and its rows, and the Profiles and theirs (drawn by nothing of their own).
+   */
   hidden?: boolean;
+  /** Whether its folder's eye is shut, so the row is not drawn whatever its own eye says (dimmed); left out when not. */
+  folderHidden?: boolean;
 }
 
 /** The origin every part is built on; the same for every document. */
-const ORIGIN: BrowserNode[] = [
+const ORIGIN: readonly BrowserNode[] = [
   { id: "origin-xy", label: "XY plane", icon: "plane" },
   { id: "origin-xz", label: "XZ plane", icon: "plane" },
   { id: "origin-yz", label: "YZ plane", icon: "plane" },
@@ -87,6 +94,12 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
   for (const f of features) if (isSketchItem(f) && !items.has(f.id)) items.set(f.id, f);
   const sketchItemOf = (id: string) => items.get(id) ?? sketchItem(document, id);
   const iconOf = itemIcons(document);
+  // A row's eye: its own (an origin plane's shut until shown), and its folder's when shut.
+  const planes: readonly string[] = ORIGIN_PLANES;
+  const eye = (id: string, folder?: string) => ({
+    hidden: planes.includes(id) ? !(document.shownPlanes?.includes(id) ?? false) : isHidden(document, id),
+    ...(folder !== undefined && isHidden(document, folder) ? { folderHidden: true } : {}),
+  });
   return [
     {
       id: "timeline",
@@ -103,14 +116,15 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       id: "sketches",
       label: "Sketches",
       icon: "folder",
+      ...eye(EYE_FOLDERS.sketches),
       children: document.sketches.map((s) => {
         const item = sketchItemOf(s.id);
-        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${item.intent.summary}`, icon: "sketch" };
+        return { id: `sketches/${s.id}`, label: item.provenance.self.label, title: `${item.provenance.self.label}\n${item.intent.summary}`, icon: "sketch", ...eye(s.id, EYE_FOLDERS.sketches) };
       }),
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
-    { id: "bodies", label: "Bodies", icon: "folder", children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", hidden: isHidden(document, feature.id) })) },
-    { id: "origin", label: "Origin", icon: "origin", children: ORIGIN, startsFolded: true },
+    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(feature.id, EYE_FOLDERS.bodies) })) },
+    { id: "origin", label: "Origin", icon: "origin", ...eye(EYE_FOLDERS.origin), children: ORIGIN.map((n) => ({ ...n, ...eye(n.id, EYE_FOLDERS.origin) })), startsFolded: true },
   ];
 }
 
@@ -148,7 +162,7 @@ export function rowReference(node: string, doc: DesignDocument, failed: Readonly
  */
 export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): (node: string) => GeometryReference | null {
   // A hidden body (U0f3) is not drawn, so its rows select nothing: a selection of something unseen.
-  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (isHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));
+  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));
   const solids = new Set(rows.values());
   // A profile, and (25c1) a sketch with curves by either of its rows: its outline.
   const outlines = new Set([...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))]);
@@ -159,4 +173,17 @@ export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> =
     const outline = node.startsWith("sketches/") ? node.slice("sketches/".length) : node;
     return outlines.has(outline) ? profileReference(outline) : null;
   };
+}
+
+/**
+ * What a browser row's eye shuts or opens (`hideRow`'s id): a Body row its
+ * feature, a sketch's row its item, an origin row itself, the Sketches,
+ * Bodies and Origin folders theirs (EYE_FOLDERS); null for a row with no
+ * eye (the Timeline's, the Profiles').
+ */
+export function eyeId(doc: DesignDocument, node: string, failed: ReadonlySet<string> = NONE_FAILED): string | null {
+  if (node.startsWith("sketches/")) return node.slice("sketches/".length);
+  if (node.startsWith("body-")) return bodyRows(doc, failed).find((r) => r.id === node)?.feature.id ?? null;
+  if (ORIGIN.some((n) => n.id === node)) return node;
+  return Object.hasOwn(EYE_FOLDERS, node) ? EYE_FOLDERS[node as keyof typeof EYE_FOLDERS] : null;
 }

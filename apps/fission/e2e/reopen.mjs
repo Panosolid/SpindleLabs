@@ -231,8 +231,12 @@ try {
         const db = await new Promise((ok, no) => Object.assign(indexedDB.open("fission"), { onsuccess: (e) => ok(e.target.result), onerror: no }));
         const name = db.objectStoreNames[0];
         const tx = db.transaction(name, "readwrite");
-        tx.objectStore(name).put(text, "project/newer");
-        tx.objectStore(name).put(JSON.stringify({ name: "My bracket", modified: new Date(Date.now() + 60_000).toISOString() }), "summary/newer");
+        const store = tx.objectStore(name);
+        // The next save in the store's count of saves, as a real save writes it (real-use hunt B5: the list goes by it).
+        const last = await new Promise((ok) => (store.get("order").onsuccess = (e) => ok(Number(e.target.result ?? 0))));
+        store.put(text, "project/newer");
+        store.put(JSON.stringify({ name: "My bracket", modified: new Date(Date.now() + 60_000).toISOString(), order: last + 1 }), "summary/newer");
+        store.put(String(last + 1), "order");
         await new Promise((ok) => (tx.oncomplete = ok));
         db.close();
       }, JSON.stringify({ ...saved, formatVersion: 3, name: "My bracket" }));

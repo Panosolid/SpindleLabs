@@ -7,7 +7,7 @@
 
 import type { BodyView, DisplayMesh, GeometryReference } from "@fission/core";
 import { bodyFeatures } from "./browser.ts";
-import { isHidden, type DesignDocument } from "./document.ts";
+import { bodyHidden, type DesignDocument } from "./document.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, readDesignReference, resolveReference, sharedBy } from "./references.ts";
@@ -43,7 +43,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
   // Every view asked at once, before the loop waits on one (security audit S2: one round trip each took minutes on a big file).
   for (const f of features) {
     const r = build.results[f.id];
-    if (r?.status !== "built" || r.body === undefined || r.spec === undefined || isHidden(doc, f.id)) continue;
+    if (r?.status !== "built" || r.body === undefined || r.spec === undefined || bodyHidden(doc, f.id)) continue;
     try {
       cache.view(r.body).catch(() => {}); // a refusal is read in the loop below
     } catch {
@@ -51,7 +51,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
     }
   }
   for (const [i, f] of features.entries()) {
-    if (isHidden(doc, f.id)) continue;
+    if (bodyHidden(doc, f.id)) continue;
     const r = build.results[f.id];
     if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
     const spec = r.spec;
