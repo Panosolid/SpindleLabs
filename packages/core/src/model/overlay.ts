@@ -29,7 +29,7 @@ export interface AnalysisOverlay {
 
 /** RGB in 0–1 for each severity. */
 export const SEVERITY_COLOURS: Record<OverlaySeverity, [number, number, number]> = {
-  info: [0.36, 0.62, 0.95],
+  info: [0.66, 0.5, 0.95], // violet, not blue: blue is the selection's (packages/viewport highlight.ts)
   warning: [0.96, 0.69, 0.3],
   error: [1, 0.42, 0.42],
 };

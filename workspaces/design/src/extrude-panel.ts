@@ -136,8 +136,10 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       parts.error.hidden = message === "";
     },
     hide() {
-      box.hidden = true;
+      // Emptied while still drawn, then hidden: a button under the pointer taken out of a panel already hidden leaves Chromium
+      // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
+      box.hidden = true;
       parts = null;
     },
     get shown() {

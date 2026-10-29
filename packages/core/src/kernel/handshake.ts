@@ -12,7 +12,7 @@ import { KERNEL_KEY } from "./kernel-key.ts";
 export interface KernelRelease {
   version: string;
   build: string;
-  /** The modelling range, in mm: the kernel's tolerance.rs LINEAR and MAX_SIZE. */
+  /** The modelling range, in mm: the kernel's linear tolerance and largest size. */
   limits: { LINEAR: number; MAX_SIZE: number };
 }
 

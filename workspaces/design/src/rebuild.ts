@@ -35,7 +35,7 @@ import { featureNames, type BodyNames } from "./naming.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
 import { moveMotions, movedSpec, moveValues } from "./move.ts";
 import { resolveReference, sharedBy } from "./references.ts";
-import { planeOf, sketchCurves } from "./sketch.ts";
+import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 
 /** Why an extrude's sketch gives it no outline (the model's causes). */
 export type LostCause = "deleted-input" | "open-outline" | "invalid-outline";
@@ -168,7 +168,9 @@ export class BodyCache {
 
   /** Frees every body but these: now, or once the last use running ends. */
   async keepOnly(handles: Iterable<BodyHandle>): Promise<void> {
-    this.wanted = new Set(handles);
+    // A closed cache keeps nothing: a rebuild still running when Design closed (two quick Undos) ends with its own
+    // keepOnly, whose bodies no cache would ever free otherwise (real-use hunt C1, 2026-10-28).
+    this.wanted = this.closed ? new Set() : new Set(handles);
     await this.freeUnwanted();
   }
 
@@ -223,6 +225,20 @@ export class BodyCache {
     return this.keepOnly([]);
   }
 
+  /**
+   * The kernel was replaced by a fresh one (KernelCalls.onRestart): every
+   * body it kept went with it, so all are forgotten, never freed (a fresh
+   * kernel hands out the same handles again, for other bodies). The next
+   * rebuild builds every body anew.
+   */
+  forget(): void {
+    this.bodies.clear();
+    this.keys.clear();
+    this.building.clear();
+    this.unfreed = [];
+    this.wanted = new Set();
+  }
+
   /** Design is gone for good: frees every body, and every one still being built once it is answered. */
   close(): Promise<void> {
     this.closed = true;
@@ -255,7 +271,7 @@ async function outlineOf(kernel: KernelCalls, content: KeptShape & Pick<Sketch, 
   if (none !== null) return { lost: "open-outline", message: none, curves: [] };
   const c = sketchCurves(content);
   try {
-    const out = await kernel.call("sketch_outline", c.lines, c.circles, c.arcs);
+    const out = plainOutline(await kernel.call("sketch_outline", c.lines, c.circles, c.arcs));
     if ("closed" in out) return { outline: out.closed };
     if (out.invalid) return { lost: "invalid-outline", message: out.open, curves: namedCurves(out.invalid, ids) };
     return { lost: "open-outline", message: out.open, curves: [] };

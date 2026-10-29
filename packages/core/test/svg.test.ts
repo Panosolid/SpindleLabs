@@ -41,7 +41,7 @@ test("hand-worked: the slot, straight sides and half-circle ends", () => {
 });
 
 test("hand-worked: a quarter-circle bulge widens the box past its corners", () => {
-  // The kernel's own hand-worked arc (ops/profile.rs): chord (0,0) → (2,0),
+  // The kernel's own hand-worked arc: chord (0,0) → (2,0),
   // bulge tan(π/8), a quarter turn counter-clockwise; r = 2/√2 = √2 ≈
   // 1.414214, centre (1, 1). It runs from 225° to 315° round the centre,
   // passing 270°, the point (1, 1 − √2) ≈ (1, −0.414214): the lowest point,

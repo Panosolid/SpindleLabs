@@ -274,11 +274,12 @@ test("4. a size box emptied or typed 0 or -5 records nothing, says why, and gets
   }
   assert.equal(a.history.undoLabel(), undo, "no undo step");
   assert.equal(a.builds(), builds, "nothing went to the kernel");
-  // Leaving the box (change fires as it loses the keys): the last size the design took comes back, and the words go.
+  // Leaving the box (change fires as it loses the keys): the last size the design took comes back, and the words say so
+  // (it went back without a word: beginner play-test 2026-10-28).
   height.dispatchEvent(new a.window.Event("change") as unknown as Event);
   await a.settle();
   assert.equal(height.value, "20");
-  assert.equal(a.error(), "");
+  assert.equal(a.error(), "The height must be more than 0 mm. It is back to 20 mm.");
   // Left with no change event (Firefox in CI's browsers job gave none for a number box left empty after 0 and -5):
   // losing the keys alone brings the size back.
   await typeIn("-5");
@@ -286,7 +287,7 @@ test("4. a size box emptied or typed 0 or -5 records nothing, says why, and gets
   height.dispatchEvent(new a.window.FocusEvent("blur") as unknown as Event);
   await a.settle();
   assert.equal(height.value, "20", "blur alone");
-  assert.equal(a.error(), "");
+  assert.equal(a.error(), "The height must be more than 0 mm. It is back to 20 mm.");
   // A good size after: taken. Then 0.5 typed through "0" and "0.": the 0 is refused on the way, 0.5 is taken, and
   // leaving keeps it.
   await typeIn("25");
@@ -317,6 +318,40 @@ async function extruded(doc: DesignDocument) {
 const edgeAt = (body: Awaited<ReturnType<typeof extruded>>, p: number[]) => body.names.edges[body.view.edge_middles.findIndex((m) => m.every((c, k) => Math.abs(c - p[k]) < 1e-9))];
 /** The plane y = 0 seen from the front: sketch x is world x, sketch y is world z (normal −y, so y = normal × x = +z). */
 const FRONT: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, -1, 0] };
+
+test("4b. a size box outside the modeller's 0.001 mm to 1,000,000 mm is refused in the panel's words, at 0.9x and 1.1x of each limit (app sweep 2026-10-28, item 19)", async () => {
+  // The kernel keeps nothing under MIN_FEATURE = 0.001 mm and works at nothing over MAX_SIZE = 1e6 mm (1 km), the limits
+  // typed-entry.ts lengthRefused holds the sketch's boxes and the AI's sizes to. On main 1e300 and 1e-320 went to the
+  // kernel and came back as a 350-character message; now the panel refuses them as it refuses 0, and builds nothing.
+  const a = await app(partDocument("box", 40, 30, 20));
+  const sizes = () => a.doc().timeline.features[0].intent.parameters;
+  const undo = a.history.undoLabel();
+  const builds = a.builds();
+  const width = a.$("#width") as HTMLInputElement;
+  const typeIn = async (text: string) => {
+    width.value = text;
+    width.dispatchEvent(new a.window.Event("input") as unknown as Event);
+    await a.settle();
+  };
+  const small = "The width must be at least 0.001 mm, the smallest piece the modeller keeps.";
+  const big = "The width can be at most 1000000 mm (1 km), the largest size the modeller works at.";
+  // 0.9x MIN = 0.0009 and 1.1x MAX = 1100000 are refused; 1e300 and 1e-320 (a subnormal, still above 0) too.
+  for (const [typed, words] of [["0.0009", small], ["1e-320", small], ["1100000", big], ["1e300", big]] as const) {
+    await typeIn(typed);
+    assert.equal(a.error(), words, `"${typed}" says why`);
+    assert.deepEqual(sizes(), { width: 40, depth: 30, height: 20 }, `"${typed}": the design keeps its sizes`);
+  }
+  assert.equal(a.history.undoLabel(), undo, "no undo step");
+  assert.equal(a.builds(), builds, "nothing went to the kernel");
+  // 1.1x MIN = 0.0011 and 0.9x MAX = 900000 are taken.
+  await typeIn("0.0011");
+  assert.deepEqual(sizes(), { width: 0.0011, depth: 30, height: 20 });
+  assert.equal(a.error(), "");
+  await typeIn("900000");
+  assert.deepEqual(sizes(), { width: 900000, depth: 30, height: 20 });
+  assert.equal(a.error(), "");
+  assert.ok(await a.close(), "every body freed");
+});
 
 test("5. a pin on the middle of an edge between two sides follows it when the outline turns over, as a corner's pin does", async () => {
   // A triangle A (0, 0), B (20, 0), C (10, 10) on XY, extruded 10. The upright edge at A, between the sides from CA and

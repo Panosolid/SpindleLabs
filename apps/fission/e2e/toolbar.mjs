@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { insertPreset, openPanel } from "./start.mjs";
+import { insertPreset, openPanel, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4240, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4240/";
@@ -178,10 +178,12 @@ try {
         const rows = await page.$$eval("#create-menu-menu [role=menuitem]", (els) => els.map((e) => [e.id, e.textContent, e.querySelector("svg.icon")?.dataset.icon]));
         assert.deepEqual(rows, [
           ["create-menu-sketch", "Create sketch", "sketch"],
-          ["create-menu-extrude", "Extrude", "extrude"],
+          // Extrude's row shows its key, E, in a <kbd> after its name.
+          ["create-menu-extrude", "ExtrudeE", "extrude"],
           // The tools still to come, greyed (coming-soon.ts; the next check).
           ...["revolve", "hole", "pattern", "sweep", "loft"].map((id) => [`coming-${id}`, `${id[0].toUpperCase()}${id.slice(1)}Coming soon`, undefined]),
         ]);
+        assert.equal(await page.textContent("#create-menu-extrude kbd.menu-button-key"), "E", "Extrude's key shown in its row");
         const menu = await rect(page, "#create-menu-menu");
         assert.ok(menu.left >= 0 && menu.right <= width, `the menu on the screen: ${menu.left}-${menu.right}`);
         await press(page, "#create-menu-sketch", tap);
@@ -291,7 +293,7 @@ try {
       try {
         await press(page, "#create-sketch", tap);
         await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet (U5)
-        await press(page, "#sketch-plane-XY", tap);
+        await pickPlane(page, "XY", tap);
         await page.waitForSelector("#finish-sketch", { state: "visible" });
         assert.deepEqual(await toolbarProblems(page), []);
         const icons = await page.$$eval("#toolbar .sketchbar-create .toolbar-group-tool", (bs) => bs.map((b) => [b.id, b.querySelector("svg.icon").dataset.icon]));

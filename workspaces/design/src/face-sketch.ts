@@ -20,7 +20,7 @@
 //
 // Every frame is worked out in doubles and squared up (unit axes, x square
 // to the normal) before the kernel sees it: the kernel refuses a frame off
-// by more than 64 ulps (FRAME_SQUARE, kernel/src/tolerance.rs).
+// by more than 64 ulps (the kernel's FRAME_SQUARE).
 
 import type { BodyView, Feature, GeometryReference, Plane, StableId } from "@fission/core";
 import { readDesignReference } from "./references.ts";

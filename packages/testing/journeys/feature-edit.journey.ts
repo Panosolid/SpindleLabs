@@ -138,7 +138,7 @@ test("hand-worked: the box's height edited under Extrude 1, then Extrude 1's dis
 
 test("the kernel's size limits, 1 µm to 1 km, at 0.9× and 1.1×: refused with the kernel's words naming the size, nothing recorded", async () => {
   const { doc, extrude } = part();
-  // MIN_FEATURE = 1e-3 mm and MAX_SIZE = 1e6 mm (kernel/src/tolerance.rs).
+  // MIN_FEATURE = 1e-3 mm and MAX_SIZE = 1e6 mm (the kernel's limits, kernel.json).
   for (const [id, key, word] of [["feature-1", "height", "height"], [extrude, "height", "extrude distance"]] as const) {
     for (const [v, takes] of [[0.9e-3, false], [1.1e-3, true], [0.9e6, true], [1.1e6, false], [0, false], [-5, false]] as const) {
       const r = await ok(doc, id, { [key]: v });
@@ -203,7 +203,7 @@ const volume = (i: MItem) => {
   return 40 * 30 * h;
 };
 const keysOf = (k: MItem["kind"]): ("width" | "depth" | "height")[] => (k === "sphere" ? ["width"] : k === "cylinder" ? ["width", "height"] : k === "extrude" ? ["height"] : ["width", "depth", "height"]);
-/** The kernel's own range for every size (tolerance.rs); a random session keeps its valid sizes 1 to 500 mm, where nothing else can fail. */
+/** The kernel's own range for every size (kernel.json); a random session keeps its valid sizes 1 to 500 mm, where nothing else can fail. */
 const inRange = (v: number) => Number.isFinite(v) && v >= 1e-3 && v <= 1e6;
 
 function rng(seed: number) {

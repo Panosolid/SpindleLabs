@@ -130,22 +130,28 @@ test("an id that is not a string is refused before anything is read", async () =
 
 test("projects saved at the same moment list by id, a before b before c", async () => {
   // The tie-break's mutants of `a.id > b.id` survive in explained.json (V8's sort never tells 0
-  // from 1). Twelve saves at one fixed time, l down to a: the
-  // times are equal, so the order comes from the ids alone.
+  // from 1). Twelve projects stored at one fixed time, l down to a, from before saves were counted
+  // (summaries with no order, as stored before B5): the times are equal, so the order comes from the ids alone.
+  const old = (kv: ReturnType<typeof memoryKeyValue>, id: string) =>
+    kv.set(`summary/${id}`, JSON.stringify({ name: id, modified: "2026-10-22T03:00:00.000Z" }));
   const kv = memoryKeyValue();
   const store = projectStore(kv, [], () => new Date("2026-10-22T03:00:00Z"));
   const ids = [..."abcdefghijkl"];
-  for (const id of [...ids].reverse()) await store.save(id, part(1));
+  for (const id of [...ids].reverse()) await old(kv, id);
   assert.deepEqual((await store.list()).map((e) => e.id), ids);
   // V8's sort only asks whether the comparator is below 0, so a tie-break that says -1 for every
   // pair would just reverse the order the keys came in: c, a, b is not a reversal of a, b, c.
   // Kills `a.id < b.id` => true.
+  const kv2 = memoryKeyValue();
+  for (const id of ["c", "a", "b"]) await old(kv2, id);
+  assert.deepEqual((await projectStore(kv2, []).list()).map((e) => e.id), ["a", "b", "c"]);
+  // A counted save comes first whatever its id and time (save number 1 against none: B5).
+  await projectStore(kv, [], () => new Date("2026-10-22T02:00:00Z")).save("z", part(1));
+  assert.deepEqual((await store.list()).map((e) => e.id), ["z", ...ids]);
+  // Saves at one moment now list in the order they happened, last first.
   const fresh = projectStore(memoryKeyValue(), [], () => new Date("2026-10-22T03:00:00Z"));
   for (const id of ["c", "a", "b"]) await fresh.save(id, part(1));
-  assert.deepEqual((await fresh.list()).map((e) => e.id), ["a", "b", "c"]);
-  // And a newer save still comes first whatever its id.
-  await projectStore(kv, [], () => new Date("2026-10-22T04:00:00Z")).save("z", part(1));
-  assert.deepEqual((await store.list()).map((e) => e.id), ["z", ...ids]);
+  assert.deepEqual((await fresh.list()).map((e) => e.id), ["b", "a", "c"]);
 });
 
 test("remove takes away exactly its own two entries, and works when only one of them is left", async () => {
@@ -157,13 +163,14 @@ test("remove takes away exactly its own two entries, and works when only one of 
   await store.save("a", part(1));
   await store.save("b", part(2));
   await store.remove("a");
-  assert.deepEqual([...kv.entries.keys()].sort(), ["project/b", "summary/b"]);
+  // The save count is shared by every project, so it stays (B5).
+  assert.deepEqual([...kv.entries.keys()].sort(), ["order", "project/b", "summary/b"]);
   await kv.delete("summary/b"); // only the project left
   await store.remove("b");
-  assert.equal(kv.entries.size, 0);
+  assert.deepEqual([...kv.entries.keys()], ["order"]);
   await kv.set("summary/c", "{}"); // only the summary left
   await store.remove("c");
-  assert.equal(kv.entries.size, 0);
+  assert.deepEqual([...kv.entries.keys()], ["order"]);
 });
 
 // ---------- unsaved.ts ----------

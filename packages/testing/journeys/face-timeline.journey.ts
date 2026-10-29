@@ -76,6 +76,12 @@ async function journey(plugin: WorkspacePlugin) {
   // 40 · 30 · 20 = 24000 for the box and 20 · 20 · 10 = 4000 for the block on top.
   assert.ok(close(a.volume(), 28000), `built: ${a.volume()} mm³`);
   assert.deepEqual(bar(a), { [box]: "", [sketch]: "", [extrude]: "" });
+  // Extrude 1 shuts Sketch 1's eye (Ben, 2026-10-29, as Fusion does); its eye in the browser shows it again, one undo step.
+  assert.equal(a.drawings().length, 0, "Sketch 1 hidden once Extrude 1 uses it");
+  assert.deepEqual(a.doc().hidden, [sketch]);
+  (a.$(`[data-eye="sketches/${sketch}"]`) as HTMLButtonElement).click();
+  await a.settle();
+  assert.equal(a.history.undoLabel(), "Show Sketch 1");
   assert.equal(a.drawings().length, 1, "Sketch 1 drawn");
 
   // ---- The box suppressed: everything on it greyed, naming it, no warning (Q3). ----

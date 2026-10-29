@@ -16,6 +16,16 @@
 #   kernel_ci.sh run NAME LOGDIR COMMAND...
 #       runs COMMAND with all its output in LOGDIR/NAME.log and prints only
 #       RESULT NAME PASS|FAIL <seconds>; exits with COMMAND's exit code
+#   kernel_ci.sh checkout DIR REF [ALSO]
+#       fetches the kernel commit or branch REF (and commit ALSO, e.g. the
+#       mutants' base) into DIR with its history (no other branch or
+#       tag), and checks REF out, printing
+#       nothing: actions/checkout prints the commit's subject and, with
+#       fetch-depth 0, every kernel branch and tag name. KERNEL_READ goes
+#       in a header for the fetch only, never into DIR/.git; SPARSE (paths)
+#       limits the checkout; with HEAD_SHA set, fails unless HEAD_SHA is
+#       REF or REF's second parent (REF a pull request's merge commit);
+#       KERNEL_SOURCE: another repo, for the tests
 #   kernel_ci.sh describe RESULTS OUTCOME
 #       the status description for kernel-ci/checks: "Failed: " and the first
 #       five failing checks' names in RESULTS (RESULT lines), or else OUTCOME
@@ -56,7 +66,7 @@ save)
   [ "$big" = 0 ] || left=" ($big over 50 MB left out)"
   cd "$work/r"
   git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com add -A >/dev/null
-  git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com commit -qm "kernel-ci $LABEL $HEAD_SHA $job" >/dev/null
+  git -c user.name=kernel-ci -c user.email=kernel-ci@users.noreply.github.com commit -qm "kernel-ci $dest" >/dev/null
   # Several jobs save at once: rebase onto whatever landed meanwhile.
   for _ in 1 2 3 4 5 6; do
     git push -q origin HEAD:main 2>"$work/push" && { echo "saved $job$left"; exit 0; }
@@ -76,6 +86,34 @@ run)
   echo "RESULT $name $([ $code = 0 ] && echo PASS || echo FAIL) $((SECONDS - start))"
   exit $code
   ;;
+checkout)
+  dir=$2 ref=$3 also=${4:-}
+  [[ $ref =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && ( -z $also || $also =~ ^[0-9a-f]{40}$ ) ]] || { echo "bad kernel ref"; exit 1; }
+  # The whole history of REF (and ALSO), and nothing else: the release
+  # build numbers itself from main's merge order, which a shallow clone
+  # can't give (release-build failed on every run after depth 1, 10-29).
+  # Only a SPARSE checkout (the oracle's scripts) takes depth 1.
+  depth=""
+  [ -n "${SPARSE:-}" ] && depth="--depth 1"
+  auth=()
+  [ -z "${KERNEL_SOURCE:-}" ] && auth=(-c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$KERNEL_READ" | base64 -w0)")
+  {
+    git init -q "$dir" &&
+      git -C "$dir" "${auth[@]}" fetch -q --no-tags $depth "${KERNEL_SOURCE:-https://github.com/Panosolid/kernel.git}" "$ref" $also &&
+      git -C "$dir" update-ref refs/heads/tested "$(git -C "$dir" rev-parse FETCH_HEAD)" &&
+      { [ -z "${SPARSE:-}" ] || git -C "$dir" sparse-checkout set $SPARSE; } &&
+      git -C "$dir" checkout -q tested
+  } >/dev/null 2>&1 || { echo "could not check out the kernel"; exit 1; }
+  # With HEAD_SHA set (kernel-ci.yml), the statuses' commit must be the one
+  # tested: REF itself (main) or the head of the pull request whose merge
+  # REF is (its second parent), so a run can't mark an untested commit green.
+  if [ -n "${HEAD_SHA:-}" ]; then
+    tested=$(git -C "$dir" rev-parse HEAD)
+    # The raw commit: a depth-1 fetch hides parents from git log.
+    head2=$(git -C "$dir" cat-file -p "$tested" | sed -n 's/^parent //p' | sed -n 2p)
+    [ "$HEAD_SHA" = "$tested" ] || [ "$HEAD_SHA" = "$head2" ] || { echo "the statuses' commit is not the one tested"; exit 1; }
+  fi
+  ;;
 describe)
   failing=$({ sed -n 's/^RESULT \([a-z0-9-]*\) FAIL .*/\1/p' "$2" 2>/dev/null || true; } | { grep -v '^all$' || true; } | head -5 | paste -sd, -)
   if [ -n "$failing" ]; then echo "Failed: $failing"; else echo "$3"; fi
@@ -84,5 +122,5 @@ filter)
   grep -E '^(RESULT [a-z0-9-]+ (PASS|FAIL) [0-9]+|count ([0-9]+|error)|shards \[[0-9,]*\]|missed [0-9]+)$' || true
   ;;
 *)
-  echo "usage: kernel_ci.sh status|save|run|describe|filter"; exit 2 ;;
+  echo "usage: kernel_ci.sh status|save|run|checkout|describe|filter"; exit 2 ;;
 esac

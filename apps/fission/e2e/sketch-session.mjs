@@ -22,7 +22,8 @@ import { preview } from "vite";
 import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { isClosed, modelOutline, openWords, shoelace } from "../../../packages/testing/src/outline-model.ts";
-import { gridSnapOn, startWithBox } from "./start.mjs";
+import { TOUCHING_CURVES as TOUCHING } from "../../../workspaces/design/src/sketch.ts";
+import { gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/";
@@ -99,6 +100,22 @@ function click(m, at) {
   return draw(STEP.circle, () => m.circles.push({ centre: from, radius }));
 }
 
+/**
+ * Finish sketch with the panel's button. With a shape half drawn (a first
+ * corner or a centre down; a line's start alone is no shape) the first press only says so (sketch-tool.ts unfinishedWords),
+ * and the second goes on without it.
+ */
+async function finishSketch(page, m, where) {
+  const unfinished = m.pending !== null && m.tool !== "line";
+  await page.click("#sketch-finish");
+  if (unfinished) {
+    await page.waitForFunction(() => /isn't finished/.test(document.getElementById("sketch-grid-error")?.textContent ?? ""), null, { timeout: 10000 }).catch(() => assert.fail(`${where}: no word on the unfinished ${m.tool}`));
+    assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.sketching), "true", `${where}: the first press finished with a ${m.tool} half drawn`);
+    await page.click("#sketch-finish");
+  }
+  m.pending = null;
+}
+
 /** Undo or redo one drawing step: the tool keeps its kind and drops what it held. */
 function travel(m, back) {
   const [from, to] = back ? [m.undo, m.redo] : [m.redo, m.undo];
@@ -118,7 +135,8 @@ function expected(m, sketchLabel = "Create sketch") {
   else {
     const outline = modelOutline(m.lines, m.circles);
     if (isClosed(outline)) status = { exact: `${words}, a closed outline.` };
-    else if (outline.kind === "not a profile") status = { prefix: `${words}, not closed: ${openWords(outline)}` };
+    // The kernel's reason, or (two curves named: crossing, touching, too close) the app's plain words (beginner play-test 2026-10-28).
+    else if (outline.kind === "not a profile") status = { prefix: `${words}, not closed: ${openWords(outline)}`, or: `${words}, not closed: ${TOUCHING}.` };
     else status = { exact: `${words}, not closed: ${openWords(outline)}.` };
   }
   const shown = pointsOf(m);
@@ -148,7 +166,7 @@ async function agree(page, m, where) {
     JSON.stringify(got.points) === JSON.stringify(want.points) &&
     got.segments === want.segments &&
     got.undo === want.undo &&
-    (want.status.exact !== undefined ? got.status === want.status.exact : got.status.startsWith(want.status.prefix));
+    (want.status.exact !== undefined ? got.status === want.status.exact : got.status.startsWith(want.status.prefix) || got.status === want.status.or);
   const deadline = Date.now() + 5000;
   let got = await read();
   while (!matches(got)) {
@@ -230,7 +248,7 @@ async function randomStep(page, m, r) {
 
 async function startSketch(page) {
   await page.click("#create-sketch");
-  await page.click("#sketch-plane-XY");
+  await pickPlane(page, "XY", false);
   await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true", null, { timeout: 5000 });
   // Grid snap is off by default since sketch feel SF1; this session models a
   // sketch on the grid (clicks up to 2 mm off a node land on it), so it ticks
@@ -293,7 +311,7 @@ async function session(seed) {
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
     const file = JSON.parse(readFileSync(await download.path(), "utf8"));
     assert.deepEqual(fileSketch(file, 0), { lines: one.lines, circles: one.circles }, `${where()}: the saved file`);
-    await page.click("#sketch-finish");
+    await finishSketch(page, one, where());
     const finished = one.lines.length + SEGMENTS_PER_CIRCLE * one.circles.length;
     await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved", null, { timeout: 10000 });
 
@@ -324,7 +342,7 @@ async function session(seed) {
       steps.push(await randomStep(page, two, r));
       await agree(page, two, where());
     }
-    await page.click("#sketch-finish");
+    await finishSketch(page, two, where());
 
     // Sketch 3: a closed house of lines, one corner per column above the floor, extruded 10 mm to the model's volume.
     await startSketch(page);

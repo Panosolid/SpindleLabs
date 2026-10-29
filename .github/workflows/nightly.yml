@@ -49,7 +49,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
+  # waiting for a runner and no merge queue run (branch_testing.py
+  # wait-idle), or after an hour (tonight's run; a branch's: two) however busy, so a night is never lost.
+  # It holds one runner while it waits instead of all of them.
+  idle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/branch_testing.py wait-idle ${{ github.event_name == 'schedule' && 3600 || 7200 }}
+
   gate:
+    needs: idle
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -206,53 +226,79 @@ jobs:
             grep -E '^(\|[^-]|[0-9]+ metric)' "$OUT/baseline.txt" >>"$OUT/report.txt" || true
           fi
           exit $code
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: always()
-        with:
-          python-version: "3.12"
-      # The oracle scripts are the private kernel repo's (prototypes/oracle).
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: always()
-        with:
-          repository: Panosolid/kernel
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          sparse-checkout: prototypes/oracle
-          persist-credentials: false
-      # Step 29b3: every shown body's STEP file, as the kernel wrote it, read
-      # by OpenCascade and judged against the models' hand-worked answers
-      # (the kernel repo's prototypes/oracle/golden_step.py); a finding is a failure folder
-      # with golden-report.txt, which file_issues.py files like the rest.
-      # Then its self-test: one round with a face flipped in every file,
-      # which must be caught in every body.
-      - name: Golden models' STEP files read by OpenCascade
+      # The STEP check's self-test input (the golden-step job): one round
+      # with a face flipped in every file.
+      - name: One golden round with a planted flipped face
         if: always()
         env:
-          OUT: ${{ runner.temp }}/golden
-          PLANTED: ${{ runner.temp }}/golden-planted
+          PLANTED: ${{ runner.temp }}/golden/planted-step
         run: |
-          [ -f "$OUT/golden-step.jsonl" ] || { echo "no STEP files: the golden run stopped first"; exit 1; }
-          pip install -q cadquery-ocp mpmath
+          FISSION_STEP_FAULT=1 FISSION_SEED=1 FISSION_GOLDEN_ROUNDS=1 FISSION_GOLDEN_TIMING_RUNS=1 FISSION_GOLDEN_OUT="$PLANTED" \
+            npm run golden -w @fission/testing >/dev/null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: golden
+          path: ${{ runner.temp }}/golden/
+          if-no-files-found: ignore
+
+  # Step 29b3: every shown body's STEP file, as the kernel wrote it, read by
+  # OpenCascade and judged against the models' hand-worked answers (the
+  # private kernel's oracle); a finding is a failure folder with
+  # golden-report.txt, which file_issues.py files like the rest. Then its
+  # self-test: the planted round, which must be caught in every body. Main
+  # only, in the "kernel" environment (main only too), so no branch's
+  # workflow can read the key that clones the kernel, and no npm code runs
+  # beside it. collect adds its line and folder to the golden ones.
+  golden-step:
+    needs: golden
+    if: always() && needs.golden.result != 'skipped' && github.ref == 'refs/heads/main'
+    environment: kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: golden
+          path: ${{ runner.temp }}/golden
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check out the kernel's oracle (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          SPARSE: prototypes/oracle
+        run: .github/scripts/kernel_ci.sh checkout k main
+      - name: Golden models' STEP files read by OpenCascade
+        env:
+          IN: ${{ runner.temp }}/golden
+          OUT: ${{ runner.temp }}/golden-step
+        run: |
+          mkdir -p "$OUT"
+          [ -f "$IN/golden-step.jsonl" ] || { echo "no STEP files: the golden run stopped first"; exit 1; }
+          pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
           code=0
           # The oracle is private kernel code: its errors (a traceback names its
           # files and lines) go to a file of the runner's, never this public log.
-          python3 k/prototypes/oracle/golden_step.py "$OUT/golden-step.jsonl" "$RUNNER_TEMP/golden-step-report.txt" >"$RUNNER_TEMP/golden-step.txt" 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
+          python3 k/prototypes/oracle/golden_step.py "$IN/golden-step.jsonl" "$RUNNER_TEMP/golden-step-report.txt" >"$RUNNER_TEMP/golden-step.txt" 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
           head -1 "$RUNNER_TEMP/golden-step.txt" | tee -a "$OUT/report.txt"
           if [ -f "$RUNNER_TEMP/golden-step-report.txt" ]; then
             dir="$OUT/seed-golden-step-${{ github.run_id }}"
             mkdir -p "$dir"
             mv "$RUNNER_TEMP/golden-step-report.txt" "$dir/golden-report.txt"
           fi
-          FISSION_STEP_FAULT=1 FISSION_SEED=1 FISSION_GOLDEN_ROUNDS=1 FISSION_GOLDEN_TIMING_RUNS=1 FISSION_GOLDEN_OUT="$PLANTED" \
-            npm run golden -w @fission/testing >/dev/null || code=$?
-          python3 k/prototypes/oracle/golden_step.py "$PLANTED/golden-step.jsonl" --planted >"$RUNNER_TEMP/golden-planted.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
+          python3 k/prototypes/oracle/golden_step.py "$IN/planted-step/golden-step.jsonl" --planted >"$RUNNER_TEMP/golden-planted.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
           tail -1 "$RUNNER_TEMP/golden-planted.txt"
           exit $code
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: golden
-          path: ${{ runner.temp }}/golden/
+          name: golden-step
+          path: ${{ runner.temp }}/golden-step/
           if-no-files-found: ignore
 
   # TypeScript mutation testing (packages/testing/stryker/run.sh), one job
@@ -296,8 +342,9 @@ jobs:
           if-no-files-found: ignore
 
   collect:
-    needs: [gate, journeys, golden, monkey, ts-mutants]
-    if: always() && needs.gate.outputs.run == 'true'
+    needs: [gate, journeys, golden, golden-step, monkey, ts-mutants]
+    # Also when the gate itself failed: its red job is filed like any other (it was red on the Actions tab only).
+    if: always() && (needs.gate.outputs.run == 'true' || needs.gate.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -319,7 +366,15 @@ jobs:
           COMMIT: ${{ github.sha }}
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
+          # Each job's result: a red one with no failure folder files an issue too.
+          JOBS: ${{ toJSON(needs) }}
         # Copied out first: the script switches this checkout to test-results.
         run: |
+          # The golden-step job's line and failure folder join the golden ones.
+          if [ -d "$IN/golden-step" ] && [ -f "$IN/golden/report.txt" ]; then
+            cat "$IN/golden-step/report.txt" >>"$IN/golden/report.txt" 2>/dev/null || true
+            cp -r "$IN/golden-step"/seed-* "$IN/golden/" 2>/dev/null || true
+          fi
+          rm -rf "$IN/golden-step"
           cp .github/scripts/collect-results.sh .github/scripts/file_issues.py "$RUNNER_TEMP/"
           bash "$RUNNER_TEMP/collect-results.sh"

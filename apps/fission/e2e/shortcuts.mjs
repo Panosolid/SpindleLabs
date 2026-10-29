@@ -60,7 +60,7 @@ try {
       // Worked out from the table: Design is on screen, so it comes first, then the
       // app's keys; no placeholder binds a key and Image binds none yet.
       assert.deepEqual(await listed(page), [
-        { title: "Design on screen", rows: ["Esc: Clear the selection", "Enter: OK in the Extrude or Move panel", "M: Move bodies (outside a sketch)", "Ctrl+C: Copy the selected profile as SVG", "L: Line tool (in a sketch)", "R: Rectangle tool (in a sketch)", "C: Circle tool (in a sketch)", "A: 3-point arc tool (in a sketch)", "T: Tangent arc tool (in a sketch)", "P: Project tool (in a sketch)", "0 1 2 3 4 5 6 7 8 9 . -: Type a length or width (while drawing a line or rectangle)"] },
+        { title: "Design on screen", rows: ["Esc: Clear the selection", "Enter: OK in the Extrude, Move or Rotate panel", "M: Move bodies (outside a sketch)", "Shift+R: Rotate bodies (outside a sketch)", "E: Extrude", "S: Search the commands by name (outside a sketch)", "Ctrl+C: Copy the selected profile as SVG", "L: Line tool (in a sketch)", "R: Rectangle tool (in a sketch)", "C: Circle tool (in a sketch)", "A: 3-point arc tool (in a sketch)", "P: Project tool (in a sketch)", "0 1 2 3 4 5 6 7 8 9 . -: Type a length or width (while drawing a line or rectangle)"] },
         { title: "Everywhere", rows: ["?: Show the keyboard shortcuts", "Ctrl+V: Paste files into the project (a project file, an image…)", "Ctrl+Z: Undo", "Ctrl+Shift+Z Ctrl+Y: Redo"] },
       ]);
       await page.screenshot({ path: "e2e/shortcuts.png" });
@@ -123,6 +123,50 @@ try {
       assert.equal(await selection(page), "", "Design is on screen in the second pane, so Escape still reaches it");
       await page.keyboard.press("?");
       assert.deepEqual((await listed(page)).map((s) => s.title), ["Design on screen", "Everywhere"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  // Ben's keys (10-29), Fusion's: E opens Extrude; S opens the command search box, which narrows as you type, runs the
+  // marked command on Enter, closes on Escape, and lists a command that is off without running it.
+  await check("E opens Extrude; S searches the commands: typing narrows, Enter runs, Escape closes", async () => {
+    const page = await fresh();
+    try {
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press("e");
+      await page.waitForSelector("#extrude-panel", { state: "visible" });
+      await page.keyboard.press("Escape");
+      await page.waitForSelector("#extrude-panel", { state: "hidden" });
+      // S: every command, the box focused.
+      await page.keyboard.press("s");
+      await page.waitForSelector("#command-search-input", { state: "visible" });
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "command-search-input");
+      const names = () => page.$$eval("#command-search-list li", (ls) => ls.map((l) => l.querySelector(".command-search-label").textContent));
+      const all = await names();
+      for (const n of ["Create sketch", "Extrude", "Move", "Body facts", "Box", "Export STL"]) assert.ok(all.includes(n), `${n} in ${all}`);
+      // A coming tool is listed, off, saying why; Enter on a list of only it runs nothing.
+      await page.fill("#command-search-input", "fillet");
+      assert.deepEqual(await names(), ["Fillet"]);
+      assert.equal(await page.getAttribute("#command-search-list li", "aria-disabled"), "true");
+      await page.keyboard.press("Enter");
+      assert.equal(await page.isVisible("#command-search-input"), true, "an off command is not run, the box stays");
+      // "mo" narrows to Move first (its name starts so); Enter runs it.
+      await page.fill("#command-search-input", "mo");
+      assert.equal((await names())[0], "Move");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector("#move-panel", { state: "visible" });
+      assert.equal(await page.isVisible("#command-search-input"), false, "the box closes once a command runs");
+      await page.keyboard.press("Escape");
+      // Escape closes the box and runs nothing; letters typed in it never reach the shortcuts (m would open Move).
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press("s");
+      await page.waitForSelector("#command-search-input", { state: "visible" });
+      await page.keyboard.type("m");
+      assert.equal(await page.isVisible("#move-panel"), false, "typing m in the box searches, it doesn't open Move");
+      await page.keyboard.press("Escape");
+      await page.waitForSelector("#command-search-input", { state: "detached" });
+      assert.equal(await page.isVisible("#move-panel"), false);
     } finally {
       await page.close();
     }

@@ -136,7 +136,8 @@ export function askName(doc: Document, suggested: string, kind: SaveKind): Promi
 
 /**
  * Saves `request`. With its `handle` the file is written again without asking (if that fails, say the file moved or
- * the permission went, the user is asked as for a first save). Then the picker, then the name box. Never throws.
+ * the permission went, the user is asked as for a first save). Then the picker (a picked file that can't be written
+ * fails, with why), then the name box. Never throws.
  */
 export async function saveFile(doc: Document, request: SaveRequest): Promise<SaveResult> {
   const win = doc.defaultView!;
@@ -153,13 +154,23 @@ export async function saveFile(doc: Document, request: SaveRequest): Promise<Sav
     }
     const picker = pickerOf(win);
     if (picker) {
+      let handle: FileHandle | null = null;
       try {
-        const handle = await picker({ suggestedName: suggested, types: [{ description: kind.description, accept: { [kind.mime]: [kind.extension] } }] });
-        await write(handle, bytes);
-        return { status: "saved", name: handle.name, handle };
+        handle = await picker({ suggestedName: suggested, types: [{ description: kind.description, accept: { [kind.mime]: [kind.extension] } }] });
       } catch (e) {
         if (e instanceof Error && e.name === "AbortError") return { status: "cancelled" };
         // The picker is refused here (a frame, a policy): the box does it.
+      }
+      if (handle) {
+        // The file was picked but can't be written (disk full, no permission): say so, rather than quietly asking
+        // for a name and downloading somewhere else (weak-spot hunt 10-29).
+        try {
+          await write(handle, bytes);
+        } catch (e) {
+          const why = e instanceof Error ? e.message : String(e);
+          return { status: "failed", message: `Couldn't write "${handle.name}"${why ? `: ${why}` : ""}. Nothing was saved there; try again, or pick another place.` };
+        }
+        return { status: "saved", name: handle.name, handle };
       }
     }
     const name = driven(win) ? suggested : await askName(doc, suggested, kind);

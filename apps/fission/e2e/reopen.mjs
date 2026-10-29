@@ -219,6 +219,118 @@ try {
     });
   }
 
+  await check("a kept project the app can't open is tried again on a plain reload, and not stored over until the new one changes", async () => {
+    // Real-use hunt A1: the new project started in its place was stored at once, so one reload, with no
+    // change at all, opened that empty project and the one "still kept in this browser" was never tried again.
+    const { context, page } = await fresh(1280);
+    try {
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      // As a newer build (or one rolled back) left it: format 3, which this build refuses, saved just now.
+      const saved = JSON.parse(readFileSync(resolve(import.meta.dirname, "saved.spindle"), "utf8"));
+      await page.evaluate(async (text) => {
+        const db = await new Promise((ok, no) => Object.assign(indexedDB.open("fission"), { onsuccess: (e) => ok(e.target.result), onerror: no }));
+        const name = db.objectStoreNames[0];
+        const tx = db.transaction(name, "readwrite");
+        const store = tx.objectStore(name);
+        // The next save in the store's count of saves, as a real save writes it (real-use hunt B5: the list goes by it).
+        const last = await new Promise((ok) => (store.get("order").onsuccess = (e) => ok(Number(e.target.result ?? 0))));
+        store.put(text, "project/newer");
+        store.put(JSON.stringify({ name: "My bracket", modified: new Date(Date.now() + 60_000).toISOString(), order: last + 1 }), "summary/newer");
+        store.put(String(last + 1), "order");
+        await new Promise((ok) => (tx.oncomplete = ok));
+        db.close();
+      }, JSON.stringify({ ...saved, formatVersion: 3, name: "My bracket" }));
+      const kept = await keptProjects(page);
+      assert.ok(kept.includes("project/newer"), JSON.stringify(kept));
+      const refused = /^Couldn't open the last project \(.+\), so a new one was started\. The old one is still kept in this browser\.$/;
+      for (const visit of ["first visit", "a plain reload"]) {
+        await page.reload();
+        await page.waitForFunction(() => document.querySelector("#file-status").textContent !== "");
+        assert.match(await status(page), refused, visit);
+        await page.waitForSelector("#start-hint", { state: "visible" });
+        await page.waitForTimeout(1500); // past autosave's quiet moment
+        assert.deepEqual(await keptProjects(page), kept, `${visit}: the new, unchanged project is not stored`);
+        assert.equal(await mark(page), null, `${visit}: a refusal with a message is not a freeze`);
+      }
+      // A change keeps the new project, as any new one.
+      await startWithBox(page);
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      assert.equal((await keptProjects(page)).length, kept.length + 1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("a second tab started while the first is still opening the project opens it too", async () => {
+    // Real-use hunt A3: two tabs started together (a restored session, a bookmark clicked twice). The second
+    // found the first one's opening mark, took it for a freeze on the last visit and started a new project.
+    const { context, page } = await fresh(1280);
+    try {
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      const id = await page.evaluate(() => document.body.dataset.projectId);
+      await page.close({ runBeforeUnload: true });
+      // Tab 1: the kernel's answers held, so it is still opening the box when tab 2 starts.
+      const first = await context.newPage();
+      await first.addInitScript({ content: `sessionStorage.setItem("hold-kernel", "1"); (${kernelValve})();` });
+      await first.goto(url + "?test-hooks#design");
+      await first.waitForFunction(([key, id]) => localStorage.getItem(key) === id, [OPENING_KEY, id]);
+      const second = await context.newPage();
+      second.on("pageerror", (e) => errors.push(e.message));
+      await second.goto(url);
+      await second.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³", null, { timeout: 10_000 });
+      assert.equal(await second.evaluate(() => document.body.dataset.projectId), id, "tab 2 opened the box");
+      assert.equal(await status(second), "");
+      await first.waitForFunction(() => document.querySelector("#file-status").textContent === "Opening the last project…"); // tab 1 still opening
+      await first.evaluate(() => window.releaseKernel());
+      await first.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      await first.waitForFunction((key) => localStorage.getItem(key) === null, OPENING_KEY, { timeout: 10_000 });
+      // Both closed; the next visit opens the box, with no word of a freeze.
+      await first.close({ runBeforeUnload: true });
+      await second.close({ runBeforeUnload: true });
+      const next = await context.newPage();
+      await next.goto(url);
+      await next.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      assert.equal(await status(next), "");
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("a tab put away soon after the project shows, then killed by the phone, leaves it to reopen", async () => {
+    // Real-use hunt D1: locked within SETTLED_MS of showing, frozen, then killed with no pagehide and no timer
+    // run, the tab left its mark, and the next visit skipped the project as if it had crashed the tab.
+    const { context, page: first } = await fresh(375);
+    try {
+      await first.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      const id = await first.evaluate(() => document.body.dataset.projectId);
+      await first.close({ runBeforeUnload: true });
+      // A phone hides the page first (lock, app switch), then freezes it, then may kill it.
+      const page = await context.newPage();
+      await page.goto(url);
+      await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      assert.equal(await mark(page), id, "still settling");
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Page.setWebLifecycleState", { state: "frozen" });
+      // Read from another page of this site that doesn't start the app: the frozen one runs nothing.
+      const look = await context.newPage();
+      await look.goto(url + "icon-192.png");
+      assert.equal(await mark(look), null, "the mark went as the tab was put away");
+      await look.close();
+      // The OS kills it: no pagehide, no timer.
+      await page.close({ runBeforeUnload: false });
+      const next = await context.newPage();
+      await next.goto(url);
+      await next.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      assert.equal(await status(next), "", "reopened with no word of a freeze");
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const width of [1280, 375]) {
     await check(`${width} px: a last project slow to open offers Start fresh instead, which keeps it for the next visit`, async () => {
       const { context, page } = await freshValved(width);

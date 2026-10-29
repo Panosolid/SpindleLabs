@@ -494,3 +494,18 @@ test("a step counts towards the limit like any step", () => {
   assert.equal(h.undo(), "S");
   assert.equal(h.undo(), null);
 });
+
+test("a clock set back between two edits keeps them two steps (real-use hunt D3)", () => {
+  // Width 50 at t = 100,000; the device's clock is corrected back 5 minutes; width 60 then reads t = −199,500 +
+  // 100,000. The gap is −300,000 + 500 ms: below MERGE_MS only because it is negative, and minutes of real time
+  // passed, so 60 must be a step of its own; undo gives 50, not 40.
+  const { h, doc, edit, tick } = rig();
+  tick(100_000);
+  edit(50, "Width", "width");
+  tick(-300_000 + 500);
+  edit(60, "Width", "width");
+  h.undo();
+  assert.equal(doc.w, 50);
+  h.undo();
+  assert.equal(doc.w, 40);
+});

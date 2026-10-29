@@ -27,7 +27,7 @@ export type TypedField = "length" | "angle" | "width" | "height" | "radius" | "s
 export type Locks = Partial<Record<TypedField, number>>;
 
 /**
- * The kernel's smallest piece and largest size (kernel/src/tolerance.rs
+ * The kernel's smallest piece and largest size (kernel.json:
  * MIN_FEATURE = 1e-3 mm, MAX_SIZE = 1e6 mm): a typed length outside them
  * would only be refused later by the outline check, so the box says so
  * at once.

@@ -5,7 +5,7 @@ import type { BodyNames } from "../src/naming.ts";
 import type { Scene } from "../src/scene.ts";
 
 /**
- * A box (make_box, primitives.rs). Corner k is at (k & 1, k & 2, k & 4)
+ * A box (the kernel's box). Corner k is at (k & 1, k & 2, k & 4)
  * scaled by the sizes; faces in order bottom (−Z), top, front (−Y), back,
  * left (−X), right, their corners [0,2,3,1], [4,5,7,6], [0,1,5,4],
  * [2,6,7,3], [0,4,6,2], [1,3,7,5] counter-clockwise from outside. Edges are

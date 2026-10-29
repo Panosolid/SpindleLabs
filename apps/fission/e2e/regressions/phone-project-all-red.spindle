@@ -1,0 +1,507 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Untitled",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "nextId": 44,
+      "profiles": [],
+      "sketches": [
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "end": "point-3",
+              "id": "line-4",
+              "kind": "line",
+              "start": "point-2"
+            },
+            {
+              "end": "point-5",
+              "id": "line-6",
+              "kind": "line",
+              "start": "point-3"
+            },
+            {
+              "end": "point-7",
+              "id": "line-8",
+              "kind": "line",
+              "start": "point-5"
+            },
+            {
+              "end": "point-2",
+              "id": "line-9",
+              "kind": "line",
+              "start": "point-7"
+            }
+          ],
+          "id": "sketch-1",
+          "points": [
+            {
+              "id": "point-2",
+              "x": 10.7,
+              "y": 32.6
+            },
+            {
+              "id": "point-3",
+              "x": 40.9,
+              "y": 32.6
+            },
+            {
+              "id": "point-5",
+              "x": 40.9,
+              "y": -14.7
+            },
+            {
+              "id": "point-7",
+              "x": 10.7,
+              "y": -14.7
+            }
+          ]
+        },
+        {
+          "constraints": [],
+          "curves": [],
+          "id": "sketch-11",
+          "points": []
+        },
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "centre": "point-15",
+              "end": "point-14",
+              "id": "arc-16",
+              "kind": "arc",
+              "start": "point-13"
+            },
+            {
+              "end": "point-15",
+              "id": "line-17",
+              "kind": "line",
+              "start": "point-13"
+            },
+            {
+              "end": "point-15",
+              "id": "line-18",
+              "kind": "line",
+              "start": "point-14"
+            },
+            {
+              "end": "point-21",
+              "id": "line-22",
+              "kind": "line",
+              "start": "point-20"
+            },
+            {
+              "end": "point-25",
+              "id": "line-26",
+              "kind": "line",
+              "start": "point-24"
+            },
+            {
+              "end": "point-29",
+              "id": "line-30",
+              "kind": "line",
+              "start": "point-28"
+            },
+            {
+              "end": "point-33",
+              "id": "line-34",
+              "kind": "line",
+              "start": "point-32"
+            }
+          ],
+          "face": {
+            "frame": {
+              "normal": [
+                1,
+                0,
+                0
+              ],
+              "origin": [
+                40.9,
+                0,
+                0
+              ],
+              "xAxis": [
+                0,
+                1,
+                0
+              ]
+            },
+            "side": 1
+          },
+          "id": "sketch-12",
+          "points": [
+            {
+              "id": "point-13",
+              "x": 11.329925949460918,
+              "y": 13.199557466597955
+            },
+            {
+              "id": "point-14",
+              "x": 19,
+              "y": 30.7
+            },
+            {
+              "id": "point-15",
+              "x": -4.8,
+              "y": 30.7
+            },
+            {
+              "id": "point-20",
+              "x": 32.6,
+              "y": 0
+            },
+            {
+              "id": "point-21",
+              "x": -14.7,
+              "y": 0
+            },
+            {
+              "id": "point-24",
+              "x": 32.6,
+              "y": 39
+            },
+            {
+              "id": "point-25",
+              "x": -14.7,
+              "y": 39
+            },
+            {
+              "id": "point-28",
+              "x": -14.7,
+              "y": 39
+            },
+            {
+              "id": "point-29",
+              "x": -14.7,
+              "y": 0
+            },
+            {
+              "id": "point-32",
+              "x": 32.6,
+              "y": 39
+            },
+            {
+              "id": "point-33",
+              "x": 32.6,
+              "y": 0
+            }
+          ],
+          "projected": [
+            {
+              "edge": "side:line-6+start",
+              "feature": "feature-10",
+              "id": "projection-19",
+              "made": "line-22"
+            },
+            {
+              "edge": "end+side:line-6",
+              "feature": "feature-10",
+              "id": "projection-23",
+              "made": "line-26"
+            },
+            {
+              "edge": "side:line-6@end+side:line-8@start",
+              "feature": "feature-10",
+              "id": "projection-27",
+              "made": "line-30"
+            },
+            {
+              "edge": "side:line-4@end+side:line-6@start",
+              "feature": "feature-10",
+              "id": "projection-31",
+              "made": "line-34"
+            }
+          ]
+        },
+        {
+          "constraints": [],
+          "curves": [
+            {
+              "centre": "point-39",
+              "end": "point-38",
+              "id": "arc-40",
+              "kind": "arc",
+              "start": "point-37"
+            },
+            {
+              "end": "point-37",
+              "id": "line-41",
+              "kind": "line",
+              "start": "point-38"
+            }
+          ],
+          "face": {
+            "frame": {
+              "normal": [
+                0,
+                -1,
+                0
+              ],
+              "origin": [
+                0,
+                -14.7,
+                0
+              ],
+              "xAxis": [
+                1,
+                0,
+                0
+              ]
+            },
+            "side": 1
+          },
+          "id": "sketch-36",
+          "points": [
+            {
+              "id": "point-37",
+              "x": 18,
+              "y": 27.4
+            },
+            {
+              "id": "point-38",
+              "x": 34,
+              "y": 33.3
+            },
+            {
+              "id": "point-39",
+              "x": 27.25375,
+              "y": 26.95
+            }
+          ]
+        }
+      ],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "sketch-1",
+            "intent": {
+              "parameters": {
+                "plane": "XY"
+              },
+              "summary": "Sketch 1 on the XY plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-1",
+                "label": "Sketch 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-1"
+            ],
+            "id": "feature-10",
+            "intent": {
+              "parameters": {
+                "distance": 39,
+                "sketch": "sketch-1"
+              },
+              "summary": "Extrude Sketch 1 by 39 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-1",
+                  "label": "Sketch 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-10",
+                "label": "Extrude 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "sketch-11",
+            "intent": {
+              "parameters": {
+                "plane": "XZ"
+              },
+              "summary": "Sketch 2 on the XZ plane",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "sketch-11",
+                "label": "Sketch 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-10"
+            ],
+            "id": "sketch-12",
+            "intent": {
+              "parameters": {
+                "plane": "face:feature-10/side:line-6"
+              },
+              "summary": "Sketch 3 on a face of Extrude 1",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-10",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "sketch-12",
+                "label": "Sketch 3",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-12"
+            ],
+            "id": "feature-35",
+            "intent": {
+              "parameters": {
+                "distance": 18,
+                "sketch": "sketch-12"
+              },
+              "summary": "Extrude Sketch 3 by 18 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-12",
+                  "label": "Sketch 3",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-35",
+                "label": "Extrude 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-10"
+            ],
+            "id": "sketch-36",
+            "intent": {
+              "parameters": {
+                "plane": "face:feature-10/side:line-8"
+              },
+              "summary": "Sketch 4 on a face of Extrude 1",
+              "type": "sketch"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-10",
+                  "label": "Extrude 1",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "sketch-36",
+                "label": "Sketch 4",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "sketch-36"
+            ],
+            "id": "feature-42",
+            "intent": {
+              "parameters": {
+                "distance": 23,
+                "sketch": "sketch-36"
+              },
+              "summary": "Extrude Sketch 4 by 23 mm",
+              "type": "extrude"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "sketch-36",
+                  "label": "Sketch 4",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-42",
+                "label": "Extrude 3",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-35"
+            ],
+            "id": "feature-43",
+            "intent": {
+              "parameters": {
+                "pivotX": 49.9,
+                "pivotY": 7.1,
+                "pivotZ": 21.949779,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": 0,
+                "y": 5,
+                "z": 0
+              },
+              "summary": "Move Extrude 2 by (0, 5, 0) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-35",
+                  "label": "Extrude 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-43",
+                "label": "Move 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 3
+    }
+  }
+}

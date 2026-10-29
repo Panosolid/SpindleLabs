@@ -224,8 +224,8 @@ export function expectedView(design, failed = new Set()) {
 /**
  * Whether the kernel builds a solid feature, from the file alone where the
  * answer is plain: "fails" or "builds", else null (not judged). The
- * kernel takes lengths from 1 µm to 1 km (kernel/src/tolerance.rs,
- * MIN_FEATURE and MAX_SIZE, in mm), so a preset whose sizes are all from
+ * kernel takes lengths from 1 µm to 1 km (its smallest
+ * feature and largest size, in mm), so a preset whose sizes are all from
  * 0.01 mm to 100 m builds, and one with a size that is not a number, at
  * most 0.0001 mm (0 and negatives among them) or over 10 km fails; ten
  * times inside and outside the limits, so rounding at a limit never

@@ -111,7 +111,7 @@ A later, user-initiated "fit exact surfaces" feature (reverse engineering: fitti
 
 ### 5. One 2D curve library, in the kernel
 
-The sketcher, Vector, Laser and Layout share one 2D curve library: lines, arcs, Béziers, offsets, path booleans, biarc fitting, and later the constraint solver's geometry. It lives in the Rust kernel and uses `tolerance.rs`, not TypeScript, so sketcher constraints, Vector path booleans and laser kerf offsets use exactly the same maths. Its operations go through `validate`-style checks for 2D results and into the stateful random-testing harness like any kernel operation. It is built a piece at a time as its users need it: lines and arcs with the sketcher (steps 21–23), offsets with step 52, Béziers, path booleans and biarc fitting with Vector (V1–V3).
+The sketcher, Vector, Laser and Layout share one 2D curve library: lines, arcs, Béziers, offsets, path booleans, biarc fitting, and later the constraint solver's geometry. It lives in the Rust kernel and uses the kernel's own tolerances, not TypeScript's, so sketcher constraints, Vector path booleans and laser kerf offsets use exactly the same maths. Its operations go through `validate`-style checks for 2D results and into the stateful random-testing harness like any kernel operation. It is built a piece at a time as its users need it: lines and arcs with the sketcher (steps 21–23), offsets with step 52, Béziers, path booleans and biarc fitting with Vector (V1–V3).
 
 ## Experience principles
 
@@ -159,6 +159,33 @@ The format is described in [project-format.md](project-format.md). It is one JSO
 ## Testing the promise
 
 `npm run journeys` walks multi-workspace journeys on the real kernel with no file exports (`packages/testing/journeys/`). Each journey also checks that live links update and that round trips lose nothing. Design → STL runs today. `JOURNEYS` and `ROUND_TRIPS` in `packages/testing/src/journeys.ts` list the others and what each one waits for. When a workspace becomes real, its journeys are written.
+
+## The contracts every workspace keeps
+
+Seven promises that make the workspaces feel like one tool. Each is a check a workspace passes before it holds anything of Design's (the checklist below). They come from what the tools we copy get right and wrong: Fusion and Onshape keep CAM, drawings and renders in the same document and mark them out of date instead of losing them; Bambu Studio and OrcaSlicer lose painted supports and colours when a changed STL is reloaded, because a triangle has no lasting name; a live bridge from a direct modeller to a renderer drops materials when a boolean gives the body a new id.
+
+1. **Ids that last.** Another workspace holds a body, face or edge only by its stable name (`references.ts`, step 24, full naming at 40), never by an index, a triangle number or a copy. A body keeps its id through every feature that changes it: a cut, a Combine's target, a fillet. Only a new body (a new extrude, a Combine's kept tool, a split) gets a new one. A name that finds nothing or two things warns on the item that holds it and is never guessed.
+2. **One frame and one unit.** Everything handed over is in millimetres, in the world frame Design uses (Z up). A workspace that needs another frame (a print bed, a laser sheet, a CNC setup) stores its own placement of the body and never moves the body itself. Inches and other units change only what the user sees and types.
+3. **Exact first, mesh on request, the same mesh every time.** A workspace asks the representation registry for the most exact kind it can take. When it takes a mesh, it says how fine (the largest gap from the true surface, in mm) and gets a mesh made for that request, not the display mesh. The same body and the same request give the same triangles in the same order, so results can be cached and compared.
+4. **Changes arrive as staleness, never as silent edits.** A workspace's results are nodes in the one dependency graph. A design edit marks them out of date (cheap ones rebuild in the background, expensive ones wait for a rerun) and leaves a change note naming the cause. A result is never thrown away because its source changed: it shows as out of date until rebuilt. An edit to Design from another workspace is a previewed command for Design to accept (decision 1).
+5. **The project stores recipes, never results.** A workspace's part of the project holds what the user chose (a plate's bodies and their placements, settings, painted faces by stable name), with its own `version` and `readData`. Layers, toolpaths, G-code and renders are rebuilt or kept in a cache keyed by their inputs, never saved in the project, so undo snapshots stay small and an old file never opens with stale results.
+6. **One undo, one selection.** Every change a user makes in any workspace is recorded in the one history (`history.ts`) under a label in plain words, and Undo from any workspace takes it back. Selecting in one workspace selects the same thing in the other pane.
+7. **Heavy work off the page, through one bridge.** Geometry and engines run in a worker reached only through `kernel-client.ts` (or a sibling bridge built the same way: typed errors, never a panic, a watchdog, only the latest request answered). The app never freezes, and a failed engine call shows its message on the item, never a blank screen.
+
+## Safe to start: the checklist for a new workspace
+
+A workspace (or a part of one) may start when the answer to every question below is yes, or when it touches nothing of Design's yet.
+
+- **Engine only?** Work that takes plain inputs (a mesh, an outline, numbers) and gives plain outputs, with no link to Design, is always safe: the adapter that hooks it up is written later against these contracts. Most of a workspace's hardest code is like this.
+- **Does it hold Design's things only by stable name (contract 1)?** If it needs a body id that survives cuts and Combine, it waits until Design gives one.
+- **Does it ask for meshes by resolution and get the same mesh each time (contract 3)?**
+- **Does its data in the project hold only choices, with its own version, `readData` and migration tests (contract 5)?**
+- **Do its results sit in the graph, go out of date on a design edit, and leave a change note (contract 4)?**
+- **Do its edits go through the one history, with plain labels (contract 6)?**
+- **Does it import only `@fission/core`, `@fission/ui` and `@fission/viewport` (the Workspace API test)?**
+- **Are its rows in [integration-map.md](integration-map.md) written, with a journey in `packages/testing/src/journeys.ts` for each?**
+
+A "no" means: build only the engine-only part now, and write down which contract it waits for in the workspace's progress file.
 
 ## Not built yet (typed drafts that throw "not implemented")
 

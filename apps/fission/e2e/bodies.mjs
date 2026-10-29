@@ -15,7 +15,7 @@ import { launch } from "./browser.mjs";
 import { withPropertiesFolded } from "./properties.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { chooseFile, closePanels, fileItem, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseFile, closePanels, fileItem, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4205, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4205/";
@@ -81,7 +81,8 @@ async function colourAt(page, p, view) {
 // the body colour is BASE_COLOUR (0x9a, 0xa7, 0xb8) lit, so "a body is
 // here" is: not the background colour sampled in an empty corner.
 const differs = (a, b) => a.some((x, i) => Math.abs(x - b[i]) > 12);
-const green = ([r, g, b]) => g - (r + b) / 2;
+/** How blue a pixel is: the selection's accent blue (74, 168, 255) is 181 above its red, the body's grey-blue 30. */
+const blue = ([r, , b]) => b - r;
 
 /** What the properties panel's Feature and Body sections describe. */
 const panelBody = (page) =>
@@ -101,7 +102,7 @@ async function addSquare(page, { square, distance, volume }, tap) {
   // A 10 × 10 square by the rectangle tool: two opposite corners on the grid.
   await press(page, "#create-sketch", tap);
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  await press(page, "#sketch-plane-XY", tap);
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   // While a sketch is edited File ▾'s New is off, saying why, as the toolbar's Start fresh was hidden then (U0f2a).
   assert.deepEqual(await fileItem(page, "start-fresh"), [true, "New: finish or cancel the sketch first."], "New off while sketching");
@@ -131,7 +132,7 @@ async function foldBrowser(page, open, tap) {
 }
 
 /** Each Body row's eye as [its row, its words, pressed, its icon], read in the page. */
-const eyes = (page) => page.$$eval("#browser [data-eye]", (es) => es.map((e) => [e.dataset.eye, e.getAttribute("aria-label"), e.getAttribute("aria-pressed"), e.querySelector("svg")?.dataset.icon]));
+const eyes = (page) => page.$$eval('#browser [data-eye^="body-"]', (es) => es.map((e) => [e.dataset.eye, e.getAttribute("aria-label"), e.getAttribute("aria-pressed"), e.querySelector("svg")?.dataset.icon]));
 
 let failed = 0;
 async function check(name, fn) {
@@ -209,8 +210,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     assert.notEqual(await selection(page), "body:feature-1");
     const lit1 = await colourAt(page, [20, 15, 20], view);
     const lit2 = await colourAt(page, top2, view);
-    assert.ok(green(lit2) > green(box2) + 20, `body 2 tinted: ${lit2} vs ${box2}`);
-    assert.ok(Math.abs(green(lit1) - green(box1)) < 6, `body 1 untouched: ${lit1} vs ${box1}`);
+    assert.ok(blue(lit2) > blue(box2) + 20, `body 2 tinted: ${lit2} vs ${box2}`);
+    assert.ok(Math.abs(blue(lit1) - blue(box1)) < 6, `body 1 untouched: ${lit1} vs ${box1}`);
     assert.deepEqual(await panelBody(page), body2);
     if (shots) await page.screenshot({ path: `${shots}/bodies-${width}-selected.png` });
 
@@ -222,8 +223,8 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await fold(false);
     const box1lit = await colourAt(page, [20, 15, 20], view);
     const box2now = await colourAt(page, top2, view);
-    assert.ok(green(box1lit) > green(box1) + 20, `body 1 tinted: ${box1lit} vs ${box1}`);
-    assert.ok(Math.abs(green(box2now) - green(box2)) < 6, `body 2 untouched: ${box2now} vs ${box2}`);
+    assert.ok(blue(box1lit) > blue(box1) + 20, `body 1 tinted: ${box1lit} vs ${box1}`);
+    assert.ok(Math.abs(blue(box2now) - blue(box2)) < 6, `body 2 untouched: ${box2now} vs ${box2}`);
     if (shots) await page.screenshot({ path: `${shots}/bodies-${width}-body1.png` });
     // Escape clears the selection: back to the last body, the part the parameters edit.
     await page.keyboard.press("Escape");
@@ -362,7 +363,14 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await page.reload();
     await until(page, () => document.querySelector('#browser [data-eye="body-2"]')?.getAttribute("aria-label") === "Show Body 2", null, "hidden after a reload");
     await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
-    assert.ok(!isBody(await colourAt(page, top2, view)), "still not drawn after a reload");
+    // Reloaded, the camera frames what is drawn: Body 1 alone, since the square's sketch is hidden once extruded (Ben, 2026-10-29)
+    // and no longer framed either. Body 1 is [0, 40] × [0, 30] × [0, 20]: centre (20, 15, 10), radius √(40² + 30² + 20²)/2 = √2900/2.
+    const body1 = { ...view, centre: [20, 15, 10], radius: Math.sqrt(2900) / 2 };
+    await until(page, () => document.querySelector("#viewport").dataset.framedRadius !== undefined, null, "framed after a reload");
+    const reloaded = Number(await framed());
+    assert.ok(Math.abs(reloaded - body1.radius) < 1e-3, `reloaded, Body 1 alone framed: radius ${reloaded}, worked out ${body1.radius}`);
+    assert.ok(isBody(await colourAt(page, [20, 15, 20], body1)), "body 1 drawn after a reload");
+    assert.ok(!isBody(await colourAt(page, top2, body1)), "still not drawn after a reload");
 
     // Shown again by its eye: drawn, and a 12 + 12 = 24-triangle STL, 80 + 4 + 24 · 50 = 1,284 bytes.
     await foldBrowser(page, true, tap);
@@ -373,6 +381,52 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     assert.ok(isBody(await colourAt(page, top2, view)), "drawn again");
     const [both] = await Promise.all([page.waitForEvent("download"), chooseFile(page, "file-export-stl", tap)]);
     assert.equal(readFileSync(await both.path()).length, 1284, "both bodies in the STL");
+    if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
+    await page.context().close();
+  });
+
+  // An eye on everything (Ben, 2026-10-29, Fusion's): the extruded square's sketch hidden at once and shown again by its eye
+  // where it was drawn, the Bodies folder's eye hiding both bodies, the XY plane shown and the Z axis hidden.
+  await check(`an eye on every row: the extruded sketch hidden, then shown; the Bodies folder, the XY plane and the Z axis (${width} px${tap ? ", taps" : ""})`, async () => {
+    const page = await fresh(width, tap);
+    await addSquare(page, { square, distance, volume }, tap);
+    await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
+    const view = { toward: [0.6, -0.8, 0.55], up: [0, 0, 1], centre, radius: want };
+    const isBody = ([r, g, b]) => r + g + b > 3 * 80;
+    const data = (key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k], key);
+    // Extruded: the square's four lines no longer drawn, Sketch 1's eye shut.
+    assert.equal(await data("sketchLines"), "0", "the extruded sketch is hidden");
+    await foldBrowser(page, true, tap);
+    const eyeOf = (id) => page.$eval(`#browser [data-eye="${id}"]`, (e) => [e.getAttribute("aria-label"), e.getAttribute("aria-pressed")]);
+    // The sketch's row is in the Sketches folder, folded by nobody at first.
+    assert.deepEqual(await eyeOf("sketches/sketch-2"), ["Show Sketch 1", "false"]);
+    if (shots) await page.screenshot({ path: `${shots}/eyes-${width}-sketch-hidden.png` });
+    await press(page, '#browser [data-eye="sketches/sketch-2"]', tap);
+    await until(page, () => document.querySelector("#viewport").dataset.sketchLines === "4", null, "the sketch's four lines drawn again");
+    assert.equal(await page.getAttribute("#undo", "title"), "Undo Show Sketch 1 (Ctrl+Z)");
+    // The Bodies folder's eye, in its title: both bodies gone, the folder left as it was (open), each body's own eye open.
+    const openBefore = await page.$eval('#browser details[data-node="bodies"]', (d) => d.open);
+    await press(page, '#browser [data-eye="bodies"]', tap);
+    await until(page, () => document.querySelector('#browser [data-eye="bodies"]')?.getAttribute("aria-pressed") === "false", null, "the Bodies folder shut");
+    assert.equal(await page.$eval('#browser details[data-node="bodies"]', (d) => d.open), openBefore, "the eye doesn't fold the folder");
+    assert.deepEqual(await eyeOf("body-2"), ["Hide Body 2", "true"]);
+    if (shots) await page.screenshot({ path: `${shots}/eyes-${width}-bodies-folder.png` });
+    await foldBrowser(page, false, tap);
+    for (const p of [top2, [20, 15, 20]]) assert.ok(!isBody(await colourAt(page, p, view)), `nothing drawn at ${p} with the Bodies folder shut`);
+    await foldBrowser(page, true, tap);
+    await press(page, '#browser [data-eye="bodies"]', tap);
+    await until(page, () => document.querySelector('#browser [data-eye="bodies"]')?.getAttribute("aria-pressed") === "true", null, "the Bodies folder open");
+    // The origin, folded at first: opened, its XY plane shown and its Z axis hidden.
+    assert.equal(await data("origin"), "x y z");
+    if (!(await page.$eval('#browser details[data-node="origin"]', (d) => d.open))) await press(page, '#browser details[data-node="origin"] > summary', tap);
+    await press(page, '#browser [data-eye="origin-xy"]', tap);
+    await until(page, () => document.querySelector("#viewport").dataset.origin === "x y z origin-xy", null, "the XY plane shown");
+    await press(page, '#browser [data-eye="origin-z"]', tap);
+    await until(page, () => document.querySelector("#viewport").dataset.origin === "x y origin-xy", null, "the Z axis hidden");
+    if (shots) await page.screenshot({ path: `${shots}/eyes-${width}-origin-browser.png` });
+    await foldBrowser(page, false, tap);
+    assert.ok(isBody(await colourAt(page, top2, view)), "body 2 drawn again");
+    if (shots) await page.screenshot({ path: `${shots}/eyes-${width}-origin.png` });
     if (width === 375) assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     await page.context().close();
   });

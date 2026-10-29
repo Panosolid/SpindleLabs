@@ -8,15 +8,19 @@ on:
 # Only the deploy job, which runs no third-party actions, may publish. What
 # the build job builds is what it publishes, so every action here is pinned
 # to a commit (.github/scripts/test_pinned_actions.py, audit 2026-10-22 H1).
+# Only main is ever built (a run started by hand on another branch does
+# nothing), and npm installs from the lock file with no cache, so nothing
+# another branch's run left behind can reach the live site.
 permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,8 +28,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run build
         working-directory: apps/fission

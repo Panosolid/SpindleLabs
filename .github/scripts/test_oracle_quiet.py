@@ -7,7 +7,12 @@ a failed install) prints a Python traceback on stderr, and a traceback names
 the oracle's files and lines and quotes its source. So every run of an
 oracle script sends stderr to a file of the runner's that is never uploaded,
 or runs inside `kernel_ci.sh run`, which keeps all its output in the private
-log (sweep 2026-10-28: four runs left it on the log)."""
+log (sweep 2026-10-28: four runs left it on the log).
+
+Its stdout goes to a file too: the oracle prints up to twenty disagreements
+in full, each naming its private checks, and a planted-fault run is nothing
+but disagreements (weak-spot hunt 10-29). The workflow prints only the
+first line of that file, the count."""
 
 import glob
 import os
@@ -19,6 +24,7 @@ WORKFLOWS = os.path.join(os.path.dirname(HERE), "workflows")
 
 ORACLE = re.compile(r"\bpython3?\b[^#\n]*\b(?:golden_step|sketch_extrude)\.py\b|\bpython3?\b[^#\n]*\bprototypes/")
 STDERR_KEPT = re.compile(r"\s2>>?\s*\S")
+STDOUT_KEPT = re.compile(r"\s>>?\s*\S")
 
 
 def problem(line, wrapped=False):
@@ -27,9 +33,13 @@ def problem(line, wrapped=False):
     `wrapped`: the line continues a `kernel_ci.sh run` command."""
     if not ORACLE.search(line):
         return None
-    if wrapped or "kernel_ci.sh run" in line or STDERR_KEPT.search(line):
+    if wrapped or "kernel_ci.sh run" in line:
         return None
-    return "runs the private oracle without sending its stderr to a file"
+    if not STDERR_KEPT.search(line):
+        return "runs the private oracle without sending its stderr to a file"
+    if not STDOUT_KEPT.search(line):
+        return "runs the private oracle without sending its stdout to a file"
+    return None
 
 
 def oracle_problems():
@@ -60,7 +70,12 @@ class CheckerTest(unittest.TestCase):
 
     def test_an_oracle_run_with_stderr_in_a_file_passes(self):
         self.assertIsNone(problem('python3 golden_step.py in.jsonl >out.txt 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?'))
-        self.assertIsNone(problem('python3 sketch_extrude.py a b --planted 2>>"$RUNNER_TEMP/oracle-errors.txt"'))
+        self.assertIsNone(problem('python3 sketch_extrude.py a b --planted >"$T/p.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt"'))
+
+    def test_stderr_alone_is_not_enough(self):
+        # The disagreements it prints name the private checks.
+        why = problem('python3 sketch_extrude.py a b --planted 2>>"$RUNNER_TEMP/oracle-errors.txt"')
+        self.assertEqual(why, "runs the private oracle without sending its stdout to a file")
 
     def test_a_run_inside_kernel_ci_passes(self):
         self.assertIsNone(problem("kernel_ci.sh run oracle logs python3 ../prototypes/oracle/fuzz_shapes.py a b"))

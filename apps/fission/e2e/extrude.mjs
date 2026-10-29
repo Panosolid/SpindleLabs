@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, closePanels, gridSnapOn, openPanel, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4184, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4184/";
@@ -106,8 +106,7 @@ async function drawn(page, pts, tap = false) {
   if (tap) await page.tap("#create-sketch");
   else await page.click("#create-sketch");
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  if (tap) await page.tap("#sketch-plane-XY");
-  else await page.click("#sketch-plane-XY");
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   // On the grid: grid snap is off by default since SF1, and Firefox's clicks land on whole pixels, 0.1 mm off.
   await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5)
@@ -154,10 +153,11 @@ try {
     await page.click("#extrude-ok");
     await until(page, () => !document.querySelector("#extrude-error").hidden, null, "a refused distance");
     assert.equal(await page.textContent("#extrude-error"), "Type a distance other than 0 mm: a negative one goes the other way.");
-    // 2 km is past the kernel's 1 km: the kernel says why (the preview already did), the panel stays, nothing is recorded.
+    // 2 km is past the modeller's 1 km: refused up front in the box's own words (backlog 10-29: before, the kernel was asked),
+    // the panel stays, nothing is recorded.
     await page.fill("#extrude-distance", "2000000");
     await page.click("#extrude-ok");
-    await until(page, () => /extrude distance must be between/.test(document.querySelector("#extrude-error").textContent), null, "the kernel's refusal");
+    await until(page, () => document.querySelector("#extrude-error").textContent === "The distance can be at most 1000000 mm (1 km), the largest size the modeller works at.", null, "the distance's refusal");
     assert.equal(await undoTitle(page), "Undo Draw line (Ctrl+Z)");
     assert.equal(await page.textContent("#volume"), "24,000 mm³", "the box is still the part");
     // 10 mm, Enter: 40 · 30 · 10 = 12,000 mm³; area 2(1200) + 2(400) + 2(300) = 3,800 mm².
@@ -198,6 +198,8 @@ try {
     assert.equal(await data(page, "sketchLines"), "4", "the sketch is still drawn");
     await page.keyboard.press("Control+Shift+z");
     await volume(page, "12,000 mm³");
+    // The extrude back, its sketch hidden with it (Ben, 2026-10-29, as Fusion hides a sketch a solid is made from).
+    assert.equal(await data(page, "sketchLines"), "0", "the extruded sketch is hidden");
     assert.equal(await page.textContent("#height-label"), "Extrude by");
     // A preset after it is a new feature after it (24d1: nothing is replaced), keeping the sizes in the boxes
     // (the height box held the distance): a 40 × 30 × 10 box, the same 12,000 mm³ but a box, shown as the part
@@ -242,8 +244,10 @@ try {
     await drawn(page, [[0, 0], [30, 0], [30, 20], [0, 0]], true);
     await status(page, "3 lines, a closed outline.");
     await page.tap("#extrude");
-    // The Extrude panel is in the Properties sheet on a phone, which opens by itself (demo rehearsal 10-28): OK and the distance box are on screen.
-    await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "Extrude opens the Properties sheet");
+    // On a phone Extrude leaves the Properties sheet shut, the view clear (Ben's rule, 10-28): Finish Extrude and Cancel are on the bar over the view.
+    await until(page, () => document.getElementById("float-finish")?.textContent === "Finish Extrude", null, "Finish Extrude on the bar over the view");
+    assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "Extrude leaves the sheet shut");
+    await openPanel(page, "properties", true); // the panel's own boxes, opened by hand
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     for (const id of ["#extrude-ok", "#extrude-cancel", "#extrude-distance", "#extrude-flip", "#extrude-clear"]) {
       const box = await page.locator(id).boundingBox();
@@ -307,6 +311,8 @@ try {
       d.timeline.features = d.timeline.features.filter((f) => f.id !== sketch.id);
       d.sketches = [];
       d.kept = kept;
+      // The extrude hid its sketch (Ben, 2026-10-29): a file from outside that deletes the sketch takes it out of `hidden` too, as Delete does.
+      delete d.hidden;
     });
     await until(page, (w) => document.querySelector("#kept-warning").textContent === w, "Extrude 1 keeps its last shape. Sketch 1 was deleted.", "the deleted warning");
     await volume(page, "12,000 mm³");
@@ -362,7 +368,7 @@ try {
       // Sketch 2 (sketch-12), left empty: nothing is built from it.
       await top();
       await press("#create-sketch");
-      await press("#sketch-plane-XY");
+      await pickPlane(page, "XY");
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       await top();
       await press("#finish-sketch");

@@ -36,7 +36,8 @@ run-name: ${{ github.event_name == 'schedule' && 'Kernel random testing, nightly
 
 on:
   schedule:
-    - cron: "0 15 * * *"
+    # 15:17, not on the hour: GitHub delays top-of-the-hour schedules most.
+    - cron: "17 15 * * *"
   workflow_dispatch:
     inputs:
       ref:
@@ -63,8 +64,29 @@ env:
   REF: ${{ github.event_name == 'schedule' && 'main' || inputs.ref }}
 
 jobs:
-  plan:
+  # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
+  # waiting for a runner and no merge queue run (branch_testing.py
+  # wait-idle), or after an hour (tonight's run; a branch's: two) however busy, so a night is never lost.
+  # It holds one runner while it waits instead of all of them.
+  idle:
     runs-on: ubuntu-latest
+    timeout-minutes: 125
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/branch_testing.py wait-idle ${{ github.event_name == 'schedule' && 3600 || 7200 }}
+
+  plan:
+    needs: idle
+    runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
@@ -89,8 +111,15 @@ jobs:
           now=$(date +%s)
           if [ "$NIGHTLY" = true ]; then
             # 22:35 UTC of the day the run started (it is meant to start at
-            # 15:00 UTC, so this is the same UTC day).
+            # 15:17 UTC, so this is the same UTC day). GitHub can start a
+            # scheduled run hours late: one that starts after 22:05 UTC (or
+            # after midnight, when "today's" 22:35 would be a whole day of
+            # runners away) skips the night instead.
             deadline=$(date -u -d "$(date -u +%F) 22:35" +%s)
+            hour=$(date -u +%-H)
+            if [ "$hour" -lt 14 ] || [ $(( deadline - now )) -lt 1800 ]; then
+              echo "Tonight's run started too late ($(date -u '+%H:%M UTC')); skipped"; exit 1
+            fi
             jobs="[0,1,2,3,4,5,6,7]" shards=4
           else
             deadline=$(( now + MINUTES * 60 ))
@@ -117,6 +146,7 @@ jobs:
   test:
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     permissions:
       # actions: read lets stop-on-merge.sh see waiting runs and CI jobs.
@@ -130,18 +160,16 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -q cadquery-ocp mpmath >/dev/null 2>&1
+      - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       - name: Random rounds until the time is up (logs in kernel-results)
         env:
           DEADLINE: ${{ needs.plan.outputs.deadline }}
@@ -152,7 +180,9 @@ jobs:
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; then
+          # A branch's run, and tonight's jobs past the first two (the night
+          # always keeps two), give their runners to CI (stop-on-merge.sh).
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
@@ -175,6 +205,7 @@ jobs:
     needs: [plan, test]
     if: ${{ !cancelled() && needs.plan.outputs.second_leg == 'true' }}
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     permissions:
       actions: read
@@ -187,18 +218,16 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -q cadquery-ocp mpmath >/dev/null 2>&1
+      - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       - name: Random rounds until the time is up (logs in kernel-results)
         env:
           DEADLINE: ${{ needs.plan.outputs.deadline }}
@@ -209,7 +238,9 @@ jobs:
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; then
+          # A branch's run, and tonight's jobs past the first two (the night
+          # always keeps two), give their runners to CI (stop-on-merge.sh).
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
@@ -232,6 +263,7 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.shards != '[]' }}
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     strategy:
       fail-fast: false
@@ -242,13 +274,11 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
@@ -276,6 +306,9 @@ jobs:
           echo $code >"$out/exit-code.txt"
           # Counts only (no mutant names): 0 all caught, 2 some missed, 3 some timed out, 124/130 cut off.
           echo "exit code $code; caught $(grep -c . "$out/caught.txt" 2>/dev/null || echo 0), missed $(grep -c . "$out/missed.txt" 2>/dev/null || echo 0)"
+          # Anything else (4: the unmutated tests failed; 1: cargo mutants
+          # itself failed) makes the shard red, and collect files an issue.
+          case $code in 0 | 2 | 3 | 124 | 130) ;; *) exit 1 ;; esac
       - name: Save the results to kernel-results
         if: always()
         env:
@@ -287,6 +320,7 @@ jobs:
     needs: [plan, test, test-second-leg, mutants]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -302,6 +336,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+          # Each job's result: a red one with no failure folder files an issue too.
+          JOBS: ${{ toJSON(needs) }}
         run: |
           export BRANCH=$REF
           r="$RUNNER_TEMP/results"
@@ -318,3 +354,26 @@ jobs:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
         run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save collect "$RUNNER_TEMP/logs"
+
+  # The engine's keys end a year after they were made: from three weeks
+  # before, one issue here names the key and the date (token_expiry.py; it
+  # prints nothing else). Nightly runs only.
+  keys:
+    needs: idle
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    environment: kernel
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: The engine's keys have more than three weeks left
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/token_expiry.py KERNEL_READ RESULTS_WRITE

@@ -35,6 +35,11 @@ function standIn() {
   return {
     kernel,
     live: () => [...live].sort((a, b) => a - b),
+    /** The kernel replaced by a fresh one (KernelCalls.onRestart): nothing held, handles counting from 1 again. */
+    restart() {
+      live.clear();
+      next = 1;
+    },
     /** Frees wait until the returned function is called. */
     hold() {
       let open = () => {};
@@ -181,4 +186,46 @@ test("closed during a use: everything is freed once the use ends, and nothing mo
   await use;
   assert.deepEqual(k.live(), []);
   await assert.rejects(cache.body(box(25)), /closed/);
+});
+
+test("closed during a rebuild: the rebuild's own keepOnly at its end keeps nothing (two quick Undos, real-use hunt C1)", async () => {
+  // rebuildTimeline is cache.using(build, then keepOnly(what it built)). Every Undo remounts Design, closing the old cache
+  // while its rebuild runs. Worked by hand: handle 1 is built, the cache is closed (it frees nothing yet, the use runs),
+  // then the rebuild asks to keep [1]. A closed cache keeps nothing, so when the use ends handle 1 is freed: live is [].
+  // Before the fix keepOnly put [1] back as wanted and the end of the use kept it, out of reach of any cache, for good.
+  const k = standIn();
+  const cache = new BodyCache(k.kernel);
+  const goesOn = later();
+  const rebuild = cache.using(async () => {
+    const h = await cache.body(box(20));
+    await goesOn.p;
+    await cache.keepOnly([h]);
+  });
+  await new Promise((r) => setImmediate(r));
+  await cache.close();
+  assert.deepEqual(k.live(), [1], "still in use");
+  goesOn.done();
+  await rebuild;
+  assert.deepEqual(k.live(), [], "the closed cache's body is freed");
+});
+
+test("a fresh kernel: forget drops every old handle unfreed, and each body is built again", async () => {
+  const k = standIn();
+  const cache = new BodyCache(k.kernel);
+  assert.equal(await cache.body(box(10)), 1);
+  assert.equal(await cache.body(box(20)), 2);
+  await cache.keepOnly([1, 2]);
+  k.restart();
+  cache.forget();
+  assert.equal(cache.size, 0);
+  // The fresh kernel hands out 1 again, now for the 20 mm box: asked for it, the cache builds it (one build, handle 1)
+  // and never answers the old handle 2, which the fresh kernel doesn't hold.
+  assert.equal(await cache.body(box(20)), 1);
+  assert.deepEqual(await cache.view(1), { handle: 1 });
+  // Keeping it frees nothing: the old 1 and 2 are not freed on the fresh kernel (that would free the new 1, or fail).
+  await cache.keepOnly([1]);
+  assert.deepEqual(k.live(), [1]);
+  // The 10 mm box is built anew too, as 2.
+  assert.equal(await cache.body(box(10)), 2);
+  assert.deepEqual(k.live(), [1, 2]);
 });

@@ -32,7 +32,7 @@ test("lengths read by hand: plain decimals of mm, with or without the unit", () 
 });
 
 test("length limits at 0.9× and 1.1× of the kernel's smallest piece and largest size", () => {
-  // kernel/src/tolerance.rs: MIN_FEATURE = 1e-3 mm, MAX_SIZE = 1e6 mm.
+  // The kernel's limits: MIN_FEATURE = 1e-3 mm, MAX_SIZE = 1e6 mm.
   assert.equal(MIN_TYPED, 1e-3);
   assert.equal(MAX_TYPED, 1e6);
   assert.match((readLength("0.0009") as { error: string }).error, /at least 0.001 mm/, "0.9 × MIN_FEATURE is refused");

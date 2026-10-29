@@ -2,12 +2,10 @@ name: Kernel fuzzing
 
 # The private kernel's fuzzing (Panosolid/kernel), on this public repo's free
 # runners like its CI (kernel-ci.yml; Ben's decision, 2026-10-27): the STL
-# reader against a model of the format (the kernel's tests/fuzz_stl.rs) and
-# coverage-guided fuzzing of the kernel's entry points (its fuzz/, cargo-fuzz
-# on nightly Rust, one job per target), every body their corpus builds then
-# compared with exact values and OpenCascade (its
-# prototypes/oracle/fuzz_shapes.py, with the planted flipped face that must
-# be caught in every body).
+# reader against a model of the format and coverage-guided fuzzing of the
+# kernel's entry points (cargo-fuzz on nightly Rust, one job per target),
+# every body their corpus builds then compared with exact values and
+# OpenCascade (with a planted flipped face that must be caught in every body).
 #
 # Nightly at 23:10 UTC, after the kernel's random testing
 # (kernel-nightly.yml, collected by about 22:50); "Run workflow" tests one
@@ -45,8 +43,29 @@ env:
   MINUTES: ${{ inputs.minutes || '45' }}
 
 jobs:
-  plan:
+  # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
+  # waiting for a runner and no merge queue run (branch_testing.py
+  # wait-idle), or after three hours however busy, so a night is never lost.
+  # It holds one runner while it waits instead of all of them.
+  idle:
     runs-on: ubuntu-latest
+    timeout-minutes: 185
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/branch_testing.py wait-idle 10800
+
+  plan:
+    needs: idle
+    runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
@@ -65,19 +84,18 @@ jobs:
   stl:
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       # A debug build (the tests' own profile), so overflow checks are on.
       # The job fails when a round found something; collect still runs.
@@ -99,6 +117,7 @@ jobs:
     # entry points, one job per target, from the committed seeds.
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -109,19 +128,17 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@2c76c034f9e32a5d6e2c104dc4df23a22476db04 # nightly
       - run: cargo install cargo-fuzz --locked >/dev/null 2>&1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -q cadquery-ocp mpmath >/dev/null 2>&1
+      - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       - name: Fuzz until the time is up (logs in kernel-results)
         env:
           TARGET: ${{ matrix.target }}
@@ -176,6 +193,7 @@ jobs:
     needs: [plan, stl, kernel]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -189,6 +207,9 @@ jobs:
           GH_REPO: Panosolid/kernel-results
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
+          # Each job's result: a red one with no failure folder (a fuzzer or an
+          # oracle run that crashed or ran out of time) files an issue too.
+          JOBS: ${{ toJSON(needs) }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           export BRANCH=$REF

@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
-import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4195, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4195/?test-hooks";
@@ -34,6 +34,16 @@ async function fresh(width = 1280, touch = false) {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  // The presses the page heard, last 40, for a timed-out wait's report (WebKit's only failure since PR #22 shows no state otherwise).
+  await page.addInitScript(() => {
+    const log = (window.__presses = []);
+    for (const type of ["touchstart", "touchend", "pointerdown", "pointerup", "click"])
+      document.addEventListener(type, (e) => {
+        const t = e.target instanceof Element ? e.target.id || e.target.getAttribute("class") || e.target.tagName : String(e.target);
+        log.push(`${type}@${Math.round(e.clientX ?? e.changedTouches?.[0]?.clientX ?? -1)},${Math.round(e.clientY ?? e.changedTouches?.[0]?.clientY ?? -1)}:${t}`);
+        if (log.length > 40) log.shift();
+      }, true);
+  });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -44,7 +54,21 @@ async function fresh(width = 1280, touch = false) {
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
-const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 8000 }).catch(async () => assert.fail(`${what}: timed out`));
+/** What the page shows now, for a timed-out wait's report: the sketch, the tool bar over the view, the sheet, the presses heard. */
+const pageState = (page) =>
+  page
+    .evaluate(() => {
+      const v = document.querySelector("#viewport")?.dataset ?? {};
+      const bar = document.getElementById("phone-float");
+      return JSON.stringify({
+        view: { ...v }, status: document.getElementById("sketch-status")?.textContent,
+        bar: bar ? `${bar.hidden ? "hidden" : "shown"} ${bar.dataset.kind}: ${bar.textContent}` : null,
+        sheet: document.getElementById("properties-toggle")?.getAttribute("aria-expanded"),
+        focus: document.activeElement?.id || document.activeElement?.tagName, presses: window.__presses,
+      });
+    })
+    .catch((e) => `(no state: ${e.message})`);
+const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 8000 }).catch(async () => assert.fail(`${what}: timed out; ${await pageState(page)}`));
 const camera = (page) => page.evaluate(() => window.fissionTest.camera());
 const canvasBox = (page) => page.locator("#viewport canvas").boundingBox();
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
@@ -217,9 +241,12 @@ try {
         await hover(page, [20, 15, 20]);
         assert.equal(await data(page, "hover"), "face 1");
         assert.equal(await data(page, "hoverPlane"), "");
-        // Pixel probe: that point of the front plane, in front of the top, shows the box, not the plane's blue.
+        // Pixel probe: that point of the front plane, in front of the top, shows the box, not the plane's blue. Both
+        // are blue now (the hover tints the top 40% towards the selection's (74, 168, 255): (122, 167, 213) before
+        // lighting, about (100, 174) lit in red and blue), so the red tells them apart: with the plane drawn over the
+        // top instead (tried by drawing the planes last) the pixel measured (168, 255). The line is halfway, 134.
         const [r, , b] = await pixelAt(page, [20, 15, 20]);
-        assert.ok(b - r < 60, `the top, not the plane, is drawn there: rgb ${r}, ${b}`);
+        assert.ok(r < 134, `the top, not the plane, is drawn there: rgb ${r}, ${b}`);
       }
       // From the top view nothing is in front of the top.
       await press(page, '[data-view="top"]', tap);
@@ -339,7 +366,7 @@ try {
   await check("375 px, taps: the front plane from its button is looked at from the front, a rectangle tapped on it and extruded", async () => {
     const page = await fresh(375, true);
     await createSketch(page, true);
-    await page.tap("#sketch-plane-XZ");
+    await pickPlane(page, "XZ", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const cam = await settle(page);
     near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking from the front");
@@ -374,6 +401,13 @@ try {
       const ids = await page.$$eval("#timeline [data-item]", (lis) => lis.map((li) => li.dataset.item));
       assert.equal(ids.length, 3);
       const [box, sketch, ext] = ids;
+      // The Extrude hid the sketch it used (Ben, 2026-10-29); its eye in the Browser shows it again, so its lines can be probed below.
+      await until(page, () => document.querySelector("#viewport").dataset.sketchLines === "0", null, "the used sketch hidden");
+      await openPanel(page, "browser", tap);
+      await press(page, `#browser [data-eye="sketches/${sketch}"]`, tap);
+      await until(page, (id) => document.querySelector(`#browser [data-eye="sketches/${id}"]`)?.getAttribute("aria-label") === "Hide Sketch 1", sketch, "the sketch shown again");
+      await until(page, () => document.querySelector("#viewport").dataset.sketchLines !== "0", null, "its lines drawn");
+      await closePanels(page, tap);
       /** Each bar item's flags: s suppressed, g greyed, w warned, f failed. */
       const flags = async () => {
         await rebuilt(page);

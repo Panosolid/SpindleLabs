@@ -4,7 +4,7 @@
 // built folder (the update test makes a second version with it).
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OFFLINE_MODE } from "./offline.config.mjs";
 
@@ -87,7 +87,8 @@ export function offlinePlugin(enabled = OFFLINE_MODE) {
     name: "spindlelabs-offline",
     apply: "build",
     configResolved(config) {
-      outDir = join(config.root, config.build.outDir);
+      // resolve, not join: a full path (a plant build into the temp folder) stays itself.
+      outDir = resolve(config.root, config.build.outDir);
     },
     transformIndexHtml() {
       return enabled ? [{ tag: "link", attrs: { rel: "manifest", href: "./manifest.webmanifest" }, injectTo: "head" }] : [];

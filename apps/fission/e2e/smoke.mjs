@@ -191,7 +191,7 @@ try {
     const box = await page.locator("#viewport canvas").boundingBox();
     const screen = (p) => screenPoint(box, p);
     const selection = () => page.evaluate(() => document.body.dataset.selection ?? "");
-    // Kernel face order for a box (primitives.rs): −Z, +Z, −Y, +Y, −X, +X.
+    // Kernel face order for a box: −Z, +Z, −Y, +Y, −X, +X.
     const top = screen([20, 15, 20]); // centre of the +Z face: face 1
     const front = screen([20, 0, 10]); // centre of the −Y face: face 2
     await page.mouse.click(top.x, top.y);
@@ -222,7 +222,7 @@ try {
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.shape === "box");
     await page.waitForTimeout(1000);
     await page.keyboard.press("Escape");
-    // Edges (17c). Kernel edge order for a box (primitives.rs): the −Z face
+    // Edges (17c). Kernel edge order for a box: the −Z face
     // makes edges 0–3, the +Z face 4–7 (first 4: corner 4 (0,0,20) to 5
     // (40,0,20), the top front edge), the −Y face adds 8: corner 1 (40,0,0)
     // to 5 (40,0,20), the front right upright, and 9.
@@ -266,8 +266,9 @@ try {
       const s = at(p);
       return pixel((s.x - box.x) / box.width, (s.y - box.y) / box.height);
     };
-    // How green a pixel is: the selection colour is green, the body grey-blue.
-    const green = ([r, g, b]) => g - (r + b) / 2;
+    // How blue a pixel is: the selection colour is the accent blue (74, 168, 255), blue 181 above red; the body
+    // grey-blue (154, 167, 184), 30 above.
+    const blue = ([r, , b]) => b - r;
     const away = () => page.mouse.move(box.x + 2, box.y + box.height - 2); // empty space, below the floating browser: nothing hovered
     const viewport = (key) => page.$eval("#viewport", (el, k) => el.dataset[k], key);
     const listed = () => page.$$eval("#selection-list li", (els) => els.map((e) => e.textContent));
@@ -283,7 +284,7 @@ try {
     await page.mouse.click(at(top).x, at(top).y);
     await away();
     const selectedTop = await colourAt(top);
-    assert.ok(green(selectedTop) > green(plainTop) + 40, `selected top face ${selectedTop} is green, was ${plainTop}`);
+    assert.ok(blue(selectedTop) > blue(plainTop) + 40, `selected top face ${selectedTop} is blue, was ${plainTop}`);
     assert.deepEqual(await colourAt(front), plainFront, "the front face is not selected");
     assert.equal(await viewport("highlight"), "faces 1 edges ");
     assert.deepEqual(await listed(), ["Top face · plane face:feature-1/top"]);
@@ -293,7 +294,7 @@ try {
     await page.mouse.move(at(front).x, at(front).y);
     const hoveredFront = await colourAt(front);
     assert.equal(await viewport("hover"), "face 2");
-    assert.ok(green(hoveredFront) > green(plainFront) + 10, `hovered front ${hoveredFront}, plain ${plainFront}`);
+    assert.ok(blue(hoveredFront) > blue(plainFront) + 10, `hovered front ${hoveredFront}, plain ${plainFront}`);
     await away();
     assert.equal(await viewport("hover"), "");
     assert.deepEqual(await colourAt(front), plainFront, "leaving the face ends the hover");
@@ -308,7 +309,7 @@ try {
     // Body 1 in the browser selects the whole body: every face tinted, its row lit.
     await clickRow("body-1");
     assert.equal(await viewport("highlight"), "body faces  edges ");
-    assert.ok(green(await colourAt(front)) > green(plainFront) + 40, "the body's front face is tinted too");
+    assert.ok(blue(await colourAt(front)) > blue(plainFront) + 40, "the body's front face is tinted too");
     // The box's Timeline row selects the same body (24f6), so it is lit with Body 1's row.
     assert.deepEqual(await lit(), ["feature-1", "body-1"]);
     assert.deepEqual(await listed(), ["Body 1 · solid body:feature-1"]);
@@ -607,12 +608,20 @@ try {
     await page.waitForFunction(() => document.querySelector("#error").textContent === "The width must be more than 0 mm.");
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
     assert.equal(await text("volume"), shown);
-    // A size the kernel refuses (under its 0.001 mm) gets the kernel's own reason.
+    // Under the modeller's 0.001 mm is refused by the panel too (app sweep 2026-10-28), in its words, not the kernel's.
     await setSize("width", 0.0001);
-    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("width must be between"));
+    await page.waitForFunction(() => document.querySelector("#error").textContent === "The width must be at least 0.001 mm, the smallest piece the modeller keeps.");
+    assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "false");
+    // A part the kernel refuses gets the kernel's own reason: a 0.0015 mm width is a thin box, but as a cylinder it is a
+    // diameter, radius 0.00075 mm, under the kernel's 0.001.
+    await setSize("width", 0.0015);
+    await page.waitForFunction(() => document.querySelector("#error").textContent === "");
+    await page.selectOption("#shape", "cylinder");
+    await page.waitForFunction(() => document.querySelector("#error").textContent.includes("radius must be between"));
     // The old numbers stay on screen, but marked out of date, never shown as current.
     assert.equal(await page.$eval("#stats", (el) => el.dataset.stale), "true");
     assert.equal(await page.isVisible("#stale-note"), true);
+    await page.selectOption("#shape", "box");
     await setSize("width", 40);
     await page.waitForFunction(() => document.querySelector("#error").textContent === "");
     assert.equal(await text("volume"), "24,000 mm³");
@@ -1545,14 +1554,22 @@ try {
       assert.ok(notice.width > 0 && notice.left >= 0 && notice.right <= 375 && !notice.cut, JSON.stringify(notice));
       assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
       await phone.screenshot({ path: "e2e/design-375-notice.png" });
-      // A new stored project; the unreadable one is left as it was.
-      await phone.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
+      // The new project is stored only once it changes (real-use hunt A1): nothing new stored yet, and the
+      // unreadable one is left as it was.
+      await phone.waitForTimeout(1500); // past autosave's quiet moment
+      assert.deepEqual((await storedKeys(phone)).filter((k) => k.startsWith("project/")), [`project/${id}`]);
+      // Dismiss hides the message; a plain reload tries the old one again, so the message is back.
+      await phone.click("#file-dismiss");
+      assert.equal((await phone.$eval("#file-notice", (el) => el.getBoundingClientRect().height)), 0);
+      await phone.reload();
+      await phone.waitForSelector("#start-hint", { state: "visible" });
+      assert.match(await phone.textContent("#file-status"), /^Couldn't open the last project /);
+      // A change keeps the new project; the next start opens it without a message.
+      await startWithBox(phone);
+      await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const fresh = await phone.evaluate(() => document.body.dataset.projectId);
       assert.notEqual(fresh, id);
       assert.deepEqual((await storedKeys(phone)).filter((k) => k.startsWith("project/")).sort(), [`project/${id}`, `project/${fresh}`].sort());
-      // Dismiss hides the message; the next start opens the new project without one.
-      await phone.click("#file-dismiss");
-      assert.equal((await phone.$eval("#file-notice", (el) => el.getBoundingClientRect().height)), 0);
       await phone.reload();
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       assert.equal(await phone.evaluate(() => document.body.dataset.projectId), fresh);
@@ -1748,6 +1765,8 @@ try {
       // Back to Design in the first pane and Image beside it.
       await switchTo(wide, "design");
       await wide.waitForFunction(() => document.body.dataset.split === "image");
+      // The status shows "—" until the kernel has answered for the design shown again, so wait for the answer.
+      await wide.waitForFunction(() => document.querySelector("#properties #status")?.textContent !== "—");
       assert.equal(await wide.textContent("#properties #status"), "valid");
 
       // Close split: one view again, its canvas gone, the first view untouched.

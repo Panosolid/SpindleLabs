@@ -28,8 +28,8 @@ export function hintOf(tool: SketchTool): string {
 }
 
 export interface PointerHint {
-  /** Shows `text` by the point (x, y) in the host's pixels; empty text hides it. */
-  show(text: string, x: number, y: number): void;
+  /** Shows `text` by the point (x, y) in the host's pixels; empty text hides it. `note`: why a click did nothing, drawn as a warning that wraps. */
+  show(text: string, x: number, y: number, note?: boolean): void;
   hide(): void;
   readonly element: HTMLElement;
 }
@@ -65,9 +65,10 @@ export function pointerHint(host: HTMLElement): PointerHint {
   host.append(el);
   const api: PointerHint = {
     element: el,
-    show(text, x, y) {
+    show(text, x, y, note = false) {
       if (text === "") return api.hide();
       if (el.textContent !== text) el.textContent = text;
+      el.classList.toggle("pointer-hint-note", note);
       el.hidden = false;
       el.style.left = `${Math.round(x)}px`;
       el.style.top = `${Math.round(y)}px`;

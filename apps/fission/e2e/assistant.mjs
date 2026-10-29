@@ -34,7 +34,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { gridSnapOn, reloadEmpty, sheetsClearFor, startWithBox, switchTo } from "./start.mjs";
+import { gridSnapOn, reloadEmpty, sheetsClearFor, startWithBox, switchTo, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4181, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4181/";
@@ -56,11 +56,15 @@ const OPENAI_KEY = "sk-proj-test-e2e-0123456789";
  * as the check allows (window.heldLines, window.allowLines), so the bar
  * can be seen part way.
  */
-async function fresh(answers = [], { ollama = true, builtIn = false, open = true, held = false } = {}) {
+async function fresh(answers = [], { ollama = true, builtIn = false, open = true, held = false, gpu = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
-  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "gpu", { get: () => undefined, configurable: true }));
+  // No WebGPU, unless `gpu`: a card that can run the in-browser model, as far as the check can see.
+  await page.addInitScript((gpu) => {
+    const card = { requestAdapter: async () => ({ features: new Set(["shader-f16"]), limits: { maxStorageBufferBindingSize: 2 ** 31 } }) };
+    Object.defineProperty(Navigator.prototype, "gpu", { get: () => (gpu ? card : undefined), configurable: true });
+  }, gpu);
   const builtInAsked = [];
   const builtInCreated = [];
   if (builtIn) {
@@ -441,7 +445,7 @@ try {
         if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
         // Sketch 1: a 40 × 30 rectangle from (0, 0), extruded 10 mm (Extrude 1, item 3): the part is the extrude, 40 · 30 · 10 = 12,000 mm³.
         await page.click("#create-sketch");
-        await page.click("#sketch-plane-XY");
+        await pickPlane(page, "XY", false);
         await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
         await gridSnapOn(page);
         await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
@@ -898,6 +902,24 @@ try {
       assert.match(await page.textContent("#ai-found"), /Ollama on your computer, or an API key, will work instead/);
     } finally {
       await page.close();
+    }
+  });
+
+  await check("a page from before an update: the in-browser runner can't be loaded, and the panel says to reload, not the browser's import error (real-use hunt A4)", async () => {
+    const { page } = await fresh([], { open: false, gpu: true });
+    const before = errors.length;
+    try {
+      // A newer build is on the server: this page's chunks loaded on demand (the in-browser runner) are gone.
+      await page.route(/\/assets\/[^/]+\.js$/, (route) => route.fulfill({ status: 404, body: "" }));
+      await page.click("#assistant-toggle");
+      await looked(page);
+      const found = await page.textContent("#ai-found");
+      assert.match(found, /In your browser can't run here: the in-browser model's code couldn't be loaded: SpindleLabs may have been updated since this page opened, or the connection dropped\. Reload the page to try again/);
+      assert.doesNotMatch(found, /dynamically imported module/);
+    } finally {
+      await page.close();
+      // The 404s are this check's own doing.
+      errors.splice(before, Infinity, ...errors.slice(before).filter((e) => !/Failed to load resource|dynamically imported module/.test(e)));
     }
   });
 
