@@ -8,14 +8,20 @@
 // the Move shows the handles at its moved pivot, and dragging the Z arrow
 // moves the box in the view before OK (35e2b drew it as built until OK).
 // At 1280 px with a mouse and at 375 px with a finger; at 393 × 852 (Ben's
-// iPhone) the handles stay in the view above the Properties sheet. Screenshots go
+// iPhone) the handles stay in the view above the Properties sheet. Snap
+// (35e2d): with a ⌀40 × 20 cylinder inserted beside the box, the cylinder's
+// top clicked and then the box's top turns the cylinder over (180° about X)
+// onto the box, centred: the boxes fill in, OK builds it, and the STL spans
+// both, worked by hand; at 393 × 852 Snap puts the Properties sheet away
+// while the view is tapped and brings it back with the numbers and OK,
+// never past 40% of the view. Screenshots go
 // to E2E_SHOTS when set. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { HOME, screenPoint } from "./sketch-screen.mjs";
 import { preview } from "vite";
-import { closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, insertPreset, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4232, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4232/";
@@ -26,6 +32,7 @@ const shots = process.env.E2E_SHOTS;
 const until = (page, fn, arg, what, timeout = 8000) => page.waitForFunction(fn, arg, { timeout }).catch(async () => assert.fail(`${what}: timed out`));
 
 async function fresh(width, height, touch) {
+  framed = HOME;
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -43,9 +50,11 @@ const closed = (page) => until(page, () => document.getElementById("move-panel")
 const boxValue = (page, key) => page.inputValue(`#move-${key}`);
 const viewData = (page, key) => page.evaluate((k) => document.getElementById("viewport").dataset[k], key);
 
+/** The view the page is framed in: HOME (the box framed) until a second body frames both (`withCylinder`). */
+let framed = HOME;
 /** Where model point `p` is on screen in the view the box opens in (HOME: the box framed). */
 async function screenAt(page, p) {
-  return screenPoint(await page.locator("#viewport canvas").boundingBox(), p, HOME);
+  return screenPoint(await page.locator("#viewport canvas").boundingBox(), p, framed);
 }
 /** A click or tap on model point `p`, the sheets put away first so the view is there to press. */
 async function pressAt(page, p, tap) {
@@ -122,7 +131,7 @@ async function dragArrow(page, axis, mm, touch) {
   const canvas = await page.locator("#viewport canvas").boundingBox();
   for (let s = 0; s <= 200; s += 0.01) {
     const p = centre.map((c, k) => (k === axis ? c + s : c));
-    const q = screenPoint(canvas, p, HOME);
+    const q = screenPoint(canvas, p, framed);
     const d = Math.hypot(q.x - from[0], q.y - from[1]);
     if (d < best) [best, s0] = [d, s];
     if (d > best + 50) break;
@@ -158,6 +167,22 @@ async function stlBounds(page, tap) {
   return [0, 1, 2].map((i) => [Math.min(...pts.map((p) => p[i])), Math.max(...pts.map((p) => p[i]))]);
 }
 const near = (got, want, what) => got.flat().forEach((x, i) => assert.ok(Math.abs(x - want.flat()[i]) <= 1e-3, `${what}: ${JSON.stringify(got)}, want ${JSON.stringify(want)}`));
+
+/** The box (feature-1) and a ⌀40 × 20 cylinder (feature-2) inserted with it, standing on the origin: x and y −20..20, z 0..20. */
+async function withCylinder(page, tap) {
+  await insertPreset(page, "cylinder", tap);
+  await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 2, null, "the cylinder in");
+  await rebuilt(page);
+  // The view frames both: x −20..40, y −20..30, z 0..20, so the centre (10, 5, 10) and half the diagonal √(60² + 50² + 20²)/2 = √6500/2.
+  const radius = Math.sqrt(6500) / 2;
+  await until(page, (r) => Math.abs(Number(document.getElementById("viewport").dataset.framedRadius) - r) < 1e-9, radius, "both bodies framed");
+  await page.waitForTimeout(400); // the camera's move to the new framing
+  framed = { ...HOME, centre: [10, 5, 10], radius };
+}
+const snapStage = (page, stage) => until(page, (s) => document.getElementById("viewport").dataset.moveSnap === s, stage, `the snap at "${stage}"`);
+// Points on the cylinder's top away from the box (x < 0) and on the box's top away from the cylinder (beyond its radius 20).
+const CYLINDER_TOP = [-16, -6, 20];
+const BOX_TOP = [30, 21, 20];
 
 let failed = 0;
 async function check(name, fn) {
@@ -241,7 +266,80 @@ try {
         await page.context().close();
       }
     });
+
+    await check(`${at}: Snap turns the cylinder over onto the box's top, centred; OK builds it there, by hand`, async () => {
+      const page = await fresh(width, height, tap);
+      try {
+        await withCylinder(page, tap);
+        await press(page, "#move", tap);
+        await opened(page);
+        await pressAt(page, CYLINDER_TOP, tap);
+        await until(page, () => document.body.dataset.selection === "body:feature-2", null, "the cylinder picked");
+        if (tap) await openPanel(page, "properties", true);
+        await press(page, "#move-snap", tap);
+        await snapStage(page, "from");
+        assert.equal(await page.textContent("#move-hint"), "Snap: click or tap a face or edge to move");
+        // No handles while Snap picks: a click is a pick, never a grab (the view takes them off on its next frame).
+        await until(page, () => document.getElementById("viewport").dataset.moveHandles === undefined, null, "the handles gone while Snap picks");
+        if (shots) await page.screenshot({ path: `${shots}/move-snap-from-${width}.png` });
+        await pressAt(page, CYLINDER_TOP, tap);
+        await snapStage(page, "to");
+        await pressAt(page, BOX_TOP, tap);
+        await snapStage(page, "");
+        // Both tops face +Z, so the cylinder turns over: half a turn about X through its middle (0, 0, 10) takes its
+        // top's centre (0, 0, 20) to (0, 0, 0); the box's top is centred (20, 15, 20), so the shift is (20, 15, 20).
+        const boxes = await Promise.all(["x", "y", "z", "turnX", "turnY", "turnZ"].map((k) => boxValue(page, k)));
+        assert.deepEqual(boxes, ["20", "15", "20", "180", "0", "0"]);
+        if (shots) await page.screenshot({ path: `${shots}/move-snap-done-${width}.png` });
+        if (tap) await openPanel(page, "properties", true);
+        await press(page, "#move-ok", tap);
+        await closed(page);
+        await rebuilt(page);
+        // The box 0..40, 0..30, 0..20 and the cylinder on it, centred (20, 15): x 0..40, y −5..35, z 20..40.
+        near(await stlBounds(page, tap), [[0, 40], [-5, 35], [0, 40]], "the STL after the snap");
+      } finally {
+        await page.context().close();
+      }
+    });
   }
+
+  await check("393 × 852 (Ben's iPhone): Snap puts the sheet away while the view is tapped, then brings it back with the numbers, never past 40% of the view", async () => {
+    const page = await fresh(393, 852, true);
+    try {
+      await withCylinder(page, true);
+      await page.tap("#move");
+      await opened(page);
+      await pressAt(page, CYLINDER_TOP, true);
+      await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "the sheet up with the boxes");
+      await page.waitForTimeout(300);
+      const [sheet, view] = await Promise.all([page.locator("#properties").boundingBox(), page.locator("#viewport").boundingBox()]);
+      const covered = Math.max(0, Math.min(sheet.y + sheet.height, view.y + view.height) - Math.max(sheet.y, view.y)) / view.height;
+      assert.ok(covered <= 0.4, `the sheet covers ${(covered * 100).toFixed(0)}% of the view`);
+      // Snap puts the sheet away: the whole view is there to tap, what to tap said over it.
+      await page.tap("#move-snap");
+      await snapStage(page, "from");
+      await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "false", null, "the sheet away while picking");
+      assert.equal(await page.isVisible("#move-hint"), true, "what to tap is said over the view");
+      if (shots) await page.screenshot({ path: `${shots}/move-snap-from-393.png` });
+      for (const [p, stage] of [[CYLINDER_TOP, "to"], [BOX_TOP, ""]]) {
+        const q = await screenAt(page, p);
+        assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [q.x, q.y]), "CANVAS", `(${p}) is on the view`);
+        await page.touchscreen.tap(q.x, q.y);
+        await snapStage(page, stage);
+        if (shots && stage === "to") await page.screenshot({ path: `${shots}/move-snap-to-393.png` });
+      }
+      // Snapped: the sheet comes back with the numbers and OK, still at most 40% of the view.
+      await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "the sheet back with the numbers");
+      await page.waitForTimeout(300);
+      const back = await page.locator("#properties").boundingBox();
+      assert.ok((view.y + view.height - back.y) / view.height <= 0.4, "the sheet back covers at most 40% of the view");
+      assert.equal(await page.isVisible("#move-ok"), true);
+      assert.equal(await boxValue(page, "turnX"), "180");
+      if (shots) await page.screenshot({ path: `${shots}/move-snap-done-393.png` });
+    } finally {
+      await page.context().close();
+    }
+  });
 
   await check("393 × 852 (Ben's iPhone): with the box picked and the Properties sheet up, every handle is in the view above it, and a finger drags one", async () => {
     const page = await fresh(393, 852, true);
