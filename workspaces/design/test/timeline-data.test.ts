@@ -48,8 +48,8 @@ function fixtureProblem(read: (data: unknown) => DesignDocument): string | null 
   // lines 5, 7, 9, 10 (counter 11); the extrude by 10 is feature-11, and
   // in version 2 it replaced the box; Sketch 2 is sketch-12 with a line
   // (points 13, 14, line-15) and a half disc arc round point-16 (arc-17),
-  // so the counter is at 18. Version 3 keeps every one of these.
-  if (doc.version !== 3) return `version ${doc.version}`;
+  // so the counter is at 18. Versions 3 and 4 keep every one of these.
+  if (doc.version !== 4) return `version ${doc.version}`;
   if (JSON.stringify(ids(doc)) !== JSON.stringify(["sketch-2", "feature-11", "sketch-12"])) return `items ${ids(doc)}`;
   if (doc.nextId !== 18) return `nextId ${doc.nextId}`;
   if (Object.hasOwn(doc.timeline, "marker")) return "a marker appeared";
@@ -62,13 +62,13 @@ function fixtureProblem(read: (data: unknown) => DesignDocument): string | null 
   return null;
 }
 
-test("the real version 2 file (saved by main before 24d1) opens as version 3 with every id kept, and reopens byte-identical", () => {
+test("the real version 2 file (saved by main before 24d1) opens as version 4 with every id kept, and reopens byte-identical", () => {
   assert.equal(JSON.parse(REAL_V2).workspaces.design.version, 2);
   assert.equal(fixtureProblem(readDesignDocument), null);
   const doc = projectFromJson(REAL_V2, DESIGN).workspaces.design as DesignDocument;
   assert.deepEqual(partOf(doc), { shape: "sketch-extrude", sizes: { height: 10 } });
-  // Saved, it is version 3.
-  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 3);
+  // Saved, it is version 4 (the current one).
+  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 4);
 });
 
 test("the fixture test fails for a migration broken on purpose, each way", () => {
