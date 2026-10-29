@@ -230,6 +230,16 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   await clickPlane(page, [5, 5], TOP, true);
   await clickPlane(page, [25, 20], TOP, true);
   await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketchPoints?.split(" ").length >= 4);
+  // WebKit moves a tap's click onto a button near the finger (CI run 40805491664: a corner tapped 15 px under the bar
+  // finished the sketch). Its events, made here: a press that begins on the view, then the click on Finish. The sketch stays.
+  await page.evaluate(() => {
+    const canvas = document.querySelector("#viewport canvas");
+    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: 120, clientY: 270 }));
+    canvas.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", clientX: 120, clientY: 270 }));
+    document.getElementById("float-finish").dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 120, clientY: 255 }));
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await page.$eval("#viewport", (v) => v.dataset.sketching), "true", "a tap on the view whose click WebKit moves onto Finish leaves the sketch open");
   // Properties opened by hand (Ben's screenshot): the bar is still over it, and Finish closes it.
   await page.tap("#properties-toggle");
   assert.equal(await sheet(), "true");
