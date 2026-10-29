@@ -1,5 +1,7 @@
-// 35e2c: the Move tool's arrows and rings in the view (move-handles.ts).
-// Where each is drawn (worked by hand), which one a press is on (nearest
+// 35e2c: the Move tool's arrows and rings in the view (move-handles.ts);
+// from Ben's ask (2026-10-29) Move's arrows and Rotate's grips, placed each
+// frame so no two press areas overlap (hand-worked placings, the limits at
+// 0.9× and 1.1×, 6,000 seeded views). Where each is drawn (worked by hand), which one a press is on (nearest
 // wins; the grab distance at 0.9× and 1.1×), the angle round a ring where
 // the pointer's ray meets its plane (worked by hand for each axis, the
 // side-on limit at 0.9× and 1.1×, 2,000 seeded points built on the ring's
@@ -7,7 +9,9 @@
 // up past a whole turn (by hand, and 500 seeded random walks).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EDGE_ON, handleAxis, handleLines, handleNear, isRing, MOVE_HANDLES, MOVE_PX, RING_PIECES, ringAngle, ringBasis, turnBetween } from "../src/move-handles.ts";
+import { ARC_PIECES, ARROW_SHOWN, EDGE_ON, gripPoint, handleAxis, handleNear, isRing, KIND_HANDLES, lineGap, MOVE_GRAB_PX, MOVE_HANDLES, MOVE_PX, placedLine, placeHandles, RING_SHOWN, ringAngle, ringBasis, segmentGap, turnBetween, type Placed } from "../src/move-handles.ts";
+
+type Vec3 = [number, number, number];
 
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
 const DEG = Math.PI / 180;
@@ -38,22 +42,153 @@ test("each ring's basis by hand: (u, v) with u × v along the axis, so u towards
 });
 
 test("where the handles are drawn, by hand: centre (1, 2, 3), half a millimetre to the pixel", () => {
-  const lines = handleLines([1, 2, 3], 0.5);
-  const at = (h: string) => lines.find((l) => l.handle === h)!.points;
-  // The X arrow runs from 58 px to 110 px along +X: 29 mm to 55 mm from the centre, so x = 30 to 56.
-  assert.deepEqual(at("x"), [[30, 2, 3], [56, 2, 3]]);
-  // The Z arrow likewise along +Z: z = 3 + 29 = 32 to 3 + 55 = 58.
-  assert.deepEqual(at("z"), [[1, 2, 32], [1, 2, 58]]);
-  // The Z ring has radius 45 px = 22.5 mm about the centre, starting on u = +X: (23.5, 2, 3); a quarter round (12 of 48 pieces) on v = +Y: (1, 24.5, 3).
-  const ring = at("turnZ");
-  assert.equal(ring.length, RING_PIECES + 1);
-  ring[0].forEach((x, k) => assert.ok(near(x, [23.5, 2, 3][k]), `start ${ring[0]}`));
-  ring[12].forEach((x, k) => assert.ok(near(x, [1, 24.5, 3][k]), `quarter ${ring[12]}`));
-  ring[RING_PIECES].forEach((x, k) => assert.ok(near(x, ring[0][k]), "closed"));
-  // The X ring starts on +Y and a quarter round is on +Z: (1, 2, 25.5).
-  at("turnX")[12].forEach((x, k) => assert.ok(near(x, [1, 2, 25.5][k]), `X ring quarter ${at("turnX")[12]}`));
-  // The arrows start outside the rings: no arrow point is within a ring's radius of the centre.
-  assert.ok(MOVE_PX.arrowFrom > MOVE_PX.ring);
+  const at = (p: Placed) => placedLine([1, 2, 3], 0.5, p);
+  // The X arrow runs from 58 px to 136 px along +X: 29 mm to 68 mm from the centre, so x = 30 to 69; the other way, x = −28 to −67.
+  assert.deepEqual(at({ handle: "x", sign: 1, quarter: 0 }), [[30, 2, 3], [69, 2, 3]]);
+  assert.deepEqual(at({ handle: "x", sign: -1, quarter: 0 }), [[-28, 2, 3], [-67, 2, 3]]);
+  // The Z arrow likewise along +Z: z = 3 + 29 = 32 to 3 + 68 = 71.
+  assert.deepEqual(at({ handle: "z", sign: 1, quarter: 0 }), [[1, 2, 32], [1, 2, 71]]);
+  // The Z grip on quarter 0: the 72 px = 36 mm circle in XY, its arc from 22.5° to 67.5° with the dot (the middle point) at 45°:
+  // (1 + 36 cos 45°, 2 + 36 sin 45°, 3) = (26.456, 27.456, 3); its first point at 22.5°: (1 + 33.26, 2 + 13.78, 3).
+  const z = at({ handle: "turnZ", sign: 1, quarter: 0 });
+  assert.equal(z.length, ARC_PIECES + 1);
+  const r = 36 * Math.SQRT1_2;
+  z[ARC_PIECES / 2].forEach((x, k) => assert.ok(near(x, [1 + r, 2 + r, 3][k]), `dot ${z[ARC_PIECES / 2]}`));
+  z[0].forEach((x, k) => assert.ok(near(x, [1 + 36 * Math.cos(Math.PI / 8), 2 + 36 * Math.sin(Math.PI / 8), 3][k]), `start ${z[0]}`));
+  // The X grip on quarter 1: about X, u = +Y and v = +Z, the middle at 135°: (1, 2 − 25.456, 3 + 25.456).
+  const x = at({ handle: "turnX", sign: 1, quarter: 1 })[ARC_PIECES / 2];
+  x.forEach((c, k) => assert.ok(near(c, [1, 2 - r, 3 + r][k]), `X grip's dot ${x}`));
+  // Every point of a grip is on its circle: 36 mm from the centre, in its plane.
+  for (const p of z) assert.ok(near(Math.hypot(p[0] - 1, p[1] - 2), 36) && p[2] === 3);
+  // The grip point a press aims at: an arrow's middle, a grip's dot.
+  assert.deepEqual(gripPoint([{ x: 0, y: 0 }, { x: 10, y: 4 }], "x"), { x: 5, y: 2 });
+  const arc = Array.from({ length: ARC_PIECES + 1 }, (_, i) => ({ x: i, y: 0 }));
+  assert.deepEqual(gripPoint(arc, "turnY"), { x: ARC_PIECES / 2, y: 0 });
+});
+
+test("the gap between two lines on screen, by hand", () => {
+  // Crossing: 0. Parallel 3 apart: 3. End to end along a line, 4 apart: 4. A point 5 above the middle of a segment: 5.
+  assert.equal(segmentGap({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 }), 0);
+  assert.equal(segmentGap({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 3 }, { x: 10, y: 3 }), 3);
+  assert.equal(segmentGap({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 14, y: 0 }, { x: 20, y: 0 }), 4);
+  assert.equal(segmentGap({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 5 }, { x: 5, y: 5 }), 5);
+  // Lines of points: the least over every pair of pieces; a corner 3-4-5 from a point.
+  assert.equal(lineGap([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], [{ x: 13, y: 4 }, { x: 20, y: 4 }]), 3);
+  assert.equal(lineGap([{ x: 0, y: 0 }, { x: 0, y: 0 }], [{ x: 3, y: 4 }, { x: 3, y: 4 }]), 5);
+});
+
+/** A camera looking along `toward` at the centre from `distance` mm, as a projection to screen pixels (fov 45°, 800 px tall) and the line of sight. */
+function camera(toward: readonly number[], distance: number, centre: Vec3 = [0, 0, 0]) {
+  const len = Math.hypot(...toward);
+  const d = toward.map((x) => x / len) as unknown as Vec3;
+  const up: Vec3 = Math.abs(d[2]) < 0.999 ? [0, 0, 1] : [0, 1, 0];
+  const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const unit = (a: Vec3): Vec3 => a.map((x) => x / Math.hypot(...a)) as unknown as Vec3;
+  const right = unit(cross(d, up));
+  const top = cross(right, d);
+  const eye = centre.map((c, k) => c - d[k] * distance);
+  const focal = 400 / Math.tan((22.5 * Math.PI) / 180); // px: half the 800 px height over tan(fov/2)
+  const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const project = (p: Vec3) => {
+    const q = [p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]];
+    const depth = dot(q, d);
+    if (!(depth > 1e-6)) return null;
+    return { x: 640 + (focal * dot(q, right)) / depth, y: 400 - (focal * dot(q, top)) / depth };
+  };
+  // One CSS pixel in mm at the centre: distance / focal.
+  return { project, sight: d, pixel: distance / focal };
+}
+
+const placed = (kind: "move" | "rotate", toward: readonly number[], reach = MOVE_GRAB_PX.touch) => {
+  const c = camera(toward, 500);
+  return placeHandles(kind, [0, 0, 0], c.pixel, c.sight, c.project, reach);
+};
+
+test("hand-worked placings: the home view, straight down, and the view where X and Y lie on each other", () => {
+  // Looking down (−1, −1, −1) (the camera above the +X +Y +Z corner): every arrow along its axis. With a mouse every
+  // grip sits on quarter 0, the arc between +u and +v, which faces the camera for each circle (u and v both +).
+  assert.deepEqual(placed("move", [-1, -1, -1]), [{ handle: "x", sign: 1, quarter: 0 }, { handle: "y", sign: 1, quarter: 0 }, { handle: "z", sign: 1, quarter: 0 }]);
+  const mouse = MOVE_GRAB_PX.mouse;
+  assert.deepEqual(placed("rotate", [-1, -1, -1], mouse), [{ handle: "turnX", sign: 1, quarter: 0 }, { handle: "turnY", sign: 1, quarter: 0 }, { handle: "turnZ", sign: 1, quarter: 0 }]);
+  // Those near arcs lean towards the camera, so on screen they shrink to √(2/3) of 72 px from the centre and crowd
+  // a finger's 48 px gap; with touch they go to the next arcs tried, whose middles are square to the line of sight
+  // ((0, −1, 1) · (1, 1, 1) = 0 for X; quarters 1 and 3 tie at 0, and 1 is tried first), so all three lie flat on
+  // screen, 72 px out and a third of a turn apart: dots 72√3 = 125 px apart.
+  assert.deepEqual(placed("rotate", [-1, -1, -1]).map((p) => p.quarter), [1, 1, 1]);
+  // From the −X −Y −Z corner instead a mouse's grips move to quarter 2 (between −u and −v), the near side.
+  assert.deepEqual(placed("rotate", [1, 1, 1], mouse).map((p) => p.quarter), [2, 2, 2]);
+  // Straight down Z: the Z arrow points at the camera and the X and Y circles are side-on, so each is left out.
+  assert.deepEqual(placed("move", [0, 0, -1]).map((p) => p.handle), ["x", "y"]);
+  assert.deepEqual(placed("rotate", [0, 0, -1]).map((p) => p.handle), ["turnZ"]);
+  // Looking along (−1, 1, 0) (the camera off the +X −Y edge): X and Y both lie along the screen's same line,
+  // x − (x·d)d = (½, ½, 0) = y − (y·d)d, so the Y arrow turns the other way and the two point apart.
+  assert.deepEqual(placed("move", [-1, 1, 0]), [{ handle: "x", sign: 1, quarter: 0 }, { handle: "y", sign: -1, quarter: 0 }, { handle: "z", sign: 1, quarter: 0 }]);
+});
+
+test("a handle the camera looks along is left out: 0.9× and 1.1× of ARROW_SHOWN and RING_SHOWN", () => {
+  // The X arrow shows the part of its length across the line of sight: with sight = (√(1 − s²), 0, −s) that part is s,
+  // so s = 0.9 · 0.3 hides it and 1.1 · 0.3 keeps it, whichever way the arrow points and however near the camera.
+  const along = (s: number) => [Math.sqrt(1 - s * s), 0, -s];
+  const shown = (kind: "move" | "rotate", toward: readonly number[], h: string) => placed(kind, toward).some((p) => p.handle === h);
+  assert.equal(shown("move", along(0.9 * ARROW_SHOWN), "x"), false);
+  assert.equal(shown("move", along(1.1 * ARROW_SHOWN), "x"), true);
+  // The Z grip's circle seen with |sight · Z| = 0.9 · 0.2: left out; 1.1 · 0.2: shown.
+  const tilt = (s: number) => [Math.sqrt(1 - s * s) * Math.SQRT1_2, Math.sqrt(1 - s * s) * Math.SQRT1_2, -s];
+  assert.equal(shown("rotate", tilt(0.9 * RING_SHOWN), "turnZ"), false);
+  assert.equal(shown("rotate", tilt(1.1 * RING_SHOWN), "turnZ"), true);
+});
+
+test("the gap rule at 0.9× and 1.1×: arrows keep their way while their lines are 2 · reach apart, and turn once they are nearer", () => {
+  // From (−1, −0.3, −0.6) the three arrows along their axes are some gap g apart on screen (the least of the three pairs).
+  const toward = [-1, -0.3, -0.6];
+  const c = camera(toward, 500);
+  const lines = (["x", "y", "z"] as const).map((handle) => placedLine([0, 0, 0], c.pixel, { handle, sign: 1, quarter: 0 }).map((p) => c.project(p)!));
+  const g = Math.min(lineGap(lines[0], lines[1]), lineGap(lines[0], lines[2]), lineGap(lines[1], lines[2]));
+  assert.ok(g > 10, `g ${g}`);
+  // Reach g / 2 / 1.1: 2 · reach = g / 1.1, under g: kept as they are. Reach 1.1 · g / 2: over g: something changes.
+  assert.ok(placed("move", toward, g / 2 / 1.1).every((p) => p.sign === 1));
+  const tight = placed("move", toward, (1.1 * g) / 2);
+  assert.ok(tight.some((p) => p.sign === -1) || tight.length < 3, JSON.stringify(tight));
+});
+
+test("seeded: 6,000 views, near and far, along the axes and in their planes too: no two press areas ever overlap, and nothing looked along is shown", () => {
+  const rand = seeded(20261029);
+  const views: number[][] = [];
+  // The awkward ones first: along each axis, in each coordinate plane, along each diagonal.
+  for (const v of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, -1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 1], [1, -1, 1]]) views.push(v, v.map((x) => -x));
+  while (views.length < 3000) {
+    const z = 2 * rand() - 1;
+    const t = 2 * Math.PI * rand();
+    views.push([Math.sqrt(1 - z * z) * Math.cos(t), Math.sqrt(1 - z * z) * Math.sin(t), z]);
+  }
+  let shownAll = 0;
+  let could = 0;
+  for (const [n, toward] of views.entries()) {
+    for (const kind of ["move", "rotate"] as const) {
+      const reach = n % 2 === 0 ? MOVE_GRAB_PX.touch : MOVE_GRAB_PX.mouse;
+      const centre: Vec3 = [rand() * 100 - 50, rand() * 100 - 50, rand() * 100 - 50];
+      const cc = camera(toward, 60 + rand() * 2000, centre);
+      const got = placeHandles(kind, centre, cc.pixel, cc.sight, cc.project, reach);
+      assert.equal(new Set(got.map((p) => p.handle)).size, got.length, `view ${n}: a handle placed twice`);
+      for (const p of got) assert.ok(KIND_HANDLES[kind].includes(p.handle), `view ${n}: ${p.handle} is not ${kind}'s`);
+      const lines = got.map((p) => placedLine(centre, cc.pixel, p).map((q) => cc.project(q)!));
+      for (let i = 0; i < lines.length; i++)
+        for (let j = i + 1; j < lines.length; j++) {
+          const gap = lineGap(lines[i], lines[j]);
+          assert.ok(gap >= 2 * reach, `view ${n} (${toward.map((x) => x.toFixed(3))}), ${kind}: ${got[i].handle} and ${got[j].handle} only ${gap.toFixed(2)} px apart`);
+        }
+      for (const [i, p] of got.entries()) {
+        const axis = handleAxis(p.handle);
+        if (isRing(p.handle)) assert.ok(Math.abs(cc.sight[axis]) >= RING_SHOWN, `view ${n}: ${p.handle} side-on`);
+        else assert.ok(Math.sqrt(1 - cc.sight[axis] ** 2) >= ARROW_SHOWN, `view ${n}: ${p.handle} looked along`);
+      }
+      // How often every handle that could be shown is: counted, so a change that leaves handles out shows here.
+      const eligible = KIND_HANDLES[kind].filter((h) => (isRing(h) ? Math.abs(cc.sight[handleAxis(h)]) >= RING_SHOWN : Math.sqrt(1 - cc.sight[handleAxis(h)] ** 2) >= ARROW_SHOWN + 0.05)).length;
+      could++;
+      if (got.length >= eligible) shownAll++;
+    }
+  }
+  assert.ok(shownAll / could > 0.97, `every handle that could be shown was in ${((100 * shownAll) / could).toFixed(1)}% of views`);
 });
 
 test("which handle a press is on: the nearest within the grab distance; 0.9× and 1.1× of it", () => {
