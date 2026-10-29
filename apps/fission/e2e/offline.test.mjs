@@ -4,11 +4,11 @@
 // is e2e/offline.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
-import { buildInfo, filesIn, onDemandChunks, ON_DEMAND, writeServiceWorker } from "../offline.mjs";
+import { buildInfo, filesIn, offlinePlugin, onDemandChunks, ON_DEMAND, writeServiceWorker } from "../offline.mjs";
 
 // sw.js is a classic script (a service worker), not a module: run it as one, with a `module` to hand its rules out.
 const sandbox = { self: {}, module: { exports: {} } };
@@ -110,4 +110,22 @@ test("offline mode off: the plugin ships the clean-up worker and no manifest lin
   assert.ok(!off.includes('"fetch"'));
   // Breaking it that way is caught: without unregister the pattern is gone.
   assert.doesNotMatch(off.replace("registration.unregister()", ""), /registration\.unregister\(\)/);
+});
+
+test("a build into a folder given by its full path writes sw.js there (the plant builds, soak-plants.mjs and monkey-plants.mjs, build into the temp folder)", () => {
+  const out = mkdtempSync(join(tmpdir(), "offline-out-"));
+  try {
+    const plugin = offlinePlugin(false);
+    plugin.configResolved({ root: "/somewhere/apps/fission", build: { outDir: out } });
+    plugin.closeBundle();
+    assert.ok(existsSync(join(out, "sw.js")), "sw.js in the folder named");
+    // A relative folder still means one inside the app's root.
+    const plugin2 = offlinePlugin(false);
+    plugin2.configResolved({ root: out, build: { outDir: "dist-here" } });
+    mkdirSync(join(out, "dist-here"));
+    plugin2.closeBundle();
+    assert.ok(existsSync(join(out, "dist-here", "sw.js")));
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
 });

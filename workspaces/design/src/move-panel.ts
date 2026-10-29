@@ -4,7 +4,8 @@
 // Y then Z), the pivot they turn about (folded under its summary, as it is
 // rarely changed: the centre of the picked bodies until a pivot box is
 // typed in, "Centre of the bodies" giving that back), the kernel's
-// refusal, and OK or Cancel. Enter in a box is OK; Escape is Cancel
+// refusal, OK, Cancel, and Snap (35e2d: a face or edge of the bodies
+// laid on another body's, move-snap.ts, which sets the boxes). Enter in a box is OK; Escape is Cancel
 // (workspace.ts `shortcut`). A new Move picks its bodies in the view or the
 // browser while the panel is open; an edited one keeps the bodies it was
 // made with. The workspace drives it; the panel only shows what it is given
@@ -22,6 +23,8 @@ export interface MoveEvents {
   cancel(): void;
   /** "Centre of the bodies": the pivot follows the picked bodies again. */
   centre(): void;
+  /** Snap pressed (35e2d): start picking what to snap, or stop. */
+  snap(): void;
 }
 
 /** What the panel opens on: a new Move (no id) or Move `id`'s numbers, the bodies' names, and whether the pivot follows the bodies. */
@@ -40,6 +43,15 @@ export interface MovePanel {
   setPivot(p: readonly [number, number, number]): void;
   /** One box set from a drag of the view's handles (35e2c): typed values follow the drag. */
   setValue(key: MoveParam, value: number): void;
+  /** The distance and angle boxes set from a snap (35e2d), each to the number itself (already rounded by move-snap.ts), so the bodies land exactly. */
+  setValues(values: MoveValues): void;
+  /**
+   * Snap pressed, with what to pick now in place of the bodies' names, or
+   * not (null). The names hidden is what a phone's Properties sheet watches
+   * (apps/fission main.ts): it goes away while the view is tapped to pick
+   * and comes back with the snapped numbers and OK.
+   */
+  snapping(words: string | null): void;
   /** Why OK recorded nothing ("" hides it). */
   showError(message: string): void;
   /** OK off while the kernel checks the Move, so a second press can't record twice. */
@@ -82,6 +94,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   // The bodies picked, or how to pick them; the second is hidden once there is one (main.ts opens a phone's sheet then).
   const bodies = el("p", "move-bodies", "move-panel-bodies");
   const pick = el("p", "move-pick", "move-panel-note", "Click the bodies to move in the view, or their rows in the browser.");
+  const snapNote = el("p", "move-snap-note", "move-panel-bodies");
+  snapNote.hidden = true;
   const inputs = new Map<MoveParam, HTMLInputElement>();
   const typed = () => Object.fromEntries(MOVE_PARAMS.map((k) => [k, inputs.get(k)!.value])) as Record<MoveParam, string>;
   let pivotTyped = false;
@@ -141,14 +155,21 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const cancel = el("button", "move-cancel", "", "Cancel");
   cancel.type = "button";
   cancel.addEventListener("click", () => on.cancel());
+  // Snap (35e2d): pressed while the view's clicks pick what to snap and where it lands; off until there are bodies.
+  const snap = el("button", "move-snap", "", "Snap");
+  snap.type = "button";
+  snap.title = "Snap: click a face or edge of the bodies, then a face or edge of another body to land it on";
+  snap.setAttribute("aria-pressed", "false");
+  snap.addEventListener("click", () => on.snap());
   const buttons = el("div", "", "move-panel-buttons");
-  buttons.append(ok, cancel);
+  buttons.append(ok, cancel, snap);
   const note = el("p", "", "move-panel-note", "Turned about X, then Y, then Z through the pivot, then moved.");
-  box.append(title, bodies, pick, rows[0], rows[1], pivot, error, note, buttons);
+  box.append(title, bodies, snapNote, pick, rows[0], rows[1], pivot, error, note, buttons);
   const setBodies = (names: readonly string[]) => {
     bodies.textContent = names.length === 0 ? "" : `${names.length === 1 ? "Body" : "Bodies"}: ${names.join(", ")}`;
-    bodies.hidden = names.length === 0;
+    bodies.hidden = names.length === 0 || !snapNote.hidden;
     pick.hidden = names.length > 0 || editing !== null;
+    snap.disabled = names.length === 0;
   };
   return {
     show(m) {
@@ -176,6 +197,15 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     setValue(key, value) {
       inputs.get(key)!.value = boxText(value);
     },
+    setValues(values) {
+      for (const k of ["x", "y", "z", "turnX", "turnY", "turnZ"] as const) inputs.get(k)!.value = String(values[k] + 0);
+    },
+    snapping(words) {
+      snap.setAttribute("aria-pressed", String(words !== null));
+      snapNote.textContent = words ?? "";
+      snapNote.hidden = words === null;
+      bodies.hidden = words !== null || bodies.textContent === "";
+    },
     showError(message) {
       error.textContent = message;
       error.hidden = message === "";
@@ -186,6 +216,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     hide() {
       editing = null;
       open = false;
+      snap.setAttribute("aria-pressed", "false");
+      snapNote.hidden = true;
       box.hidden = true;
       error.hidden = true;
     },

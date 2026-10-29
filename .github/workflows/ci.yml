@@ -250,7 +250,8 @@ jobs:
   # A phone's conditions in Safari's engine (owner's decision, 2026-10-28,
   # after the kernel ran out of memory on Ben's iPhone): WebKit at an
   # iPhone's screen with the kernel's memory capped, run out and restarted
-  # (e2e/kernel-restart.mjs). Unlike browsers' reports it gates the merge
+  # (e2e/kernel-restart.mjs), and the start card clear of what floats over
+  # the view (e2e/phone-start.mjs). Unlike browsers' reports it gates the merge
   # once it has run (automerge.py, GATES_WHEN_RUN); on the same pull
   # requests as browsers, so never in the merge queue.
   phone:
@@ -278,8 +279,15 @@ jobs:
         working-directory: apps/fission
         env:
           E2E_BROWSER: webkit
+      # The first screen's start card clear of the floating buttons at every phone width (#44).
+      - run: node e2e/phone-start.mjs
+        if: ${{ !cancelled() }}
+        working-directory: apps/fission
+        env:
+          E2E_BROWSER: webkit
       # The kernel's files lost to a deploy or the network, on a phone (e2e/app-updated.mjs, blind spots B2).
       - run: node e2e/app-updated.mjs
+        if: ${{ !cancelled() }}
         working-directory: apps/fission
         env:
           E2E_BROWSER: webkit
