@@ -26,7 +26,7 @@ test("the fresh design, written out by hand: nothing in it, the id counter at 1"
   const d = freshDesign();
   // U0c (the owner's ask): a new project starts empty. Version 3 of Design's data; no item has been given an id,
   // so the counter stands at 1 and the first thing added is feature-1 or sketch-1.
-  assert.deepEqual(d, { version: 3, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
+  assert.deepEqual(d, { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
   assert.equal(Object.hasOwn(d.timeline, "marker"), false, "no marker");
   assert.equal(Object.hasOwn(d, "kept"), false);
   assert.equal(START_FRESH_STEP, "Start fresh");

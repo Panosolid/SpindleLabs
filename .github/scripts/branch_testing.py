@@ -1,6 +1,6 @@
 """Random testing started on a branch (nightly.yml's workflow_dispatch) shares
-the account's 20 runners with every pull request's CI, and merges come first
-(Ben, 2026-10-26, after merges waited half an hour behind day runs). Two
+the account's runners (60 jobs at once on GitHub Team since 2026-10-29) with every pull request's CI, and merges come first
+(Ben, 2026-10-26, after merges waited half an hour behind day runs). Three
 commands:
 
   branch_testing.py yield <branch> <started>
@@ -11,6 +11,16 @@ commands:
       for a runner (merges first); or another branch's run is waiting and
       this one has had its SHARE seconds since <started> (a unix time).
       Branch runs share one concurrency group, so only one runs at a time.
+
+      On main (tonight's run; its jobs past the first two ask too, so the
+      night always keeps two), only a starved CI job counts.
+
+  branch_testing.py wait-idle <max seconds>
+      The first job of every random-testing and fuzzing workflow (Ben,
+      2026-10-29: they start only when the queue is idle): returns once no
+      CI job waits for a runner and no merge queue run is going, or after
+      <max seconds> however busy (so a night is never skipped). Asks every
+      IDLE_POLL_SECONDS (default 60); a failed lookup counts as busy.
 
   branch_testing.py cancel <branch>
       Run by stop-testing.yml when a pull request merges or closes: cancels
@@ -62,7 +72,10 @@ def branch_runs(runs, repo):
 
 
 def yield_reason(now, started, branch, own_id, repo, nightly_runs, ci_jobs, ci_wait=CI_WAIT, share=SHARE):
-    """Why this branch run's random rounds should stop now, or None. `nightly_runs` are nightly.yml's recent runs, `ci_jobs` the jobs of CI runs not yet finished."""
+    """Why this branch run's random rounds should stop now, or None. `nightly_runs` are nightly.yml's recent runs, `ci_jobs` the jobs of CI runs not yet finished.
+    On main (the nightly run) only a starved CI job counts: branch runs wait for the night, not the other way round."""
+    if branch == "main":
+        nightly_runs = []
     waiting = [r for r in branch_runs(nightly_runs, repo) if r["status"] in WAITING and r["id"] != own_id]
     newer = [r for r in waiting if run_branch(r) == branch]
     if newer:
@@ -74,6 +87,42 @@ def yield_reason(now, started, branch, own_id, repo, nightly_runs, ci_jobs, ci_w
     if waiting and now - started >= share:
         return f"random testing on {run_branch(waiting[0])} is waiting and this run has had its {share // 60} minutes"
     return None
+
+
+def busy_reason(now, ci_runs, ci_jobs):
+    """Why random testing should not start yet, or None. `ci_runs` are the CI runs not yet finished, `ci_jobs` their jobs."""
+    queued = [j for j in ci_jobs if j["status"] in WAITING]
+    if queued:
+        j = min(queued, key=lambda j: j["created_at"])
+        return f"CI job \"{j['name']}\" is waiting for a runner ({int(now - stamp(j['created_at'])) // 60} min)"
+    group = [r for r in ci_runs if r.get("event") == "merge_group"]
+    if group:
+        return f"the merge queue is testing (run {group[0]['id']})"
+    return None
+
+
+def ci_now(repo):
+    """The CI runs not yet finished (this repository's and the kernel's) and their jobs."""
+    ci = [r for w in CI_WORKFLOWS for r in gh(f"repos/{repo}/actions/workflows/{w}/runs?per_page=20")["workflow_runs"] if r["status"] != "completed"]
+    return ci, [j for r in ci for j in gh(f"repos/{repo}/actions/runs/{r['id']}/jobs?filter=latest&per_page=100")["jobs"]]
+
+
+def wait_idle(limit, poll, look, now=time.time, sleep=time.sleep, log=print):
+    """Waits until `look()` (a busy reason, or None when idle; it may raise) says idle, at most `limit` seconds. Returns how it ended."""
+    start = now()
+    while True:
+        try:
+            reason = look()
+        except (subprocess.SubprocessError, ValueError, KeyError, TypeError) as e:
+            reason = f"couldn't read the queue ({type(e).__name__})"
+        if reason is None:
+            return "idle"
+        waited = now() - start
+        if waited >= limit:
+            log(f"still busy after {int(waited) // 60} min ({reason}); starting anyway")
+            return "timeout"
+        log(f"waiting: {reason}")
+        sleep(poll)
 
 
 def to_cancel(runs, branch, repo):
@@ -91,13 +140,17 @@ def main(argv):
     if len(argv) == 4 and argv[1] == "yield":
         try:
             nightly = gh(f"repos/{repo}/actions/workflows/{workflow}/runs?per_page=30")["workflow_runs"]
-            ci = [r for w in CI_WORKFLOWS for r in gh(f"repos/{repo}/actions/workflows/{w}/runs?per_page=20")["workflow_runs"] if r["status"] != "completed"]
-            jobs = [j for r in ci for j in gh(f"repos/{repo}/actions/runs/{r['id']}/jobs?filter=latest&per_page=100")["jobs"]]
+            _, jobs = ci_now(repo)
         except (subprocess.SubprocessError, ValueError, KeyError, TypeError):
             return 0
         reason = yield_reason(time.time(), float(argv[3]), argv[2], int(os.environ.get("GITHUB_RUN_ID", "0")), repo, nightly, jobs)
         if reason:
             print(reason)
+        return 0
+    if len(argv) == 3 and argv[1] == "wait-idle" and argv[2].isdigit():
+        how = wait_idle(int(argv[2]), float(os.environ.get("IDLE_POLL_SECONDS", "60")),
+                        lambda: busy_reason(time.time(), *ci_now(repo)))
+        print("CI is idle: starting" if how == "idle" else "CI still busy: starting anyway")
         return 0
     if len(argv) == 3 and argv[1] == "cancel":
         # A kernel run's branch is in its title, not GitHub's branch filter.
