@@ -65,7 +65,7 @@ export interface SketchProjection {
   made: string;
 }
 
-/** The shortest line the kernel takes in a sketch (kernel/src/tolerance.rs MIN_FEATURE, 1 µm). */
+/** The shortest line the kernel takes in a sketch (MIN_FEATURE, 1 µm). */
 export const MIN_LENGTH = 1e-3;
 
 /** What an edge is seen as from a sketch, in the sketch's (x, y): a point, a line from `a` to `b`, a circle, or an arc counter-clockwise from `start` to `end`. */

@@ -121,7 +121,7 @@ FUZZ_TARGETS = {
     "Timeline sessions": "timeline sessions",
     # packages/testing/fuzz/face-stack.ts (stacked face sketches)
     "Stacked face sketches": "stacked face sketches",
-    # kernel/fuzz/run.sh, the coverage-guided targets (kernel/fuzz/checks.rs)
+    # the kernel's coverage-guided fuzzing targets
     "Kernel extrude fuzzing": "kernel's extrude",
     "Kernel sketch fuzzing": "kernel's sketch outline",
     "Kernel placed fuzzing": "kernel's moves and turns",
@@ -129,7 +129,7 @@ FUZZ_TARGETS = {
 
 
 def fuzz_kinds(report):
-    """Kinds in a fuzzer's fuzz-report.txt (kernel/tests/fuzz_stl.rs,
+    """Kinds in a fuzzer's fuzz-report.txt (the kernel's STL fuzzer,
     packages/testing/src/project-fuzz.ts, packages/testing/fuzz/sketch-extrude.ts,
     packages/testing/fuzz/timeline.ts, packages/testing/fuzz/face-stack.ts): a first line naming the target,
     then one 'failure: <kind> | <case and input>' line per kind, each
@@ -171,8 +171,8 @@ def monkey_kinds(report):
 
 
 def devious_kinds(output):
-    """Kinds in devious-output.txt (endless.sh's run of kernel/tests/
-    devious.rs devious_random, issue #315): one per failing case, from
+    """Kinds in devious-output.txt (the kernel's endless run of its
+    devious parts, issue #315): one per failing case, from
     lines like 'case 882 (FISSION_SEED=.. FISSION_DEVIOUS_CASE=882),
     case-882-from-random-16: refused: <message>; expected Builds', the
     part's name and every number taken out; one for a starting part the
@@ -438,7 +438,7 @@ def texts(action, kind, hits, run_url, commit, branch):
     if action == "create" and kind.startswith("devious "):
         body = (
             f"{MARK.format(key(kind))}\n"
-            f"Random testing's devious parts (kernel/tests/devious.rs, devious_random: awkward sketches moved, turned "
+            f"Random testing's devious parts (awkward sketches moved, turned "
             f"and scaled, each judged by an exact model) found a new kind of problem ({where}).\n\n"
             f"**Kind:** {kind}\n\n"
             f"Example (seed `{seed}`):\n{fenced(example)}\n\n"

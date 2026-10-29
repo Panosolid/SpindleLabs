@@ -79,7 +79,7 @@ class Kinds(unittest.TestCase):
                   "line 1 must be between 0.001 and 1000000 mm long, got 1007141.2976170945; expected Builds")
         line_b = ("case 2873 (FISSION_SEED=69405559697056 FISSION_DEVIOUS_CASE=2873), case-2873-from-bens-part-huge-0.999: "
                   "refused: line 2 must be between 0.001 and 1000000 mm long, got 1000953.2184887282; expected Builds")
-        out = ("running 1 test\nthread 'devious_random' panicked at tests/devious.rs:272:5:\n1 of 3000 devious cases failed:\n"
+        out = ("running 1 test\nthread 'devious_random' panicked at tests/widget.rs:272:5:\n1 of 3000 devious cases failed:\n"
                + line_a + "\n  made by: scaled ×2.4e2\n  part: Part { .. }\ndevious_random --- FAILED\n")
         got = devious_kinds(out)
         self.assertEqual([k for k, _ in got], ["devious part refused: line # must be between # and # mm long, got #; expected Builds"])
@@ -94,7 +94,7 @@ class Kinds(unittest.TestCase):
         self.assertEqual([k for k, _ in devious_kinds("1 of 300 devious cases failed:\n" + dis)],
                          ["devious generator: the kernel and the model measure a starting part's thinnest feature differently"])
         # A devious run that died without naming a case still says so.
-        self.assertEqual([k for k, _ in devious_kinds("thread 'devious_random' panicked at tests/devious.rs:244:5:\nonly 3 bases built\n")],
+        self.assertEqual([k for k, _ in devious_kinds("thread 'devious_random' panicked at tests/widget.rs:244:5:\nonly 3 bases built\n")],
                          ["devious generator crashed"])
         # Its issue says how to replay a devious case, not a stateful chain.
         title, body = texts("create", got[0][0], [("249373476819941", got[0][1])], "https://run", "abc", "main")
@@ -160,13 +160,13 @@ class Plan(unittest.TestCase):
         self.assertNotIn("y" * (MAX_EXAMPLE + 1), body)
 
 
-# Reports as the fuzzers write them (kernel/tests/fuzz_stl.rs, packages/testing/src/project-fuzz.ts).
+# Reports as the fuzzers write them (the kernel's STL fuzzer, packages/testing/src/project-fuzz.ts).
 FUZZ_STL_A = """STL reader fuzzing, seed 11, 2000 inputs: 2 kind(s) of failure
-failure: panic in stl::read: range end index 84 out of range for slice of length 83 at src/stl.rs:94 | case 315 | shrunk input: input-315.stl (83 bytes)
+failure: panic in stl::read: range end index 84 out of range for slice of length 83 at src/widget.rs:94 | case 315 | shrunk input: input-315.stl (83 bytes)
 failure: accepted a malformed file | case 3 (model refuses it: WrongLength) | shrunk input: input-3.stl (85 bytes)
 """
 FUZZ_STL_B = """STL reader fuzzing, seed 12, 2000 inputs: 1 kind(s) of failure
-failure: panic in stl::read: range end index 84 out of range for slice of length 80 at src/stl.rs:95 | case 9 | shrunk input: input-9.stl (80 bytes)
+failure: panic in stl::read: range end index 84 out of range for slice of length 80 at src/widget.rs:95 | case 9 | shrunk input: input-9.stl (80 bytes)
 """
 FUZZ_KERNEL = """Kernel extrude fuzzing, seed 14, 52000 inputs: 1 failure(s)
 failure: volume 80.07 want 80.56 (slack 3.4e-6) | input input-1-crash-85ef (31 bytes)
@@ -197,7 +197,7 @@ class Fuzz(unittest.TestCase):
         # Worked by hand: the target comes from the first line, the kind is
         # the text after "failure: " up to " | ", with numbers as #.
         self.assertEqual([k for k, _ in fuzz_kinds(FUZZ_STL_A)], [
-            "fuzzing the STL reader: panic in stl::read: range end index # out of range for slice of length # at src/stl.rs:#",
+            "fuzzing the STL reader: panic in stl::read: range end index # out of range for slice of length # at src/widget.rs:#",
             "fuzzing the STL reader: accepted a malformed file",
         ])
         # Another round's panic at other numbers is the same kind.
