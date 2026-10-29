@@ -825,6 +825,36 @@ class QueueCalls(unittest.TestCase):
         self.assertEqual(gh.writes, [])
         self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
 
+    def test_a_timed_out_head_goes_back_in_once(self):
+        # CI_TIMEOUT is busy runners, not the branch: the first one leaves no
+        # dequeued marker, so the next run queues the same head again; a
+        # second time out for that head keeps it out like any removal.
+        gh = queue_repo()
+        orig = gh.call
+
+        def call(method, path, body=None):
+            r = orig(method, path, body)
+            if method == "POST":
+                gh.table["/issues/1/comments?per_page=100"].append(bot(body["body"]))
+            return r
+        gh.call = call
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
+        first = gh.writes[0][2]["body"]
+        self.assertIn("<!-- automerge-timed-out:h1 -->", first)
+        self.assertNotIn("automerge-dequeued", first)
+        automerge.run(gh, log=lambda s: None)
+        self.assertEqual(gh.writes[1:], [("GRAPHQL", "enqueuePullRequest", {"id": "N1"}, "owner")])
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
+        self.assertIn("<!-- automerge-dequeued:h1 -->", gh.writes[-1][2]["body"])
+        n = len(gh.writes)
+        automerge.run(gh, log=lambda s: None)
+        self.assertEqual(len(gh.writes), n, "a head that timed out twice is not queued again")
+
+    def test_a_strangers_timed_out_marker_doesnt_buy_a_second_go(self):
+        gh = queue_repo(comments=[stranger(automerge.timed_out_text("h1"))])
+        automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None)
+        self.assertIn("automerge-timed-out:h1", gh.writes[0][2]["body"])
+
     def test_dequeued_note_once_per_head(self):
         gh = queue_repo()
         orig = gh.call
