@@ -25,3 +25,6 @@
   .extrude button, .extrude input { min-height: 44px; }
   .extrude .extrude-clear { min-width: 44px; }
 }
+/* The distance box glows softly while the view's arrow is dragged, and fades as it ends (Ben, 2026-10-28), as Move's do. */
+.extrude .extrude-row input { transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s; }
+.extrude .extrude-row input.extrude-dragged { border-color: var(--look-accent, #4aa8ff); background-color: color-mix(in srgb, var(--look-accent, #4aa8ff) 12%, var(--look-field, #0f141c)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, #4aa8ff) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, #4aa8ff) 45%, transparent); }

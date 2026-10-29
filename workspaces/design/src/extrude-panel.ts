@@ -29,6 +29,8 @@ export interface ExtrudePanel {
   showProfile(chosen: string | null): void;
   /** The distance box set to `typed` (an arrow drag); the caret and focus are left alone. */
   showDistance(typed: string): void;
+  /** The distance box glows softly while the view's arrow is dragged (Ben, 2026-10-28), so it is clear which value changes. */
+  dragging(on: boolean): void;
   /** Whether the chosen profile can be extruded, in words; OK follows it. */
   showStatus(text: string, closed: boolean): void;
   /** Why OK did nothing, or why the preview can't be built (a distance the kernel refused); empty hides it. */
@@ -121,6 +123,9 @@ export function extrudePanel(slot: HTMLElement, on: ExtrudePanelEvents): Extrude
       parts.profile.textContent = chosen ?? PICK_PROFILE;
       parts.profile.classList.toggle("extrude-unpicked", chosen === null);
       parts.clear.hidden = chosen === null;
+    },
+    dragging(on) {
+      parts?.input.classList.toggle("extrude-dragged", on);
     },
     showDistance(typed) {
       if (parts) parts.input.value = typed;
