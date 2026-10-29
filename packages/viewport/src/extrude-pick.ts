@@ -24,7 +24,7 @@ function piecesOf(path: { corners: number[]; bulges: number[] }): Piece[] {
 }
 
 /**
- * The circle an arc piece lies on (kernel/src/ops/profile.rs Seg::from_bulge):
+ * The circle an arc piece lies on (the kernel's bulge rule):
  * chord c = |b − a|, radius c(1 + β²) / (4|β|), centre the chord's middle
  * plus perp(b − a) (1 − β²) / (4β), perp(x, y) = (−y, x).
  */

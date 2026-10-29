@@ -1,7 +1,7 @@
 // The Image workspace's limits. The physical ones mirror the kernel's
-// modelling range in kernel/src/tolerance.rs (LINEAR = 10 nm is the smallest
+// modelling range (LINEAR = 10 nm is the smallest
 // length it tells apart, MAX_SIZE = 1 km the largest part), so an image can
-// always become geometry; a test reads tolerance.rs to keep them equal.
+// always become geometry; a test reads kernel.json to keep them equal.
 
 import { ImageError } from "./errors.ts";
 

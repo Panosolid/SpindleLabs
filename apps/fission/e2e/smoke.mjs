@@ -191,7 +191,7 @@ try {
     const box = await page.locator("#viewport canvas").boundingBox();
     const screen = (p) => screenPoint(box, p);
     const selection = () => page.evaluate(() => document.body.dataset.selection ?? "");
-    // Kernel face order for a box (primitives.rs): −Z, +Z, −Y, +Y, −X, +X.
+    // Kernel face order for a box: −Z, +Z, −Y, +Y, −X, +X.
     const top = screen([20, 15, 20]); // centre of the +Z face: face 1
     const front = screen([20, 0, 10]); // centre of the −Y face: face 2
     await page.mouse.click(top.x, top.y);
@@ -222,7 +222,7 @@ try {
     await page.waitForFunction(() => document.querySelector("#viewport").dataset.shape === "box");
     await page.waitForTimeout(1000);
     await page.keyboard.press("Escape");
-    // Edges (17c). Kernel edge order for a box (primitives.rs): the −Z face
+    // Edges (17c). Kernel edge order for a box: the −Z face
     // makes edges 0–3, the +Z face 4–7 (first 4: corner 4 (0,0,20) to 5
     // (40,0,20), the top front edge), the −Y face adds 8: corner 1 (40,0,0)
     // to 5 (40,0,20), the front right upright, and 9.

@@ -1,7 +1,7 @@
 // Free placement (sketch feel SF1): which kernel call rounds a sketch
 // pointer (snap.ts `rounding`), grid snap off by default, and the panel's
 // help no longer promising the grid. The rounding itself is the kernel's
-// (sketch.rs `place_freely`, with its own hand-worked, boundary and model
+// (the kernel's free placement, with its own hand-worked, boundary and model
 // tests); the real kernel runs it in packages/testing's
 // free-placement.journey.ts and the browser in apps/fission/e2e/free-placement.mjs.
 import { test } from "node:test";

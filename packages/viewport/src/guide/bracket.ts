@@ -1,7 +1,7 @@
 // The guide's B-rep example: an L-shaped bracket with a rounded inside
 // corner and a hole through its base, written out face by face, edge by
 // edge, vertex by vertex, the way the kernel's B-rep holds a body
-// (kernel/src/topology.rs). The B-rep chapter explodes it; tests check its
+// (the kernel's B-rep). The B-rep chapter explodes it; tests check its
 // counts against the Euler–Poincaré rule the kernel's validation uses.
 //
 // Sizes are scene units. x runs across (−W to W); the side profile lies in
