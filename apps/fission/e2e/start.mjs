@@ -81,8 +81,34 @@ export async function openPanel(page, which, tap) {
   tap ??= await page.evaluate(() => navigator.maxTouchPoints > 0); // a touch context taps, a mouse one clicks
   const toggle = `#${which}-toggle`;
   if (!(await page.isVisible(toggle))) return;
-  if ((await page.getAttribute(toggle, "aria-expanded")) !== "true") await (tap ? page.tap(toggle) : page.click(toggle));
-  await page.waitForFunction((t) => document.querySelector(t)?.getAttribute("aria-expanded") === "true", toggle);
+  await pressUntil(page, toggle, "true", tap);
+}
+
+/**
+ * Presses sheet toggle `toggle` until its aria-expanded is `want`, as a person
+ * taps again when a sheet didn't move. Reading the state and then pressing is
+ * a race: the app opens and closes the Properties sheet by itself as tools
+ * start and end, so a sheet read as open can shut just before the press lands
+ * and the press opens it again (extrude-drag at 375 px, merge queue
+ * 2026-10-29: 30 s waiting for a state that never came). Each press waits up
+ * to 5 s; a press that needed repeating is logged, and three that change
+ * nothing fail with the state seen.
+ */
+export async function pressUntil(page, toggle, want, tap) {
+  const state = () => page.getAttribute(toggle, "aria-expanded");
+  for (let press = 1; press <= 3; press++) {
+    if ((await state()) === want) {
+      if (press > 1) console.log(`  note: ${toggle} needed ${press - 1} presses to be ${want === "true" ? "open" : "shut"}`);
+      return;
+    }
+    await (tap ? page.tap(toggle) : page.click(toggle));
+    const done = await page.waitForFunction(([t, w]) => document.querySelector(t)?.getAttribute("aria-expanded") === w, [toggle, want], { timeout: 5000 }).then(() => true, () => false);
+    if (done) {
+      if (press > 1) console.log(`  note: ${toggle} needed ${press} presses to be ${want === "true" ? "open" : "shut"}`);
+      return;
+    }
+  }
+  throw new Error(`${toggle}: 3 presses and still aria-expanded="${await state()}", not "${want}"`);
 }
 
 /** Closes whichever phone sheet is open (Properties, Browser) by pressing its toggle, so the view is clear to tap. A no-op where there are no toggles. */
@@ -90,10 +116,7 @@ export async function closePanels(page, tap) {
   tap ??= await page.evaluate(() => navigator.maxTouchPoints > 0);
   for (const which of ["properties", "browser"]) {
     const toggle = `#${which}-toggle`;
-    if ((await page.isVisible(toggle)) && (await page.getAttribute(toggle, "aria-expanded")) === "true") {
-      await (tap ? page.tap(toggle) : page.click(toggle));
-      await page.waitForFunction((t) => document.querySelector(t)?.getAttribute("aria-expanded") === "false", toggle);
-    }
+    if ((await page.isVisible(toggle)) && (await page.getAttribute(toggle, "aria-expanded")) === "true") await pressUntil(page, toggle, "false", tap);
   }
 }
 
