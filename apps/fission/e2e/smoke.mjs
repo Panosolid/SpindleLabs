@@ -1545,14 +1545,22 @@ try {
       assert.ok(notice.width > 0 && notice.left >= 0 && notice.right <= 375 && !notice.cut, JSON.stringify(notice));
       assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth), 375, "no sideways scroll");
       await phone.screenshot({ path: "e2e/design-375-notice.png" });
-      // A new stored project; the unreadable one is left as it was.
-      await phone.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
+      // The new project is stored only once it changes (real-use hunt A1): nothing new stored yet, and the
+      // unreadable one is left as it was.
+      await phone.waitForTimeout(1500); // past autosave's quiet moment
+      assert.deepEqual((await storedKeys(phone)).filter((k) => k.startsWith("project/")), [`project/${id}`]);
+      // Dismiss hides the message; a plain reload tries the old one again, so the message is back.
+      await phone.click("#file-dismiss");
+      assert.equal((await phone.$eval("#file-notice", (el) => el.getBoundingClientRect().height)), 0);
+      await phone.reload();
+      await phone.waitForSelector("#start-hint", { state: "visible" });
+      assert.match(await phone.textContent("#file-status"), /^Couldn't open the last project /);
+      // A change keeps the new project; the next start opens it without a message.
+      await startWithBox(phone);
+      await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       const fresh = await phone.evaluate(() => document.body.dataset.projectId);
       assert.notEqual(fresh, id);
       assert.deepEqual((await storedKeys(phone)).filter((k) => k.startsWith("project/")).sort(), [`project/${id}`, `project/${fresh}`].sort());
-      // Dismiss hides the message; the next start opens the new project without one.
-      await phone.click("#file-dismiss");
-      assert.equal((await phone.$eval("#file-notice", (el) => el.getBoundingClientRect().height)), 0);
       await phone.reload();
       await phone.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
       assert.equal(await phone.evaluate(() => document.body.dataset.projectId), fresh);
