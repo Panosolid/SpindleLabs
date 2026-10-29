@@ -31,7 +31,7 @@ import { launch } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseFile, closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseFile, closePanels, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/?test-hooks";
@@ -396,7 +396,7 @@ try {
       await settle(page);
       await press(page, "#create-sketch", tap);
       await until(page, () => document.querySelector("#viewport").dataset.planes === "XY, XZ, YZ", null, "planes offered");
-      await press(page, "#sketch-plane-XY", tap);
+      await pickPlane(page, "XY", tap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
       await settle(page);
       // The box's back right corners (40, 30, 0) and (40, 30, 20) are one place seen from above; the bottom one is on XY, so it is taken.

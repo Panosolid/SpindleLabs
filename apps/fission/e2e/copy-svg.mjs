@@ -12,7 +12,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, gridSnapOn, startWithBox } from "./start.mjs";
+import { chooseShape, gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4177, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4177/";
@@ -160,7 +160,7 @@ try {
     try {
       // Sketch 1 (sketch-2): a 40 × 30 rectangle from (0, 0) by the rectangle tool, on the grid.
       await page.click("#create-sketch");
-      await page.click("#sketch-plane-XY");
+      await pickPlane(page, "XY", false);
       await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
       await gridSnapOn(page);
       await page.click("#sketch-tool-rectangle");
