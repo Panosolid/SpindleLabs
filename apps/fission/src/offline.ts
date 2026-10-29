@@ -7,7 +7,7 @@
 // when another tab updates says so too. Only in the built app (the dev
 // server has no sw.js), and never in a frame: main.ts imports this after
 // frame-guard.ts, which stops a framed page first.
-import "./styles/app-update.css";
+import { showNotice as show } from "./app-notice.ts";
 
 /** Offline mode's switch, from offline.config.mjs (set in vite.config.ts). Off: nothing is kept for offline use, and an earlier install is removed. */
 declare const __OFFLINE_MODE__: boolean;
@@ -23,19 +23,7 @@ const WORDS: Record<Shown, string> = {
 
 /** Shows the update notice (one at a time) with its Reload button. */
 function showNotice(kind: Shown, reload: () => void) {
-  document.getElementById("app-update")?.remove();
-  const box = Object.assign(document.createElement("div"), { id: "app-update", className: "app-update" });
-  box.setAttribute("role", "status");
-  box.dataset.kind = kind;
-  const words = Object.assign(document.createElement("span"), { textContent: WORDS[kind] });
-  const button = Object.assign(document.createElement("button"), { type: "button", id: "app-update-reload", textContent: "Reload" });
-  button.title = "Reload to use the new version; your design is kept";
-  button.addEventListener("click", () => {
-    button.disabled = true;
-    reload();
-  });
-  box.append(words, button);
-  document.body.append(box);
+  show(kind, WORDS[kind], { label: "Reload", title: "Reload to use the new version; your design is kept", press: reload });
 }
 
 /**

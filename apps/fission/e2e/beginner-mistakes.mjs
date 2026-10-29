@@ -54,10 +54,13 @@ async function fresh(width, touch) {
   return page;
 }
 
+/** The XY plane's button: on the bar over the view at phone width (phone-float.ts), the Properties sheet being shut. */
+const xyPlane = (tap) => (tap ? "#float-plane-XY" : "#sketch-plane-XY");
+
 /** A new sketch on XY in the empty design, its tool `tool`. */
 async function sketchOnXY(page, tap, tool) {
   await press(page, "#create-sketch", tap);
-  await press(page, "#sketch-plane-XY", tap);
+  await press(page, xyPlane(tap), tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await closePanels(page, tap);
   await press(page, `#sketch-tool-${tool}`, tap);
@@ -79,7 +82,7 @@ try {
     await check(`a circle the grid pulls onto its centre says so by the pointer, nothing drawn (${width} px${tap ? ", taps" : ""})`, async () => {
       const page = await fresh(width, tap);
       await press(page, "#create-sketch", tap);
-      await press(page, "#sketch-plane-XY", tap);
+      await press(page, xyPlane(tap), tap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       await gridSnapOn(page);
       await press(page, "#sketch-tool-circle", tap);
