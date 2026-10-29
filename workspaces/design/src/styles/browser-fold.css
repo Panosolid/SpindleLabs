@@ -61,5 +61,9 @@
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row:not(:hover, :focus-within) > .delete-ask-more:not(#none) { opacity: 0; }
 }
 /* A folder's eye (Ben, 2026-10-29: an eye on everything) sits in its
-   title before its folder icon, centred on the words. */
-.browser-fold .tree summary > .browser-row-eye:not(#none) { vertical-align: middle; margin-right: 2px; }
+   title before its folder icon, lined up with it (-3px); no padding above or
+   below, and a little taken off the line it adds, so the folder's line
+   stays as slim as a row's (layout.mjs: 22 px at most). */
+.browser-fold .tree summary > .browser-row-eye:not(#none) { vertical-align: -3px; margin: -3px 2px -3px 0; padding-block: 0; }
+/* The same over the floating card's eye rule above (two ids), which would put its 1 px margins back. */
+.browser-fold:is(#workspace #browser > *) .tree summary > .browser-row-eye:not(#none) { margin: -3px 2px -3px 0; }
