@@ -422,3 +422,65 @@ test("never throws: random bytes and broken lines give problems, not exceptions"
     assert.ok(Array.isArray(rp.problems));
   }
 });
+
+// Weak-spot hunt E (2026-10-29): what the replayer got wrong, each worked out by hand.
+
+test("hand-worked: G21 (mm) and G17 (XY plane) are what we assume, so no problem; G20 (inches) is one", () => {
+  // Almost every slicer writes G21 first; reporting it trained people to ignore the problem list.
+  assert.deepEqual(replay(["G21", "G17", "G90", "G1 X10 F1000"].join("\n")).problems, []);
+  // G20 would make X10 mean 254 mm: not followed, and a problem.
+  assert.deepEqual(replay(["G20", "G1 X10 F1000"].join("\n")).problems.map((p) => [p.line, p.kind]), [[1, "inches"]]);
+});
+
+test("hand-worked: Marlin's M82 after G91 makes the extruder absolute again; Klipper's G91 keeps it relative", () => {
+  // G91 then M82, then E5 twice. Marlin 2.x: G91 turns every axis relative, M82 turns E back to absolute,
+  // so E5 then E5 push 5 then 5 − 5 = 0: 5 mm. Klipper reads E relative whenever the axes are (G91): 10 mm.
+  const text = ["G90", "M82", "G92 E0", "G1 F600", "G91", "M82", "G1 X1 E5", "G1 X1 E5"].join("\n");
+  assert.ok(close(replay(text).filament, 5, 1e-12), `${replay(text).filament}`);
+  assert.ok(close(replay(text, { flavour: "klipper" }).filament, 10, 1e-12));
+});
+
+test("hand-worked: a retraction pulled in two pieces and pushed back in full leaves nothing retracted", () => {
+  // −0.1 − 0.2 = −0.3 in doubles is −0.30000000000000004 and +0.3 leaves 4e-17 "still retracted": the
+  // travel after the full prime was taken as retracted, so a wall it crossed was excused. Under STILL it is none.
+  const r = replay(["G90", "M83", "G1 X10 Y10 F1000", "G1 E-0.1", "G1 E-0.2", "G1 E0.3", "G1 X50 Y10"].join("\n"));
+  assert.equal(r.moves.at(-1)!.kind, "travel");
+  assert.equal(r.moves.at(-1)!.retracted, false);
+  // A real retraction still counts: pulled 0.3, pushed 0.2, 0.1 mm is still out.
+  const part = replay(["G90", "M83", "G1 X10 Y10 F1000", "G1 E-0.3", "G1 E0.2", "G1 X50 Y10"].join("\n"));
+  assert.equal(part.moves.at(-1)!.retracted, true);
+});
+
+test("hand-worked: an arc it can't follow still takes the nozzle to its end, as a straight move", () => {
+  // G2 X500 Y500 R10 from (10, 10): a printer drives to (500, 500) (or stops); the move was dropped, so the bed
+  // check never saw (500, 500). It is now recorded straight, with its problem.
+  const r = replay(["G28", "G1 X10 Y10 F1000", "G2 X500 Y500 R10"].join("\n"));
+  assert.deepEqual(r.problems.map((p) => [p.line, p.kind]), [[3, "arc-radius-form"]]);
+  const m = r.moves.at(-1)!;
+  assert.deepEqual([m.line, m.to.x, m.to.y, m.arc], [3, 500, 500, undefined]);
+  // Straight from (10, 10) to (500, 500): 490·√2 mm.
+  assert.ok(close(m.length, 490 * Math.SQRT2, 1e-12));
+});
+
+test("hand-worked: after G92 X/Y/Z the moves are where the nozzle really is", () => {
+  // G28 puts the nozzle at x 0; G92 X220 says "you are at 220" without moving; G1 X200 then moves 20 mm
+  // left of the end stop: x = 200 − 220 = −20, off the bed. Homing X again ends the shift.
+  const r = replay(["G28", "G92 X220", "G1 X200 Y10 F1000", "G28 X", "G1 X5"].join("\n"));
+  assert.deepEqual(r.moves.map((m) => [m.to.x, m.to.y]), [[-20, 10], [5, 10]]);
+  // Z too: G92 Z5 at z 0, then Z1 is 4 mm below the bed.
+  assert.equal(replay(["G28", "G92 Z5", "G1 Z1 F600"].join("\n")).moves[0].to.z, -4);
+});
+
+test("a temperature past 500 °C is a problem and still a temperature, so the printer check sees it", () => {
+  const r = replay("M104 S600");
+  assert.deepEqual(r.problems.map((p) => p.kind), ["bad-temperature"]);
+  assert.deepEqual(r.temperatures.map((t) => [t.heater, t.celsius]), [["nozzle", 600]]);
+});
+
+test("commands that change what moves do are problems; their harmless forms are not", () => {
+  // Each of these changes the plastic, the speed, the steps or the limits behind the moves the replay follows.
+  const changing = ["M221 S300", "M220 S50", "M92 E1000", "M200 D1.75", "M211 S0", "M302 P1", "T1"];
+  for (const c of changing) assert.deepEqual(replay(c).problems.map((p) => p.kind), ["machine-setting"], c);
+  // Slicers reset flow and speed to 100 % and select the first tool; Bambu's M221 X/Y/Z is something else.
+  for (const c of ["M221 S100", "M220 S100", "M200 D0", "T0", "M221 X0 Y0 Z1", "M221"]) assert.deepEqual(replay(c).problems, [], c);
+});
