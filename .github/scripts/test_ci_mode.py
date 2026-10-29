@@ -334,5 +334,35 @@ class Workflows(unittest.TestCase):
         self.assertIn("run-name: Kernel CI ${{ inputs.label }}\n", open(os.path.join(WORKFLOWS, "kernel-ci.yml")).read())
 
 
+def main_not_last(text):
+    """True when a test file's `if __name__ == "__main__"` block is not its
+    last top-level statement: run as a script, it would stop at unittest.main()
+    before the rest of the file defines its helpers and tests."""
+    import ast
+    body = ast.parse(text).body
+    for i, node in enumerate(body):
+        if isinstance(node, ast.If) and "__main__" in ast.unparse(node.test):
+            return i != len(body) - 1
+    return False
+
+
+class MainLast(unittest.TestCase):
+    """Every test file here also runs on its own (python3 test_x.py), so
+    nothing may follow its __main__ block (test_automerge.py once had helpers
+    after it: discover passed while running the file raised NameErrors)."""
+
+    def test_every_test_file(self):
+        for name in sorted(os.listdir(HERE)):
+            if name.startswith("test_") and name.endswith(".py"):
+                with self.subTest(name=name), open(os.path.join(HERE, name), encoding="utf-8") as f:
+                    self.assertFalse(main_not_last(f.read()))
+
+    def test_planted(self):
+        main = 'if __name__ == "__main__":\n    unittest.main()\n'
+        self.assertFalse(main_not_last("def f():\n    pass\n" + main))
+        self.assertTrue(main_not_last(main + "def f():\n    pass\n"))
+        self.assertFalse(main_not_last("def f():\n    pass\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

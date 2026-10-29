@@ -452,10 +452,6 @@ class Session:
             self.t.assertTrue(stuck_ok, f"#{n} could merge but was left open")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 GRACE = automerge.CONFLICT_GRACE_S
 
 
@@ -952,3 +948,7 @@ class QueueSimulation(unittest.TestCase):
                     self.assertFalse(q["in_queue"], q)
                 elif can_queue and q["green"] and q["mergeable"] is not False:
                     self.assertTrue(q["in_queue"], q)
+
+
+if __name__ == "__main__":
+    unittest.main()

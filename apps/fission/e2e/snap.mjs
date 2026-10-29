@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
-import { gridSnapOn, startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4185, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4185/";
@@ -95,7 +95,7 @@ async function at(page, [x, y], tap = false) {
 
 async function startSketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
-  await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
+  await pickPlane(page, "XY", tap);
   // These checks snap against the 10 mm grid: grid snap on (off by default since SF1).
   await gridSnapOn(page);
   if (tap) await page.locator("#viewport canvas").scrollIntoViewIfNeeded(); // at phone width the tickbox is below the view

@@ -20,6 +20,8 @@
 #                   journeys/
 #                   and ts-mutants-*/
 #   MUTANT_SHARDS   how many mutation shards the run started (0 or unset: none)
+#   JOBS            the workflow's `toJSON(needs)`: a job that went red with
+#                   nothing more specific to report files an issue too
 #   RUN_URL, COMMIT, BRANCH   what this run tested, written next to every row
 #   GH_TOKEN        for `gh` (without it no issue is filed; file_issues.py prints
 #                   what it would have done)
@@ -208,11 +210,11 @@ done
 [ $pushed = 1 ] || { echo "Could not push to test-results after 5 attempts."; exit 1; }
 
 # One issue per kind of problem, found again and updated rather than piling
-# up (file_issues.py, next to this script).
-if [ "$found" -gt 0 ]; then
-  RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$(dirname "$0")/file_issues.py" "$IN" ||
-    echo "Filing issues failed; the results are on test-results all the same."
-fi
+# up (file_issues.py, next to this script). Every run, not only one with a
+# failure folder: a journey FAIL, an unexplained mutant, a mutants shard
+# that stopped or a red job (JOBS) leaves none, and is filed all the same.
+RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$(dirname "$0")/file_issues.py" "$IN" ||
+  echo "Filing issues failed; the results are on test-results all the same."
 if [ "$new_missed" -gt 0 ]; then
   body="Run: $RUN_URL (commit $short on $BRANCH)"$'\n\n'
   body="$body$new_missed mutant(s) survived that the previous complete mutation run caught or did not have (new code, or a test that got weaker):"$'\n'"$(printf '%s\n' "$new_list" | head -50 | sed 's/^/- /')"$'\n\n'"Every survivor is in mutants/missed.txt on the test-results branch."$'\n'

@@ -69,6 +69,7 @@ jobs:
     needs: dequeued
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    environment: merge
     timeout-minutes: 10
     # One at a time, so two runs never act on the same pull request at once.
     concurrency:

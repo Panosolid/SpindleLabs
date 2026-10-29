@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { chooseShape, closePanels, openPanel, sheetsClearFor, startWithBox, switchTo } from "./start.mjs";
+import { chooseShape, closePanels, openPanel, sheetsClearFor, startWithBox, switchTo, pickPlane } from "./start.mjs";
 import { TOP, screenPoint } from "./sketch-screen.mjs";
 
 const server = await preview({ preview: { port: 4180, strictPort: true }, logLevel: "error" });
@@ -392,7 +392,7 @@ try {
       sheetsClearFor(page);
       await page.click("#create-sketch");
       await openPanel(page, "properties", false);
-      await page.click("#sketch-plane-XY");
+      await pickPlane(page, "XY", false);
       await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
       await closePanels(page, false);
       await page.evaluate(() => {
