@@ -300,6 +300,57 @@ try {
       await page.context().close();
     }
   });
+  // Weak-spot hunt 10-29, at 1280 px: (1) text the number box can't read ("1e") was recorded as 0; (2) Edit Move on a
+  // 1e-7 mm Move with nothing changed recorded "Edit Move 1" and set X to 0 (the box shows it rounded); (3) X = 1e308
+  // in the preview gave the view NaN sizes (console errors) and the box vanished.
+  await check("1280 px: unreadable text is refused, an unchanged tiny Move records nothing, a huge one leaves the preview drawn", async () => {
+    const page = await fresh(1280, 800, false);
+    try {
+      await page.click("#move");
+      await opened(page);
+      await pressAt(page, [20, 15, 20], false);
+      await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked");
+      const before = await undoTitle(page);
+      // (3) Huge: the box stays drawn where it was (the preview can't draw it there), and no errors (checked at the end).
+      const top = [5, 5, 20];
+      const lit = await colourAt(page, top);
+      await type(page, "x", "1e308");
+      assert.ok(!differs(await colourAt(page, top), lit), "a 1e308 mm Move leaves the box drawn unmoved");
+      // (1) "1e" in X with Y 5: OK refuses it, naming the box, and records nothing; leaving the box doesn't make it 0.
+      await type(page, "y", "5");
+      await page.focus("#move-x");
+      await page.keyboard.press("Control+a");
+      await page.keyboard.type("1e");
+      assert.equal(await page.$eval("#move-x", (i) => i.validity.badInput), true, "the box holds text it can't read");
+      await page.focus("#move-z");
+      assert.equal((await panel(page)).boxes.x, "", "left as typed, not filled with 0");
+      await page.click("#move-ok");
+      await until(page, () => !document.getElementById("move-error").hidden, null, "Move refuses");
+      assert.match((await panel(page)).error, /X distance/);
+      assert.equal((await panel(page)).open, true);
+      assert.equal(await undoTitle(page), before, "nothing recorded");
+      // (2) 1e-7 mm along X: the box shows 0 once reopened, and OK with nothing changed records nothing.
+      await type(page, "x", "0.0000001");
+      await type(page, "y", "0");
+      await page.click("#move-ok");
+      await closed(page);
+      await rebuilt(page);
+      assert.match(await undoTitle(page), /Move bodies/);
+      const moved = await undoTitle(page);
+      await page.locator('#timeline [data-item="feature-2"]').click({ button: "right" });
+      await until(page, () => document.getElementById("row-menu").open, null, "Move 1's menu");
+      await page.click("#row-menu-edit");
+      await opened(page);
+      assert.equal((await panel(page)).boxes.x, "0", "1e-7 shows as 0 (to a nanometre)");
+      await page.click("#move-ok");
+      await closed(page);
+      await rebuilt(page);
+      assert.equal(await undoTitle(page), moved, "no Edit Move step for an unchanged Move");
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Move 1\nMove Box 1 by (1e-7, 0, 0) mm", "its 1e-7 kept");
+    } finally {
+      await page.context().close();
+    }
+  });
 } finally {
   await browser.close();
   await server.close();

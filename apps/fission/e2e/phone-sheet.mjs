@@ -270,12 +270,31 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   await page.waitForFunction(() => document.querySelector("#float-finish")?.textContent === "Finish Extrude");
   await page.waitForTimeout(300);
   assert.equal(await page.$eval("#float-finish", (b) => b.disabled), await page.$eval("#extrude-ok", (b) => b.disabled), "Finish Extrude is off exactly when OK is");
+  // Weak-spot hunt 10-29: the dimmed Finish said nothing on touch (its reason sat in the closed sheet and a title never shows):
+  // the bar now says why in words, the panel's own status line, on screen without opening anything.
+  assert.equal(await page.$eval("#float-finish", (b) => b.disabled), true, "no closed outline: Finish Extrude is off");
+  assert.equal(await sheet(), "false", "the sheet is still shut");
+  const status = (await page.textContent("#extrude-status")).trim();
+  assert.ok(status.length > 0, "the panel has a reason");
+  assert.equal((await page.textContent("#float-why")).trim(), status, "the bar says why Finish is off");
+  assert.equal((await reach("#float-why")).onScreen, true, "and it is on screen");
+  if (shots) await page.screenshot({ path: `${shots}/phone-float-why-393.png` });
   await page.tap("#properties-toggle");
   await page.tap("#float-cancel");
   await page.waitForSelector("#phone-float", { state: "hidden" });
   assert.equal(await sheet(), "false", "2: Cancel puts the sheet away too");
   assert.equal(await page.isVisible("#extrude-panel"), false, "Cancel ended Extrude");
   await untilBodies(page, 2);
+  // Finish Move with no body picked: Move refuses (its error in the closed sheet), and the bar shows those words.
+  await page.tap("#move");
+  await page.waitForFunction(() => document.querySelector("#float-finish")?.textContent === "Finish Move");
+  assert.equal(await page.isVisible("#float-why"), false, "nothing wrong yet: no words");
+  await page.tap("#float-finish");
+  await page.waitForSelector("#float-why", { state: "visible" });
+  assert.equal((await page.textContent("#float-why")).trim(), (await page.textContent("#move-error")).trim(), "the bar repeats Move's refusal");
+  assert.equal((await reach("#float-why")).onScreen, true, "on screen");
+  await page.tap("#float-cancel");
+  await page.waitForSelector("#phone-float", { state: "hidden" });
   await context.close();
 }
 // Ben's rule (10-28): on a phone one tap must never suddenly cover the view when the person may not want that. Each toolbar

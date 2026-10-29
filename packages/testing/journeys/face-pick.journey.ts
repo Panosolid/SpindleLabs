@@ -262,7 +262,9 @@ test("every tool draws on a face as on the ground plane: on the back (side −1)
   await a.key("sketch-arc");
   // From the corner (5, 15) to (15, 15) through (10, 18): a free end at (15, 15).
   for (const [x, y] of [[5, 15], [15, 15], [10, 18]]) await a.click(x, y);
-  await a.key("sketch-tangent");
+  // T is kept for Trim (Ben 10-29): the tangent arc is chosen from its toolbar button.
+  a.$("#sketch-tool-tangent")!.click();
+  await a.settle();
   for (const [x, y] of [[15, 15], [25, 25]]) await a.click(x, y);
   const s = a.doc().sketches.at(-1)!;
   const kinds = s.curves.map((c) => c.kind).sort();

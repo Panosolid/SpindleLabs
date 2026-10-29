@@ -14,4 +14,6 @@
   .phone-float .phone-float-finish:disabled { opacity: 0.45; }
   .phone-float .phone-float-plane:not(#none) { min-width: 44px; padding: 0 8px; }
   .phone-float .phone-float-words { flex-basis: 100%; padding: 0 4px; color: #d7dde5; font-size: 14px; }
+  /* What is wrong (phone-float.ts floatWhy): at most three lines, so the bar never grows over the view. */
+  .phone-float .phone-float-why { color: #f5b14c; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
