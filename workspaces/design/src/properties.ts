@@ -47,6 +47,17 @@ export const EXTRUDED_SKETCH = "Extruded sketch";
 export const SHAPE_TITLE = "The part's shape: choosing another changes the part in place when it is a preset, else adds a new body at the marker. Insert ▾ adds a new body.";
 const NONE = "—";
 
+/**
+ * What the panel says once a refused size (`why`, typed as `typed`) has
+ * given way to the one the design kept: it went back without a word
+ * (beginner play-test 2026-10-28). A negative extrude distance names Flip,
+ * the way to go the other way.
+ */
+export function revertedNote(why: string, typed: string, kept: string, extrude: boolean): string {
+  const flip = extrude && Number(typed) < 0 ? " To extrude the other way, tick Flip in Edit feature." : "";
+  return `${why} It is back to ${kept} mm.${flip}`;
+}
+
 const HTML = `
   <h2>Selection</h2>
   <p id="selection-empty">Nothing selected: click a face or an edge, or a body in the browser.</p>

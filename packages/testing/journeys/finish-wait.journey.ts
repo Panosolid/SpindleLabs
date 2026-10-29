@@ -71,6 +71,30 @@ test("Finish Sketch with no click waiting closes at once, as before", async () =
   assert.ok(await a.close(), "every body freed");
 });
 
+test("a circle's centre still waiting, then Finish Sketch: once the centre lands the circle is unfinished, so it says so and waits for a second press", async () => {
+  // The beginner play-test (2026-10-28): a half-drawn shape was dropped without a word. A finish asked while the click
+  // waits is asked again once it has landed, and then holds like any other.
+  const a = await app(partDocument("box", 40, 30, 20));
+  a.$("#create-sketch")!.click();
+  await a.settle();
+  await a.pick({ plane: "XY" });
+  await a.key("sketch-circle");
+  a.hold();
+  a.pointer("click", [60, 0]); // the centre, not yet answered
+  await turns();
+  a.$("#finish-sketch")!.click();
+  await turns();
+  assert.equal(a.sketching(), true);
+  await a.release();
+  assert.equal(a.sketching(), true, "the circle isn't finished: still open");
+  assert.equal(a.$("#sketch-grid-error")!.textContent, "The circle isn't finished: click a point on the circle to finish it, or press Finish sketch again to go on without it.");
+  a.$("#finish-sketch")!.click();
+  await a.settle();
+  assert.equal(a.sketching(), false, "the second press goes on without it");
+  assert.equal(sketchCurves(a.doc().sketches.at(-1)!).circles.length, 0);
+  assert.ok(await a.close(), "every body freed");
+});
+
 test("Escape still drops a click that waits for the kernel (it is a cancel)", async () => {
   const a = await app(partDocument("box", 40, 30, 20));
   a.$("#create-sketch")!.click();
