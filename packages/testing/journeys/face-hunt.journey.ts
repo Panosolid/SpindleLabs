@@ -191,11 +191,26 @@ test("5. settling a click or an edit holds no bodies of its own: the kernel hold
   await a.settle();
   assert.equal(a.error(), "Type the height in mm.");
   assert.equal(await a.bodies(), 1, "after a size the panel refuses");
-  // 0.0001: a number the panel takes and the kernel refuses (its words shown): nothing builds, and the kernel holds nothing.
+  // 0.0001: under the modeller's 0.001 mm, refused by the panel itself since the app sweep of 2026-10-28 (item 19).
   height.value = "0.0001";
   height.dispatchEvent(new a.window.Event("input") as unknown as Event);
   await a.settle();
-  assert.equal(a.error(), "height must be between 0.001 and 1000000 mm, got 0.0001");
+  assert.equal(a.error(), "The height must be at least 0.001 mm, the smallest piece the modeller keeps.");
+  assert.equal(await a.bodies(), 1, "after a size the panel refuses");
+  // A part the panel takes and the kernel refuses (its words shown): a width of 0.0015 mm is a thin box, but made a
+  // cylinder it is a diameter, radius 0.00075 mm, under the kernel's 0.001. Nothing builds, and the kernel holds nothing.
+  height.value = "25";
+  height.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  await a.settle();
+  const width = a.$("#width") as HTMLInputElement;
+  width.value = "0.0015";
+  width.dispatchEvent(new a.window.Event("input") as unknown as Event);
+  await a.settle();
+  const choice = a.$("#shape") as HTMLSelectElement;
+  choice.value = "cylinder";
+  choice.dispatchEvent(new a.window.Event("change", { bubbles: true }) as unknown as Event);
+  await a.settle();
+  assert.equal(a.error(), "radius must be between 0.001 and 1000000 mm, got 0.00075");
   assert.equal(await a.bodies(), 0, "after a size the kernel refuses");
   assert.ok(await a.close());
 });

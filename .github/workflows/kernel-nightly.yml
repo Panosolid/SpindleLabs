@@ -66,6 +66,7 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
@@ -125,6 +126,7 @@ jobs:
   test:
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     permissions:
       # actions: read lets stop-on-merge.sh see waiting runs and CI jobs.
@@ -181,6 +183,7 @@ jobs:
     needs: [plan, test]
     if: ${{ !cancelled() && needs.plan.outputs.second_leg == 'true' }}
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     permissions:
       actions: read
@@ -236,6 +239,7 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.shards != '[]' }}
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     strategy:
       fail-fast: false
@@ -289,6 +293,7 @@ jobs:
     needs: [plan, test, test-second-leg, mutants]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
