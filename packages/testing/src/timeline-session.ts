@@ -154,9 +154,10 @@ export const WAITING_MOVES: readonly WaitingMove[] = [
     weight: 3,
     does: "Edit a Move's numbers, and (35e2i) a time in three which bodies it moves: one or two of the bodies built before it.",
     model: "The bodies it moves are moved by the new numbers from the Move on, a body taken out stays where it was before the Move, and everything after it (a sketch on a moved face, its extrude) follows.",
+    // The bodies' draw is read off `pick` (its last third, stretched), so the sessions draw as many numbers as before 35e2i.
     draw: (r) => {
       const s = r.next();
-      return { op: "set-move", pick: s, ...moveNumbers(r), swap: s < 2 / 3 ? null : r.next() };
+      return { op: "set-move", pick: s, ...moveNumbers(r), swap: s < 2 / 3 ? null : 3 * s - 2 };
     },
   },
   {
