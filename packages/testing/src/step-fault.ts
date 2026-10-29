@@ -1,5 +1,5 @@
 // The planted STEP fault for the oracle (step 29b3), as the kernel's tests
-// plant it (kernel/tests/support/step_file.rs, `flip_first_face`): the
+// plant it (the kernel's own planted fault): the
 // first face's normal flipped, its ADVANCED_FACE's same_sense swapped, and
 // nothing else changed. OpenCascade's checks (prototypes/oracle/compare.py,
 // `step_issues`) must catch it in every body; golden/night.ts (fault

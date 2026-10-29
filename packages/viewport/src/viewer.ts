@@ -1457,7 +1457,7 @@ export class Viewer implements SharedViewport {
     const overlays = [...this.overlays.values()];
     for (const view of this.views) view.label(overlays, this.highlight, this.hover);
     if (!this.mesh || !this.faces) return;
-    // Vertices belong to one face each (display.rs), so per-vertex colour is per-face colour.
+    // Vertices belong to one face each (the kernel's display mesh), so per-vertex colour is per-face colour.
     // Vertex colours are linear; THREE.Color converts from sRGB.
     // Tints are mixed in sRGB, like the colours are chosen.
     const linear = (c: Rgb) => new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace).toArray();

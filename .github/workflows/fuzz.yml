@@ -194,13 +194,23 @@ jobs:
         if: always()
         env:
           PLANTED: ${{ runner.temp }}/planted
+        # Every chain the planted run tried must catch it: as many failure folders as chains in its log (rounds of 25;
+        # a fast runner fits several rounds into the second, 125 of 125 on 10-29, which "exactly 25" called a failure,
+        # issue #63). A miss is written as a failure folder, so the night's issue names it.
         run: |
+          missed() {
+            echo "$1"
+            mkdir -p "$RUNNER_TEMP/fuzz/seed-stack-planted"
+            printf 'Stacked face sketches, planted bug model-long: 1 kind(s) of failure\nfailure: the planted bug check: %s | %s\n' "$2" "$1" >"$RUNNER_TEMP/fuzz/seed-stack-planted/fuzz-report.txt"
+            exit 1
+          }
           if FISSION_STACK_FAULT=model-long FISSION_FUZZ_SECONDS=1 FISSION_FUZZ_OUT="$PLANTED" npm run stack -w @fission/testing >"$RUNNER_TEMP/planted.txt"; then
-            echo "the planted bug was not caught"; exit 1
+            missed "the planted bug was not caught" "not caught"
           fi
           caught=$(ls -d "$PLANTED"/seed-stack-* | wc -l)
-          echo "planted bug caught in $caught of 25 chains"
-          [ "$caught" -eq 25 ]
+          chains=$(awk -F, 'NR > 1 { n += $3 } END { print n + 0 }' "$PLANTED/log.csv")
+          echo "planted bug caught in $caught of $chains chains"
+          [ "$chains" -ge 25 ] && [ "$caught" -eq "$chains" ] || missed "planted bug caught in $caught of $chains chains" "caught in only some chains"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -244,10 +254,14 @@ jobs:
         run: |
           mkdir -p "$OUT"
           [ -f "$IN/fuzz/oracle.jsonl" ] || exit 0
-          pip install -q cadquery-ocp mpmath
+          pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
           # The oracle is private kernel code: its errors (a traceback names its
-          # files and lines) go to a file of the runner's, never this public log.
-          if ! python3 sketch_extrude.py "$IN/fuzz/oracle.jsonl" "$OUT/disagreements.txt" 2>"$RUNNER_TEMP/oracle-errors.txt"; then
+          # files and lines) and its disagreements (they name its checks) go to
+          # files of the runner's, never this public log; only the count is shown.
+          code=0
+          python3 sketch_extrude.py "$IN/fuzz/oracle.jsonl" "$OUT/disagreements.txt" >"$RUNNER_TEMP/oracle.txt" 2>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
+          head -1 "$RUNNER_TEMP/oracle.txt"
+          if [ "$code" -ne 0 ]; then
             mkdir -p "$OUT/seed-oracle-${{ github.run_id }}"
             mv "$OUT/disagreements.txt" "$OUT/seed-oracle-${{ github.run_id }}/oracle-disagreements.txt"
             exit 1
@@ -257,7 +271,11 @@ jobs:
         env:
           IN: ${{ runner.temp }}/in
         working-directory: k/prototypes/oracle
-        run: python3 sketch_extrude.py "$IN/planted/oracle.jsonl" "$RUNNER_TEMP/planted-disagreements.txt" --planted 2>>"$RUNNER_TEMP/oracle-errors.txt"
+        run: |
+          code=0
+          python3 sketch_extrude.py "$IN/planted/oracle.jsonl" "$RUNNER_TEMP/planted-disagreements.txt" --planted >"$RUNNER_TEMP/oracle-planted.txt" 2>>"$RUNNER_TEMP/oracle-errors.txt" || code=$?
+          head -1 "$RUNNER_TEMP/oracle-planted.txt"
+          exit $code
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

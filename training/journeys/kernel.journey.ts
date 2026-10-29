@@ -66,7 +66,7 @@ test("1,000 examples on the real kernel: each builds the part its sizes give", a
     assert.deepEqual(view.errors, [], `${e.id}: ${e.prompt}`);
     const expected = volumeOf(shape, width, depth, height);
     if (expected !== null) {
-      // 1e-6 relative: the kernel's tolerance for mass properties (MASS_PROPS_REL in kernel/src/tolerance.rs).
+      // 1e-6 relative: the kernel's tolerance for mass properties (MASS_PROPS_REL).
       assert.ok(Math.abs(view.volume - expected) <= 1e-6 * expected, `${e.id} ${e.prompt}: volume ${view.volume}, by hand ${expected}`);
       checked++;
     } else assert.ok(view.volume > 0);

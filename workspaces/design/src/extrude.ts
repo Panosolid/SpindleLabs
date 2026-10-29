@@ -49,7 +49,7 @@ export const isFlipped = (f: Feature): boolean => f.intent.parameters.flip === t
  * sketches there are, skipping a name any item has (`freshName`, U0e). The kernel judges the
  * distance and the outline when the feature is built. `flip` sends it the
  * other way from the sketch's plane, its start cap still on the plane
- * (step 26c, Fusion's Flip; kernel/src/ops/place.rs).
+ * (step 26c, Fusion's Flip).
  */
 export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: number, flip = false): { doc: DesignDocument; id: string } {
   const sketch = sketchItem(doc, sketchId);

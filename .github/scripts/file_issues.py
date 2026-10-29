@@ -121,7 +121,7 @@ FUZZ_TARGETS = {
     "Timeline sessions": "timeline sessions",
     # packages/testing/fuzz/face-stack.ts (stacked face sketches)
     "Stacked face sketches": "stacked face sketches",
-    # kernel/fuzz/run.sh, the coverage-guided targets (kernel/fuzz/checks.rs)
+    # the kernel's coverage-guided fuzzing targets
     "Kernel extrude fuzzing": "kernel's extrude",
     "Kernel sketch fuzzing": "kernel's sketch outline",
     "Kernel placed fuzzing": "kernel's moves and turns",
@@ -129,7 +129,7 @@ FUZZ_TARGETS = {
 
 
 def fuzz_kinds(report):
-    """Kinds in a fuzzer's fuzz-report.txt (kernel/tests/fuzz_stl.rs,
+    """Kinds in a fuzzer's fuzz-report.txt (the kernel's STL fuzzer,
     packages/testing/src/project-fuzz.ts, packages/testing/fuzz/sketch-extrude.ts,
     packages/testing/fuzz/timeline.ts, packages/testing/fuzz/face-stack.ts): a first line naming the target,
     then one 'failure: <kind> | <case and input>' line per kind, each
@@ -171,8 +171,8 @@ def monkey_kinds(report):
 
 
 def devious_kinds(output):
-    """Kinds in devious-output.txt (endless.sh's run of kernel/tests/
-    devious.rs devious_random, issue #315): one per failing case, from
+    """Kinds in devious-output.txt (the kernel's endless run of its
+    devious parts, issue #315): one per failing case, from
     lines like 'case 882 (FISSION_SEED=.. FISSION_DEVIOUS_CASE=882),
     case-882-from-random-16: refused: <message>; expected Builds', the
     part's name and every number taken out; one for a starting part the
@@ -218,24 +218,34 @@ def kinds_of(folder_files):
 
 # Which artifact folders each job of the four workflows writes, so a red
 # job whose folders gave a kind already isn't filed twice. A job missing
-# here is always filed when it goes red.
+# here is always filed when it goes red. A name ending in "-" is a matrix
+# job's legs (each leg its own folder); any other names one folder exactly,
+# so "fuzz-sessions" is not "fuzz-sessions-oracle" (weak-spot hunt 10-29).
 JOB_DIRS = {
-    "journeys": ("journeys",), "golden": ("golden",), "monkey": ("monkey",), "ts-mutants": ("ts-mutants-",),
-    "project": ("fuzz-project",), "sessions": ("fuzz-sessions",), "timeline": ("fuzz-timeline",), "stack": ("fuzz-stack",),
+    "journeys": ("journeys",), "golden": ("golden",), "golden-step": ("golden",), "monkey": ("monkey",), "ts-mutants": ("ts-mutants-",),
+    "project": ("fuzz-project",), "sessions": ("fuzz-sessions",), "sessions-oracle": ("fuzz-sessions-oracle",), "timeline": ("fuzz-timeline",), "stack": ("fuzz-stack",),
     "test": ("endless-a-",), "test-second-leg": ("endless-b-",), "mutants": ("mutants-",),
     "stl": ("fuzz-stl",), "kernel": ("fuzz-kernel-",),
 }
+
+
+def job_dir(d, prefixes):
+    """Whether incoming folder `d` is one of a job's (JOB_DIRS)."""
+    return any(d.startswith(p) if p.endswith("-") else d == p for p in prefixes)
 # cargo mutants: 0 all caught, 2 some missed (filed as new survivors), 3
 # some timed out; 124/130 the shard was cut off at the deadline (expected).
 MUTANTS_FINE = {"0", "2", "3", "124", "130"}
 
 
-def check_kinds(reports, jobs, explained_dirs):
+def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
     """Kinds for failures without a failure folder. reports: {path in the
-    incoming folder: text} for journeys/report.txt, ts-mutants-*/<t>.txt and
-    mutants-*/exit-code.txt; jobs: {job: result} (the workflow's `needs`);
-    explained_dirs: the incoming folders whose failure folders gave a kind.
-    Returns [(kind, example)], each kind starting "check "."""
+    incoming folder: text} for journeys/report.txt, journeys/soak.json,
+    ts-mutants-*/<t>.txt and mutants-*/exit-code.txt; jobs: {job: result}
+    (the workflow's `needs`); explained_dirs: the incoming folders whose
+    failure folders gave a kind; present_dirs: every incoming folder, so a
+    red matrix job's leg that left a folder with no kind is still filed when
+    a sibling leg's folder gave one. Returns [(kind, example)], each kind
+    starting "check "."""
     kinds = []
     dirs_with_kinds = set(explained_dirs)
     for path, text in sorted(reports.items()):
@@ -251,6 +261,15 @@ def check_kinds(reports, jobs, explained_dirs):
             for line in text.splitlines():
                 if line.startswith("UNEXPLAINED"):
                     found.append((f"check TypeScript mutants: {numbers_out(line).strip()[:150]}", line))
+        elif path == "journeys/soak.json":
+            # The long-session soak runs in the journeys job: each problem it judged is a kind, so a soak failure on a
+            # night with a journey FAIL is filed too (it was hidden by it, weak-spot hunt 10-29).
+            try:
+                soak = json.loads(text)
+            except json.JSONDecodeError:
+                soak = {}
+            for problem in soak.get("problems", []) if isinstance(soak, dict) else []:
+                found.append((f"check soak: {numbers_out(str(problem)).strip()[:150]}", f"seed {soak.get('seed')}: {problem}"))
         elif top.startswith("mutants-") and path.endswith("/exit-code.txt"):
             code = text.strip()
             if code not in MUTANTS_FINE:
@@ -260,12 +279,17 @@ def check_kinds(reports, jobs, explained_dirs):
             dirs_with_kinds.add(top)
             kinds += found
     for job, result in sorted(jobs.items()):
+        # Not "cancelled": a run stopped or replaced by a newer one cancels every job, and isn't a failure to file.
         if result != "failure":
             continue
         prefixes = JOB_DIRS.get(job, ())
-        if prefixes and any(d.startswith(prefixes) for d in dirs_with_kinds):
+        # Explained when one of its folders gave a kind and none of its folders that came in gave none (a matrix leg
+        # that crashed beside a leg that found something was hidden, weak-spot hunt 10-29).
+        silent = sorted(d for d in present_dirs if job_dir(d, prefixes) and d not in dirs_with_kinds)
+        if prefixes and any(job_dir(d, prefixes) for d in dirs_with_kinds) and not silent:
             continue
-        kinds.append((f"check the {job} job failed with nothing more specific reported", f"job {job}: {result}"))
+        example = f"job {job}: {result}" + (f" (no kind from {', '.join(silent)})" if silent and prefixes else "")
+        kinds.append((f"check the {job} job failed with nothing more specific reported", example))
     return kinds
 
 
@@ -279,7 +303,7 @@ def read_checks(incoming):
             continue
         names = []
         if run == "journeys":
-            names = ["report.txt"]
+            names = ["report.txt", "soak.json"]
         elif run.startswith("ts-mutants-"):
             names = [f for f in sorted(os.listdir(d)) if f.endswith(".txt")]
         elif run.startswith("mutants-"):
@@ -414,7 +438,7 @@ def texts(action, kind, hits, run_url, commit, branch):
     if action == "create" and kind.startswith("devious "):
         body = (
             f"{MARK.format(key(kind))}\n"
-            f"Random testing's devious parts (kernel/tests/devious.rs, devious_random: awkward sketches moved, turned "
+            f"Random testing's devious parts (awkward sketches moved, turned "
             f"and scaled, each judged by an exact model) found a new kind of problem ({where}).\n\n"
             f"**Kind:** {kind}\n\n"
             f"Example (seed `{seed}`):\n{fenced(example)}\n\n"
@@ -488,7 +512,8 @@ def read_folders(incoming):
     """{seed: {file name: text}} for every endless-*/seed-*/,
     fuzz-*/seed-*/, golden/seed-golden-*/ and monkey/seed-monkey-*/ folder."""
     folders = {}
-    for run in sorted(os.listdir(incoming)):
+    # No artifacts at all (a run whose first job failed) leaves no incoming folder: nothing to read, not a crash.
+    for run in sorted(os.listdir(incoming)) if os.path.isdir(incoming) else []:
         if not run.startswith(("endless-", "fuzz-")) and run not in ("golden", "monkey"):
             continue
         for name in sorted(os.listdir(os.path.join(incoming, run))):
@@ -534,11 +559,20 @@ def lock(number, log):
         log(f"Could not lock #{number} (it may be locked already): {e.stderr.strip()}")
 
 
+class FilingFailed(Exception):
+    """Some kinds could not be filed (each one's gh error is in the log); every other kind was."""
+
+    def __init__(self, kinds):
+        super().__init__(f"Could not file {len(kinds)} kind(s): " + "; ".join(kinds))
+        self.kinds = kinds
+
+
 def run(incoming, dry_run=False, log=print):
     run_url, commit, branch = os.environ["RUN_URL"], os.environ["COMMIT"], os.environ["BRANCH"]
     folders = read_folders(incoming)
     reports, jobs = read_checks(incoming)
-    found = gather(folders, check_kinds(reports, jobs, folder_dirs(incoming, folders)))
+    present = [d for d in os.listdir(incoming) if os.path.isdir(os.path.join(incoming, d))] if os.path.isdir(incoming) else []
+    found = gather(folders, check_kinds(reports, jobs, folder_dirs(incoming, folders), present))
     if not found:
         log("No problems found in this run.")
         return []
@@ -553,24 +587,37 @@ def run(incoming, dry_run=False, log=print):
         issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "all", "--limit", "1000",
                                "--json", "number,state,stateReason,body"))
     actions = plan(found, issues, branch)
+    failed = []
     for action, kind, number in actions:
         title, body = texts(action, kind, found[kind], run_url, commit, branch)
         log(f"{action} {number or ''} {kind}")
         if not live:
             continue
-        if action == "create":
-            url = gh("issue", "create", "--title", title, "--label", LABEL, "--body-file", "-", stdin=body)
-            m = re.search(r"/issues/(\d+)", url)
-            if m:
-                lock(m.group(1), log)
-        else:
-            if action == "reopen":
-                gh("issue", "reopen", str(number))
-            gh("issue", "comment", str(number), "--body-file", "-", stdin=body)
-            # Issues filed before locking began get locked the next time they come back.
-            lock(number, log)
+        # One refused gh call (a rate limit, a network blip) skips only its own kind: the rest of the night's kinds
+        # are still filed, and the run ends red naming what wasn't (it stopped all filing, quietly, before).
+        try:
+            if action == "create":
+                url = gh("issue", "create", "--title", title, "--label", LABEL, "--body-file", "-", stdin=body)
+                m = re.search(r"/issues/(\d+)", url)
+                if m:
+                    lock(m.group(1), log)
+            else:
+                if action == "reopen":
+                    gh("issue", "reopen", str(number))
+                gh("issue", "comment", str(number), "--body-file", "-", stdin=body)
+                # Issues filed before locking began get locked the next time they come back.
+                lock(number, log)
+        except subprocess.CalledProcessError as e:
+            log(f"Could not {action} {number or ''} {kind}: {(e.stderr or '').strip()}")
+            failed.append(kind)
+    if failed:
+        raise FilingFailed(failed)
     return actions
 
 
 if __name__ == "__main__":
-    run(sys.argv[1], dry_run="--dry-run" in sys.argv)
+    try:
+        run(sys.argv[1], dry_run="--dry-run" in sys.argv)
+    except FilingFailed as e:
+        print(e, file=sys.stderr)
+        sys.exit(2)
