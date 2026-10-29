@@ -11,7 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { changedMove, insertMove, MOVE_STEP, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
-import { draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
+import { draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
@@ -1686,6 +1686,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const distance = Number(typed);
     if (typed.trim() === "" || !Number.isFinite(distance)) return extrudeBox.showError("Type the distance in mm.");
     if (distance === 0) return extrudeBox.showError(ZERO_DISTANCE);
+    // Under 0.001 mm or over 1 km, either way: the one rule for typed lengths, in short words (1e300 gave the kernel's
+    // 350-character refusal, weak-spot hunt 10-29).
+    const tooFar = lengthRefused(Math.abs(distance));
+    if (tooFar !== null) return extrudeBox.showError(`The distance${tooFar.slice("A length".length)}`);
     const before = designDoc();
     const source = sourceOf(id);
     // A face offered in another design is out of date (that design changed since).
@@ -1786,9 +1790,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     try {
       const f = editableFeature(before, id);
       const read = readTyped(f.keys, typed);
-      if ("bad" in read) {
-        const label = f.shape === "sketch-extrude" ? "distance" : parameterRows(f.shape).find((r) => r.key === read.bad)!.label.toLowerCase();
-        return editBox.showError(`Type the ${label} in mm.`);
+      if (!("sizes" in read)) {
+        const key = "bad" in read ? read.bad : read.refused;
+        const label = f.shape === "sketch-extrude" ? "distance" : parameterRows(f.shape).find((r) => r.key === key)!.label.toLowerCase();
+        return editBox.showError("bad" in read ? `Type the ${label} in mm.` : `The ${label}${read.why.slice("A length".length)}`);
       }
       next = editFeature(before, id, read.sizes, flip);
     } catch (e) {
@@ -1864,7 +1869,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function previewMove() {
     if (!lastScene) return;
     const read = readMoveBoxes(moveBox.typed);
-    const v = moveBox.shown && "values" in read ? read.values : null;
+    const v = moveBox.shown && "values" in read && previewable(read.values) ? read.values : null;
     const id = moveBox.editing;
     viewport.showBody(v === null ? lastScene.mesh : id === null ? movedMesh(lastScene, moveBodies, v) : editedMoveMesh(lastScene, designDoc(), resultsNow, id, v));
     showMoveHandles();
@@ -1878,7 +1883,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function showMoveHandles() {
     const read = readMoveBoxes(moveBox.typed);
     // Not while Snap picks (35e2d): a click on the bodies is a pick then, never a grab of an arrow or ring over them.
-    const on = shown && moveBox.shown && moveBodies.length > 0 && snapping === null && "values" in read;
+    const on = shown && moveBox.shown && moveBodies.length > 0 && snapping === null && "values" in read && previewable(read.values);
     viewport.showMoveHandles(on ? { centre: handlesCentre(read.values) } : null);
   }
 

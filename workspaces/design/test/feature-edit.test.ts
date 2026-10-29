@@ -94,6 +94,18 @@ test("typed boxes: empty or not a number names the box; spaces and exponents are
   assert.deepEqual(edit.readTyped(["height"], { height: "Infinity" }), { bad: "height" });
   // Only the shown boxes are read.
   assert.deepEqual(edit.readTyped(["height"], { width: "junk", height: "7" }), { sizes: { height: 7 } });
+  // Weak-spot hunt 10-29: past the typed-length range, either sign, the box is named with lengthRefused's short words
+  // (1e300 and 1e-320 gave the kernel's ~350-character refusal). The range is 0.001 mm to 1e6 mm (1 km): 0.9×/1.1× of each end.
+  assert.deepEqual(edit.readTyped(["height"], { height: "1e300" }), { refused: "height", why: "A length can be at most 1000000 mm (1 km), the largest size the modeller works at." });
+  assert.deepEqual(edit.readTyped(["height"], { height: "-1e300" }), { refused: "height", why: "A length can be at most 1000000 mm (1 km), the largest size the modeller works at." });
+  assert.deepEqual(edit.readTyped(["height"], { height: "1e-320" }), { refused: "height", why: "A length must be at least 0.001 mm, the smallest piece the modeller keeps." });
+  assert.deepEqual(edit.readTyped(["height"], { height: "900000" }), { sizes: { height: 900000 } });
+  assert.ok("refused" in edit.readTyped(["height"], { height: "1100000" }));
+  assert.deepEqual(edit.readTyped(["height"], { height: "0.0011" }), { sizes: { height: 0.0011 } });
+  assert.ok("refused" in edit.readTyped(["height"], { height: "0.0009" }));
+  // 0 and negatives within range are the kernel's to judge, as before.
+  assert.deepEqual(edit.readTyped(["height"], { height: "0" }), { sizes: { height: 0 } });
+  assert.deepEqual(edit.readTyped(["height"], { height: "-5" }), { sizes: { height: -5 } });
   // Numbers that aren't finite never reach a document.
   assert.throws(() => edit.editFeature(design(), "feature-1", { width: Number.NaN }), { message: "Box 1: its width must be a number of mm, not NaN" });
 });

@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView, DisplayMesh, GeometryReference } from "@fission/core";
 import { NO_MOVE, type MoveValues } from "../src/move.ts";
-import { boxCentre, boxText, draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, movedPoint, pickedBodies, readMoveBoxes, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "../src/move-tool.ts";
+import { boxCentre, boxText, draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, MOVE_PREVIEW_LIMIT, movedMesh, movedPoint, pickedBodies, previewable, readMoveBoxes, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "../src/move-tool.ts";
 import { insertMove } from "../src/move.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { nameBody } from "../src/naming.ts";
@@ -267,4 +267,16 @@ test("seeded: 300 chains of Moves on two bodies; an edited Move's preview is the
     got.normals.forEach((x, i) => assert.ok(Math.abs(x - want.normals[i]) < 1e-9, `chain ${n}: normal ${i}`));
     got.edge_lines.forEach((x, i) => assert.ok(Math.abs(x - want.edge_lines[i]) < 1e-8, `chain ${n}: line ${i}`));
   }
+});
+
+test("the preview draws a Move only within 1e9 mm (boundary 0.9× draws, 1.1× doesn't; weak-spot hunt 10-29: 1e308 gave the view NaN)", () => {
+  const base = { ...NO_MOVE };
+  assert.equal(previewable(base), true);
+  for (const k of ["x", "y", "z", "pivotX", "pivotY", "pivotZ"] as const) {
+    assert.equal(previewable({ ...base, [k]: 0.9 * MOVE_PREVIEW_LIMIT }), true, `${k} 0.9×`);
+    assert.equal(previewable({ ...base, [k]: -1.1 * MOVE_PREVIEW_LIMIT }), false, `${k} −1.1×`);
+    assert.equal(previewable({ ...base, [k]: 1e308 }), false, `${k} 1e308`);
+  }
+  // Angles are not distances: any turn is drawn (its sine and cosine stay in range).
+  assert.equal(previewable({ ...base, turnZ: 1e12 }), true);
 });
