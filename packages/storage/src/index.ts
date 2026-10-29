@@ -13,7 +13,7 @@ import { projectStore, type ProjectStore } from "./store.ts";
 
 export { indexedDbKeyValue } from "./indexeddb.ts";
 export { memoryKeyValue, type KeyValue } from "./key-value.ts";
-export { startAutosave, QUIET_MS, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
+export { startAutosave, QUIET_MS, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
 export { ProjectChangedError, projectStore, type ProjectStore, type ProjectSummary } from "./store.ts";
 export { journalEntry, keptEntry, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
 export { ASK_MS, OPENING_KEY, reopenGuard, SETTLED_MS, type MarkStorage, type OpeningChannel, type ReopenGuard } from "./reopen.ts";

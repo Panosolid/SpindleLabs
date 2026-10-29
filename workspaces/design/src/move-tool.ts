@@ -227,6 +227,17 @@ export function readMoveBoxes(typed: Partial<Record<MoveParam, string>>): { valu
   return { values };
 }
 
+/**
+ * Whether the preview can draw `v`: every distance and pivot within 1e9 mm,
+ * ten times the kernel's model space (1e8 mm, which OK checks). Past that
+ * the moved points overflow what the view can draw (a 1e308 mm Move gave
+ * the view NaN sizes and the body vanished, weak-spot hunt 10-29), so the
+ * body is drawn unmoved, as for a box half typed.
+ */
+export const MOVE_PREVIEW_LIMIT = 1e9;
+export const previewable = (v: MoveValues): boolean =>
+  (["x", "y", "z", "pivotX", "pivotY", "pivotZ"] as const).every((k) => Math.abs(v[k]) <= MOVE_PREVIEW_LIMIT);
+
 /** A number as a box shows it: rounded to a nanometre (the kernel's 10 nm tolerance is far coarser), with no "-0". */
 export const boxText = (n: number): string => String(Math.round(n * 1e6) / 1e6 + 0);
 

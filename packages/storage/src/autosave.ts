@@ -102,6 +102,15 @@ export interface Autosave {
 /** One second: long enough that typing a number is one save. A page going sooner keeps its changes through `leaving()`. */
 export const QUIET_MS = 1000;
 
+/**
+ * How long a save may go unanswered before the status says storage isn't
+ * answering: fifteen seconds (a phone's real saves take well under one).
+ * Blind spots B2b: IndexedDB that never answered left "Saving…" for good.
+ */
+export const STORAGE_ANSWER_MS = 15_000;
+/** The words for a save storage hasn't answered (the status line puts "Not saved: " before them). */
+export const STORAGE_NOT_ANSWERING = "browser storage isn't answering, so your latest changes aren't stored yet (use Save to keep your work as a file)";
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
@@ -117,6 +126,8 @@ export function startAutosave(
 ): Autosave {
   let timer: unknown = null;
   let inFlight = false;
+  /** The save in flight went unanswered past STORAGE_ANSWER_MS: said, and kept said until it settles. */
+  let overdue = false;
   /** Settles when the save in flight (if any) has finished, either way. */
   let flight: Promise<void> = Promise.resolve();
   let again = false;
@@ -223,6 +234,10 @@ export function startAutosave(
     }
     inFlight = true;
     let failure: string | null = null;
+    const watch = timers.setTimeout(() => {
+      overdue = true;
+      report({ state: "error", message: STORAGE_NOT_ANSWERING });
+    }, STORAGE_ANSWER_MS);
     try {
       const saving = store.save(id, JSON.parse(text) as Project, at, base); // exactly the state checked above
       flight = saving.then(
@@ -239,6 +254,8 @@ export function startAutosave(
       if (e instanceof ProjectChangedError) conflicted = true;
       failure = message(e);
     }
+    timers.clearTimeout(watch);
+    overdue = false;
     inFlight = false;
     if (again) {
       again = false;
@@ -253,7 +270,7 @@ export function startAutosave(
     version++;
     if (timer !== null) timers.clearTimeout(timer);
     timer = timers.setTimeout(() => void save(), quietMs);
-    report({ state: "saving" });
+    report(overdue ? { state: "error", message: STORAGE_NOT_ANSWERING } : { state: "saving" });
   }
   /** A history change: a change unless the project is what the store holds, with no save waiting or running. */
   function followed() {

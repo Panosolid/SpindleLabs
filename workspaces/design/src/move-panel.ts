@@ -97,7 +97,23 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const snapNote = el("p", "move-snap-note", "move-panel-bodies");
   snapNote.hidden = true;
   const inputs = new Map<MoveParam, HTMLInputElement>();
-  const typed = () => Object.fromEntries(MOVE_PARAMS.map((k) => [k, inputs.get(k)!.value])) as Record<MoveParam, string>;
+  // What the panel itself put in a box, rounded for show (boxText), with the exact number behind it: a box still showing
+  // it reads as that number, so OK on an unchanged Move of 1e-7 mm records no change (weak-spot hunt 10-29).
+  const exact = new Map<MoveParam, { text: string; value: number }>();
+  const put = (k: MoveParam, value: number) => {
+    const text = boxText(value);
+    inputs.get(k)!.value = text;
+    exact.set(k, { text, value });
+  };
+  // A box holding text it can't read as a number ("1e", "1.2.3") has the value "" (badInput): read it as not a number,
+  // never as an empty box's 0 (weak-spot hunt 10-29).
+  const read = (k: MoveParam) => {
+    const input = inputs.get(k)!;
+    if (input.validity?.badInput) return "?";
+    const shown = exact.get(k);
+    return shown && shown.text === input.value ? String(shown.value) : input.value;
+  };
+  const typed = () => Object.fromEntries(MOVE_PARAMS.map((k) => [k, read(k)])) as Record<MoveParam, string>;
   let pivotTyped = false;
   let editing: string | null = null;
   let open = false;
@@ -121,7 +137,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       });
       // A box left empty shows 0 as soon as the focus leaves it (Ben, 2026-10-28): it counts as 0 meanwhile (readMoveBoxes).
       input.addEventListener("blur", () => {
-        if (input.value.trim() !== "" || !open) return;
+        if (input.value.trim() !== "" || input.validity?.badInput || !open) return;
         input.value = "0";
         if (row.id === "move-pivot") showSummary();
         on.typed(typed());
@@ -178,7 +194,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       // An edited Move keeps its pivot; a new one follows its bodies.
       pivotTyped = m.id !== null;
       title.textContent = m.id === null ? "Move" : `Edit ${m.name}`;
-      for (const k of MOVE_PARAMS) inputs.get(k)!.value = boxText(m.values[k]);
+      exact.clear();
+      for (const k of MOVE_PARAMS) put(k, m.values[k]);
       pivot.open = false;
       showSummary();
       setBodies(m.bodies);
@@ -191,14 +208,14 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     setBodies,
     setPivot(p) {
       if (pivotTyped) return;
-      (["pivotX", "pivotY", "pivotZ"] as const).forEach((k, i) => (inputs.get(k)!.value = boxText(p[i])));
+      (["pivotX", "pivotY", "pivotZ"] as const).forEach((k, i) => put(k, p[i]));
       showSummary();
     },
     setValue(key, value) {
-      inputs.get(key)!.value = boxText(value);
+      put(key, value);
     },
     setValues(values) {
-      for (const k of ["x", "y", "z", "turnX", "turnY", "turnZ"] as const) inputs.get(k)!.value = String(values[k] + 0);
+      for (const k of ["x", "y", "z", "turnX", "turnY", "turnZ"] as const) (inputs.get(k)!.value = String(values[k] + 0)), exact.delete(k);
     },
     snapping(words) {
       snap.setAttribute("aria-pressed", String(words !== null));

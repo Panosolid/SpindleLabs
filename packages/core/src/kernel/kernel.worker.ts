@@ -5,7 +5,7 @@
 import init, * as kernel from "./wasm/fission_kernel.js";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
@@ -36,6 +36,8 @@ const ready = download().then((exports) => {
   return startKernel(kernel.begin, release);
 });
 ready.catch(() => {});
+// Started: from now on the client times each call (kernel-client.ts, `answerWithinMs`), never the download.
+ready.then(() => self.postMessage({ ready: true } satisfies KernelReady), () => {});
 
 const ops = {
   kernel_version: () => kernel.kernel_version(),
