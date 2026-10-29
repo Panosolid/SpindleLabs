@@ -255,6 +255,7 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
   assert.deepEqual(await reach("#float-finish"), { onScreen: true, tappable: true, height: 44, disabled: false }, "1: Finish Extrude on screen and tappable");
   assert.equal(await page.isVisible("#float-cancel"), true, "Extrude has Cancel on the bar too");
   await page.tap("#properties-toggle");
+  await page.fill("#extrude-distance", "10"); // Extrude starts at 0 mm (Ben, 2026-10-28)
   if (shots) await page.screenshot({ path: `${shots}/phone-float-finish-extrude-393.png` });
   await page.tap("#float-finish");
   await untilBodies(page, 2);

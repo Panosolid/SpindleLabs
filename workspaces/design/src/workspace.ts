@@ -6,7 +6,7 @@ import { latestOnly, NO_HIGHLIGHT, ORIGIN_AT_FIRST, type BodySpec, type MoveKind
 import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
+import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
@@ -1730,12 +1730,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         if (extruding !== e || e.sketch !== id) return;
         e.base = { doc, sketch: id, spec };
       }
-      const handle = await kernel.call("body_build", previewSpec(e.base.spec, d));
+      // At 0 mm (where Extrude starts) nothing is drawn, but the arrow still stands on the profile: it is found from a 1 mm build.
+      const handle = await kernel.call("body_build", previewSpec(e.base.spec, d === 0 ? 1 : d));
       const view = await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       // Out of date: another sketch chosen or the panel closed. A newer distance only means another build follows.
       if (extruding !== e || e.sketch !== id) return;
-      e.preview = e.distance === null ? null : view;
-      e.arrow = arrowOf(view, d) ?? e.arrow;
+      e.preview = e.distance === null || d === 0 ? null : view;
+      e.arrow = arrowOf(view, d === 0 ? 1 : d) ?? e.arrow;
     } catch (err) {
       if (extruding !== e || e.sketch !== id || e.distance !== d) return;
       e.preview = null;
@@ -1779,7 +1780,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!id) return;
     const distance = Number(typed);
     if (typed.trim() === "" || !Number.isFinite(distance)) return extrudeBox.showError("Type the distance in mm.");
-    if (distance === 0) return extrudeBox.showError(ZERO_DISTANCE);
+    if (distance === 0) return extrudeBox.showError(ZERO_OK);
     // Under 0.001 mm or over 1 km, either way: the one rule for typed lengths, in short words (1e300 gave the kernel's
     // 350-character refusal, weak-spot hunt 10-29).
     const tooFar = lengthRefused(Math.abs(distance));
