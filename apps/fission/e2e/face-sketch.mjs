@@ -34,6 +34,16 @@ async function fresh(width = 1280, touch = false) {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  // The presses the page heard, last 40, for a timed-out wait's report (WebKit's only failure since PR #22 shows no state otherwise).
+  await page.addInitScript(() => {
+    const log = (window.__presses = []);
+    for (const type of ["touchstart", "touchend", "pointerdown", "pointerup", "click"])
+      document.addEventListener(type, (e) => {
+        const t = e.target instanceof Element ? e.target.id || e.target.getAttribute("class") || e.target.tagName : String(e.target);
+        log.push(`${type}@${Math.round(e.clientX ?? e.changedTouches?.[0]?.clientX ?? -1)},${Math.round(e.clientY ?? e.changedTouches?.[0]?.clientY ?? -1)}:${t}`);
+        if (log.length > 40) log.shift();
+      }, true);
+  });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
@@ -44,7 +54,21 @@ async function fresh(width = 1280, touch = false) {
 }
 
 const data = (page, key) => page.evaluate((k) => document.querySelector("#viewport").dataset[k] ?? "", key);
-const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 8000 }).catch(async () => assert.fail(`${what}: timed out`));
+/** What the page shows now, for a timed-out wait's report: the sketch, the tool bar over the view, the sheet, the presses heard. */
+const pageState = (page) =>
+  page
+    .evaluate(() => {
+      const v = document.querySelector("#viewport")?.dataset ?? {};
+      const bar = document.getElementById("phone-float");
+      return JSON.stringify({
+        view: { ...v }, status: document.getElementById("sketch-status")?.textContent,
+        bar: bar ? `${bar.hidden ? "hidden" : "shown"} ${bar.dataset.kind}: ${bar.textContent}` : null,
+        sheet: document.getElementById("properties-toggle")?.getAttribute("aria-expanded"),
+        focus: document.activeElement?.id || document.activeElement?.tagName, presses: window.__presses,
+      });
+    })
+    .catch((e) => `(no state: ${e.message})`);
+const until = (page, fn, arg, what) => page.waitForFunction(fn, arg, { timeout: 8000 }).catch(async () => assert.fail(`${what}: timed out; ${await pageState(page)}`));
 const camera = (page) => page.evaluate(() => window.fissionTest.camera());
 const canvasBox = (page) => page.locator("#viewport canvas").boundingBox();
 const press = (page, sel, tap) => (tap ? page.tap(sel) : page.click(sel));
