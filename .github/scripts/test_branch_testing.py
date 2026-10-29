@@ -86,6 +86,60 @@ class Yield(unittest.TestCase):
         self.assertIsNone(reason([run(1, "claude/a", "queued")]))
 
 
+class Idle(unittest.TestCase):
+    def test_busy_while_a_ci_job_waits_or_the_queue_tests(self):
+        self.assertIsNone(bt.busy_reason(NOW, [], []))
+        # Every CI job already has a runner, and no merge queue run: idle.
+        self.assertIsNone(bt.busy_reason(NOW, [run(5, "claude/a", "in_progress", event="pull_request")],
+                                         [job("app", "in_progress", "2026-10-26T03:50:00Z")]))
+        # Any wait at all counts (unlike yield's CI_WAIT): starting now would take the runner it waits for.
+        # Hand-worked: created 03:55:00, NOW 04:00:00, so it has waited 5 min.
+        self.assertEqual(bt.busy_reason(NOW, [], [job("app", "queued", "2026-10-26T03:55:00Z"), job("e2e (1/4)", "queued", "2026-10-26T03:59:59Z")]),
+                         'CI job "app" is waiting for a runner (5 min)')
+        self.assertEqual(bt.busy_reason(NOW, [run(6, "gh-readonly-queue/main/pr-1", "in_progress", event="merge_group")], []),
+                         "the merge queue is testing (run 6)")
+
+    def wait(self, answers, limit=180, poll=60):
+        clock, slept, lines = [NOW], [], []
+        answers = iter(answers)
+        def look():
+            a = next(answers)
+            if isinstance(a, Exception):
+                raise a
+            return a
+        def sleep(s):
+            slept.append(s)
+            clock[0] += s
+        how = bt.wait_idle(limit, poll, look, now=lambda: clock[0], sleep=sleep, log=lines.append)
+        return how, slept, lines
+
+    def test_waits_until_idle(self):
+        how, slept, lines = self.wait(["the merge queue is testing (run 6)", subprocess.SubprocessError(), None])
+        self.assertEqual((how, slept), ("idle", [60, 60]))
+        self.assertEqual(lines, ["waiting: the merge queue is testing (run 6)", "waiting: couldn't read the queue (SubprocessError)"])
+
+    def test_starts_anyway_at_the_limit(self):
+        # limit 180 s, a look every 60 s: busy at 0, 60, 120 and 180 s, so three sleeps and then it starts.
+        how, slept, lines = self.wait(["busy"] * 10)
+        self.assertEqual((how, slept), ("timeout", [60, 60, 60]))
+        self.assertEqual(lines[-1], "still busy after 3 min (busy); starting anyway")
+
+    def test_the_limit_boundary_at_0_9_and_1_1(self):
+        # One poll of 0.9 x the limit: still under it, so it looks again; 1.1 x: past it, so it starts.
+        how, slept, _ = self.wait(["busy", "busy", None], limit=100, poll=90)
+        self.assertEqual((how, slept), ("idle", [90, 90]))
+        how, slept, _ = self.wait(["busy", "busy", None], limit=100, poll=110)
+        self.assertEqual((how, slept), ("timeout", [110]))
+
+
+class Nightly(unittest.TestCase):
+    def test_on_main_only_a_starved_ci_job_counts(self):
+        # Another branch's run waiting for an hour never stops the night's run on main...
+        self.assertIsNone(reason(nightly=[run(5, "claude/b", "queued")], started=NOW - 7200, branch="main"))
+        # ...but a CI job waiting past CI_WAIT does.
+        self.assertIn('CI job "app" has waited 3 min', reason(jobs=[job("app", "queued", "2026-10-26T03:57:00Z")], branch="main"))
+
+
 class Cancel(unittest.TestCase):
     def test_only_this_branchs_unfinished_runs_by_hand(self):
         runs = [run(1, "claude/a", "in_progress"), run(2, "claude/a", "pending"), run(3, "claude/a", "completed"),
@@ -183,6 +237,16 @@ class Command(unittest.TestCase):
         out, calls = self.cli(body, "yield", "claude/k", str(NOW), workflow="kernel-nightly.yml")
         self.assertIn('CI job "checks" has waited', out.stdout)
         self.assertEqual(calls[0], "api repos/o/r/actions/workflows/kernel-nightly.yml/runs?per_page=30")
+
+    def test_wait_idle_starts_when_idle_and_anyway_when_unreadable(self):
+        quiet = "case \"$*\" in *runs\\?per_page*) echo '{\"workflow_runs\":[]}';; *) exit 1;; esac\n"
+        out, calls = self.cli(quiet, "wait-idle", "600")
+        self.assertEqual((out.returncode, out.stdout.strip()), (0, "CI is idle: starting"))
+        self.assertEqual(calls, ["api repos/o/r/actions/workflows/ci.yml/runs?per_page=20", "api repos/o/r/actions/workflows/kernel-ci.yml/runs?per_page=20"])
+        out, _ = self.cli("exit 1\n", "wait-idle", "0")
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("still busy after 0 min (couldn't read the queue", out.stdout)
+        self.assertIn("CI still busy: starting anyway", out.stdout)
 
     def test_cancel_kernel_runs_asks_without_githubs_branch_filter(self):
         listing = '{"workflow_runs":[%s]}' % ",".join(

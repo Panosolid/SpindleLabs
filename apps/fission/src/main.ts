@@ -17,10 +17,10 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { watchKernel } from "./kernel-lost.ts";
@@ -569,14 +569,14 @@ let canKeep = true;
  * Keeps the open project in the store under `id` from now on; `stored` when it was just opened from there as it is,
  * stored at `storedAt`: a save after another tab stored it since is refused and says so (app sweep, finding 2).
  */
-function keep(id: string, stored = false, storedAt: Date | null = null) {
+function keep(id: string, stored = false, storedAt: Date | null = null, fromKept = false) {
   keepOnChange = null;
   autosave?.finish();
   if (!canKeep) return;
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt });
+  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -841,6 +841,21 @@ function showShortcuts() {
   shortcutDialog.querySelector(".close")!.addEventListener("click", () => shortcutDialog.close());
   shortcutDialog.showModal();
 }
+// Settings: a card dialog of sections (@fission/ui settings.ts), kept in this
+// browser alone. Close, Escape and a tap outside the card all leave it.
+const settingsDialog = Object.assign(document.createElement("dialog"), { id: "settings", className: "settings" });
+settingsDialog.setAttribute("aria-labelledby", "settings-title");
+document.body.append(settingsDialog);
+let browserSettings: SettingsStore | null = null;
+const settings = () => (browserSettings ??= new SettingsStore(local));
+$("settings-open").addEventListener("click", () => {
+  settings(); // read once now, so the first real setting has its place
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts });
+  settingsDialog.showModal();
+});
+settingsDialog.addEventListener("click", (e) => {
+  if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
+});
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
@@ -886,6 +901,7 @@ showUndoRedo();
 withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
+withIcon($("settings-open"), "settings", 16);
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
@@ -1017,9 +1033,12 @@ async function start() {
       fileStatus("The last project didn't finish opening on your last visit, so a new one was started. The old one is still kept in this browser: reload the page now, before changing anything, to try it again.");
     } else if (newest) {
       guard.opening(newest);
-      ctx.project = await store.open(newest);
-      keep(newest, true, newestAt);
-      saveStatus({ state: "saved" });
+      // Its newest state, when the store had no room for it (storage full): kept in the journal, and what the user
+      // last saw, so it is what opens and what Save writes (real-use hunt B1). Its autosave stores it once it can.
+      const kept = keptEntry(local, newest);
+      ctx.project = kept === null ? await store.open(newest) : projectFromJson(kept, workspaces);
+      keep(newest, kept === null, newestAt, kept !== null);
+      saveStatus(kept === null ? { state: "saved" } : { state: "error", message: "this browser's storage had no room for your latest changes. They're kept until it has, and Save keeps them as a file." });
       opened = newest;
     } else keep(newId());
   } catch (e) {

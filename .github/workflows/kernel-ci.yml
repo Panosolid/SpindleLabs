@@ -19,6 +19,10 @@ name: Kernel CI
 # and no fork can read them; test_kernel_ci.py checks): KERNEL_READ, a fine-grained key with
 # read-only contents and read-write commit statuses on Panosolid/kernel;
 # RESULTS_WRITE, contents and issues read-write on Panosolid/kernel-results.
+# The title names the label, so the kernel repo's ci.yml can find and cancel
+# a pull request's run when it goes back to draft.
+run-name: Kernel CI ${{ inputs.label }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -116,8 +120,11 @@ jobs:
 
   # Which kernel code no test runs at all (the kernel's ci/coverage.sh): a
   # per-file table and an lcov file, in kernel-results only. Report only: no
-  # status, so it never holds a merge.
+  # status, so it never holds a merge. Only for main's runs, after each merge
+  # (Ben, 2026-10-29: about 790 runner minutes a day went on every pull
+  # request push's copy).
   coverage:
+    if: inputs.label == 'main'
     runs-on: ubuntu-latest
     environment: kernel
     timeout-minutes: 60

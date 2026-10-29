@@ -106,7 +106,7 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     try {
       await store.save(id, project, entry.written ?? undefined); // the state as of when the entry was written
     } catch (e) {
-      problems.push(`unsaved changes from your last visit couldn't be stored (${message(e)}); they are kept in this browser for the next visit`);
+      problems.push(`unsaved changes from your last visit couldn't be stored (${message(e)}); they are shown, and kept in this browser until it has room: Save keeps them as a file`);
       try {
         journal.setItem(k, journalEntry(entry.text, entry.written ?? new Date(0), true)); // so no tab saves over them meanwhile
       } catch {
@@ -117,6 +117,22 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     remove(journal, k);
   }
   return problems;
+}
+
+/**
+ * The file text of `id`'s entry when recovery couldn't store it (marked kept): the project's newest state, which the
+ * app opens in place of the older one the store holds (real-use hunt B1), with an autosave that owns the entry
+ * (`fromKept`). Null when there is no such entry, or no journal to read.
+ */
+export function keptEntry(journal: JournalStorage | null, id: string): string | null {
+  try {
+    const entry = journal?.getItem(unsavedKey(id));
+    if (entry == null) return null;
+    const read = readJournalEntry(entry);
+    return read.kept ? read.text : null;
+  } catch {
+    return null;
+  }
 }
 
 function remove(journal: JournalStorage, key: string) {

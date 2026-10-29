@@ -44,7 +44,33 @@ function keptFile(path, navigate, precache) {
   return precache.includes(path) ? path : null;
 }
 
-if (typeof module === "object") module.exports = { cachesToDelete, keptFile, PREFIX };
+/**
+ * Anything else: the network first (kept in this version's cache when it
+ * is one of the build's own files, such as a chunk loaded on demand), then
+ * any of our caches, so an older tab finds its own version's files: when
+ * the network fails, and when the server no longer has the file (404 or
+ * 410, an older build's file gone after a deploy; real-use hunt A2). `env`
+ * is the worker's fetch and caches, and the name of this version's cache.
+ */
+async function fromAnywhere(request, path, { fetch, caches, current }) {
+  const fromCache = () => caches.match(request, { ignoreSearch: request.mode === "navigate" });
+  let response;
+  try {
+    response = await fetch(request);
+  } catch (e) {
+    const cached = await fromCache();
+    if (cached) return cached;
+    throw e;
+  }
+  if (response.ok && path.startsWith("assets/")) {
+    const copy = response.clone();
+    caches.open(current).then((cache) => cache.put(request, copy));
+  }
+  if (response.status === 404 || response.status === 410) return (await fromCache()) ?? response;
+  return response;
+}
+
+if (typeof module === "object") module.exports = { cachesToDelete, fromAnywhere, keptFile, PREFIX };
 else {
   const scope = new URL(self.registration.scope);
   const relative = (url) => (url.pathname.startsWith(scope.pathname) ? url.pathname.slice(scope.pathname.length) : null);
@@ -72,32 +98,12 @@ else {
     const path = relative(url);
     if (path === null || path === "sw.js") return;
     const kept = keptFile(path, request.mode === "navigate", BUILD.precache);
-    event.respondWith(kept === null ? fromAnywhere(request, path) : fromCurrent(kept, request));
+    event.respondWith(kept === null ? fromAnywhere(request, path, { fetch: (r) => fetch(r), caches, current: CURRENT }) : fromCurrent(kept, request));
   });
 
   /** A file this version keeps: from its cache, else (the cache cleared under us) the network. */
   async function fromCurrent(path, request) {
     const cache = await caches.open(CURRENT);
     return (await cache.match(new URL(path, scope).href)) ?? fetch(request);
-  }
-
-  /**
-   * Anything else: the network first (kept in this version's cache when it
-   * is one of the build's own files, such as a chunk loaded on demand),
-   * then any of our caches, so an older tab finds its own version's files.
-   */
-  async function fromAnywhere(request, path) {
-    try {
-      const response = await fetch(request);
-      if (response.ok && path.startsWith("assets/")) {
-        const copy = response.clone();
-        caches.open(CURRENT).then((cache) => cache.put(request, copy));
-      }
-      return response;
-    } catch (e) {
-      const cached = await caches.match(request, { ignoreSearch: request.mode === "navigate" });
-      if (cached) return cached;
-      throw e;
-    }
   }
 }

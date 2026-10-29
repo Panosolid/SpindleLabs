@@ -77,6 +77,10 @@ PASSING = ("success", "skipped", "neutral")
 # ci.yml's browser check in a quick run (only while main requires the merge
 # queue): a head with it had only the quick checks.
 QUICK = "e2e (quick)"
+# ci.yml's marker of a draft's run, which skips the phone and browsers
+# checks: a head whose latest run was a draft's waits for the run that
+# marking it ready starts (in which this check is skipped).
+DRAFT = "draft run"
 MAX_ACTIONS = 20
 
 
@@ -93,10 +97,14 @@ def counts(check):
 
 
 def ci_state(check_runs, quick_ok=False):
-    """'success', 'failure', 'pending', 'none' or 'quick' (tested only by a
-    quick run, so not for merging without the queue) for a head's latest
-    check runs. quick_ok: a quick run's success is 'success' (the queue's
-    own run tests it in full)."""
+    """'success', 'failure', 'pending', 'none', 'quick' (tested only by a
+    quick run, so not for merging without the queue) or 'draft' (its latest
+    run was a draft's, without the phone check) for a head's latest check
+    runs. quick_ok: a quick run's success is 'success' (the queue's own run
+    tests it in full)."""
+    if any(c["name"] == DRAFT and c.get("app", {}).get("slug") == "github-actions"
+           and c.get("conclusion") != "skipped" for c in check_runs):
+        return "draft"
     # A full run lists the quick check too, as skipped: only one that ran counts.
     if not quick_ok and any(c["name"] == QUICK and c.get("app", {}).get("slug") == "github-actions"
            and c.get("conclusion") != "skipped" for c in check_runs):

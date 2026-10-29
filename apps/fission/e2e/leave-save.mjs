@@ -10,10 +10,13 @@
 //     question asked, and a new tab opens the last width;
 //   - localStorage refusing the journal (as when it is full): a saved page
 //     reloads without asking, and closing while a change waits asks first,
-//     and staying keeps the page.
+//     and staying keeps the page;
+//   - browser storage full: a reload shows the last width, Save writes it,
+//     and it is stored once there is room (real-use hunt B1).
 // Every page comes back saying Saved, with no journal entry left.
 // Run with `npm run e2e` (after `npm run build`); `E2E_BROWSER` picks the engine.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
@@ -236,6 +239,57 @@ try {
     await until(page, () => localStorage.getItem("panoshape.opening") === null, null, "the page counted as opened");
     await open(context, "36,000 mm³");
     await context.close();
+  });
+
+  await check("browser storage full: a reload shows the last width, Save writes it, and it is stored once there is room", async () => {
+    // Real-use hunt B1: the change the store refused (full) was put back nowhere, so a reload showed the older
+    // stored width and Save to file wrote that. A full disk, emulated: while localStorage "full" is set, every
+    // IndexedDB put fails as a full disk does (QuotaExceededError, the transaction aborted).
+    const { context, page } = await fresh(1280, {
+      init: () => {
+        const put = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (...a) {
+          const r = put.apply(this, a);
+          if (localStorage.getItem("full")) this.transaction.abort();
+          return r;
+        };
+      },
+    });
+    const full = (on) => page.evaluate((on) => (on ? localStorage.setItem("full", "1") : localStorage.removeItem("full")), on);
+    try {
+      await full(true);
+      await typeWidth(page, "50");
+      await volume(page, "30,000 mm³"); // 50·30·20
+      await until(page, () => document.querySelector("#save-status").dataset.state === "error", null, "the save refused");
+      await page.reload();
+      await volume(page, "30,000 mm³");
+      assert.match(await page.textContent("#file-status"), /couldn't be stored \(.+\); they are shown, and kept in this browser until it has room: Save keeps them as a file\./);
+      // It tries to store it at once, and says it couldn't: never "Saved".
+      await until(page, () => document.querySelector("#save-status").dataset.state === "error", null, "not said to be saved");
+      const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
+      const file = JSON.parse(readFileSync(await download.path(), "utf8"));
+      assert.equal(file.workspaces.design.timeline.features[0].intent.parameters.width, 50, "Save writes what is shown");
+      // Another edit while still full: kept too, and shown after a reload.
+      await pinProperties(page);
+      await typeWidth(page, "45");
+      await volume(page, "27,000 mm³"); // 45·30·20
+      await page.reload();
+      await volume(page, "27,000 mm³");
+      // Room again: the next change is stored, and the journal is empty.
+      await full(false);
+      await pinProperties(page);
+      await typeWidth(page, "60");
+      await volume(page, "36,000 mm³"); // 60·30·20
+      await until(page, () => document.querySelector("#save-status").dataset.state === "saved", null, "stored");
+      assert.deepEqual(await journal(page), []);
+      await page.reload();
+      await volume(page, "36,000 mm³");
+      await cameBack(page);
+    } finally {
+      await context.close();
+      // The refused saves are this check's own doing.
+      errors.splice(0, Infinity, ...errors.filter((e) => !/AbortError|aborted|QuotaExceeded/i.test(e)));
+    }
   });
 
   await check("no page errors", async () => {
