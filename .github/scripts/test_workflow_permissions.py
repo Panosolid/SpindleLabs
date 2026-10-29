@@ -14,6 +14,8 @@ are changed in the same diff, where a reader sees it. It checks:
   environments hold the engine's keys;
 - a workflow started for someone else's pull request (pull_request_target,
   workflow_run) never checks out the pull request's code;
+- no one-line `run:` holds ": " outside quotes, which YAML reads as a new
+  key and GitHub refuses the whole file (this reader would not notice);
 - every `pip install` takes exact files by hash (oracle-requirements.txt), so
   a package changed on PyPI never runs in a job that holds the engine's keys.
 
@@ -47,6 +49,7 @@ WRITES = {
     ("auto-merge.yml", ""): {"contents", "pull-requests", "issues", "actions"},
     ("fuzz.yml", "collect"): {"contents", "issues"},
     ("nightly.yml", "collect"): {"contents", "issues"},
+    ("kernel-nightly.yml", "keys"): {"issues"},
     ("pages.yml", "deploy"): {"pages", "id-token"},
     ("stop-testing.yml", "cancel"): {"actions"},
 }
@@ -68,6 +71,7 @@ ENVIRONMENTS = {
     ("kernel-nightly.yml", "test-second-leg"): "kernel",
     ("kernel-nightly.yml", "mutants"): "kernel",
     ("kernel-nightly.yml", "collect"): "kernel",
+    ("kernel-nightly.yml", "keys"): "kernel",
     ("nightly.yml", "golden-step"): "kernel",
     ("pages.yml", "deploy"): "github-pages",
 }
@@ -171,6 +175,9 @@ def problems(name, text):
             if "github.event" in ref or "head" in ref:
                 found.append(f"{name} checks out {ref.strip()} in a workflow started for someone else's pull request")
     for number, line in enumerate(text.splitlines(), 1):
+        plain = re.match(r"^\s*(?:-\s+)?run:\s+([^|>'\"\s].*)$", line)
+        if plain and re.search(r":(\s|$)", re.sub(r"\s+#.*$", "", plain.group(1))):
+            found.append(f"{name}:{number} has a one-line run: with ': ' in it, which isn't valid YAML (use run: |)")
         if re.search(r"\bpip3? install\b", line) and "--require-hashes" not in line:
             found.append(f"{name}:{number} installs Python packages without --require-hashes")
     return found
@@ -231,6 +238,7 @@ class ReaderTest(unittest.TestCase):
             "for every job": base.replace("permissions: {}", "permissions: write-all"),
             "job cancel writes ['contents']": base + "      contents: write\n",
             "uses environment kernel, listed None": base + "    environment: kernel\n",
+            "isn't valid YAML": base + "    steps:\n      - run: pip install --require-hashes --only-binary=:all: -r r.txt\n",
             "without --require-hashes": base + "    steps:\n      - run: pip install -q mpmath\n",
             "checks out": base + "    steps:\n      - uses: actions/checkout\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n",
         }

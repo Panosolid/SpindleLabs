@@ -231,7 +231,7 @@ jobs:
         run: |
           mkdir -p "$OUT"
           [ -f "$IN/fuzz/oracle.jsonl" ] || exit 0
-          pip install -q --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
+          pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
           # The oracle is private kernel code: its errors (a traceback names its
           # files and lines) and its disagreements (they name its checks) go to
           # files of the runner's, never this public log; only the count is shown.

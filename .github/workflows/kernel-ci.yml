@@ -82,7 +82,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -q --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
+      - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
       # slicing engine's oracle (Ubuntu noble ships 2.7.2).
       - run: sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq valgrind prusa-slicer >/dev/null 2>&1

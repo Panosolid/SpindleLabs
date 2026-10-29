@@ -149,7 +149,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -q --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
+      - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       - name: Random rounds until the time is up (logs in kernel-results)
         env:
           DEADLINE: ${{ needs.plan.outputs.deadline }}
@@ -205,7 +205,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install -q --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
+      - run: pip install -q --require-hashes -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt" >/dev/null 2>&1
       - name: Random rounds until the time is up (logs in kernel-results)
         env:
           DEADLINE: ${{ needs.plan.outputs.deadline }}
@@ -330,3 +330,25 @@ jobs:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           RESULTS_PATH: runs/${{ github.run_id }}-${{ github.run_attempt }}
         run: mkdir -p "$RUNNER_TEMP/logs" && .github/scripts/kernel_ci.sh save collect "$RUNNER_TEMP/logs"
+
+  # The engine's keys end a year after they were made: from three weeks
+  # before, one issue here names the key and the date (token_expiry.py; it
+  # prints nothing else). Nightly runs only.
+  keys:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    environment: kernel
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: The engine's keys have more than three weeks left
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/token_expiry.py KERNEL_READ RESULTS_WRITE
