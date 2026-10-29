@@ -185,6 +185,38 @@ export interface StlFile {
   warning: string | null;
 }
 
+/** What one path of a slice prints. */
+export type PrintRole = "outer-wall" | "inner-wall" | "solid-infill" | "sparse-infill";
+
+/** One path of a slice's preview: on the bed, mm, its points flattened x, y, x, y, … */
+export interface PrintPath {
+  role: PrintRole;
+  /** Line width, mm. */
+  width: number;
+  closed: boolean;
+  points: number[];
+}
+
+/** One layer of a slice's preview: its top above the bed and its height (mm), its paths in printing order. */
+export interface PrintLayer {
+  zTop: number;
+  height: number;
+  paths: PrintPath[];
+}
+
+/** A slice from the slicing engine (slice_stl): the G-code for the owner's printer's defaults (Bambu Lab P1S, 0.4 mm nozzle, PLA) and what it prints. */
+export interface SlicedPrint {
+  gcode: string;
+  layers: number;
+  /** Filament pushed, net of retractions (mm), and its weight in PLA (g). */
+  filamentMm: number;
+  filamentG: number;
+  retractions: number;
+  /** mm³ of the part too thin for one wall, so not printed; the app warns when it is not 0. */
+  unprintedVolume: number;
+  preview: PrintLayer[];
+}
+
 /** A body the kernel keeps between calls: a whole number from 1, never reused. Free it with body_free. */
 export type BodyHandle = number;
 

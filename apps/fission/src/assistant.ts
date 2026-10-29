@@ -48,6 +48,7 @@ import {
 } from "@fission/ai";
 import { projectToJson, type AIView, type Command, type History, type MountedWorkspace, type Project, type WorkspaceId } from "@fission/core";
 import { DESIGN_COMMANDS, DRAW_OPS, drawWords, EXTRUDE_OP, extrudeWords, partOf, RENAME_OP, renameWords, type DesignDocument } from "@fission/design";
+import { skeleton } from "@fission/ui";
 
 export interface AssistantHost {
   history: History;
@@ -687,6 +688,10 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     if (p.working === "") shown?.remove();
     else if (shown) shown.querySelector(".ai-working-text")!.textContent = p.working;
     else box.append(working(p.working));
+    // Until its first words arrive, lines shimmer where they will be (@fission/ui skeleton.ts; unseen if they come within 200 ms).
+    const waiting = box.querySelector(":scope > .skeleton");
+    if (p.working === "" && p.stage !== "checking") waiting ?? box.append(skeleton(document, "lines", "Waiting for the AI's first words"));
+    else waiting?.remove();
   }
 
   /** What the AI is doing now, in words. */

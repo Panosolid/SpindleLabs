@@ -117,6 +117,16 @@ export function u3qr1f(p0, p1, p2) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+export function uq4cun(p0, p1, p2, p3) {
+    const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export function urxw0w() {
     const ret = wasm.urxw0w();
     return ret;
@@ -451,6 +461,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {

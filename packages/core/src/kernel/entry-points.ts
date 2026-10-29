@@ -23,4 +23,5 @@ export const entry = {
   body_step: k.pprlx7,
   body_free: k.vicdld,
   body_count: k.urxw0w,
+  slice_stl: k.uq4cun,
 };

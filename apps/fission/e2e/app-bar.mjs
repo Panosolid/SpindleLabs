@@ -163,7 +163,7 @@ try {
   for (const [width, tap] of [[1280, false], [375, true]]) {
     const at = `${width} px${tap ? ", taps" : ""}`;
 
-    await check(`${at}: File ▾ lists New, Open…, Save, Save As…, Export STL with icons; on an empty design New and Export STL are off, saying why; Open… opens the picker; Save downloads the project`, async () => {
+    await check(`${at}: File ▾ lists New, Open…, Save, Save As…, Export STL, Slice for printing with icons; on an empty design New, Export STL and Slice for printing are off, saying why; Open… opens the picker; Save downloads the project`, async () => {
       const page = await fresh(width, tap);
       try {
         await press(page, "#file-menu", tap);
@@ -173,10 +173,12 @@ try {
           ["file-save", "save", false],
           ["file-save-as", "save", false],
           ["file-export-stl", "export", true],
+          ["file-slice-print", "export", true],
         ]);
-        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Save As…", "Export STL"]);
+        assert.deepEqual(await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.textContent)), ["New", "Open…", "Save", "Save As…", "Export STL", "Slice for printing"]);
         assert.equal(await page.getAttribute("#start-fresh", "title"), ALREADY);
         assert.equal(await page.getAttribute("#file-export-stl", "title"), NO_BODY);
+        assert.equal(await page.getAttribute("#file-slice-print", "title"), NO_BODY);
         assert.deepEqual(await barProblems(page), [], "every item's icon drawn");
         // On the screen, and 44 px to tap at phone width.
         for (const r of await page.$$eval("#file-menu-menu [role=menuitem]", (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()))) {
