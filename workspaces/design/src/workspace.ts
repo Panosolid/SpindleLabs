@@ -2,7 +2,7 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, ORIGIN_AT_FIRST, type BodySpec, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { latestOnly, NO_HIGHLIGHT, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
@@ -10,7 +10,7 @@ import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { changedMove, insertMove, MOVE_STEP, moveValues, NO_MOVE, type MoveValues } from "./move.ts";
+import { changedMove, insertMove, MOVE_STEP, moveKindOf, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
@@ -106,7 +106,7 @@ const NO_FACTS = "Nothing built yet: insert a preset or extrude a sketch, and it
  * each command button with its element, the Insert menu and the Body facts
  * button.
  */
-function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
+function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: () => void, onExtrude: () => void, onMove: () => void, onRotate: () => void, onInsert: (kind: ShapeKind) => void, inspect: Inspecting): { made: [ToolButton, HTMLButtonElement][]; insert: MenuButton; facts: HTMLButtonElement; commands: () => SearchCommand[] } {
   const made: [ToolButton, HTMLButtonElement][] = [];
   const document = slot.ownerDocument; // the slot's own page, not a global one
   const button = (id: string, words: string, title: string, run: () => void) => {
@@ -160,12 +160,14 @@ function toolbar(slot: HTMLElement, onClick: (b: ToolButton) => void, onSketch: 
     g.element.dataset.modelling = "";
     return g;
   };
-  // Modify ▾ (35e2b): Move, then the tools still to come.
-  const moveTitle = "Move: move and turn bodies by distances and angles you type. Pick the bodies, then OK. A Move in the timeline, at the marker.";
+  // Modify ▾ (35e2b): Move and (Ben, 2026-10-29) Rotate, each its own tool, then the tools still to come.
+  const moveTitle = "Move: slide bodies along X, Y and Z by distances you drag or type. Pick the bodies, then OK. A Move in the timeline, at the marker.";
   const move = button("move", "Move", moveTitle, onMove);
-  const modifySections = (): MenuSection[] => [{ items: [{ id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove }] }, { items: comingItems("Modify") }];
+  const rotateTitle = "Rotate: turn bodies about X, Y and Z by angles you drag or type. Pick the bodies, then OK. A Rotate in the timeline, at the marker.";
+  const rotate = button("rotate", "Rotate", rotateTitle, onRotate);
+  const modifySections = (): MenuSection[] => [{ items: [{ id: "modify-menu-move", label: "Move", icon: "move", key: "M", title: moveTitle, run: onMove }, { id: "modify-menu-rotate", label: "Rotate", icon: "rotate", key: "Shift+R", title: rotateTitle, run: onRotate }] }, { items: comingItems("Modify") }];
   const modifying = toolGroup(document, { name: "Modify", menu: { id: "modify-menu", title: "Every way to change bodies, by name", sections: modifySections } });
-  modifying.add([move, "move"]);
+  modifying.add([move, "move"], [rotate, "rotate"]);
   modifying.element.dataset.modelling = "";
   const constructing = coming("Construct", "construct-menu", "plane", "Construct: planes, axes and points to build on. Coming soon: open to see what is on the way.");
   // Fusion's order: Create, Modify, Construct, Inspect, Insert, then the exports.
@@ -389,7 +391,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     none: () => ((lastScene?.bodies.length ?? 0) > 0 ? null : NO_FACTS),
   };
-  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), (kind) => void insertBody(kind), inspecting);
+  const { insert: insertMenu, facts: factsButton, commands } = toolbar(ctx.toolbar, (b) => run(b.command), () => startSketch(), () => startExtrude(), () => startMove(), () => startMove(null, "rotate"), (kind) => void insertBody(kind), inspecting);
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
@@ -1826,7 +1828,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const moveHint = viewport.element.ownerDocument.createElement("p");
   moveHint.id = "move-hint"; // read by the e2e test
   moveHint.className = "move-panel-hint";
-  moveHint.textContent = "Move: click or tap the bodies to move";
+  moveHint.textContent = "";
   moveHint.hidden = true;
   viewport.element.append(moveHint);
   /** What the hint says while Snap picks (35e2d): first what to snap, then where it lands. */
@@ -1838,7 +1840,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Snap (35e2d) while it picks: null when off, else the face or edge to snap once picked (on body `body`, as the scene shows it). */
   let snapping: { from: { body: string; part: SnapPart } | null } | null = null;
   function showMoveHint() {
-    moveHint.textContent = snapping ? (snapping.from === null ? SNAP_FROM : SNAP_TO) : "Move: click or tap the bodies to move";
+    moveHint.textContent = snapping ? (snapping.from === null ? SNAP_FROM : SNAP_TO) : moveBox.kind === "rotate" ? "Rotate: click or tap the bodies to turn" : "Move: click or tap the bodies to move";
     if (moveBox.shown) moveBox.snapping(snapping && moveHint.textContent);
     moveHint.hidden = !(shown && moveBox.shown && (snapping !== null || (picksBodies() && moveBodies.length === 0)));
     viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
@@ -1907,12 +1909,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /**
-   * Move (35e2b), from Modify ▾, M, or Edit feature on a Move: out of any
-   * sketch or other panel first. A new Move starts with the selection's
-   * bodies (a face or edge picks its body) and turns about their centre;
-   * an edited one shows its own numbers and keeps its bodies.
+   * Move (35e2b), from Modify ▾, M, or Edit feature on a Move; Rotate (Ben,
+   * 2026-10-29, its own tool) from Modify ▾ or Shift+R: out of any sketch
+   * or other panel first. A new one starts with the selection's bodies (a
+   * face or edge picks its body) and turns about their centre; an edited
+   * one opens in the tool its numbers say (move.ts moveKindOf), shows them
+   * and keeps its bodies.
    */
-  function startMove(id: string | null = null) {
+  function startMove(id: string | null = null, kind: MoveKind = "move") {
     leaveExtrude();
     leaveEdit();
     if (mode.kind !== "none") leaveSketch();
@@ -1920,12 +1924,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
       moveBodies = [...f.dependsOn];
-      moveBox.show({ id, name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
+      moveBox.show({ id, kind: moveKindOf(f), name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
       return previewMove();
     }
     moveBodies = pickedBodies(ctx.selection.items, lastScene);
     const [pivotX, pivotY, pivotZ] = startPivot(moveBodies, lastScene);
-    moveBox.show({ id: null, name: "Move", bodies: bodyLabels(moveBodies), values: { ...NO_MOVE, pivotX, pivotY, pivotZ } });
+    moveBox.show({ id: null, kind, name: kind === "rotate" ? "Rotate" : "Move", bodies: bodyLabels(moveBodies), values: { ...NO_MOVE, pivotX, pivotY, pivotZ } });
     pickMoveBodies();
   }
 
@@ -1975,7 +1979,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const read = readMoveBoxes(moveBox.typed);
     // Not while Snap picks (35e2d): a click on the bodies is a pick then, never a grab of an arrow or ring over them.
     const on = shown && moveBox.shown && moveBodies.length > 0 && snapping === null && "values" in read && previewable(read.values);
-    viewport.showMoveHandles(on ? { centre: handlesCentre(read.values) } : null);
+    viewport.showMoveHandles(on ? { centre: handlesCentre(read.values), kind: moveBox.kind } : null);
   }
 
   /** The Move's numbers as a handle's drag began (the boxes then), or null while none is held. */
@@ -2080,7 +2084,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     try {
       if (id === null) {
         if (v.x === 0 && v.y === 0 && v.z === 0 && v.turnX === 0 && v.turnY === 0 && v.turnZ === 0 && moveBodies.length > 0) return leaveMove();
-        ({ doc: next, id: moved } = insertMove(before, moveBodies, v));
+        ({ doc: next, id: moved } = insertMove(before, moveBodies, v, moveBox.kind));
       } else [next, moved] = [changedMove(before, id, v), id];
     } catch (e) {
       return moveBox.showError(e instanceof Error ? e.message : String(e));
@@ -2099,7 +2103,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (designDoc() !== before) return moveBox.showError(MOVE_CHANGED);
     if (refused !== null) return moveBox.showError(refused);
     if (id === null) ctx.selection.clear();
-    menuHost.record(id === null ? MOVE_STEP : editStep(before, id), next);
+    menuHost.record(id === null ? (moveBox.kind === "rotate" ? ROTATE_STEP : MOVE_STEP) : editStep(before, id), next);
   }
 
   /** The pointer rounded by the kernel: onto the grid with grid snap on, else where it is to within half a pixel (snap.ts `rounding`). */
@@ -2504,6 +2508,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // being picked, nor with Extrude already open. S opens the command search box outside a sketch (Ben's keys 10-29).
       if (id === "extrude-tool") return mode.kind === "pick" || extrudeBox.shown ? false : (startExtrude(), true);
       if (id === "command-search") return mode.kind === "none" ? (searchBox.open(), true) : false;
+      if (id === "rotate-tool") return mode.kind === "none" ? (startMove(null, "rotate"), true) : false;
       if (id === "clear-selection" && mode.kind === "edit" && toolBusy(mode.tool)) {
         mode.tool = startTool(mode.tool.kind, mode.tool.sketch);
         mode.snap = null;
