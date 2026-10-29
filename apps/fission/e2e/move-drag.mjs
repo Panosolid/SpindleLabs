@@ -364,6 +364,32 @@ try {
       await page.context().close();
     }
   });
+  await check("1280 px: a drag whose release never arrives (Alt-Tab, a dialog mid-drag) ends at the next move with no button held", async () => {
+    // Backlog 2026-10-29 (weak-spot hunt D, F1c): the box kept following a hovering pointer until the next click.
+    const page = await fresh(1280, 800, false);
+    try {
+      await press(page, "#move", false);
+      await opened(page);
+      await pressAt(page, [20, 15, 20], false);
+      await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked");
+      const g = (await handles(page)).grab.x;
+      const ended = Number((await viewData(page, "moveDrags")) ?? 0) + 1;
+      const cdp = await page.context().newCDPSession(page);
+      const mouse = (type, k, buttons) => cdp.send("Input.dispatchMouseEvent", { type, x: g[0] + k * 8, y: g[1], button: buttons ? "left" : "none", buttons, clickCount: buttons ? 1 : 0 });
+      await mouse("mouseMoved", 0, 0);
+      await mouse("mousePressed", 0, 1);
+      for (let k = 1; k <= 4; k++) await mouse("mouseMoved", k, 1);
+      const held = await boxValue(page, "x");
+      assert.notEqual(held, "0", "the drag moved the box first");
+      // The release is lost: the pointer moves on with no button held.
+      for (let k = 5; k <= 12; k++) await mouse("mouseMoved", k, 0);
+      await until(page, (n) => Number(document.getElementById("viewport").dataset.moveDrags ?? 0) >= n, ended, "the drag ended at the first move with no button");
+      assert.equal(await boxValue(page, "x"), held, "a hovering pointer moved the box");
+      assert.equal(await viewData(page, "moveHot"), undefined, "the handle let go");
+    } finally {
+      await page.context().close();
+    }
+  });
 } finally {
   await browser.close();
   await server.close();

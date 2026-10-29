@@ -349,6 +349,7 @@ export class ViewportView {
     }, { capture: true, signal: this.listening.signal });
     canvas.addEventListener("pointermove", (e) => {
       if (!drag || e.pointerId !== drag.id) return;
+      if (releaseLost(e)) return end(e);
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.x = e.clientX;
       drag.y = e.clientY;
@@ -388,6 +389,7 @@ export class ViewportView {
     canvas.addEventListener("pointermove", (e) => {
       const drag = this.arrowDrag;
       if (!drag || e.pointerId !== drag.id) return;
+      if (releaseLost(e)) return end(e);
       const s = this.arrowAt(e.clientX, e.clientY);
       if (s === null) return;
       drag.last = s - drag.offset;
@@ -434,6 +436,7 @@ export class ViewportView {
     canvas.addEventListener("pointermove", (e) => {
       const drag = this.moveDrag;
       if (!drag || e.pointerId !== drag.id) return;
+      if (releaseLost(e)) return end(e);
       const at = this.alongHandle(drag.handle, drag.centre, e.clientX, e.clientY);
       if (at === null) return;
       if (isRing(drag.handle)) {
@@ -934,6 +937,12 @@ const FINISHED_SKETCH_ORDER = -1;
 const LOST_SKETCH_ORDER = 0.5;
 
 /** Empties a group, freeing its geometry and materials. */
+/**
+ * A mouse or pen moving with no button held while a drag is under way: its release went somewhere else (Alt-Tab, the
+ * Windows key, a dialog mid-drag), so the drag has ended. A finger always holds its button while it moves.
+ */
+export const releaseLost = (e: PointerEvent) => e.pointerType !== "touch" && e.buttons === 0;
+
 function clearGroup(group: THREE.Group) {
   for (const o of group.children) {
     if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.Points) {
