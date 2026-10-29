@@ -20,7 +20,7 @@ import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS,
 import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
+import { keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
 import { watchKernel } from "./kernel-lost.ts";
@@ -565,6 +565,13 @@ const saveStatus = (s: AutosaveStatus) => {
   if (s.state === "saved") window.removeEventListener("beforeunload", askBeforeLeaving);
   else window.addEventListener("beforeunload", askBeforeLeaving);
 };
+/**
+ * After the first save of the user's own work (an edit, or a file opened), asks the browser not to clear the kept
+ * projects when space runs low (real-use hunt B3). Never on load: the empty project a first visit stores is no work.
+ */
+const askToKeepStorage = keepStorage(globalThis.navigator?.storage);
+/** A file has been opened in this tab (its first save is the user's work, with nothing to undo). */
+let openedFile = false;
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 /** False once the browser has shown it can't keep projects: then nothing autosaves, and Save/Open use files. */
 let canKeep = true;
@@ -579,7 +586,7 @@ function keep(id: string, stored = false, storedAt: Date | null = null, fromKept
   // Following the undo history: an amend (a face sketch settled, a pinned point followed once the kernel answers) is a
   // change no one records, and it can come after the edit was stored (hunt 26h). One that changes nothing (the history
   // started afresh on a reopened project) is not.
-  autosave = startAutosave(store, id, () => ctx.project, saveStatus, { journal: local, follows: ctx.history, stored, storedAt, fromKept });
+  autosave = startAutosave(store, id, () => ctx.project, (s) => (s.state === "saved" && (openedFile || ctx.history.canUndo()) && askToKeepStorage(), saveStatus(s)), { journal: local, follows: ctx.history, stored, storedAt, fromKept });
   document.body.dataset.projectId = id; // read by the e2e test
 }
 /** A new project in place of the last one, kept once it is changed (`keepOnChange`). */
@@ -657,7 +664,9 @@ function replaceProject(project: Project) {
  */
 function openProject(text: string) {
   const project = projectFromJson(text, workspaces);
-  const id = newId();
+  // A file already kept here as it is (opened before, unchanged since) goes on under its stored id, not as one more
+  // copy no one can reach (real-use hunt B3). Looked up while it opens; a store that can't answer means a new copy.
+  const copy = canKeep ? storedCopy(store, project).catch(() => undefined) : Promise.resolve(undefined);
   // The old project is kept as it was, its last change too (finish, not stop: one made within the quiet moment
   // before Open was dropped, timeline hunt follow-up); nothing of the new one is stored yet.
   autosave?.finish();
@@ -665,10 +674,15 @@ function openProject(text: string) {
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus("");
   replaceProject(project);
-  whileOpening(OPENING_FILE, () => {
-    keep(id);
-    autosave?.changed(); // store the opened file, with anything changed while it opened
-  });
+  const ticket = whileOpening(OPENING_FILE, () =>
+    void copy.then((found) => {
+      if (ticket !== openings) return; // another opening, or Start fresh, since
+      // Its first save writes it (so it is the project a reload opens), checking no other tab changed the copy since.
+      openedFile = true;
+      keep(found?.id ?? newId(), false, found?.modified ?? null);
+      autosave?.changed(); // store the opened file, with anything changed while it opened
+    }),
+  );
 }
 
 // While a project opens (the last one reopened, or a file), the top bar
@@ -685,6 +699,7 @@ let openings = 0;
 let openingNow: string | null = null;
 /** Settles once every workspace on screen has shown the project (each one's `ready`). */
 const shownOnScreen = () => Promise.all((["main", "split"] as const).map((p) => pool.awake(p)?.view.ready)).then(() => {});
+/** Returns the opening's ticket: `openings` moves past it once another opening, or Start fresh, ends its wait. */
 function whileOpening(words: string, opened: () => void) {
   const ticket = ++openings;
   const loading = holdSkeleton($("viewport"), "view", words); // seen only if it takes over 200 ms (@fission/ui skeleton.ts)
@@ -701,6 +716,7 @@ function whileOpening(words: string, opened: () => void) {
     endOffer();
     opened();
   });
+  return ticket;
 }
 /** Takes the offer away, and its words if nothing has replaced them. */
 function endOffer() {
