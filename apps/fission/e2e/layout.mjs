@@ -515,7 +515,11 @@ try {
     const f = await fold(page);
     assert.equal(f.folded, true);
     assert.equal(f.words, 'Properties ‹" ⚠"', "the folded button carries the warning mark");
-    assert.equal(await page.$eval("#properties-handle", (el) => getComputedStyle(el).color), "rgb(245, 177, 76)", "in amber");
+    // In amber. The mouse still rests on the handle after the click, and a hovered button eases its colour in over
+    // --motion-fast (110 ms, motion.css), so the colour is read once it has settled rather than straight away
+    // (a single read caught rgb(230, 233, 238), the colour it fades from, in two merge-queue runs).
+    const amber = await page.waitForFunction(() => getComputedStyle(document.querySelector("#properties-handle")).color === "rgb(245, 177, 76)", null, { timeout: 2000 }).then(() => true, () => false);
+    assert.equal(amber, true, `in amber (got ${await page.$eval("#properties-handle", (el) => getComputedStyle(el).color)})`);
     // The design that builds again takes the mark away.
     await page.setInputFiles("#open-file", { name: "rolled.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(rolledBack)) });
     await page.waitForFunction(() => document.querySelector("#error")?.textContent === "" && !document.querySelector("#properties").hasAttribute("data-problem"));
