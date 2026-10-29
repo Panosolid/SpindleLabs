@@ -9,21 +9,22 @@
 .sketchbar.sketchbar-snap:not(#none) + .sketchbar.sketchbar-finish:not(#none) { margin-left: 0; }
 /* The Snap toggle (snap.ts snapsNow): lit while snapping is on, plain and dimmed while off. */
 .sketchbar #sketch-snap:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
-.sketchbar #sketch-snap[aria-pressed="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
+.sketchbar #sketch-snap[aria-pressed="true"]:not(#none) { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
 .sketchbar #sketch-snap[aria-pressed="false"]:not(#none) { color: #8a919c; }
-.sketchbar #finish-sketch:not(#none) { background: #1f5f3f; border-color: #3ddc97; font-weight: 600; padding: 7px 16px; }
-.sketchbar #finish-sketch:not(#none):hover { background: #26744c; }
+/* UX2c: Finish Sketch is the sketch's one main action, so it takes the bright blue fill (it was green). */
+.sketchbar #finish-sketch:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); box-shadow: var(--look-primary-glow); border-radius: var(--look-radius-pill); font-weight: 600; padding: 7px 18px; }
+.sketchbar #finish-sketch:not(#none):hover { filter: brightness(1.08); }
 /* U0f: Finish Sketch's icon before its words, and each menu row's icon before its name. */
 .sketchbar #finish-sketch:not(#none) { display: inline-flex; align-items: center; gap: 6px; }
 .sketchbar .sketchbar-menu .sketchbar-menu-name { display: inline-flex; align-items: center; gap: 8px; }
 .sketchbar .sketchbar-menu-button:not(#none) { background: none; border-color: transparent; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #b7c0cc; }
-.sketchbar .sketchbar-menu-button[aria-expanded="true"]:not(#none) { border-color: #4aa8ff; }
+.sketchbar .sketchbar-menu-button[aria-expanded="true"]:not(#none) { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
 /* The Create menu: fixed to the page under its button, so the toolbar's
    sideways scroll at phone width never clips it. */
-.sketchbar .sketchbar-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 190px; padding: 4px; background: #161d2a; border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.sketchbar .sketchbar-menu { position: fixed; z-index: 30; display: flex; flex-direction: column; min-width: 190px; padding: 4px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .sketchbar .sketchbar-menu button:not(#none) { display: flex; justify-content: space-between; gap: 16px; background: none; border-color: transparent; text-align: left; }
 .sketchbar .sketchbar-menu button:not(#none):hover, .sketchbar .sketchbar-menu button:not(#none):focus { background: #263142; }
-.sketchbar .sketchbar-menu button[aria-checked="true"]:not(#none) { background: #23384f; border-color: #4aa8ff; }
+.sketchbar .sketchbar-menu button[aria-checked="true"]:not(#none) { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
 .sketchbar .sketchbar-menu kbd { font-family: ui-monospace, monospace; color: #8a919c; }
 /* Phone width: everything 44 px tall to tap, and the tools wrap inside the
    screen's width (two rows) so all of them show at once; Extrude and
@@ -38,6 +39,6 @@
 /* The Arc row and its own menu of the three arcs, beside the row (under it
    at phone width). The row is lit while one of its arcs is the tool in use. */
 .sketchbar .sketchbar-menu .sketchbar-menu-more { color: #8a919c; }
-.sketchbar .sketchbar-menu button.sketchbar-menu-holds:not(#none) { border-color: #4aa8ff; }
+.sketchbar .sketchbar-menu button.sketchbar-menu-holds:not(#none) { border-color: var(--look-accent); }
 .sketchbar .sketchbar-menu button[aria-expanded="true"]:not(#none) { background: #263142; }
 .sketchbar .sketchbar-submenu { z-index: 31; }

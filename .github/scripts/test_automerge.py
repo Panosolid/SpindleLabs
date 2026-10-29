@@ -821,6 +821,14 @@ class QueueCalls(unittest.TestCase):
         gh = queue_repo(comments=[stranger(marker)])
         self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_FAILURE", log=lambda s: None))
 
+    def test_a_merged_pull_request_gets_no_dequeued_note(self):
+        # Regression: the queue also "removes" a pull request when it merges
+        # it (reason MERGE), and every merge got a "fix what failed" comment.
+        gh = queue_repo()
+        self.assertFalse(automerge.note_dequeued(gh, 1, "h1", "MERGE", log=lambda s: None))
+        self.assertEqual(gh.writes, [])
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
+
     def test_dequeued_note_once_per_head(self):
         gh = queue_repo()
         orig = gh.call
