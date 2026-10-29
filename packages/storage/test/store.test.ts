@@ -132,7 +132,8 @@ test("a project a file can't hold is refused before anything is written", async 
 
 test("a failing key-value store's message reaches the caller", async () => {
   const kv = memoryKeyValue();
-  kv.set = async () => {
+  // Saves write through update (one step, real-use hunt B6); set fails the same way, for any other write.
+  kv.set = kv.update = async () => {
     throw new Error("browser storage is full: can't save \"project/p\"");
   };
   await assert.rejects(projectStore(kv, [design]).save("p", part("P")), /browser storage is full/);
