@@ -4,7 +4,10 @@
 // facing it (outward normals opposite, touching), centre on centre; a
 // straight edge on a straight edge (along the same line, middle on
 // middle); a round edge on a round edge (centre on centre, the flat faces
-// beside them facing each other, as a lid sits on a can). The bodies are
+// beside them facing each other, as a lid sits on a can); a round side (a
+// cylinder's, or an arc's side of an extrude) on a round side, along one
+// axis, middle on middle, as a shaft goes into a hole (35e2k); a sphere on
+// a sphere, centre on centre, its turn kept. The bodies are
 // turned by the smallest turn that does it on top of the turn the boxes
 // already hold, so a part already stood on its side stays as it is about
 // the snapped direction. The answer is the Move's numbers, which the panel
@@ -18,14 +21,25 @@ import { movedPoint, unmovedPoint, type PointMap } from "./move-tool.ts";
 type Point = [number, number, number];
 type Matrix = [Point, Point, Point];
 
-/** What a picked face or edge snaps by: a flat face's centroid and outward normal, a straight edge's middle and direction, a round edge's centre and the outward normal of the flat face beside it. Directions are unit. */
-export type SnapPart = { kind: "face"; point: Point; normal: Point } | { kind: "line"; point: Point; direction: Point } | { kind: "circle"; point: Point; normal: Point };
+/**
+ * What a picked face or edge snaps by: a flat face's centroid and outward
+ * normal, a straight edge's middle and direction, a round edge's centre and
+ * the outward normal of the flat face beside it, a round side's axis (the
+ * middle of its round edges' centres and the direction through them), a
+ * sphere's centre. Directions are unit.
+ */
+export type SnapPart =
+  | { kind: "face"; point: Point; normal: Point }
+  | { kind: "line"; point: Point; direction: Point }
+  | { kind: "circle"; point: Point; normal: Point }
+  | { kind: "axis"; point: Point; direction: Point }
+  | { kind: "centre"; point: Point };
 
 /** What each kind of part is called in the words the panel says. */
-const PART_WORDS: Record<SnapPart["kind"], string> = { face: "a flat face", line: "a straight edge", circle: "a round edge" };
+const PART_WORDS: Record<SnapPart["kind"], string> = { face: "a flat face", line: "a straight edge", circle: "a round edge", axis: "a round side", centre: "a sphere" };
 
-/** A curved face picked: nothing to lay flat on. */
-export const SNAP_CURVED_FACE = "A curved face can't be snapped yet: pick a flat face, or an edge.";
+/** A curved face with nothing to snap by: a kind the kernel may make one day, a round side without two round edges round its axis, a sphere without its equator. */
+export const SNAP_CURVED_FACE = "This curved face has no round edges to find its axis or centre by: pick a flat face, or an edge.";
 /** A round edge with no flat face beside it: nothing says which way it faces. */
 export const SNAP_NO_FLAT = "This round edge has no flat face beside it, so it can't be snapped: pick another face or edge.";
 
@@ -41,6 +55,8 @@ export function snapPart(view: BodyView, kind: "face" | "edge", index: number): 
   if (kind === "face") {
     const normal = view.face_normals[index];
     const point = view.face_centroids[index];
+    if (view.face_types[index] === "cylinder") return roundSide(view, index);
+    if (view.face_types[index] === "sphere") return sphereCentre(view, index);
     if (view.face_types[index] !== "plane" || !normal || !point) return { refused: SNAP_CURVED_FACE };
     return { part: { kind: "face", point: [...point], normal: unit(normal) } };
   }
@@ -54,10 +70,50 @@ export function snapPart(view: BodyView, kind: "face" | "edge", index: number): 
   return { part: { kind: "line", point: [...view.edge_middles[index]], direction: unit([e[0] - s[0], e[1] - s[1], e[2] - s[2]]) } };
 }
 
+/** The round (circle or arc) edges of face `index`: the kernel's edge indices whose two faces include it. */
+const roundEdges = (view: BodyView, index: number) => view.edge_types.flatMap((t, e) => (t === "circle" && view.edge_centres[e] && view.edge_faces[e]?.includes(index) ? [e] : []));
+
+/**
+ * A round side's axis (35e2k): every round edge of a cylinder face is a
+ * circle or arc square to its axis, centred on it, so the line through two
+ * of their centres is the axis, exact (the face's centroid is off it for an
+ * arc's side, and only near it in floating point for a whole cylinder's).
+ * The two farthest apart are taken (a cylinder's two rims, an arc side's
+ * top and bottom arcs), the point is halfway between them: the side's
+ * middle along its axis. Fewer than two centres apart: refused.
+ */
+function roundSide(view: BodyView, index: number): { part: SnapPart } | { refused: string } {
+  const centres = roundEdges(view, index).map((e) => view.edge_centres[e]!);
+  let best: [Point, Point] | null = null;
+  let far = 0;
+  for (let i = 0; i < centres.length; i++)
+    for (let j = i + 1; j < centres.length; j++) {
+      const d = Math.hypot(centres[j][0] - centres[i][0], centres[j][1] - centres[i][1], centres[j][2] - centres[i][2]);
+      if (d > far) [far, best] = [d, [centres[i], centres[j]]];
+    }
+  if (best === null) return { refused: SNAP_CURVED_FACE };
+  const [a, b] = best;
+  return { part: { kind: "axis", point: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], direction: unit([b[0] - a[0], b[1] - a[1], b[2] - a[2]]) } };
+}
+
+/**
+ * A sphere's centre (35e2k): the kernel's sphere is two halves joined at
+ * its equator, a great circle, whose centre is the sphere's. Only a round
+ * edge with a sphere face on both sides is taken as that equator (a round
+ * edge between a sphere and a flat cut would be a smaller circle, centred
+ * off the sphere's centre); none: refused.
+ */
+function sphereCentre(view: BodyView, index: number): { part: SnapPart } | { refused: string } {
+  const equator = roundEdges(view, index).find((e) => view.edge_faces[e]!.every((f) => view.face_types[f] === "sphere"));
+  if (equator === undefined) return { refused: SNAP_CURVED_FACE };
+  return { part: { kind: "centre", point: [...view.edge_centres[equator]!] } };
+}
+
 /** `part` taken through `map`: its point moved, its direction turned. */
 export function mappedPart(part: SnapPart, map: PointMap): SnapPart {
   const point = map(part.point, false);
-  return part.kind === "line" ? { kind: "line", point, direction: unit(map(part.direction, true)) } : { kind: part.kind, point, normal: unit(map(part.normal, true)) };
+  if (part.kind === "centre") return { kind: "centre", point };
+  return part.kind === "line" || part.kind === "axis" ? { kind: part.kind, point, direction: unit(map(part.direction, true)) } : { kind: part.kind, point, normal: unit(map(part.normal, true)) };
 }
 
 /**
@@ -150,17 +206,24 @@ export const snapDistance = (d: number): number => Math.round(d * 1e9) / 1e9 + 0
  * the Move's result is seen. The turn the boxes hold (`v`) is turned on by
  * the smallest turn that lays `from` on `to`: a face's or round edge's
  * normal turned to point against `to`'s, a straight edge along `to`'s line
- * whichever way needs less turn. The pivot stays; the distance is what
- * then takes `from`'s point onto `to`'s. A face lands only on a face, a
- * straight edge on a straight edge, a round edge on a round edge.
+ * whichever way needs less turn, and a round side's axis along `to`'s the
+ * same way; a sphere is not turned more. The pivot stays; the distance is
+ * what then takes `from`'s point onto `to`'s. Each kind lands only on its
+ * own kind: a face on a face, a straight edge on a straight edge, a round
+ * edge on a round edge, a round side on a round side, a sphere on a sphere.
  */
 export function snappedValues(v: MoveValues, from: SnapPart, to: SnapPart): { values: MoveValues } | { refused: string } {
   if (from.kind !== to.kind) return { refused: `${PART_WORDS[from.kind][0].toUpperCase()}${PART_WORDS[from.kind].slice(1)} lands only on ${PART_WORDS[from.kind]}: pick one on another body.` };
-  const now = unit(movedPoint(from.kind === "line" ? from.direction : from.normal, v, true));
-  let want: Point;
-  if (to.kind === "line") want = dot(now, to.direction) < 0 ? [-to.direction[0], -to.direction[1], -to.direction[2]] : to.direction;
-  else want = [-to.normal[0], -to.normal[1], -to.normal[2]];
-  const [turnX, turnY, turnZ] = turnAngles(times(turnBetween(now, want), turnMatrix(v))).map(snapAngle);
+  let turnX = v.turnX;
+  let turnY = v.turnY;
+  let turnZ = v.turnZ;
+  if (from.kind !== "centre" && to.kind !== "centre") {
+    const now = unit(movedPoint(from.kind === "line" || from.kind === "axis" ? from.direction : from.normal, v, true));
+    let want: Point;
+    if (to.kind === "line" || to.kind === "axis") want = dot(now, to.direction) < 0 ? [-to.direction[0], -to.direction[1], -to.direction[2]] : to.direction;
+    else want = [-to.normal[0], -to.normal[1], -to.normal[2]];
+    [turnX, turnY, turnZ] = turnAngles(times(turnBetween(now, want), turnMatrix(v))).map(snapAngle);
+  }
   const turned: MoveValues = { ...v, turnX, turnY, turnZ, x: 0, y: 0, z: 0 };
   const landed = movedPoint(from.point, turned);
   const [x, y, z] = [0, 1, 2].map((k) => snapDistance(to.point[k] - landed[k]));

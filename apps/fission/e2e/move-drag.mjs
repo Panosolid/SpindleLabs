@@ -15,7 +15,11 @@
 // onto the box, centred: the boxes fill in, OK builds it, and the STL spans
 // both, worked by hand; at 393 × 852 Snap puts the Properties sheet away
 // while the view is tapped and brings it back with the numbers and OK,
-// never past 40% of the view. Screenshots go
+// never past 40% of the view. Curved faces (35e2k): with a file opened
+// holding a ⌀20 × 20 cylinder lying along X (its axis (−40..−20, 0, 30))
+// and a 30 × 10 × 5 slot, the slot's round end clicked and then the
+// cylinder's side lays the end's axis along the cylinder's, middle on
+// middle: the boxes and the STL worked by hand. Screenshots go
 // to E2E_SHOTS when set. Run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -215,6 +219,70 @@ const snapStage = (page, stage) => until(page, (s) => document.getElementById("v
 const CYLINDER_TOP = [-16, -6, 20];
 const BOX_TOP = [30, 21, 20];
 
+/**
+ * A ⌀20 × 20 cylinder (feature-1) turned 90° about Y through the origin and moved (−40, 0, 30) by Move 1, so lying
+ * along X from (−40, 0, 30) to (−20, 0, 30), and a 30 × 10 × 5 slot (feature-3, x 0..30, y 0..10, z 0..5, its round
+ * ends about (5, 5) and (25, 5)): the design as `insertMove` and `insertPreset` write it.
+ */
+const ROUND_PROJECT = {
+  formatVersion: 2,
+  name: "Round sides",
+  units: { length: "mm" },
+  materials: [],
+  links: [],
+  workspaces: {
+    design: {
+      version: 4,
+      nextId: 5,
+      profiles: [{ id: "profile-4", kind: "slot", width: 30, depth: 10, plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] } }],
+      sketches: [],
+      timeline: {
+        features: [
+          { id: "feature-1", intent: { type: "cylinder", parameters: { diameter: 20, height: 20 }, summary: "Cylinder: ⌀20 × 20 mm" }, provenance: { self: { workspace: "design", id: "feature-1", label: "Cylinder 1" }, from: [] }, dependsOn: [], suppressed: false },
+          {
+            id: "feature-2",
+            intent: { type: "move", parameters: { x: -40, y: 0, z: 30, turnX: 0, turnY: 90, turnZ: 0, pivotX: 0, pivotY: 0, pivotZ: 0 }, summary: "Move Cylinder 1 by (-40, 0, 30) mm, turned 90° about Y" },
+            provenance: { self: { workspace: "design", id: "feature-2", label: "Move 1" }, from: [{ workspace: "design", id: "feature-1", label: "Cylinder 1" }] },
+            dependsOn: ["feature-1"],
+            suppressed: false,
+          },
+          {
+            id: "feature-3",
+            intent: { type: "extrude", parameters: { profile: "profile-4", distance: 5 }, summary: "Extrude: Slot with round ends profile 30 × 10 mm, by 5 mm" },
+            provenance: { self: { workspace: "design", id: "feature-3", label: "Slot 1" }, from: [{ workspace: "design", id: "profile-4", label: "Slot with round ends profile" }] },
+            dependsOn: ["profile-4"],
+            suppressed: false,
+          },
+        ],
+      },
+    },
+  },
+};
+/** A fresh page with ROUND_PROJECT opened, framed: x −40..30, y −10..10, z 0..40, so centre (−5, 0, 20) and radius about √(70² + 20² + 40²)/2 = √6900/2. */
+async function withRoundSides(width, height, touch) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch, acceptDownloads: true });
+  const page = await context.newPage();
+  await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  await page.goto(url + "#design");
+  await page.waitForSelector("#start-hint", { state: "visible", timeout: 15000 });
+  await page.setInputFiles("#open-file", { name: "Round.fission.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(ROUND_PROJECT)) });
+  await until(page, () => document.querySelectorAll("#timeline [data-item]").length === 3, null, "the file's three items", 15000);
+  await rebuilt(page);
+  await until(page, () => Number(document.getElementById("viewport").dataset.fits) >= 1, null, "both bodies framed");
+  await page.waitForTimeout(400); // the camera's move to the framing
+  // Framed from the drawn mesh, whose round sides are chords a little inside the circles: within 0.1 mm of √6900/2.
+  const radius = Number(await viewData(page, "framedRadius"));
+  assert.ok(Math.abs(radius - Math.sqrt(6900) / 2) < 0.1, `framed radius ${radius}`);
+  framed = { ...HOME, centre: [-5, 0, 20], radius };
+  return sheetsClearFor(page);
+}
+// HOME looks from (0.6, −0.8, 0.55): the slot's right end (radius 5 about (25, 5)) seen at the angle (0.6, −0.8) round
+// it, halfway up; the cylinder's side (radius 10 about its axis) seen at (−0.8, 0.55)/0.97 round it, in its middle.
+const SLOT_END = [25 + 5 * 0.6, 5 - 5 * 0.8, 2.5];
+const ROUND_SIDE = [-30, (-10 * 0.8) / Math.hypot(0.8, 0.55), 30 + (10 * 0.55) / Math.hypot(0.8, 0.55)];
+
 let failed = 0;
 async function check(name, fn) {
   try {
@@ -368,6 +436,48 @@ try {
         await rebuilt(page);
         // The box 0..40, 0..30, 0..20 and the cylinder on it, centred (20, 15): x 0..40, y −5..35, z 20..40.
         near(await stlBounds(page, tap), [[0, 40], [-5, 35], [0, 40]], "the STL after the snap");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+
+  for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
+    await check(`${width} px${tap ? ", a finger" : ""}: Snap lays the slot's round end along the lying cylinder's side, axis on axis, middle on middle (35e2k), by hand`, async () => {
+      const page = await withRoundSides(width, height, tap);
+      try {
+        await press(page, "#move", tap);
+        await opened(page);
+        await pressAt(page, SLOT_END, tap);
+        await until(page, () => document.body.dataset.selection === "body:feature-3", null, "the slot picked");
+        if (tap) await openPanel(page, "properties", true);
+        await press(page, "#move-snap", tap);
+        await snapStage(page, "from");
+        await pressAt(page, SLOT_END, tap);
+        await snapStage(page, "to"); // a round side is taken, not refused
+        await pressAt(page, ROUND_SIDE, tap);
+        await snapStage(page, "");
+        assert.equal(await page.isVisible("#move-error"), false, "no refusal");
+        // The end's axis runs +Z through (25, 5, 2.5); the cylinder's along X through (−30, 0, 30). Square to each other,
+        // so a quarter turn about Y either way is least (+Z × ±X = ±Y); it turns about the slot's middle (15, 5, 2.5),
+        // where the end's middle is (10, 0, 0) off. +90° about Y takes (x, z) to (z, −x): (0, 0, −10), to (15, 5, −7.5),
+        // so the shift is (−30, 0, 30) − (15, 5, −7.5) = (−45, −5, 37.5); −90° takes it to (0, 0, 10), shift z 17.5.
+        const turnY = Number(await boxValue(page, "turnY"));
+        assert.equal(Math.abs(turnY), 90, `a quarter turn about Y, not ${turnY}`);
+        const boxes = await Promise.all(["x", "y", "z", "turnX", "turnZ"].map((k) => boxValue(page, k)));
+        assert.deepEqual(boxes, ["-45", "-5", turnY > 0 ? "37.5" : "17.5", "0", "0"]);
+        if (shots) await page.screenshot({ path: `${shots}/move-snap-round-${width}.png` });
+        if (tap) await openPanel(page, "properties", true);
+        await press(page, "#move-ok", tap);
+        await closed(page);
+        await rebuilt(page);
+        // The slot stands up across the cylinder: x −32.5..−27.5 (its 5 thickness), y −5..5, its 30 length along Z
+        // round the middle at z 40 (+90°) or 20 (−90°); the cylinder x −40..−20, y −10..10, z 20..40.
+        // The STL's round sides are flat facets, chords up to a few hundredths of a mm inside the circles, so the
+        // round extents (the cylinder's y, the slot's far round end) are read to 0.05 mm, the flat ones to 1e-3.
+        const [bx, by, bz] = await stlBounds(page, tap);
+        near(bx, [-40, -20], "the STL's x after the snap");
+        [[by, [-10, 10]], [bz, turnY > 0 ? [20, 55] : [5, 40]]].forEach(([got, want]) => got.forEach((g, i) => assert.ok(Math.abs(g - want[i]) <= 0.05, `the STL after the snap: ${JSON.stringify([bx, by, bz])}`)));
       } finally {
         await page.context().close();
       }
