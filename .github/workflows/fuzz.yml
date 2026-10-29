@@ -231,7 +231,7 @@ jobs:
         run: |
           mkdir -p "$OUT"
           [ -f "$IN/fuzz/oracle.jsonl" ] || exit 0
-          pip install -q cadquery-ocp mpmath
+          pip install -q --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
           # The oracle is private kernel code: its errors (a traceback names its
           # files and lines) go to a file of the runner's, never this public log.
           if ! python3 sketch_extrude.py "$IN/fuzz/oracle.jsonl" "$OUT/disagreements.txt" 2>"$RUNNER_TEMP/oracle-errors.txt"; then

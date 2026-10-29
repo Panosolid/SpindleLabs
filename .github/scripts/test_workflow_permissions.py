@@ -13,7 +13,9 @@ are changed in the same diff, where a reader sees it. It checks:
   own code runs in (pull_request, merge_group) uses an environment, since the
   environments hold the engine's keys;
 - a workflow started for someone else's pull request (pull_request_target,
-  workflow_run) never checks out the pull request's code.
+  workflow_run) never checks out the pull request's code;
+- every `pip install` takes exact files by hash (oracle-requirements.txt), so
+  a package changed on PyPI never runs in a job that holds the engine's keys.
 
 The workflows are read with a small indentation reader (the runner's Python
 has no YAML library); its own tests are in ReaderTest."""
@@ -168,6 +170,9 @@ def problems(name, text):
         for ref in re.findall(r"^\s+ref:\s*(.+)$", text, re.M):
             if "github.event" in ref or "head" in ref:
                 found.append(f"{name} checks out {ref.strip()} in a workflow started for someone else's pull request")
+    for number, line in enumerate(text.splitlines(), 1):
+        if re.search(r"\bpip3? install\b", line) and "--require-hashes" not in line:
+            found.append(f"{name}:{number} installs Python packages without --require-hashes")
     return found
 
 
@@ -226,6 +231,7 @@ class ReaderTest(unittest.TestCase):
             "for every job": base.replace("permissions: {}", "permissions: write-all"),
             "job cancel writes ['contents']": base + "      contents: write\n",
             "uses environment kernel, listed None": base + "    environment: kernel\n",
+            "without --require-hashes": base + "    steps:\n      - run: pip install -q mpmath\n",
             "checks out": base + "    steps:\n      - uses: actions/checkout\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n",
         }
         for why, text in cases.items():

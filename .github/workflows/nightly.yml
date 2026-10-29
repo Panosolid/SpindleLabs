@@ -260,7 +260,7 @@ jobs:
         run: |
           mkdir -p "$OUT"
           [ -f "$IN/golden-step.jsonl" ] || { echo "no STEP files: the golden run stopped first"; exit 1; }
-          pip install -q cadquery-ocp mpmath
+          pip install -q --require-hashes --only-binary=:all: -r "$GITHUB_WORKSPACE/.github/scripts/oracle-requirements.txt"
           code=0
           # The oracle is private kernel code: its errors (a traceback names its
           # files and lines) go to a file of the runner's, never this public log.
