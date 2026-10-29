@@ -9,7 +9,7 @@
 
 import type { ViewportPick } from "@fission/core";
 import { SKETCH_PLANES, type SketchPlane } from "./document.ts";
-import { drawnOnFace, faceFeature, type SketchPlacement } from "./face-sketch.ts";
+import { drawnOnFace, faceFeature, worldFrame, type SketchPlacement } from "./face-sketch.ts";
 import { designReference } from "./references.ts";
 import { sceneHit, type Scene } from "./scene.ts";
 
@@ -44,7 +44,7 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   const ref = designReference("face", body.names, hit.index);
   const feature = ref === null ? null : faceFeature(ref.id);
   if (ref === null || feature !== body.feature) return { kind: "refused", message: UNNAMED_FACE };
-  return { kind: "face", face: { plane: ref.id, feature }, drawn: body.frame ? { ...drawn, body: body.frame } : drawn };
+  return { kind: "face", face: { plane: ref.id, feature }, drawn: { ...drawn, body: body.frame ?? worldFrame() } };
 }
 
 /** The faces of the bodies on screen a sketch can go on (joined numbering, for the viewport to light): the flat ones with a name of their own. */

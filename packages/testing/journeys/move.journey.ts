@@ -159,6 +159,12 @@ test("35e2h: a sketch on a moved face slides and turns with it when the Move is 
   // so the top (z 20) turns over to look down at z 0, then rises to 5; the square's y 5..15 goes to 15..25; the extrude, out of the
   // face, built at z 20..30 on the unmoved box, goes to 0..−10, then −5..5.
   near((await built(changedMove(doc, "feature-2", v({ turnX: 180, pivotY: 15, pivotZ: 10, z: 5 })))).views.get(extrude)!.bounds, [[5, 15, -5], [15, 25, 5]], "turned over with its face");
+
+  // A sketch from a file made before 35e2h keeps no body frame: where its body was when drawn isn't known, so it isn't
+  // carried (a guess would move it on opening), and slides as it always did: not at all, x 5..15.
+  const old = addFaceSketch(insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
+  const oldExtrude = extrudeSketch(drawRectangle(old.doc, old.id, [5, 5], [15, 15]).doc, old.id, 10);
+  near((await built(changedMove(oldExtrude.doc, "feature-2", v({ x: 20, z: 5 })))).views.get(oldExtrude.id)!.bounds, [[5, 5, 25], [15, 15, 35]], "an old file's sketch stays");
 });
 
 test("35e2h seeded: sketches drawn on a box's top after a random slide and turn about Z land where a random edit of that Move takes the face (FISSION_SEED)", async () => {

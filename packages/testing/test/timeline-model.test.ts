@@ -529,6 +529,28 @@ test("a Move (35e2) by hand: turned about Z through its pivot, then shifted; gre
   assert.deepEqual(run(m, { op: "reorder", item: "item-1", to: 1 }), [{ kind: "refused", cause: "after-dependent" }]);
 });
 
+test("35e2h by hand: a sketch drawn on a moved top is carried along it when the Move is edited, and its extrude with it", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-move", bodies: ["item-1"], shift: [0, 0, 5], turnZ: 90, pivot: [10, 0] });
+  // Drawn after the quarter turn about (10, 0): the world's origin is (−10, 0) from the pivot, (a, b) → (−b, a) gives
+  // (0, −10), back from the pivot (10, −10); so the box had moved by a quarter turn and (10, −10). Where drawn: no turn.
+  run(m, { op: "add-face-sketch", shape: { kind: "circle", centre: [0, 0], radius: 3 }, face: { feature: "item-1", role: "top" } }, { op: "add-extrude", sketch: "item-3", distance: 4 });
+  assert.deepEqual(results(m)["item-3"], { status: "built", lift: 25 });
+  const turnOf = () => (results(m)["item-3"] as { turn?: { x: number[]; at: number[] } }).turn!;
+  const nearAll = (got: number[], want: number[], what: string) => assert.ok(got.every((x, k) => near(x, want[k])), `${what}: ${got} want ${want}`);
+  // Edited to shift 7 along x too: the box now at a quarter turn and (17, −10), so the motion since is a shift of (7, 0).
+  run(m, { op: "set-move", item: "item-2", shift: [7, 0, 5], turnZ: 90, pivot: [10, 0] });
+  nearAll([...turnOf().x, ...turnOf().at], [1, 0, 7, 0], "slid 7");
+  // The circle's centre, drawn at the sketch's (0, 0), is the extrude's end cap's middle: (7, 0) at z 25 + 4.
+  nearAll(face(bodyOf(results(m)["item-5"]), "item-5/end").centroid, [7, 0, 29], "the extrude went with it");
+  // Edited to half a turn instead: (−10, 0) from the pivot turns to (10, 0), so the box is at a half turn and (20, 0).
+  // Since drawn: a quarter turn, and the origin goes to (20, 0) − R(90°)(10, −10) = (20, 0) − (10, 10) = (10, −10); x along Y.
+  run(m, { op: "set-move", item: "item-2", shift: [0, 0, 5], turnZ: 180, pivot: [10, 0] });
+  nearAll([...turnOf().x, ...turnOf().at], [0, 1, 10, -10], "turned");
+  // Planted ("sketch-not-carried"): only the height follows.
+  assert.deepEqual(rebuild(m.doc, new Set(["sketch-not-carried"])).results["item-3"], { status: "built", lift: 25 });
+});
+
 test("what a Move must rebuild: one body per body it moves, nothing when it's taken away, and moves of moves in one list", () => {
   const m = createModel();
   run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "sphere", sizes: [10] });

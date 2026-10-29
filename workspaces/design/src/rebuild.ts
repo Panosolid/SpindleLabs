@@ -579,8 +579,8 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, cach
     const face = resolveReference(ref, names);
     const outward = face === null ? null : view.face_normals[face];
     if (face !== null && outward) {
-      // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn.
-      const carry = carried(p.body, bodyFrame(on.spec) ?? undefined);
+      // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
+      const carry = p.body === undefined ? null : carried(p.body, bodyFrame(on.spec) ?? undefined);
       const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
       return { status: "built", placement, ...(await follow(f, index, done, cache, placement.plane, featureId)) };
     }

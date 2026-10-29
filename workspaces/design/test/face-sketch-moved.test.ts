@@ -86,7 +86,7 @@ test("hand-worked: a sketch on the top slides and turns with its face when a Mov
   nearPlane(frameNow(plane([0, 0, 0], [1, 0, 0], [0, 0, 1]), [0, 0, 1], [20, -15, 0], carried(undefined, bodyFrame(movedBy([{ turn: { pivot: [0, 0, 0], axis: [1, 0, 0], angle: Math.PI } }]))!)), plane([0, 0, 0], [1, 0, 0], [0, 0, -1]), "bottom turned over");
 });
 
-test("a face picked on a moved body gives the new sketch where the Moves had put the body, and only then", () => {
+test("a face picked gives the new sketch where the Moves had put its body, the world's frame when none had", () => {
   // The box's faces in make_box's order (face-pick.test.ts): the top is face 1. No mesh: the pick reads only normals and names.
   const view = { ...boxView(40, 30, 20), mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, face_normals: [[0, 0, -1], [0, 0, 1], [0, -1, 0], [0, 1, 0], [-1, 0, 0], [1, 0, 0]], face_centroids: [[20, 15, 0], [20, 15, 20], [20, 0, 10], [20, 30, 10], [0, 15, 10], [40, 15, 10]] } as BodyView;
   const top = 1;
@@ -97,9 +97,13 @@ test("a face picked on a moved body gives the new sketch where the Moves had put
   assert.deepEqual(moved.drawn.body, at);
   const kept = addFaceSketch(partDocument("box", 40, 30, 20), moved.face, moved.drawn).doc.sketches.at(-1)!.face!;
   assert.deepEqual(kept.body, at);
+  // Never moved: the world's frame, so a Move put in before it later carries it.
   const still = sketchSpot({ face: top, shift: false }, joinBodies([body()]));
-  assert.ok(still?.kind === "face" && still.drawn.body === undefined, "never moved: no body frame");
-  assert.equal(addFaceSketch(partDocument("box", 40, 30, 20), still.face, still.drawn).doc.sketches.at(-1)!.face!.body, undefined);
+  assert.ok(still?.kind === "face", JSON.stringify(still));
+  assert.deepEqual(still.drawn.body, plane([0, 0, 0], [1, 0, 0], [0, 0, 1]));
+  assert.deepEqual(addFaceSketch(partDocument("box", 40, 30, 20), still.face, still.drawn).doc.sketches.at(-1)!.face!.body, plane([0, 0, 0], [1, 0, 0], [0, 0, 1]));
+  // A placement with no body (a file from before 35e2h, or a caller that doesn't know) keeps none.
+  assert.equal(addFaceSketch(partDocument("box", 40, 30, 20), still.face, { plane: still.drawn.plane, side: 1 }).doc.sketches.at(-1)!.face!.body, undefined);
   // A body frame that can't be a frame is refused (a broken caller, not a pick).
   assert.throws(() => addFaceSketch(partDocument("box", 40, 30, 20), moved.face, { ...moved.drawn, body: plane([0, 0, 0], [0, 0, 1], [0, 0, 1]) }), /needs a frame for where its body was moved to/);
 });

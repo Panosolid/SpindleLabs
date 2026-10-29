@@ -21,7 +21,9 @@
 //   face's body since it was drawn (`body`: where they had put the body's
 //   own frame, the world's, when drawn; `bodyFrame` now), so a Move edited
 //   to slide the face along itself, or turn it about its normal, takes the
-//   sketch with it, as it takes the face.
+//   sketch with it, as it takes the face. A sketch with no `body` (drawn
+//   before 35e2h) is not carried: where its body was when drawn is not
+//   known, and a guess would move it on opening.
 //
 // Every frame is worked out in doubles and squared up (unit axes, x square
 // to the normal) before the kernel sees it: the kernel refuses a frame off
@@ -36,7 +38,7 @@ type Vec3 = [number, number, number];
 export interface SketchPlacement {
   plane: Plane;
   side: 1 | -1;
-  /** Where the Moves before it had put the face's body's own frame when picked (`bodyFrame`); none when not moved. */
+  /** Where the Moves before it had put the face's body's own frame when picked (`bodyFrame`, the world's when not moved). */
   body?: Plane;
 }
 
@@ -59,7 +61,7 @@ export interface SketchFace {
   frame: Plane;
   side: 1 | -1;
   held?: Plane;
-  /** Where the Moves before it had put the face's body's own frame (the world's) when drawn; none when it was not moved (35e2h). */
+  /** Where the Moves before it had put the face's body's own frame (the world's) when drawn (35e2h); none when drawn before 35e2h, which is never carried. */
   body?: Plane;
 }
 
@@ -173,6 +175,9 @@ export function drawnOnFace(view: BodyView, face: number): SketchPlacement | nul
 
 /** The world's own frame: where a body that no Move has moved keeps its own. */
 const WORLD: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
+
+/** A copy of the world's frame, for a sketch picked on a body no Move has moved (face-pick.ts). */
+export const worldFrame = (): Plane => ({ origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] });
 
 /**
  * `v` turned `angle` radians counter-clockwise looking down unit `k` (the

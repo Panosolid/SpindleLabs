@@ -115,6 +115,7 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "face-sketch-unbound": "outcome differs from the model",
   "move-shift-then-turn": "the rebuild differs from the model",
   "move-not-held": "the rebuild differs from the model",
+  "sketch-not-carried": "the rebuild differs from the model",
 };
 
 /** The first seed whose session the planted bug fails, and how. */
