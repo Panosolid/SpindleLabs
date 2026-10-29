@@ -41,6 +41,15 @@ for (const [width, height] of [[320, 568], [375, 667], [414, 896]]) {
   const tag = `${width}`;
   let o = await overflow(page);
   assert.deepEqual([o.wide, o.sideways <= 0, o.down, o.extra <= 0], [[], true, 0, true], `${tag}: closed ${JSON.stringify(o)}`);
+  // The view's buttons are a strip along the view's bottom, never a card over the sketch's origin: at 320 px they wrapped to
+  // three rows over 26-29% of the view (weak-spot hunt A7). At most two rows; below 361 px one, scrolling sideways within the bar.
+  const bar = await page.evaluate(() => {
+    const b = document.getElementById("view-controls"), v = document.getElementById("viewport").getBoundingClientRect();
+    const r = b.getBoundingClientRect();
+    const tops = new Set([...b.querySelectorAll("button")].filter((x) => x.offsetParent).map((x) => Math.round(x.getBoundingClientRect().top)));
+    return { rows: tops.size, share: (r.width * r.height) / (v.width * v.height), scrolls: b.scrollWidth <= b.clientWidth || getComputedStyle(b).overflowX === "auto" };
+  });
+  assert.ok(bar.rows <= (width < 361 ? 1 : 2) && bar.share <= 0.16 && bar.scrolls, `${tag}: the view's buttons are ${width < 361 ? "one row" : "at most two rows"}, at most 16% of the view, scrolling sideways when they don't fit ${JSON.stringify(bar)}`);
   for (const which of ["browser", "properties"]) {
     await page.tap(`#${which}-toggle`);
     assert.equal(await expanded(page, which), "true");
