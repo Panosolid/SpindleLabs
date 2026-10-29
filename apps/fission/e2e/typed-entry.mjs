@@ -15,8 +15,10 @@
 // a 3-point arc's end typed by length and angle with no boxes for its
 // point on the arc, a centre arc's start typed by radius and angle and its
 // end by a typed 270° arc angle the way the pointer went (the preview first),
-// and at 375 px with taps the boxes and hint whole on screen. Run with `npm run e2e`
-// (after `npm run build`).
+// and at 375 px with taps the boxes and hint whole on screen. A phone
+// turned sideways mid-line and back: the boxes stay in the view, beside the
+// line's point where it went, still taking the keys (hunt D2). Run with
+// `npm run e2e` (after `npm run build`); ONLY=<words> runs the checks whose names hold them.
 import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
@@ -29,8 +31,8 @@ const browser = await launch();
 const errors = [];
 const shots = process.env.E2E_SHOTS;
 
-async function fresh(width = 1280, touch = false) {
-  const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
+async function fresh(width = 1280, touch = false, height = 800) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -83,6 +85,7 @@ async function sketch(page, tap = false) {
 
 let failed = false;
 async function check(name, fn) {
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -258,6 +261,51 @@ await check("375 px with taps: the boxes on screen, a line typed by length and a
   if (shots) await page.screenshot({ path: `${shots}/typed-entry-375.png` });
   await page.keyboard.press("Enter");
   await points(page, "20,15 20,40");
+  await page.close();
+});
+
+await check("375 × 667 with taps, then turned sideways to 667 × 375 and back: the boxes stay on screen beside the line's point", async () => {
+  const page = await fresh(375, true, 667);
+  await sketch(page, true);
+  await clickPlane(page, [20, 15], TOP, true);
+  await points(page, "20,15");
+  await page.locator("#typed-length").tap();
+  await page.keyboard.type("12");
+  const canvas0 = await page.locator("#viewport canvas").boundingBox();
+  const point0 = screenPoint(canvas0, [20, 15, 0], TOP);
+  const boxes0 = await page.locator("#typed-entry").boundingBox();
+  // Where the boxes sit from the point at phone width (centred under it, pushed in from the view's right edge),
+  // the same again once turned back.
+  const upright = { x: boxes0.x - point0.x, y: boxes0.y - point0.y };
+  let canvasBefore = canvas0;
+  let point = point0;
+  for (const size of [{ width: 667, height: 375 }, { width: 375, height: 667 }]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(600); // the layout and the view's own resize settle
+    const canvas = await page.locator("#viewport canvas").boundingBox();
+    const boxes = await page.locator("#typed-entry").boundingBox();
+    const view = await page.locator("#viewport").boundingBox();
+    const what = `${size.width} × ${size.height}: boxes ${JSON.stringify(boxes)} in view ${JSON.stringify(view)}`;
+    assert.ok(boxes && boxes.x >= view.x && boxes.y >= view.y && boxes.x + boxes.width <= view.x + view.width + 1 && boxes.y + boxes.height <= view.y + view.height + 1, `${what}: inside the view`);
+    // Where the point went, by hand: the camera keeps its vertical field of view as the canvas changes size
+    // (three.js PerspectiveCamera: only its aspect follows the canvas), and a point's pixel distance from the
+    // canvas centre is (h / 2) · f · X / (−Z) across and (h / 2) · f · Y / (−Z) down (across, x's 1 / aspect
+    // cancels the w / h of the pixels), so with the camera unmoved it scales by h_new / h_old about the centre.
+    const k = canvas.height / canvasBefore.height;
+    const centre = (c) => ({ x: c.x + c.width / 2, y: c.y + c.height / 2 });
+    const c0 = centre(canvasBefore);
+    const c1 = centre(canvas);
+    point = { x: c1.x + (point.x - c0.x) * k, y: c1.y + (point.y - c0.y) * k };
+    canvasBefore = canvas;
+    const ok = (a, b) => Math.abs(a - b) <= 3;
+    // Sideways (667 px, wider than the phone rule's 640) the boxes' own CSS puts them 18 px right of and 14 px below the point.
+    const offset = size.width > 640 ? { x: 18, y: 14 } : upright;
+    assert.ok(ok(boxes.x - point.x, offset.x) && ok(boxes.y - point.y, offset.y), `${what}: beside the point at ${JSON.stringify(point)} (offset ${JSON.stringify(offset)}, now ${JSON.stringify({ x: boxes.x - point.x, y: boxes.y - point.y })})`);
+    assert.equal(await focused(page), "typed-length", `${what}: the keys still go to Length`);
+    if (shots) await page.screenshot({ path: `${shots}/typed-turned-${size.width}.png` });
+  }
+  await page.keyboard.type("3");
+  assert.equal(await page.inputValue("#typed-length"), "123", "typing carries on in the box");
   await page.close();
 });
 

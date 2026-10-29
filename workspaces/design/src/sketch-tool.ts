@@ -85,7 +85,8 @@ export const SKETCH_TOOLS: readonly { kind: ToolKind; label: string; key?: strin
   { kind: "circle", label: "Circle", key: "C" },
   { kind: "arc", label: "3-point arc", key: "A", group: "Arc" },
   { kind: "centre", label: "Centre arc", group: "Arc" },
-  { kind: "tangent", label: "Tangent arc", key: "T", group: "Arc" },
+  // No key: T is kept for Trim (Fusion's, Ben 10-29), which comes with step 52.
+  { kind: "tangent", label: "Tangent arc", group: "Arc" },
   { kind: "project", label: "Project", key: "P" },
 ];
 

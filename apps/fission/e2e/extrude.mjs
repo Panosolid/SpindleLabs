@@ -153,10 +153,11 @@ try {
     await page.click("#extrude-ok");
     await until(page, () => !document.querySelector("#extrude-error").hidden, null, "a refused distance");
     assert.equal(await page.textContent("#extrude-error"), "Type a distance other than 0 mm: a negative one goes the other way.");
-    // 2 km is past the kernel's 1 km: the kernel says why (the preview already did), the panel stays, nothing is recorded.
+    // 2 km is past the modeller's 1 km: refused up front in the box's own words (backlog 10-29: before, the kernel was asked),
+    // the panel stays, nothing is recorded.
     await page.fill("#extrude-distance", "2000000");
     await page.click("#extrude-ok");
-    await until(page, () => /extrude distance must be between/.test(document.querySelector("#extrude-error").textContent), null, "the kernel's refusal");
+    await until(page, () => document.querySelector("#extrude-error").textContent === "The distance can be at most 1000000 mm (1 km), the largest size the modeller works at.", null, "the distance's refusal");
     assert.equal(await undoTitle(page), "Undo Draw line (Ctrl+Z)");
     assert.equal(await page.textContent("#volume"), "24,000 mm³", "the box is still the part");
     // 10 mm, Enter: 40 · 30 · 10 = 12,000 mm³; area 2(1200) + 2(400) + 2(300) = 3,800 mm².

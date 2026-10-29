@@ -178,10 +178,12 @@ try {
         const rows = await page.$$eval("#create-menu-menu [role=menuitem]", (els) => els.map((e) => [e.id, e.textContent, e.querySelector("svg.icon")?.dataset.icon]));
         assert.deepEqual(rows, [
           ["create-menu-sketch", "Create sketch", "sketch"],
-          ["create-menu-extrude", "Extrude", "extrude"],
+          // Extrude's row shows its key, E, in a <kbd> after its name.
+          ["create-menu-extrude", "ExtrudeE", "extrude"],
           // The tools still to come, greyed (coming-soon.ts; the next check).
           ...["revolve", "hole", "pattern", "sweep", "loft"].map((id) => [`coming-${id}`, `${id[0].toUpperCase()}${id.slice(1)}Coming soon`, undefined]),
         ]);
+        assert.equal(await page.textContent("#create-menu-extrude kbd.menu-button-key"), "E", "Extrude's key shown in its row");
         const menu = await rect(page, "#create-menu-menu");
         assert.ok(menu.left >= 0 && menu.right <= width, `the menu on the screen: ${menu.left}-${menu.right}`);
         await press(page, "#create-menu-sketch", tap);

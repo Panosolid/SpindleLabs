@@ -80,7 +80,7 @@ await check("the Arc row: hover opens the three arcs beside it, another row clos
     await page.hover("#sketch-menu-group-arc");
     await until(page, () => !document.getElementById("sketch-arc-menu").hidden, null, "the arcs open on hover");
     const sub = await page.$$eval("#sketch-arc-menu [role=menuitemradio]", (els) => els.map((e) => [e.querySelector("span").textContent, e.querySelector("kbd").textContent]));
-    assert.deepEqual(sub, [["3-point arc", "A"], ["Centre arc", ""], ["Tangent arc", "T"]]);
+    assert.deepEqual(sub, [["3-point arc", "A"], ["Centre arc", ""], ["Tangent arc", ""]]);
     const row = await rect(page, "#sketch-menu-group-arc");
     const menu = await rect(page, "#sketch-arc-menu");
     assert.ok(menu.left >= row.right && menu.left - row.right <= 4 && Math.abs(menu.top - row.top) <= 6, `beside the Arc row: ${JSON.stringify(menu)} vs ${JSON.stringify(row)}`);

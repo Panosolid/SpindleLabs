@@ -20,8 +20,13 @@ def pr(number, **kw):
     return p
 
 
-def check(name, status="completed", conclusion="success", app="github-actions"):
-    return dict(name=name, status=status, conclusion=conclusion, app=dict(slug=app))
+def check(name, status="completed", conclusion="success", app="github-actions", started=None, id=None):
+    c = dict(name=name, status=status, conclusion=conclusion, app=dict(slug=app))
+    if started:
+        c["started_at"] = started
+    if id:
+        c["id"] = id
+    return c
 
 
 class CiState(unittest.TestCase):
@@ -53,6 +58,34 @@ class CiState(unittest.TestCase):
         self.assertEqual(ci_state(quick + [check("draft run", app="someone-else")], quick_ok=True), "success")
         # Still running as a draft: the marker decides, not the pending jobs.
         self.assertEqual(ci_state(quick[:-1] + [check("e2e", "in_progress", None), check("draft run")], quick_ok=True), "draft")
+
+    def test_an_older_runs_draft_marker_is_overruled_by_the_newer_run(self):
+        # #51 and #66 on 2026-10-29: a run started while the head was a draft
+        # (its `draft run` marker succeeded) and the run marking it ready
+        # both list their checks for the head, even with filter=latest. Only
+        # the newer run's checks decide: the head is green.
+        old = "2026-10-29T05:00:00Z"
+        new = "2026-10-29T05:10:00Z"
+        names = ["kernel", "app", "baseline", "mutants-in-diff", "e2e (quick)", "e2e"]
+        drafted = [check(n, started=old, id=100 + i) for i, n in enumerate(names)] + [check("draft run", started=old, id=120)]
+        ready = [check(n, started=new, id=200 + i) for i, n in enumerate(names)] + [
+            check("draft run", conclusion="skipped", started=new, id=220), check("phone", started=new, id=221)]
+        self.assertEqual(ci_state(drafted + ready, quick_ok=True), "success")
+        self.assertEqual(ci_state(ready + drafted, quick_ok=True), "success", "order of the list doesn't matter")
+        # The other way round (marked draft again after a ready run): the newer draft run decides.
+        redrafted = [check(n, started=new, id=200 + i) for i, n in enumerate(names)] + [check("draft run", started=new, id=220)]
+        oldready = [check(n, started=old, id=100 + i) for i, n in enumerate(names)] + [
+            check("draft run", conclusion="skipped", started=old, id=120), check("phone", started=old, id=121)]
+        self.assertEqual(ci_state(oldready + redrafted, quick_ok=True), "draft")
+        # A cancelled older run's failure doesn't count against a newer green run either.
+        cancelled = [check("app", conclusion="cancelled", started=old, id=99)]
+        self.assertEqual(ci_state(cancelled + ready, quick_ok=True), "success")
+        # A job of the newer run still waiting to start is newer than any finished one.
+        waiting = [c for c in ready if c["name"] != "app"] + [check("app", "queued", None, id=230)]
+        self.assertEqual(ci_state(drafted + waiting, quick_ok=True), "pending")
+        # Same name from another app: kept apart, not one overruling the other.
+        other = check("app", conclusion="failure", app="someone-else", started=new, id=300)
+        self.assertEqual(ci_state(ready + [other], quick_ok=True), "failure")
 
     def test_cases(self):
         both = [check("kernel"), check("app"), check("e2e"), check("mutants-in-diff"), check("baseline")]

@@ -276,7 +276,7 @@ try {
         const groups = await page.evaluate(() => [...document.querySelectorAll("#shortcuts section, #shortcuts .shortcut-group")].map((g) => [g.querySelector("h3")?.textContent ?? "", [...g.querySelectorAll("kbd")].map((k) => k.textContent).join(" ")]));
         const design = groups.find(([title]) => /^Design/.test(title));
         assert.ok(design, JSON.stringify(groups));
-        for (const key of ["L", "R", "C", "A", "T", "Esc"]) assert.ok(design[1].split(" ").includes(key), `${key} in ${design[1]}`);
+        for (const key of ["L", "R", "C", "A", "E", "S", "Esc"]) assert.ok(design[1].split(" ").includes(key), `${key} in ${design[1]}`);
         // Escape closes the list and only the list: the sketch is still open with its chain.
         await page.keyboard.press("Escape");
         await until(page, () => document.getElementById("shortcuts")?.open === false, null, "the list closed");

@@ -6,9 +6,9 @@ import type { ToolKind } from "../src/sketch-tool.ts";
 
 test("the Create menu lists every tool with its key, in the tools' order, the three arcs under one Arc row", () => {
   // Written out by hand: Line L, Rectangle R, Circle C, then Arc opening
-  // 3-point arc A, Centre arc (no key) and Tangent arc T, then (27d) Project P.
+  // 3-point arc A, Centre arc and Tangent arc (no keys: T is kept for Trim, Ben 10-29), then (27d) Project P.
   const show = (e: MenuEntry): string => ("group" in e ? `${e.group} ▸ [${e.rows.map(show).join(", ")}]` : `${e.label}${e.key ? ` ${e.key}` : ""}`);
-  assert.deepEqual(createMenuRows().map(show), ["Line L", "Rectangle R", "Circle C", "Arc ▸ [3-point arc A, Centre arc, Tangent arc T]", "Project P"]);
+  assert.deepEqual(createMenuRows().map(show), ["Line L", "Rectangle R", "Circle C", "Arc ▸ [3-point arc A, Centre arc, Tangent arc]", "Project P"]);
 });
 
 test("menu keys by hand: Down and Up wrap round five rows, Home and End jump, other keys don't move", () => {
@@ -91,7 +91,9 @@ test("the tool in use: exactly its button pressed and its menu row ticked, keys 
   t.showTool("arc");
   assert.deepEqual([pressed(), ticked()], [["arc"], ["arc"]]);
   assert.equal($("sketch-tool-circle").title, "Circle (C)");
-  assert.equal($("sketch-tool-tangent").getAttribute("aria-keyshortcuts"), "T");
+  assert.equal($("sketch-tool-project").getAttribute("aria-keyshortcuts"), "P");
+  // T is kept for Trim (Ben 10-29, step 52): the tangent arc has no key, so names none.
+  assert.equal($("sketch-tool-tangent").hasAttribute("aria-keyshortcuts"), false);
   assert.equal($("sketch-menu-rectangle").textContent, "RectangleR", "the row's name, then its key");
   assert.equal($("sketch-tool-centre").title, "Centre arc", "no key, so none named");
   assert.equal($("sketch-tool-centre").hasAttribute("aria-keyshortcuts"), false);

@@ -1,0 +1,23 @@
+{
+  "seed": 0,
+  "what": "Issue #42: with a body hidden by its eye, the selection check expected its row to select it; a hidden body's row selects nothing on purpose (browser.ts rowReferences), and with one body left in view none of its faces light up (the monkey's model now knows hidden bodies)",
+  "actions": [
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 0
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 1
+    },
+    {
+      "do": "click",
+      "sel": "button[data-eye=\"body-1\"]"
+    },
+    {
+      "do": "select-bodies"
+    }
+  ]
+}

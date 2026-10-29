@@ -13,12 +13,14 @@ test("Design's keys: Escape clears (also in a size field), Enter is Extrude's OK
     ["extrude-ok", "Enter", false],
     // 35e2b: Move, Fusion's key, outside a sketch.
     ["move-tool", "M", false],
+    // Ben's keys (10-29), Fusion's: E Extrude, S the command search box. T is kept for Trim (step 52): no key yet.
+    ["extrude-tool", "E", false],
+    ["command-search", "S", false],
     ["copy-svg", "Mod+C", false],
     ["sketch-line", "L", false],
     ["sketch-rectangle", "R", false],
     ["sketch-circle", "C", false],
     ["sketch-arc", "A", false],
-    ["sketch-tangent", "T", false],
     // 27d: Project, Fusion's key.
     ["sketch-project", "P", false],
     // SF4: the keys that start typing a size, never inside a text box (there they type).
