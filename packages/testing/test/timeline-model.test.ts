@@ -551,6 +551,27 @@ test("35e2h by hand: a sketch drawn on a moved top is carried along it when the 
   assert.deepEqual(rebuild(m.doc, new Set(["sketch-not-carried"])).results["item-3"], { status: "built", lift: 25 });
 });
 
+test("35e2i by hand: an edited Move's bodies changed; the one taken out goes back to where it was made, the one put in moves", () => {
+  const m = createModel();
+  run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "box", sizes: [10, 10, 10] }, { op: "add-move", bodies: ["item-1"], shift: [5, 0, 0], turnZ: 0, pivot: [0, 0] });
+  const top = (body: string) => face(bodyOf(rebuild(m.doc).results[body]), `${body}/top`).centroid;
+  const nearAll = (got: number[], want: number[], what: string) => assert.ok(got.every((x, k) => near(x, want[k])), `${what}: ${got} want ${want}`);
+  // As made, box 1's top centre is (20, 15, 20), box 2's (5, 5, 10); Move 3 shifts box 1 5 along x: (25, 15, 20).
+  nearAll(top("item-1"), [25, 15, 20], "box 1 moved");
+  run(m, { op: "set-move", item: "item-3", shift: [5, 0, 0], turnZ: 0, pivot: [0, 0], bodies: ["item-2"] });
+  nearAll(top("item-1"), [20, 15, 20], "box 1 taken out: as made");
+  nearAll(top("item-2"), [10, 5, 10], "box 2 put in: 5 along x");
+  // Undo puts box 1 back in.
+  run(m, { op: "undo" });
+  nearAll(top("item-1"), [25, 15, 20], "undone");
+  run(m, { op: "redo" });
+  // Planted ("move-bodies-kept"): the edit keeps box 1 where the Move put it.
+  const kept = createModel(["move-bodies-kept"]);
+  run(kept, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "box", sizes: [10, 10, 10] }, { op: "add-move", bodies: ["item-1"], shift: [5, 0, 0], turnZ: 0, pivot: [0, 0] });
+  run(kept, { op: "set-move", item: "item-3", shift: [5, 0, 0], turnZ: 0, pivot: [0, 0], bodies: ["item-2"] });
+  nearAll(face(bodyOf(rebuild(kept.doc).results["item-1"]), "item-1/top").centroid, [25, 15, 20], "kept under the fault");
+});
+
 test("what a Move must rebuild: one body per body it moves, nothing when it's taken away, and moves of moves in one list", () => {
   const m = createModel();
   run(m, { op: "add-preset", kind: "box", sizes: [40, 30, 20] }, { op: "add-preset", kind: "sphere", sizes: [10] });

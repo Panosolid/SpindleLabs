@@ -6,7 +6,7 @@
 // then shifted by (x, y, z) mm. It makes no body of its own; from its place
 // in the timeline on, each body it moves is where it put it (rebuild.ts),
 // so editing, suppressing, deleting or reordering it works like any item.
-// `inserted` and `changedMove` are the document changes, pure functions;
+// `insertMove` and `changedMove` (its numbers, and since 35e2i its bodies) are the document changes, pure functions;
 // `moveMotions` what the kernel is asked to do.
 
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
@@ -116,14 +116,50 @@ export function insertMove(doc: DesignDocument, bodies: readonly string[], value
   return { id, doc: { ...doc, nextId: doc.nextId + 1, timeline: insertItem(doc, feature) } };
 }
 
-/** The design with Move `id` at these numbers instead: the same item, its place, flags and bodies kept; the design itself when nothing changes. */
-export function changedMove(doc: DesignDocument, id: string, values: MoveValues): DesignDocument {
+/** Words for a body picked for Move `move` that is made after it in the timeline (35e2i): it can't move what isn't made yet. */
+export const madeAfter = (body: string, move: string): string => `${body} is made after ${move} in the timeline, so ${move} can't move it.`;
+
+/**
+ * The bodies an edited Move moves instead (35e2i), as `bodiesFor` checks a
+ * new one's but against the Move's own place: each makes a body and comes
+ * before the Move in the timeline, each once, at least one. A body the
+ * Move already held that has been deleted since may stay (as a file may
+ * hold it: the rebuild fails the Move naming it), under its old name.
+ */
+function bodiesBefore(doc: DesignDocument, move: Feature, bodies: readonly string[]): { id: string; label: string }[] {
+  if (bodies.length === 0) throw new Error(`pick at least one body for ${move.provenance.self.label} to move`);
+  const end = doc.timeline.features.indexOf(move);
+  return bodies.map((id, i) => {
+    if (bodies.indexOf(id) !== i) throw new Error(`${shown(id)} is picked twice`);
+    const at = doc.timeline.features.findIndex((f) => f.id === id);
+    const f = doc.timeline.features[at];
+    const held = move.provenance.from.find((r) => r.id === id);
+    if (f === undefined && move.dependsOn.includes(id) && held) return { id, label: held.label };
+    if (f === undefined || !makesBody(f)) throw new Error(`${shown(id)} is not a body in the design`);
+    if (at > end) throw new Error(madeAfter(f.provenance.self.label, move.provenance.self.label).slice(0, -1));
+    return { id, label: f.provenance.self.label };
+  });
+}
+
+/**
+ * The design with Move `id` at these numbers instead, and moving `bodies`
+ * when given (35e2i; refused as `bodiesBefore` says): the same item, its
+ * place and flags kept; its bodies kept when not given. The design itself
+ * when nothing changes (the same bodies in another order change nothing).
+ */
+export function changedMove(doc: DesignDocument, id: string, values: MoveValues, bodies?: readonly string[]): DesignDocument {
   const old = doc.timeline.features.find((f) => f.id === id);
   if (!old || !isMoveItem(old)) throw new Error(`there is no move ${shown(id)} in the design`);
   const v = checked(values);
-  if (MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k])) return doc;
-  const labels = old.dependsOn.map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
+  const items = bodies === undefined ? null : bodiesBefore(doc, old, bodies);
+  const sameBodies = items === null || (items.length === old.dependsOn.length && items.every((b) => old.dependsOn.includes(b.id)));
+  if (sameBodies && MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k])) return doc;
+  const kept = sameBodies ? null : items!;
+  const labels = kept ? kept.map((b) => b.label) : old.dependsOn.map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
   const verb = old.intent.summary.startsWith("Rotate ") ? "Rotate" : "Move";
-  const feature: Feature = { ...old, intent: { ...old.intent, parameters: { ...v }, summary: moveSummary(labels, v, verb) } };
+  const intent = { ...old.intent, parameters: { ...v }, summary: moveSummary(labels, v, verb) };
+  const feature: Feature = kept
+    ? { ...old, intent, dependsOn: kept.map((b) => b.id), provenance: { ...old.provenance, from: kept.map((b) => ({ workspace: "design", id: b.id, label: b.label })) } }
+    : { ...old, intent };
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
 }

@@ -11,7 +11,7 @@
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle } from "@fission/core";
 import { isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
-import { moveValues, type MoveValues } from "./move.ts";
+import { madeAfter, moveValues, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { bodyOf, type Scene } from "./scene.ts";
 import { itemName } from "./timeline-edits.ts";
@@ -142,29 +142,56 @@ export function movedMesh(scene: Scene, moving: readonly string[], v: MoveValues
  * the body shows where OK will put it, whatever comes after. A Move that
  * did not build (suppressed, greyed, past the marker) builds nothing
  * either way and is drawn as it is; one that failed moved nothing, so
- * there is nothing to take back. Numbers as built give the mesh itself.
+ * there is nothing to take back. Since 35e2i the Move may move `bodies`
+ * instead of its own: a body taken out is only taken back out of where the
+ * Move put it, one put in only moved by `v`. Numbers and bodies as built
+ * give the mesh itself.
  */
-export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string, v: MoveValues): DisplayMesh {
+export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string, v: MoveValues, bodies?: readonly string[]): DisplayMesh {
   const at = doc.timeline.features.findIndex((f) => f.id === id);
   const edited = doc.timeline.features[at];
   const status = results[id]?.status;
   if (edited === undefined || !isMoveItem(edited) || (status !== "built" && status !== "failed")) return scene.mesh;
   const before = moveValues(edited);
-  if (status === "built" && MOVE_PARAMS.every((k) => before[k] === v[k])) return scene.mesh;
+  const now = bodies ?? edited.dependsOn;
+  const sameBodies = now.length === edited.dependsOn.length && now.every((b) => edited.dependsOn.includes(b));
+  if (status === "built" && sameBodies && MOVE_PARAMS.every((k) => before[k] === v[k])) return scene.mesh;
   if (status === "failed" && still(v)) return scene.mesh;
   const later = doc.timeline.features.slice(at + 1).filter((f) => isMoveItem(f) && results[f.id]?.status === "built");
   return mappedMesh(scene, (feature) => {
-    if (!edited.dependsOn.includes(feature)) return null;
+    const was = edited.dependsOn.includes(feature);
+    const is = now.includes(feature);
+    if (!was && !is) return null;
     const after = later.filter((f) => f.dependsOn.includes(feature)).map(moveValues);
     return (p, vector) => {
       let q: readonly number[] = p;
       for (const m of [...after].reverse()) q = unmovedPoint(q, m, vector);
-      if (status === "built") q = unmovedPoint(q, before, vector);
-      q = movedPoint(q, v, vector);
+      if (status === "built" && was) q = unmovedPoint(q, before, vector);
+      if (is) q = movedPoint(q, v, vector);
       for (const m of after) q = movedPoint(q, m, vector);
       return q as Point;
     };
   });
+}
+
+/**
+ * An edited Move's bodies as the picks change (35e2i): the bodies it holds
+ * that `scene` doesn't show stay (a hidden, failed or deleted body can't be
+ * clicked off), the shown ones are those `picked`, in timeline order. A
+ * pick made after the Move can't be moved by it: it is left out and
+ * `refused` says so (the first such pick), so the caller can let it go.
+ */
+export function editedBodies(doc: DesignDocument, id: string, held: readonly string[], picked: readonly string[], scene: Scene | null): { bodies: string[]; refused: string | null } {
+  const features = doc.timeline.features;
+  const at = features.findIndex((f) => f.id === id);
+  const move = features[at];
+  if (move === undefined || !isMoveItem(move)) return { bodies: [...held], refused: null };
+  const shownNow = new Set((scene?.bodies ?? []).map((b) => b.feature));
+  const place = (b: string) => features.findIndex((f) => f.id === b);
+  const later = picked.filter((b) => place(b) > at);
+  const bodies = [...new Set([...held.filter((b) => !shownNow.has(b)), ...picked.filter((b) => !later.includes(b))])];
+  bodies.sort((a, b) => place(a) - place(b));
+  return { bodies, refused: later.length === 0 ? null : madeAfter(itemName(features[place(later[0])]), itemName(move)) };
 }
 
 /** Where a Move of `v` puts its pivot: where the arrows and rings are drawn. */

@@ -103,8 +103,8 @@ export type WaitingOp =
   | { op: "set-extrude-operation"; pick: number; operation: BooleanKind | "new-body" }
   /** 35e2: a Move of the `pick`th built body before where it goes in, and, when `other` is a number, the `other`th of the rest too; turned `turnZ` degrees about the upright through `pivot`, then shifted. */
   | { op: "add-move"; pick: number; other: number | null; shift: Vec3; turnZ: number; pivot: Point }
-  /** 35e2: the `pick`th Move's numbers changed. */
-  | { op: "set-move"; pick: number; shift: Vec3; turnZ: number; pivot: Point };
+  /** 35e2: the `pick`th Move's numbers changed; 35e2i: its bodies too when `swap` is a number (one or two of the built bodies before it). */
+  | { op: "set-move"; pick: number; shift: Vec3; turnZ: number; pivot: Point; swap: number | null };
 
 /** One waiting move: when it turns on, how often it is drawn, and what the model and Design must answer once it does. */
 export interface WaitingMove {
@@ -152,9 +152,12 @@ export const WAITING_MOVES: readonly WaitingMove[] = [
     op: "set-move",
     from: "35e2",
     weight: 3,
-    does: "Edit a Move's numbers.",
-    model: "The bodies it moves are moved by the new numbers from the Move on, and everything after it (a sketch on a moved face, its extrude) follows.",
-    draw: (r) => ({ op: "set-move", pick: r.next(), ...moveNumbers(r) }),
+    does: "Edit a Move's numbers, and (35e2i) a time in three which bodies it moves: one or two of the bodies built before it.",
+    model: "The bodies it moves are moved by the new numbers from the Move on, a body taken out stays where it was before the Move, and everything after it (a sketch on a moved face, its extrude) follows.",
+    draw: (r) => {
+      const s = r.next();
+      return { op: "set-move", pick: s, ...moveNumbers(r), swap: s < 2 / 3 ? null : r.next() };
+    },
   },
   {
     op: "add-combine",
@@ -459,7 +462,15 @@ export function resolveStep(doc: ModelDoc, step: SessionOp): Resolved {
     }
     case "set-move": {
       const m = choose(doc.items.filter((i) => i.kind === "move"), step.pick);
-      return edit(m && { op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot });
+      if (!m || step.swap === null) return edit(m && { op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot });
+      // 35e2i: as in the app, picked among the bodies shown and made before the Move (one, or two when the draw runs past the list).
+      const built = rebuild(doc);
+      const before = new Set(doc.items.slice(0, doc.items.indexOf(m)).map((i) => i.id));
+      const bodies = built.order.filter((id) => before.has(id) && built.results[id].status === "built" && (built.results[id] as { body?: unknown }).body !== undefined);
+      if (bodies.length === 0) return edit({ op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot });
+      const k = Math.floor(step.swap * 2 * bodies.length);
+      const picked = k < bodies.length || bodies.length === 1 ? [bodies[k % bodies.length]] : [bodies[k - bodies.length], bodies[(k + 1) % bodies.length]];
+      return edit({ op: "set-move", item: m.id, shift: step.shift, turnZ: step.turnZ, pivot: step.pivot, bodies: picked });
     }
     case "add-combine":
     case "set-combine":
@@ -570,7 +581,7 @@ function translateOp(op: ConcreteOp, to: (id: string) => string): ConcreteOp {
     case "add-move":
       return { ...op, bodies: op.bodies.map(to) };
     case "set-move":
-      return { ...op, item: to(op.item) };
+      return { ...op, item: to(op.item), ...(op.bodies ? { bodies: op.bodies.map(to) } : {}) };
     default:
       return op;
   }

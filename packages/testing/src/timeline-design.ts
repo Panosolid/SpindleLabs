@@ -373,7 +373,7 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         return { state: { doc: m.doc, meta }, made: [m.id] };
       }
       case "set-move":
-        return { state: { doc: changedMove(doc, op.item, moveValues(op)), meta }, made: [] };
+        return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies), meta }, made: [] };
     }
   }
 

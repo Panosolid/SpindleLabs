@@ -429,6 +429,81 @@ test("an edited Move previews in the app (35e2c): its handles at its pivot moved
   assert.equal(a.moveHandlesShown(), null);
 });
 
+test("35e2i: an edited Move's bodies changed on the real kernel, by hand: Cylinder 1 put in, Box 1 taken out, a later Move still applied", async () => {
+  const { changedMove } = await import("@fission/design");
+  // Box 1 40 × 30 × 20 at the origin, Cylinder 1 ⌀10 × 5 standing on it; Move 1 shifts Box 1 10 mm along X, Move 2 lifts Cylinder 1 3 mm.
+  const d = insertPreset(BOX(), "cylinder", 10, 10, 5).doc;
+  const first = insertMove(d, ["feature-1"], v({ x: 10 }));
+  const doc = insertMove(first.doc, ["feature-2"], v({ z: 3 })).doc;
+  // Move 1 moving both: the box x 10..50; the cylinder x −5..5 → 5..15, then up 3: z 3..8.
+  const both = (await built(changedMove(doc, first.id, v({ x: 10 }), ["feature-1", "feature-2"]))).views;
+  near(both.get("feature-1")!.bounds, [[10, 0, 0], [50, 30, 20]], "Box 1 still moved");
+  near(both.get("feature-2")!.bounds, [[5, -5, 3], [15, 5, 8]], "Cylinder 1 moved by Move 1, then Move 2");
+  // Move 1 moving the cylinder alone: the box back where it was made.
+  const swapped = (await built(changedMove(doc, first.id, v({ x: 10 }), ["feature-2"]))).views;
+  near(swapped.get("feature-1")!.bounds, [[0, 0, 0], [40, 30, 20]], "Box 1 taken out: as made");
+  near(swapped.get("feature-2")!.bounds, [[5, -5, 3], [15, 5, 8]], "Cylinder 1 put in");
+});
+
+test("35e2i: an edited Move's bodies changed in the app: a pick puts one in, another takes one out, a body made later is refused in words, the preview is what OK builds", async () => {
+  const { app } = await import("./design-app.ts");
+  const { bodyReference, madeAfter } = await import("@fission/design");
+  // Box 1 40 × 30 × 20, Cylinder 1 ⌀10 × 5, Move 1 (Box 1, 10 mm along X), then Box 2 1 × 1 × 1 made after it.
+  const first = insertMove(insertPreset(BOX(), "cylinder", 10, 10, 5).doc, ["feature-1"], v({ x: 10 }));
+  const a = await app(insertPreset(first.doc, "box", 1, 1, 1).doc);
+  const bodiesLine = () => a.$("#move-bodies")!.textContent;
+  await a.doubleClick(first.id);
+  assert.equal(bodiesLine(), "Body: Box 1", "the edit opens on Move 1's own body");
+  assert.deepEqual(a.selection.items.map((r) => r.id), [bodyReference("feature-1").id], "its body picked, lit as a new Move's are");
+  // Cylinder 1's row clicked in the browser: put in, drawn 10 mm along X before OK.
+  a.selection.toggle(bodyReference("feature-2"));
+  await a.settle();
+  assert.equal(bodiesLine(), "Bodies: Box 1, Cylinder 1");
+  // Box 1 clicked in the view (its first face, joined face 0): taken out, drawn where it was made.
+  await a.pick({ face: 0 });
+  assert.equal(bodiesLine(), "Body: Cylinder 1");
+  // Box 2 clicked in the view (after Box 1's 6 faces and Cylinder 1's 3: joined face 9): refused, nothing changes.
+  await a.pick({ face: 9 });
+  assert.equal(a.$("#move-error")!.textContent, madeAfter("Box 2", "Move 1"));
+  assert.equal(bodiesLine(), "Body: Cylinder 1", "Box 2 let go");
+  assert.deepEqual(a.selection.items.map((r) => r.id), [bodyReference("feature-2").id]);
+  const preview = a.mesh()!.positions.slice();
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  await a.settle();
+  const move = a.doc().timeline.features.find((f) => f.id === first.id)!;
+  assert.deepEqual(move.dependsOn, ["feature-2"]);
+  assert.equal(move.intent.summary, "Move Cylinder 1 by (10, 0, 0) mm");
+  assert.equal(a.history.undoLabel(), "Edit Move 1", "one undo step");
+  assert.deepEqual(a.selection.items, [], "the edited Move's picks let go");
+  // What OK built is what the preview drew; by hand the box is as made and the cylinder x 5..15.
+  const kernel = a.mesh()!.positions;
+  assert.equal(kernel.length, preview.length);
+  kernel.forEach((x, i) => assert.ok(Math.abs(x - preview[i]) <= LINEAR, `point number ${i}: ${x}, the preview's ${preview[i]}`));
+  const views = (await built(a.doc())).views;
+  near(views.get("feature-1")!.bounds, [[0, 0, 0], [40, 30, 20]], "Box 1");
+  near(views.get("feature-2")!.bounds, [[5, -5, 0], [15, 5, 5]], "Cylinder 1");
+  // Undo puts Box 1 back in Move 1.
+  await a.undo();
+  assert.deepEqual(a.doc().timeline.features.find((f) => f.id === first.id)!.dependsOn, ["feature-1"]);
+});
+
+test("35e2i: every body taken out of an edited Move asks for one again, and OK says to pick one; Cancel keeps the Move as it was", async () => {
+  const { app } = await import("./design-app.ts");
+  const moved = insertMove(BOX(), ["feature-1"], v({ x: 10 }));
+  const a = await app(moved.doc);
+  await a.doubleClick(moved.id);
+  await a.pick({ face: 0 });
+  assert.equal(a.$("#move-bodies")!.hidden, true);
+  assert.equal(a.$("#move-pick")!.hidden, false, "how to pick shown again");
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  await a.settle();
+  assert.equal(a.$("#move-error")!.textContent, "pick at least one body for Move 1 to move");
+  (a.$("#move-cancel") as HTMLButtonElement).click();
+  await a.settle();
+  assert.deepEqual(a.doc().timeline.features.at(-1)!.dependsOn, ["feature-1"]);
+  near(meshBox(a.mesh()!.positions), [[10, 0, 0], [50, 30, 20]], "as built");
+});
+
 test("an empty Move box (Ben, 2026-10-28) counts as 0 while empty, keeps the preview and handles up, and shows 0 once left", async () => {
   const { app } = await import("./design-app.ts");
   const { bodyReference } = await import("@fission/design");

@@ -103,9 +103,9 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "end-edges-named-start": "two edges share a name",
   "lost-sketch-fails": "the rebuild differs from the model",
   "kept-not-forgotten": "the rebuild differs from the model",
-  // From 35e2 the first session that catches it (seed 1) saves while a kept extrude shows; the model's own catch, a
-  // save while the kept extrude is greyed under a suppressed sketch and so changes nothing shown, is the test after the loop.
-  "save-drops-kept": "save and open changed the rebuild",
+  // From 35e2i (set-move's draws changed the sessions) the first session that catches it (seed 3) is caught by the
+  // model; the catch of a save and open changing what is built (seed 4) is the test after the loop.
+  "save-drops-kept": "the rebuild differs from the model",
   "warning-dropped": "the rebuild differs from the model",
   "full-replay": "an edit rebuilt bodies that didn't change",
   "body-kept-by-item": "an edit kept a body whose shape changed",
@@ -116,6 +116,7 @@ const CAUGHT_BY: Record<ModelFault, string> = {
   "move-shift-then-turn": "the rebuild differs from the model",
   "move-not-held": "the rebuild differs from the model",
   "sketch-not-carried": "the rebuild differs from the model",
+  "move-bodies-kept": "the rebuild differs from the model",
 };
 
 /** The first seed whose session the planted bug fails, and how. */
@@ -135,8 +136,8 @@ for (const fault of MODEL_FAULTS)
     assert.equal(found.failure.check, CAUGHT_BY[fault], found.failure.message);
   });
 
-test("dropped kept shapes are caught by the model too, when the save changes nothing shown (seed 3)", async () => {
-  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(3n, 150)))?.check, "the rebuild differs from the model");
+test("dropped kept shapes are caught by save and open too, when the save changes what is built (seed 4)", async () => {
+  assert.equal((await failureOf(() => modelSubject(["save-drops-kept"]), randomSession(4n, 150)))?.check, "save and open changed the rebuild");
 });
 
 test("without a rebuild from scratch, a stale cache is still caught by the model", async () => {
