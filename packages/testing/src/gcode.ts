@@ -12,26 +12,39 @@
 // What it understands:
 // - G0/G1 straight moves (X Y Z E F), G2/G3 arcs in the XY plane given by
 //   their centre (I J, from the start point); an arc given by its radius
-//   (R) is a problem, not a guess.
+//   (R), or one with its centre on its start, is a problem, not a guess,
+//   and is recorded as a straight move to its end (the nozzle ends there
+//   either way, so the printer checks still see where it went).
 // - G90/G91 absolute/relative axes, M82/M83 absolute/relative extruder,
-//   G92 (sets the position, E included, without moving), G28 (homes the
-//   named axes, or all three, to 0: printers differ here, so a slice's
-//   moves are judged after its start routine's last G28).
+//   G92 (says where the nozzle is, E included, without moving), G28 (homes
+//   the named axes, or all three, to 0: printers differ here, so a slice's
+//   moves are judged after its start routine's last G28). Moves are
+//   recorded where the nozzle really is: after G92 X220 at x 0, X200 is at
+//   x −20, until that axis is homed again.
+// - G21 (millimetres) and G17 (the XY plane) are what it assumes anyway;
+//   G20 (inches) is a problem.
 // - G10/G11 firmware retraction, counted as retract and prime events with
 //   no length known.
-// - M104/M109 nozzle and M140/M190 bed temperatures (S), M106/M107 fan.
+// - M104/M109 nozzle and M140/M190 bed temperatures (S), M106/M107 fan; a
+//   temperature past 0–500 °C is a problem and still recorded.
 // - Line numbers (N…), checksums (*…), `;` and `( )` comments, letters in
 //   either case, numbers like `.2`, `-.5` and `1.` with or without spaces
 //   between words (`G1X10Y5`).
-// Every other M command is listed in `ignored` (they don't move anything);
-// any other G command is a problem, since it might move. Firmware macros
-// (a name like EXCLUDE_OBJECT_START) are listed in `ignored` too.
+// Commands that change what the moves do without moving (flow M221 and
+// speed M220 other than 100 %, steps per mm M92, volumetric extrusion M200
+// D, soft end stops off M211 S0, cold extrusion M302, a tool other than
+// T0) are "machine-setting" problems: the replay would no longer be what
+// the printer does. Every other M command is listed in `ignored` (they
+// don't move anything); any other G command is a problem, since it might
+// move. Firmware macros (a name like EXCLUDE_OBJECT_START) are listed in
+// `ignored` too.
 //
-// Firmware differs on one thing that changes the plastic laid down: G90
-// after M83. Marlin makes the extruder absolute again; Klipper keeps it
-// relative. Following `flavour` (Marlin by default), the replayer reports
-// an "ambiguous-extruder" problem when an E value is used in that state,
-// so our own writer must always say M82 or M83 after G90.
+// Firmware differs on the extruder's mode. Marlin: G91 makes every axis
+// relative, E included; M82/M83 then set E alone; G90 makes them all
+// absolute. Klipper: E is relative while G91 or M83 is in force, and G90
+// leaves M83 alone. Following `flavour` (Marlin by default), the replayer
+// reports an "ambiguous-extruder" problem when an E value is used after G90
+// that followed M83, so our own writer must always say M82 or M83 after G90.
 //
 // Plastic: filament pushed while the nozzle moves sideways (in X or Y)
 // is laid down along that move. Filament pulled back is a retraction;
@@ -98,7 +111,9 @@ export type ProblemKind =
   | "bad-arc"
   | "no-feed-rate"
   | "ambiguous-extruder"
-  | "bad-temperature";
+  | "bad-temperature"
+  | "inches"
+  | "machine-setting";
 
 export interface GcodeProblem {
   line: number;
@@ -209,10 +224,15 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
     seconds: 0,
     end: { x: 0, y: 0, z: 0, e: 0 },
   };
+  // `pos` is where the G-code says the nozzle is; G92 shifts that from where it really is by `shift`.
   let pos = { x: 0, y: 0, z: 0 };
+  const shift = { x: 0, y: 0, z: 0 };
+  const real = (p: Vec3): Vec3 => ({ x: p.x - shift.x, y: p.y - shift.y, z: p.z - shift.z });
   let e = 0;
   let relativeAxes = false;
+  // Marlin's E mode (G91 sets it, G90 clears it, M82/M83 set it alone); Klipper reads E relative under G91 or M83.
   let relativeE = false;
+  let m83 = false;
   // Set by G90 after M83 (Marlin turns E absolute, Klipper keeps it relative) until M82/M83 settles it.
   let ambiguousE = false;
   let feed = 0;
@@ -248,29 +268,22 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
         const ev = words.get("E");
         if (ev !== undefined) {
           if (ambiguousE) out.problems.push({ line: n, kind: "ambiguous-extruder", text: "E after G90 that followed M83: Marlin reads it as absolute, Klipper as relative; say M82 or M83 after G90" });
-          const rel = relativeAxes || relativeE;
+          const rel = flavour === "klipper" ? relativeAxes || m83 : relativeE;
           de = rel ? ev : ev - e;
         }
-        let length: number;
+        let length = Math.hypot(target.x - pos.x, target.y - pos.y, target.z - pos.z);
         let arc: Move["arc"];
-        if (command === "G2" || command === "G3") {
-          if (words.has("R")) {
-            out.problems.push({ line: n, kind: "arc-radius-form", text: "arcs given by R are not followed; give the centre with I and J" });
-            pos = target;
-            e += de;
-            continue;
-          }
-          const ci = words.get("I") ?? 0;
-          const cj = words.get("J") ?? 0;
+        const ci = words.get("I") ?? 0;
+        const cj = words.get("J") ?? 0;
+        // An arc it can't follow is recorded straight to its end: the nozzle ends there either way.
+        if ((command === "G2" || command === "G3") && words.has("R")) {
+          out.problems.push({ line: n, kind: "arc-radius-form", text: "arcs given by R are not followed; give the centre with I and J (recorded as a straight move)" });
+        } else if ((command === "G2" || command === "G3") && ci === 0 && cj === 0) {
+          out.problems.push({ line: n, kind: "bad-arc", text: "arc with its centre on its start (I and J both 0; recorded as a straight move)" });
+        } else if (command === "G2" || command === "G3") {
           const centre = { x: pos.x + ci, y: pos.y + cj };
           const r0 = Math.hypot(ci, cj);
           const r1 = Math.hypot(target.x - centre.x, target.y - centre.y);
-          if (r0 === 0) {
-            out.problems.push({ line: n, kind: "bad-arc", text: "arc with its centre on its start (I and J both 0)" });
-            pos = target;
-            e += de;
-            continue;
-          }
           // Firmware accepts a small mismatch between the two radii; report a big one (more than 0.05 mm, Marlin's own limit).
           if (Math.abs(r1 - r0) > 0.05) out.problems.push({ line: n, kind: "bad-arc", text: `arc ends ${Math.abs(r1 - r0).toFixed(4)} mm off its circle` });
           const clockwise = command === "G2";
@@ -281,12 +294,11 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
           while (sweep > 2 * Math.PI) sweep -= 2 * Math.PI;
           const flat = sweep * r0;
           length = Math.hypot(flat, target.z - pos.z);
-          arc = { centre, clockwise, sweep };
-        } else {
-          length = Math.hypot(target.x - pos.x, target.y - pos.y, target.z - pos.z);
+          arc = { centre: { x: centre.x - shift.x, y: centre.y - shift.y }, clockwise, sweep };
         }
         const sideways = Math.hypot(target.x - pos.x, target.y - pos.y) >= STILL;
-        const wasRetracted = retracted > 0 || firmwareRetracted;
+        // Pulled in pieces and pushed back in full can leave rounding (−0.1 − 0.2 + 0.3 is −4e-17), not a retraction.
+        const wasRetracted = retracted > STILL || firmwareRetracted;
         let kind: MoveKind;
         let volume = 0;
         if (de < 0) {
@@ -312,7 +324,7 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
           }
         }
         if (length >= STILL || de !== 0) {
-          out.moves.push({ line: n, kind, from: pos, to: target, e: de, volume, length, feed, seconds, retracted: wasRetracted, ...(feature !== undefined ? { feature } : {}), ...(arc ? { arc } : {}) });
+          out.moves.push({ line: n, kind, from: real(pos), to: real(target), e: de, volume, length, feed, seconds, retracted: wasRetracted, ...(feature !== undefined ? { feature } : {}), ...(arc ? { arc } : {}) });
         }
         out.volume += volume;
         out.filament += de;
@@ -323,26 +335,36 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
       }
       case "G90":
         relativeAxes = false;
-        if (relativeE) {
-          if (flavour === "marlin") relativeE = false;
-          ambiguousE = true;
-        }
+        relativeE = false;
+        if (m83) ambiguousE = true;
         break;
       case "G91":
         relativeAxes = true;
+        relativeE = true;
         break;
       case "M82":
         relativeE = false;
+        m83 = false;
         ambiguousE = false;
         break;
       case "M83":
         relativeE = true;
+        m83 = true;
         ambiguousE = false;
+        break;
+      case "G21": // millimetres and the XY plane: what the replay assumes
+      case "G17":
+        break;
+      case "G20":
+        out.problems.push({ line: n, kind: "inches", text: "G20 (inches) is not followed: every number after it would be read as millimetres" });
         break;
       case "G92":
         for (const axis of ["x", "y", "z"] as const) {
           const v = words.get(axis.toUpperCase());
-          if (v !== undefined) pos = { ...pos, [axis]: v };
+          if (v === undefined) continue;
+          // Says the nozzle is at v without moving it: the shift grows by how far that is from what it was.
+          shift[axis] += v - pos[axis];
+          pos = { ...pos, [axis]: v };
         }
         if (words.has("E")) e = words.get("E")!;
         break;
@@ -350,7 +372,11 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
         out.homes.push(n);
         const named = ["X", "Y", "Z"].filter((a) => words.has(a) || flags.has(a));
         const axes = named.length === 0 ? ["X", "Y", "Z"] : named;
-        for (const a of axes) pos = { ...pos, [a.toLowerCase()]: 0 };
+        for (const a of axes) {
+          const axis = a.toLowerCase() as "x" | "y" | "z";
+          pos = { ...pos, [axis]: 0 };
+          shift[axis] = 0;
+        }
         break;
       }
       case "G10":
@@ -369,18 +395,42 @@ export function replay(text: string, options: ReplayOptions = {}): Replay {
       case "M140":
       case "M190": {
         const s = words.get("S") ?? words.get("R");
-        if (s === undefined || s < 0 || s > 500) {
-          out.problems.push({ line: n, kind: "bad-temperature", text: `${command} without a sensible S (0–500 °C)` });
-          break;
-        }
-        out.temperatures.push({ line: n, heater: command === "M104" || command === "M109" ? "nozzle" : "bed", celsius: s, wait: command === "M109" || command === "M190" });
+        if (s === undefined || s < 0 || s > 500) out.problems.push({ line: n, kind: "bad-temperature", text: `${command} without a sensible S (0–500 °C)` });
+        // Still recorded, so the printer's own limits are checked against it too.
+        if (s !== undefined) out.temperatures.push({ line: n, heater: command === "M104" || command === "M109" ? "nozzle" : "bed", celsius: s, wait: command === "M109" || command === "M190" });
         break;
       }
-      default:
-        if (/^G\d/.test(command)) out.problems.push({ line: n, kind: "unknown-motion", text: `${command} is not followed and might move the nozzle` });
+      default: {
+        const setting = machineSetting(command, words);
+        if (setting) out.problems.push({ line: n, kind: "machine-setting", text: `${command}: ${setting}` });
+        else if (/^G\d/.test(command)) out.problems.push({ line: n, kind: "unknown-motion", text: `${command} is not followed and might move the nozzle` });
         else out.ignored[command] = (out.ignored[command] ?? 0) + 1;
+      }
     }
   }
-  out.end = { ...pos, e };
+  out.end = { ...real(pos), e };
   return out;
+}
+
+/** Why a command changes what the moves do without moving (so the replay would be wrong), or null when it doesn't. */
+function machineSetting(command: string, words: Map<string, number>): string | null {
+  const s = words.get("S");
+  switch (command) {
+    case "M221":
+      return s !== undefined && s !== 100 ? `flow set to ${s} %, so every extrusion lays down that share of what it says` : null;
+    case "M220":
+      return s !== undefined && s !== 100 ? `speed set to ${s} %, so every move's time changes` : null;
+    case "M92":
+      return ["X", "Y", "Z", "E"].some((a) => words.has(a)) ? "steps per mm changed, so moves are no longer the lengths they say" : null;
+    case "M200": {
+      const d = words.get("D");
+      return d !== undefined && d !== 0 ? `volumetric extrusion (D${d}), so E is mm³, not mm of filament` : null;
+    }
+    case "M211":
+      return s === 0 ? "soft end stops off, so the printer no longer stops a move past its limits" : null;
+    case "M302":
+      return words.has("P") || words.has("S") ? "cold extrusion allowed" : null;
+  }
+  if (/^T\d+$/.test(command) && command !== "T0") return "another tool, whose offsets and filament the replay doesn't know";
+  return null;
 }

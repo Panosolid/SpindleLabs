@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { replay, STILL } from "../src/gcode.ts";
-import { checkLayers, checkPrinter, checkTravel, checkVolume, crosses, extremes, layersOf, MAX_LAYER, MIN_LAYER, type Printer } from "../src/gcode-checks.ts";
+import { checkLayers, checkPrinter, checkProblems, checkTravel, checkVolume, crosses, extremes, layersOf, MAX_LAYER, MIN_LAYER, type Printer } from "../src/gcode-checks.ts";
 
 const A = Math.PI * 0.875 ** 2; // 1.75 mm filament's cross-section, mm²
 const fmt = (v: number) => v.toFixed(9).replace(/\.?0+$/, "");
@@ -243,4 +243,18 @@ test("walls: a wall missing a side is open; closing within closeWithin at 0.9× 
   assert.deepEqual(checkLayers(replay(box({ outerShort: 1.1 * 0.05 })), 0.05).map((p) => p.check), ["open-wall"]);
   // Infill lines are never walls, so they are never asked to close.
   assert.deepEqual(checkLayers(replay(box()), 0), []);
+});
+
+// Weak-spot hunt E (2026-10-29): files the replayer already found wrong passed every check.
+
+test("checkProblems: every problem the replay found fails the file, by its line", () => {
+  const r = replay(["G21", "G20", "G1 X10 F600", "M221 S300"].join("\n"));
+  assert.deepEqual(checkProblems(r).map((p) => [p.check, p.line]), [["replay", 2], ["replay", 4]]);
+  assert.deepEqual(checkProblems(replay(["G21", "G90", "G1 X10 F600"].join("\n"))), []);
+});
+
+test("checkPrinter: a 600 °C nozzle, an R arc's end off the bed and a G92-shifted move off the bed are caught", () => {
+  assert.deepEqual(checkPrinter(replay("M104 S600"), P1S).map((p) => p.check), ["temperature"]);
+  assert.deepEqual(checkPrinter(replay(["G28", "G1 X10 Y10 F1000", "G2 X500 Y500 R10"].join("\n")), P1S).map((p) => [p.check, p.line]), [["bed", 3]]);
+  assert.deepEqual(checkPrinter(replay(["G28", "G92 X220", "G1 X200 Y10 F1000"].join("\n")), P1S).map((p) => [p.check, p.line]), [["bed", 3]]);
 });
