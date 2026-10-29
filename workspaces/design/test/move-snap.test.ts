@@ -1,7 +1,8 @@
 // Move's snap (step 35e2d, move-snap.ts), worked by hand: a box stacked on
 // another, a box laid top to top (half a turn about X), side to side (half
 // a turn about Y), an edge laid along an upright edge (−90° about Y), a
-// cylinder's rim on another's, the refusals, the turn kept from the boxes,
+// cylinder's rim on another's, a round side laid along a lying one and an
+// arc's side found by its arcs (35e2k), a sphere on a sphere, the refusals, the turn kept from the boxes,
 // the parallel limit at 0.9× and 1.1×, and an edited Move's ends taken back
 // through the Moves after it. Seeded: 2,000 random snaps land exactly and
 // turn least; 2,000 random turns read back as angles. The same snaps on
@@ -107,8 +108,89 @@ test("by hand: a ⌀10 cylinder's bottom rim on a ⌀20 cylinder's top rim, cent
   assert.deepEqual(shiftOf(m), [0, 0, 20]);
 });
 
-test("refused: a curved face, a round edge with no flat face beside it, and a face onto an edge", () => {
-  assert.deepEqual(snapPart(cylinder(5, 10), "face", 2), { refused: SNAP_CURVED_FACE });
+/** A sphere of radius r centred (cx, cy, cz): the kernel's two halves, upper and lower, joined at the equator, a closed circle. */
+function sphere(r: number, cx: number, cy: number, cz: number): BodyView {
+  return {
+    ...cylinderView(r, 0),
+    faces: 2,
+    edges: 1,
+    vertices: 1,
+    face_types: ["sphere", "sphere"],
+    edge_types: ["circle"],
+    face_roles: [{ role: "upper" }, { role: "lower" }],
+    edge_faces: [[0, 1]],
+    edge_centres: [[cx, cy, cz]],
+    edge_vertices: [[0, 0]],
+    vertex_points: [[cx + r, cy, cz]],
+    face_centroids: [[cx, cy, cz + r / 2], [cx, cy, cz - r / 2]],
+    face_normals: [null, null],
+  };
+}
+
+test("by hand: a ⌀10 cylinder's side laid along a lying ⌀20 cylinder's side: 90° about Y, middle on middle", () => {
+  // The upright cylinder's side (face 2) has its rims centred (0, 0, 0) and (0, 0, 10): its axis runs +Z, middle
+  // (0, 0, 5). The lying one's rims are centred (30, 0, 10) and (50, 0, 10): axis +X, middle (40, 0, 10). +Z to +X is
+  // 90° about Z × X = +Y. Turning about the pivot (0, 0, 5), the middle is the pivot and stays; shift (40, 0, 5).
+  const lying = { ...cylinder(10, 20), edge_centres: [[30, 0, 10], [50, 0, 10]] } as BodyView;
+  const from = part(snapPart(cylinder(5, 10), "face", 2));
+  assert.deepEqual(from, { kind: "axis", point: [0, 0, 5], direction: [0, 0, 1] });
+  const m = values(snappedValues(v({ pivotZ: 5 }), from, part(snapPart(lying, "face", 2))));
+  assert.deepEqual(turnsOf(m), [0, 90, 0]);
+  assert.deepEqual(shiftOf(m), [40, 0, 5]);
+  // A slanted one, rims centred (30, 0, 10) and (40, 0, 20): axis (1, 0, 1)/√2, 45° about Y from +Z. Given the other
+  // way round (rims listed top first) it is the same line, so still 45° about Y, not the 135° to (−1, 0, −1)/√2.
+  for (const centres of [[[30, 0, 10], [40, 0, 20]], [[40, 0, 20], [30, 0, 10]]]) {
+    const slanted = { ...lying, edge_centres: centres } as BodyView;
+    const turns = turnsOf(values(snappedValues(v({ pivotZ: 5 }), from, part(snapPart(slanted, "face", 2)))));
+    close(turns, [0, 45, 0], `slanted ${JSON.stringify(centres)}`);
+  }
+});
+
+test("by hand: an arc's side (an extruded slot's end) found by its arcs, the farthest two, not its centroid", () => {
+  // Face 1 is the round end of a slot extruded 7 mm up from z = 0, the arc centred (3, 4): its edges are the bottom arc
+  // (centre (3, 4, 0)), the top arc (centre (3, 4, 7)), two straight edges, and a round edge of another face (centre
+  // (9, 9, 9)) that is not its own. A third arc of its own halfway up (centre (3, 4, 2), as a cut might leave) is
+  // nearer: the farthest pair is the bottom and top, so the axis runs +Z through (3, 4, 3.5), halfway up.
+  const slot = {
+    ...cylinder(5, 7),
+    face_types: ["plane", "cylinder", "plane"],
+    edge_types: ["circle", "line", "circle", "line", "circle", "circle"],
+    edge_faces: [[1, 0], [1, 0], [2, 1], [1, 2], [0, 2], [1, 0]],
+    edge_centres: [[3, 4, 0], null, [3, 4, 7], null, [9, 9, 9], [3, 4, 2]],
+  } as BodyView;
+  assert.deepEqual(part(snapPart(slot, "face", 1)), { kind: "axis", point: [3, 4, 3.5], direction: [0, 0, 1] });
+});
+
+test("by hand: a ⌀10 sphere onto a sphere centred (20, 30, 40), centre on centre, the 30° about Z kept", () => {
+  // The equator of the sphere centred (0, 0, 5) is centred (0, 0, 5), its centre. A sphere has no direction, so the
+  // turn the boxes hold, 30° about Z, stays; turning about the pivot (0, 0, 5) leaves the centre where it is, and the
+  // shift is (20, 30, 40) − (0, 0, 5) = (20, 30, 35). Either half of a sphere picks it by the same centre.
+  const from = part(snapPart(sphere(5, 0, 0, 5), "face", 1));
+  assert.deepEqual(from, { kind: "centre", point: [0, 0, 5] });
+  assert.deepEqual(part(snapPart(sphere(5, 0, 0, 5), "face", 0)), from);
+  const m = values(snappedValues(v({ pivotZ: 5, turnZ: 30, x: 3 }), from, part(snapPart(sphere(8, 20, 30, 40), "face", 0))));
+  assert.deepEqual(turnsOf(m), [0, 0, 30]);
+  assert.deepEqual(shiftOf(m), [20, 30, 35]);
+});
+
+test("refused: curved faces with nothing to snap by, and each kind onto another", () => {
+  // A round side with one round edge (no second centre to find the axis by), with both at one centre, a sphere whose
+  // only round edge meets a flat cut (a smaller circle, not centred on the sphere's centre), and a kind of face the
+  // kernel does not make yet.
+  assert.deepEqual(snapPart({ ...cylinder(5, 10), edge_types: ["circle", "line"] } as BodyView, "face", 2), { refused: SNAP_CURVED_FACE });
+  assert.deepEqual(snapPart({ ...cylinder(5, 10), edge_centres: [[0, 0, 4], [0, 0, 4]] } as BodyView, "face", 2), { refused: SNAP_CURVED_FACE });
+  const cut = { ...sphere(5, 0, 0, 0), face_types: ["sphere", "plane"], face_normals: [null, [0, 0, -1]] } as BodyView;
+  assert.deepEqual(snapPart(cut, "face", 0), { refused: SNAP_CURVED_FACE });
+  assert.deepEqual(snapPart({ ...cylinder(5, 10), face_types: ["plane", "plane", "torus"] } as BodyView, "face", 2), { refused: SNAP_CURVED_FACE });
+  const side = part(snapPart(cylinder(5, 10), "face", 2));
+  const ball = part(snapPart(sphere(5, 0, 0, 5), "face", 0));
+  assert.deepEqual(snappedValues(v({}), side, part(snapPart(small, "edge", 0))), { refused: "A round side lands only on a round side: pick one on another body." });
+  assert.deepEqual(snappedValues(v({}), part(snapPart(small, "edge", 0)), side), { refused: "A straight edge lands only on a straight edge: pick one on another body." });
+  assert.deepEqual(snappedValues(v({}), ball, part(snapPart(big, "face", 1))), { refused: "A sphere lands only on a sphere: pick one on another body." });
+  assert.deepEqual(snappedValues(v({}), part(snapPart(big, "face", 1)), ball), { refused: "A flat face lands only on a flat face: pick one on another body." });
+});
+
+test("refused: a round edge with no flat face beside it, and a face onto an edge", () => {
   const sphereRim = { ...cylinder(5, 10), face_normals: [null, null, null] };
   assert.deepEqual(snapPart(sphereRim, "edge", 0), { refused: SNAP_NO_FLAT });
   const face = part(snapPart(small, "face", 0));
@@ -179,23 +261,29 @@ test("seeded: 2,000 rotations read back as Move angles give the same rotation, e
 
 test("seeded: 2,000 random snaps land the point on the point, the direction against (or along) the other, by the least turn", () => {
   const rand = seeded(353);
-  const kinds = ["face", "line", "circle"] as const;
+  const kinds = ["face", "line", "circle", "axis", "centre"] as const;
   for (let n = 0; n < 2000; n++) {
-    const kind = kinds[n % 3];
+    const kind = kinds[n % 5];
     const make = (): SnapPart => {
       const point: [number, number, number] = [(rand() - 0.5) * 2000, (rand() - 0.5) * 2000, (rand() - 0.5) * 2000];
-      return kind === "line" ? { kind, point, direction: axisOr(rand) } : { kind, point, normal: axisOr(rand) };
+      if (kind === "centre") return { kind, point };
+      return kind === "line" || kind === "axis" ? { kind, point, direction: axisOr(rand) } : { kind, point, normal: axisOr(rand) };
     };
     const start = v({ x: (rand() - 0.5) * 100, turnX: rand() < 0.5 ? 0 : (rand() - 0.5) * 360, turnY: rand() < 0.5 ? 0 : (rand() - 0.5) * 360, turnZ: (rand() - 0.5) * 360, pivotX: (rand() - 0.5) * 1000, pivotY: rand() * 100, pivotZ: rand() * 100 });
     const [from, to] = [make(), make()];
     const m = values(snappedValues(start, from, to));
     // The point lands within a picometre per metre (1e-9 mm rounding plus 1e-12° on points up to ~3 m from the pivot).
     close(movedPoint(from.point, m), to.point, `point ${n}`, 1e-8);
-    const dir = (p: SnapPart) => (p.kind === "line" ? p.direction : p.normal);
-    const got = movedPoint(dir(from), m, true);
-    const was = movedPoint(dir(from), start, true);
-    const t = dir(to);
-    const want = kind === "line" ? (was[0] * t[0] + was[1] * t[1] + was[2] * t[2] < 0 ? t.map((x) => -x) : t) : t.map((x) => -x);
+    // A sphere is not turned: the boxes' angles stay exactly.
+    if (from.kind === "centre") {
+      assert.deepEqual(turnsOf(m), turnsOf(start), `sphere ${n} kept its turn`);
+      continue;
+    }
+    const dir = (p: Exclude<SnapPart, { kind: "centre" }>) => (p.kind === "line" || p.kind === "axis" ? p.direction : p.normal);
+    const got = movedPoint(dir(from as Exclude<SnapPart, { kind: "centre" }>), m, true);
+    const was = movedPoint(dir(from as Exclude<SnapPart, { kind: "centre" }>), start, true);
+    const t = dir(to as Exclude<SnapPart, { kind: "centre" }>);
+    const want = kind === "line" || kind === "axis" ? (was[0] * t[0] + was[1] * t[1] + was[2] * t[2] < 0 ? t.map((x) => -x) : t) : t.map((x) => -x);
     close(got, want, `direction ${n}`, 1e-11);
     // The least turn: the turn added (now · startᵀ) is by the angle between where the direction was and where it went.
     const added = turnMatrix(m).map((row) => [0, 1, 2].map((j) => row.reduce((s, x, k) => s + x * turnMatrix(start)[j][k], 0)));

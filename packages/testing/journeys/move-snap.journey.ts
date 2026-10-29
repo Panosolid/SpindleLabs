@@ -2,7 +2,10 @@
 // 10 mm cube's bottom snapped onto a 40 × 30 × 20 box's top lands centred
 // on it (worked by hand), top onto top turns it over, Escape stops only
 // the snap, the wrong body says why; an edited Move snapped through a later
-// Move of the same body. Then seeded: random boxes and cylinders, random
+// Move of the same body. Round sides and spheres (35e2k): a slot's round
+// end laid along a cylinder lying on its side, a ball dropped centre on
+// centre into a big one, a sphere onto a flat face refused in words. Then
+// seeded: random boxes, cylinders, slots and spheres, random
 // turns already in the boxes, random faces and edges snapped, each Move
 // built by the kernel and the snapped face or edge found where it landed
 // (FISSION_SEED to replay). Run with `npm run journeys` after the app build.
@@ -186,18 +189,80 @@ test("a snap onto a tilted face keeps its angles' every digit: the faces lie fla
   near(built.face_centroids[faceWith(built, "bottom")], target.face_centroids[faceWith(target, "top")], "centre on centre");
 });
 
+test("35e2k by hand in the app: a slot's round end laid along a cylinder lying on its side, axis on axis, middle on middle", async () => {
+  const { app } = await import("./design-app.ts");
+  // The ⌀20 × 20 cylinder stands on the origin, then is turned 90° about Y through the origin, (x, y, z) → (z, y, −x),
+  // so its rims' centres (0, 0, 0) and (0, 0, 20) go to (0, 0, 0) and (20, 0, 0), and lifted 30: its axis runs along
+  // X from (0, 0, 30) to (20, 0, 30), middle (10, 0, 30). The 30 × 10 × 5 slot's right end is round about (25, 5),
+  // 5 high: axis +Z, middle (25, 5, 2.5) as made. Snapped, the end's axis must run along X through (10, 0, 30).
+  let doc = insertMove(partDocument("cylinder", 20, 20, 20), ["feature-1"], v({ turnY: 90, z: 30 })).doc;
+  const placed = insertPreset(doc, "slot", 30, 10, 5);
+  doc = placed.doc;
+  const scene = await sceneOf(doc);
+  const big = scene.bodies.findIndex((s) => s.feature === "feature-1");
+  const slot = scene.bodies.findIndex((s) => s.feature === placed.id);
+  const end = scene.bodies[slot].view.face_roles.findIndex((r) => r?.role === "side" && r.piece === 1);
+  assert.equal(scene.bodies[slot].view.face_types[end], "cylinder", "the slot's piece 1 is its round end");
+  const a = await app(doc);
+  a.selection.set([bodyReference(placed.id)]);
+  await a.key("move-tool");
+  (a.$("#move-snap") as HTMLButtonElement).click();
+  await a.pick({ face: scene.faceStart[slot] + end });
+  assert.match(a.$("#move-hint")!.textContent!, /where it lands/, "a round side is taken, not refused");
+  await a.pick({ face: scene.faceStart[big] + faceWith(scene.bodies[big].view, "side") });
+  assert.equal(a.$("#move-error")!.hidden, true);
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  await a.settle();
+  const built = (await views(a.doc())).get(placed.id)!;
+  const axis = snapPart(built, "face", end);
+  assert.ok("part" in axis && axis.part.kind === "axis", JSON.stringify(axis));
+  near(axis.part.point, [10, 0, 30], "the end's middle on the cylinder's");
+  near(axis.part.direction.map(Math.abs), [1, 0, 0], "the end's axis along X", 1e-12);
+  assert.ok(Math.abs(built.volume - scene.bodies[slot].view.volume) < 1e-6, "the slot kept its volume");
+});
+
+test("35e2k by hand in the app: a ⌀10 ball dropped centre on centre into a ⌀40 one; a ball onto a flat face is refused in words", async () => {
+  const { app } = await import("./design-app.ts");
+  // The ⌀40 sphere sits on the floor, centre (0, 0, 20), moved 50 along X: centre (50, 0, 20). The ⌀10 ball, centred
+  // on its equator's centre wherever it was placed, lands there: from (45, −5, 15) to (55, 5, 25), not turned.
+  let doc = insertMove(partDocument("sphere", 40, 40, 40), ["feature-1"], v({ x: 50 })).doc;
+  const placed = insertPreset(doc, "sphere", 10, 10, 10);
+  doc = insertPreset(placed.doc, "box", 10, 10, 10).doc;
+  const scene = await sceneOf(doc);
+  const [big, ball, box] = ["feature-1", placed.id, doc.timeline.features.at(-1)!.id].map((id) => scene.bodies.findIndex((s) => s.feature === id));
+  const a = await app(doc);
+  a.selection.set([bodyReference(placed.id)]);
+  await a.key("move-tool");
+  (a.$("#move-snap") as HTMLButtonElement).click();
+  await a.pick({ face: scene.faceStart[ball] + 1 });
+  await a.pick({ face: scene.faceStart[box] + faceWith(scene.bodies[box].view, "top") });
+  assert.equal(a.$("#move-error")!.textContent, "A sphere lands only on a sphere: pick one on another body.");
+  await a.pick({ face: scene.faceStart[big] });
+  assert.equal(a.$("#move-error")!.hidden, true);
+  near(["turnX", "turnY", "turnZ"].map((k) => Number((a.$(`#move-${k}`) as HTMLInputElement).value)), [0, 0, 0], "not turned", 0);
+  (a.$("#move-ok") as HTMLButtonElement).click();
+  await a.settle();
+  near((await views(a.doc())).get(placed.id)!.bounds.flat(), [45, -5, 15, 55, 5, 25], "the ball at the big one's centre");
+});
+
 test("seeded: random faces and edges of random bodies snapped, the Move built by the kernel, land where the target is (FISSION_SEED)", async () => {
   const seed = BigInt(process.env.FISSION_SEED ?? "352");
   const r = seeded(seed);
   const pick = (n: number) => Math.floor(r.next() * n);
-  const reached = { face: 0, line: 0, circle: 0, turned: 0 };
-  for (let n = 0; n < 60; n++) {
-    // The target, then the body moved, each a box or cylinder of random size; the moved one already turned at random.
-    // Straight edges are on boxes only and round edges on cylinders only, so the kind of part is chosen first.
-    const kind = (["face", "line", "circle"] as const)[n % 3];
-    const shape = () => (kind === "line" ? "box" : kind === "circle" ? "cylinder" : pick(2) === 0 ? "box" : "cylinder");
+  const reached = { face: 0, line: 0, circle: 0, axis: 0, centre: 0, turned: 0 };
+  for (let n = 0; n < 100; n++) {
+    // The target, then the body moved, each of random size; the moved one already turned at random. The kind of part
+    // is chosen first, then shapes that have one: straight edges on boxes, round edges on cylinders, round sides on
+    // cylinders and slots (35e2k), spheres' centres on spheres.
+    const kind = (["face", "line", "circle", "axis", "centre"] as const)[n % 5];
+    const two = <A, B>(x: A, y: B) => (pick(2) === 0 ? x : y);
+    const shape = () => (kind === "line" ? "box" : kind === "circle" ? "cylinder" : kind === "axis" ? two("cylinder" as const, "slot" as const) : kind === "centre" ? "sphere" : two("box" as const, "cylinder" as const));
     const kinds = [shape(), shape()] as const;
-    const size = () => [1 + pick(60), 1 + pick(60), 1 + pick(60)] as const;
+    // A slot's length is at least its width (its round ends' diameter) and more.
+    const size = () => {
+      const [w, d, h] = [1 + pick(60), 1 + pick(60), 1 + pick(60)];
+      return [Math.max(w, d + 1), d, h] as const;
+    };
     let doc = partDocument(kinds[0], ...size());
     const placed = insertPreset(doc, kinds[1], ...size());
     doc = insertMove(placed.doc, ["feature-1"], v({ turnX: 15 * (pick(25) - 12), turnZ: 15 * (pick(25) - 12), x: pick(200) - 100, pivotZ: pick(50) })).doc;
@@ -209,7 +274,8 @@ test("seeded: random faces and edges of random bodies snapped, the Move built by
       Array.from({ length: kind === "face" ? view.faces : view.edges }, (_, i) => snapPart(view, kind, i))
         .map((p, index) => ({ p, index }))
         .filter((x): x is { p: { part: SnapPart }; index: number } => "part" in x.p);
-    const of = (view: BodyView) => parts(view, kind === "face" ? "face" : "edge").filter((x) => x.p.part.kind === kind);
+    const faces = kind === "face" || kind === "axis" || kind === "centre";
+    const of = (view: BodyView) => parts(view, faces ? "face" : "edge").filter((x) => x.p.part.kind === kind);
     const [froms, tos] = [of(body), of(target)];
     if (froms.length === 0 || tos.length === 0) continue;
     const from = froms[pick(froms.length)];
@@ -219,16 +285,17 @@ test("seeded: random faces and edges of random bodies snapped, the Move built by
     const got = snappedValues(start, from.p.part, to.p.part);
     assert.ok("values" in got, JSON.stringify(got));
     const after = (await views(insertMove(doc, [moved], got.values).doc)).get(moved)!;
-    const landed = snapPart(after, kind === "face" ? "face" : "edge", from.index);
+    const landed = snapPart(after, faces ? "face" : "edge", from.index);
     assert.ok("part" in landed);
     const what = `seed ${seed} case ${n} (${kinds.join(" under ")}, ${kind} ${from.index} on ${to.index}; FISSION_SEED=${seed} to replay)`;
     near(landed.part.point, to.p.part.point, `${what}: point`);
-    const dir = (p: SnapPart) => (p.kind === "line" ? p.direction : p.normal);
+    reached[kind]++;
+    if (landed.part.kind === "centre") continue; // a sphere has no direction (its turn kept: move-snap.test.ts)
+    const dir = (p: SnapPart) => (p.kind === "centre" ? [0, 0, 0] : p.kind === "line" || p.kind === "axis" ? p.direction : p.normal);
     const [d, t] = [dir(landed.part), dir(to.p.part)];
     const along = d[0] * t[0] + d[1] * t[1] + d[2] * t[2];
-    // Faces and round edges face each other; straight edges lie along one line, either way.
-    assert.ok(kind === "line" ? Math.abs(Math.abs(along) - 1) < 1e-9 : Math.abs(along + 1) < 1e-9, `${what}: directions ${JSON.stringify(d)} and ${JSON.stringify(t)}`);
-    reached[kind]++;
+    // Faces and round edges face each other; straight edges and round sides' axes lie along one line, either way.
+    assert.ok(kind === "line" || kind === "axis" ? Math.abs(Math.abs(along) - 1) < 1e-9 : Math.abs(along + 1) < 1e-9, `${what}: directions ${JSON.stringify(d)} and ${JSON.stringify(t)}`);
   }
-  assert.ok(reached.face === 20 && reached.line === 20 && reached.circle === 20 && reached.turned >= 30, JSON.stringify(reached));
+  assert.ok(reached.face === 20 && reached.line === 20 && reached.circle === 20 && reached.axis === 20 && reached.centre === 20 && reached.turned >= 50, JSON.stringify(reached));
 });
