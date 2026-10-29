@@ -15,6 +15,8 @@
 #   IN                        downloaded artifacts: fuzz-<target>/ (log.csv, numbers.jsonl, seed-*/)
 #   RUN_URL, COMMIT, BRANCH   what this run tested, written next to every row
 #   GH_TOKEN                  for `gh` (without it file_issues.py only prints)
+#   JOBS                      the workflow's `toJSON(needs)`: a red job with no
+#                             failure folder files an issue too
 set -uo pipefail
 : "${IN:?}" "${RUN_URL:?}" "${COMMIT:?}" "${BRANCH:?}"
 short=$(echo "$COMMIT" | cut -c1-7)
@@ -80,7 +82,7 @@ done
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat fuzz/summary.txt >>"$GITHUB_STEP_SUMMARY"
 [ $pushed = 1 ] || { echo "Could not push to test-results after 5 attempts."; exit 1; }
 
-if [ "$found" -gt 0 ]; then
-  RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$here/file_issues.py" "$IN" ||
-    echo "Filing issues failed; the results are on test-results all the same."
-fi
+# Every run, not only one with a failure folder: a fuzzer that crashed or
+# ran out of time leaves none, and its red job (JOBS) is filed all the same.
+RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$here/file_issues.py" "$IN" ||
+  echo "Filing issues failed; the results are on test-results all the same."

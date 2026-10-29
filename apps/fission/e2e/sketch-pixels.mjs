@@ -25,7 +25,7 @@ import { preview } from "vite";
 import { browserName, launch } from "./browser.mjs";
 import { compareImages, decodePng, encodePng } from "./png.mjs";
 import { clickPlane, screenPoint, TOP } from "./sketch-screen.mjs";
-import { gridSnapOn, startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4193, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4193/";
@@ -149,7 +149,7 @@ try {
   // a pixel shorter): pin them, so the canvas is 1280 × 678 everywhere (980 × 678 before U0b floated the properties, 760 × 710 before SF3d) and the golden images line up.
   await page.addStyleTag({ content: "#topbar, #toolbar { height: 45px !important; min-height: 0 !important; overflow: hidden; }" });
   await page.click("#create-sketch");
-  await page.click("#sketch-plane-XY");
+  await pickPlane(page, "XY", false);
   await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
   // The drawing is on the grid: grid snap is off by default since SF1, and Firefox's clicks land on whole pixels.
   await gridSnapOn(page);

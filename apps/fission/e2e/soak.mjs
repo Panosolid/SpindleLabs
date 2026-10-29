@@ -20,7 +20,7 @@ import { preview } from "vite";
 import { launch, untilBodies } from "./browser.mjs";
 import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { pinProperties } from "./properties.mjs";
-import { chooseFile, fileItem, gridSnapOn, insertPreset } from "./start.mjs";
+import { chooseFile, fileItem, gridSnapOn, insertPreset, pickPlane } from "./start.mjs";
 import { judgeSoak } from "./soak-judge.mjs";
 
 const CYCLES = Number(process.env.SOAK_CYCLES ?? 40);
@@ -44,7 +44,7 @@ await cdp.send("Performance.enable");
 
 // Snap to grid lives in the sketch panel and lasts for the page: tick it in a sketch, then Undo that sketch.
 await page.click("#create-sketch");
-await page.click("#sketch-plane-XY");
+await pickPlane(page, "XY", false);
 await gridSnapOn(page);
 await page.keyboard.press("ControlOrMeta+z");
 await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching !== "true");
@@ -56,7 +56,7 @@ const saveFile = join(tmpdir(), `soak-${process.pid}.spindlelabs.json`);
 async function cycle(i) {
   // A sketch on the ground, a 40 × 30 rectangle, extruded 10: 12,000 mm³.
   await page.click("#create-sketch");
-  await page.click("#sketch-plane-XY");
+  await pickPlane(page, "XY", false);
   await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
   await page.click("#sketch-tool-rectangle");
   for (const corner of [[0, 0], [40, 30]]) await clickPlane(page, corner, EMPTY_TOP);

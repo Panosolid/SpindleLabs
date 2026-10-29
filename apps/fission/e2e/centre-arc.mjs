@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane, screenPoint } from "./sketch-screen.mjs";
-import { gridSnapOn, startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/";
@@ -52,7 +52,7 @@ async function hover(page, [x, y]) {
 /** Into a sketch on the ground plane with grid snap ticked, so clicks land on the 10 mm grid. */
 async function startSketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
-  await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await gridSnapOn(page);
   await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width
