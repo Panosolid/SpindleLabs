@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -26,6 +26,7 @@ import { startOffline } from "./offline.ts";
 import { watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
+import { appLoaded } from "./loading.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
 import { simulateWorkspace } from "@fission/simulate";
@@ -701,6 +702,7 @@ const shownOnScreen = () => Promise.all((["main", "split"] as const).map((p) => 
 /** Returns the opening's ticket: `openings` moves past it once another opening, or Start fresh, ends its wait. */
 function whileOpening(words: string, opened: () => void) {
   const ticket = ++openings;
+  const loading = holdSkeleton($("viewport"), "view", words); // seen only if it takes over 200 ms (@fission/ui skeleton.ts)
   const offer = setTimeout(() => {
     if (ticket !== openings) return;
     openingNow = words;
@@ -708,6 +710,7 @@ function whileOpening(words: string, opened: () => void) {
     $("opening-fresh").hidden = false;
   }, OFFER_MS);
   void shownOnScreen().then(() => {
+    void loading.done();
     clearTimeout(offer);
     if (ticket !== openings) return;
     endOffer();
@@ -1092,6 +1095,7 @@ async function start() {
 // Save, Open, a drop and a paste wait for this: until the last project is
 // open, ctx.project is the empty one the app starts with.
 const started = start();
+appLoaded(started.then(shownOnScreen), ctx.kernel); // index.html's skeleton goes once the project is shown and the kernel has answered
 ctx.kernel.call("kernel_version").then((v) => {
   $("version").textContent = `kernel v${v}`;
   $("version").parentElement!.title = `SpindleLabs, kernel v${v}`; // where the version shows when the bar has no room for it
