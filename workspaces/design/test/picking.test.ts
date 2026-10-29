@@ -8,7 +8,7 @@ import { BOX_VIEW, onlyBody } from "./views.ts";
 const box = onlyBody(BOX_VIEW, nameBody("feature-1", BOX_VIEW, () => null));
 
 test("a pick on a face names that face of the feature on screen", () => {
-  // The default box's top face is kernel face 1 (primitives.rs lists the
+  // The default box's top face is kernel face 1 (the kernel lists the
   // faces −Z, +Z, −Y, +Y, −X, +X), so a click on it is "face:feature-1/top".
   assert.deepEqual(pickChange({ face: 1, shift: false }, box), { change: "set", item: { kind: "face", id: "face:feature-1/top" } });
   assert.deepEqual(pickChange({ face: 1, shift: true }, box), { change: "toggle", item: { kind: "face", id: "face:feature-1/top" } });
@@ -17,7 +17,7 @@ test("a pick on a face names that face of the feature on screen", () => {
 });
 
 test("a pick on an edge names that edge, and wins over a face", () => {
-  // The default box's top front edge joins corners 4 and 5 (primitives.rs:
+  // The default box's top front edge joins corners 4 and 5 (the kernel's box:
   // the −Z face makes edges 0-3, the +Z face 4-7, and its first is 4→5),
   // where the front and the top meet: "edge:feature-1/front+top".
   assert.deepEqual(pickChange({ face: null, edge: 4, shift: false }, box), { change: "set", item: { kind: "edge", id: "edge:feature-1/front+top" } });

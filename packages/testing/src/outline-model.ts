@@ -1,5 +1,5 @@
 // A simple model of what a sketch's lines and circles make (the kernel's
-// sketch_outline, kernel/src/sketch.rs), written separately from it to
+// sketch_outline), written separately from it to
 // check it: for drawings on a whole-number grid, where two ends join only
 // when their coordinates are equal and every test can be exact (products of
 // whole numbers below 2^53). Used by the mixed-tool journey on the real

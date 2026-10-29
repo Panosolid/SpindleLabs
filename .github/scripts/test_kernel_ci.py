@@ -307,7 +307,8 @@ def jobs(text):
     the runners): each job starts at a two-space-indented key under jobs:."""
     body = text[text.index("\njobs:\n"):]
     found = {}
-    for part in re.split(r"(?m)^(?=  [a-z][a-z0-9-]*:\n)", body)[1:]:
+    # Any key GitHub takes as a job id: letters, digits, "_" and "-", any case (my_job, Build).
+    for part in re.split(r"(?m)^(?=  [A-Za-z_][A-Za-z0-9_-]*:\n)", body)[1:]:
         found[part.split(":", 1)[0].strip()] = part
     return found
 
@@ -317,21 +318,45 @@ class SecretsOnlyOnMain(unittest.TestCase):
     the environment holding them, which only main may use: as plain
     repository secrets, any branch's workflow could read them (and the key
     clones the private kernel). No such job runs npm, so no npm package's
-    install or test code ever runs beside the key."""
+    install or test code ever runs beside the key (nor npx, yarn, pnpm or
+    a node script). A secret this check doesn't know, one named at the
+    workflow's top level (every job would get it), and `secrets: inherit`
+    are refused too, so a new key can't slip past it (weak-spot hunt 10-29).
+    It reads the workflows only: a script a job runs (the kernel's
+    ci/checks.sh runs npm ci for its dump-viewer check) is out of its sight,
+    which is why the keys are step-scoped and the environments main-only."""
 
     WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
     NEEDS = {"KERNEL_READ": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
+    # Secrets that are no key: GitHub's own per-run token.
+    PLAIN = {"GITHUB_TOKEN"}
+    SECRET = re.compile(r"""secrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([^'"]+)['"]\s*\])""")
+
+    @classmethod
+    def secrets(cls, text):
+        return {a or b for a, b in cls.SECRET.findall(text)}
 
     def problems(self, name, text):
         out = []
+        top = text[: text.index("\njobs:\n")]
+        if self.secrets(top):
+            out.append(f"{name}: secrets named for the whole workflow ({', '.join(sorted(self.secrets(top)))})")
         for job, lines in jobs(text).items():
-            used = {env for secret, env in self.NEEDS.items() if f"secrets.{secret}" in lines}
+            # Comments say nothing: "# environment: kernel" is no environment.
+            code = "\n".join(line for line in lines.split("\n") if not line.lstrip().startswith("#"))
+            if re.search(r"(?m)^\s*secrets:\s*inherit\b", code):
+                out.append(f"{name} {job}: passes every secret on (secrets: inherit)")
+            named = self.secrets(code)
+            for unknown in sorted(named - set(self.NEEDS) - self.PLAIN):
+                out.append(f"{name} {job}: uses {unknown}, which this check doesn't know")
+            used = {env for secret, env in self.NEEDS.items() if secret in named}
             if not used:
                 continue
-            m = re.search(r"(?m)^    environment: (\S+)$", lines)
+            m = re.search(r"(?m)^    environment: (\S+)$", code) or re.search(r"(?m)^    environment:\n      name: (\S+)$", code)
             if len(used) > 1 or not m or m.group(1) not in used:
                 out.append(f"{name} {job}: needs environment {'/'.join(sorted(used))}")
-            if re.search(r"\bnpm (ci|install|run|exec)\b", lines):
+            # A command, not a name: setup-node and node-version are no node run.
+            if re.search(r"(?<![\w-])(npm (ci|install|run|exec)|npx|yarn|pnpm|node)(?![\w-])", code):
                 out.append(f"{name} {job}: runs npm beside a key")
         return out
 
@@ -351,6 +376,21 @@ class SecretsOnlyOnMain(unittest.TestCase):
         self.assertEqual(self.problems("w", wf(ok.replace("    environment: kernel\n", ""))), ["w a: needs environment kernel"])
         self.assertEqual(self.problems("w", wf(ok.replace("kernel", "merge"))), ["w a: needs environment kernel"])
         self.assertEqual(self.problems("w", wf(ok + "      - run: npm ci\n")), ["w a: runs npm beside a key"])
+        # Weak-spot hunt 10-29: each form the check used to miss, caught.
+        key = "    steps:\n      - env:\n          K: ${{ secrets.KERNEL_READ }}\n"
+        self.assertEqual(self.problems("w", "on: push\njobs:\n  my_job:\n    runs-on: x\n" + key), ["w my_job: needs environment kernel"])
+        self.assertEqual(self.problems("w", "on: push\njobs:\n  Build:\n    runs-on: x\n" + key), ["w Build: needs environment kernel"])
+        self.assertEqual(self.problems("w", wf(key.replace("secrets.KERNEL_READ", "secrets['KERNEL_READ']"))), ["w a: needs environment kernel"])
+        self.assertEqual(self.problems("w", wf(key.replace("secrets.KERNEL_READ", 'secrets["MERGE_QUEUE_TOKEN"]'))), ["w a: needs environment merge"])
+        self.assertEqual(self.problems("w", "on: push\nenv:\n  K: ${{ secrets.KERNEL_READ }}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: echo\n"),
+                         ["w: secrets named for the whole workflow (KERNEL_READ)"])
+        self.assertEqual(self.problems("w", "on: push\njobs:\n  a:\n    uses: ./.github/workflows/x.yml\n    secrets: inherit\n"), ["w a: passes every secret on (secrets: inherit)"])
+        for runner in ("npx something", "pnpm install", "yarn", "node scripts/x.js"):
+            self.assertEqual(self.problems("w", wf(ok + f"      - run: {runner}\n")), ["w a: runs npm beside a key"], runner)
+        self.assertEqual(self.problems("w", wf("    # environment: kernel\n" + key)), ["w a: needs environment kernel"], "a comment is no environment")
+        self.assertEqual(self.problems("w", wf("    environment:\n      name: kernel\n" + key)), [], "the mapping form names it too")
+        self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "SOME_NEW_KEY"))), ["w a: uses SOME_NEW_KEY, which this check doesn't know"])
+        self.assertEqual(self.problems("w", wf(key.replace("KERNEL_READ", "GITHUB_TOKEN"))), [])
 
 
 if __name__ == "__main__":
