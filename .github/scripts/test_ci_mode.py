@@ -316,6 +316,23 @@ class Workflows(unittest.TestCase):
         self.assertIn("DRAFTED: ${{ github.event.action == 'converted_to_draft' }}", ci["e2e"])
         self.assertNotIn("push:", text.split("\njobs:\n")[0])
 
+    def test_random_testing_and_fuzzing_wait_for_idle_ci(self):
+        # Every job of these workflows starts after `idle` (directly or through
+        # a job that needs it), which waits for no CI job queued and no merge
+        # queue run (branch_testing.py wait-idle); the kernel's coverage
+        # report runs only for main's runs.
+        for name in ("nightly.yml", "kernel-nightly.yml", "fuzz.yml", "kernel-fuzz.yml"):
+            found = jobs(os.path.join(WORKFLOWS, name))
+            self.assertRegex(found["idle"], r"run: python3 \.github/scripts/branch_testing\.py wait-idle \S+", name)
+            self.assertNotIn("needs:", found["idle"], name)
+            for job, block in found.items():
+                if job != "idle":
+                    with self.subTest(workflow=name, job=job):
+                        self.assertRegex(block, r"(?m)^    needs: ")
+        kernel = jobs(os.path.join(WORKFLOWS, "kernel-ci.yml"))
+        self.assertIn("    if: inputs.label == 'main'\n", kernel["coverage"])
+        self.assertIn("run-name: Kernel CI ${{ inputs.label }}\n", open(os.path.join(WORKFLOWS, "kernel-ci.yml")).read())
+
 
 if __name__ == "__main__":
     unittest.main()

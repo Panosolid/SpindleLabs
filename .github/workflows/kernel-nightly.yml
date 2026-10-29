@@ -64,7 +64,27 @@ env:
   REF: ${{ github.event_name == 'schedule' && 'main' || inputs.ref }}
 
 jobs:
+  # Starts the testing only once CI is idle (Ben, 2026-10-29): no CI job
+  # waiting for a runner and no merge queue run (branch_testing.py
+  # wait-idle), or after an hour (tonight's run; a branch's: two) however busy, so a night is never lost.
+  # It holds one runner while it waits instead of all of them.
+  idle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/branch_testing.py wait-idle ${{ github.event_name == 'schedule' && 3600 || 7200 }}
+
   plan:
+    needs: idle
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -158,7 +178,9 @@ jobs:
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; then
+          # A branch's run, and tonight's jobs past the first two (the night
+          # always keeps two), give their runners to CI (stop-on-merge.sh).
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi
@@ -213,7 +235,9 @@ jobs:
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; then
+          # A branch's run, and tonight's jobs past the first two (the night
+          # always keeps two), give their runners to CI (stop-on-merge.sh).
+          if { [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$REF" != main ]; } || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "${{ matrix.job }}" -ge 2 ]; }; then
             .github/scripts/stop-on-merge.sh "$REF" "$FISSION_ENDLESS_STOP_FILE" >"$RUNNER_TEMP/watcher.log" 2>&1 &
             watcher=$!
           fi

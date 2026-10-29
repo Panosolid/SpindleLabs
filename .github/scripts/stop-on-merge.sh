@@ -19,6 +19,10 @@
 # main holds every commit of it (GitHub's compare says identical or behind) or
 # it was deleted; the kernel repository has no pull requests this key can read.
 #
+# On main (kernel-nightly.yml's scheduled run, every job past the first two)
+# only the starved-CI rule applies: the night gives runners back to CI and
+# always keeps two jobs testing.
+#
 # Usage: stop-on-merge.sh <branch> <stop file>
 # Asks every STOP_POLL_SECONDS (default 180); needs GH_TOKEN and GITHUB_REPOSITORY.
 set -u
@@ -26,7 +30,11 @@ branch=$1 stop_file=$2
 here=$(cd "$(dirname "$0")" && pwd)
 started=$(date +%s)
 while sleep "${STOP_POLL_SECONDS:-180}"; do
-  if [ -n "${KERNEL_REPO:-}" ]; then
+  if [ "$branch" = main ]; then
+    # Tonight's run on main (kernel-nightly.yml): nothing to merge, so only
+    # branch_testing.py's starved-CI rule can stop it.
+    :
+  elif [ -n "${KERNEL_REPO:-}" ]; then
     answer=$(GH_TOKEN="${KERNEL_READ:-}" gh api "repos/$KERNEL_REPO/compare/main...$branch" --jq .status 2>&1)
     case $answer in
     identical | behind | *"HTTP 404"*)

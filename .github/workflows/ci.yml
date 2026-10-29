@@ -267,7 +267,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - run: echo "A draft's run: the phone and browsers checks run once it is marked ready, and auto-merge waits for them."
+      - run: |
+          echo "A draft's run: the phone and browsers checks run once it is marked ready, and auto-merge waits for them."
 
   # A phone's conditions in Safari's engine (owner's decision, 2026-10-28,
   # after the kernel ran out of memory on Ben's iPhone): WebKit at an
