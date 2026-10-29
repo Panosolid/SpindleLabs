@@ -1,0 +1,26 @@
+Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-10-29 03:16 UTC)
+  hours of fuzzing: 27.8
+  timeline rounds 95, inputs 237500, rounds that found something 0, last: none yet
+  sessions rounds 17448, inputs 34896000, rounds that found something 19, last: 1300073639247023807 (commit 0a2363b on main)
+  stack    rounds 615, inputs 15375, rounds that found something 0, last: none yet
+  project  rounds 74110, inputs 148220000, rounds that found something 45, last: 11112622042180314866 (commit e329120 on main)
+fuzz/log.csv has one line per round; fuzz/failures/seed-<seed>/ has each failing round's
+fuzz-report.txt and its shrunk failing inputs.
+
+Simulated users (timeline sessions on the real kernel, Tier 3 item 4; fuzz/numbers.jsonl), updated 2026-10-29 03:16 UTC
+  last run (https://github.com/Panosolid/SpindleLabs/actions/runs/40805982198, commit e329120 on main): 55 sessions in 11 rounds
+    rebuilds right:           100% (0 wrong of 26,471)
+    references right:         100% (0 wrong of 173,077)
+    bodies passing validate:  100% (0 failed or crashed of 1,427,564); 0 inputs refused as the user's
+    rebuilds with a feature failed as the model says (the user's doing, shown in words): 35.2%
+    rebuild from scratch against features built: -21.3 ms + 0.8 ms per feature (fastest at each of 146 counts)
+      by features built: 1-5: 2.8 ms a rebuild, 0.938 per feature (2,268); 6-10: 6.83 ms a rebuild, 0.856 per feature (2,333); 11-20: 11.8 ms a rebuild, 0.77 per feature (3,923); 21-40: 25.5 ms a rebuild, 0.849 per feature (5,874); 41-80: 53.1 ms a rebuild, 0.911 per feature (7,771); 81+: 86.4 ms a rebuild, 0.895 per feature (4,052)
+      per feature, biggest timelines over smallest: 0.95x (above 1, each feature costs more in a bigger timeline)
+  all runs on main so far: 200 sessions in 40 rounds (times as multiples of the calibration workload)
+    rebuilds right:           100% (0 wrong of 96,148)
+    references right:         100% (0 wrong of 644,959)
+    bodies passing validate:  100% (0 failed or crashed of 4,274,636); 0 inputs refused as the user's
+    rebuilds with a feature failed as the model says (the user's doing, shown in words): 9.68%
+    rebuild from scratch against features built: -0.439 x + 0.0148 x per feature (fastest at each of 146 counts)
+      by features built: 1-5: 0.0517 x a rebuild, 0.0174 per feature (8,426); 6-10: 0.123 x a rebuild, 0.0153 per feature (9,175); 11-20: 0.235 x a rebuild, 0.0153 per feature (15,349); 21-40: 0.479 x a rebuild, 0.0161 per feature (22,704); 41-80: 0.933 x a rebuild, 0.016 per feature (28,522); 81+: 1.5 x a rebuild, 0.0159 per feature (10,974)
+      per feature, biggest timelines over smallest: 0.91x (above 1, each feature costs more in a bigger timeline)

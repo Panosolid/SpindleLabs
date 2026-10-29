@@ -1,0 +1,2 @@
+Project loader fuzzing, seed 16360336418099820822, 2000 inputs: 1 kind(s) of failure
+failure: refused with an engine message: Cannot read properties of null (reading '…') | case 0 | shrunk input: input-0.json (440 characters)

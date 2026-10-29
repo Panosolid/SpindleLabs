@@ -1,0 +1,2 @@
+Project loader fuzzing, seed 1696546943206252621, 2000 inputs: 1 kind(s) of failure
+failure: saving lost or changed something the file had | case 639 | shrunk input: input-639.json (1228 characters)
