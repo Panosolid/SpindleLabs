@@ -425,6 +425,9 @@ async function act(s, a) {
       if (rows.length !== view.bodies) return false; // the per-step check reports that
       const blocks = [];
       const wrong = []; // every disagreement, so the message shows the whole pattern
+      // A body hidden by its eye is not drawn, so its row selects nothing (browser.ts rowReferences) and the bodies in view are the rest (issue #42).
+      const hidden = new Set(design.hidden ?? []);
+      const inView = rows.filter((r) => !hidden.has(r.id)).length;
       for (const { row, place, id } of rows) {
         await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`).click(), row);
         await settle(page);
@@ -438,6 +441,11 @@ async function act(s, a) {
         }));
         const f = design.timeline.features.find((x) => x.id === id);
         const name = `Body ${place} (${f.intent.summary})`;
+        if (hidden.has(id)) {
+          if (got.selection !== "") wrong.push(`clicking hidden ${name} selected "${got.selection}"`);
+          blocks.push([]);
+          continue;
+        }
         if (got.selection !== `body:${id}`) wrong.push(`clicking ${name} selected "${got.selection}"`);
         if (got.intent !== f.intent.summary) wrong.push(`with ${name} selected the Feature panel says "${got.intent}"`);
         const faces = /faces ([\d,]*)/.exec(got.highlight)?.[1].split(",").filter(Boolean).map(Number) ?? [];
@@ -448,7 +456,7 @@ async function act(s, a) {
           // The panel rounds to a few figures (fmt in properties.ts); 0.5% is far inside the gap between any two different bodies the monkey makes, and far outside the kernel's 1e-6 relative volume error.
           if (want !== null && !(Math.abs(volume - want) <= 0.005 * want)) wrong.push(`with ${name} selected the Body panel shows ${got.volume}, but that body is ${want.toPrecision(6)} mm³`);
           // With every body selected (one body alone) the app lights none of them on purpose (scene.ts), so the count is checked from two bodies up.
-          if (rows.length > 1 && faces.length !== shownFaces) wrong.push(`with ${name} selected ${faces.length} faces light up, but the Body panel says it has ${shownFaces}`);
+          if (inView > 1 && faces.length !== shownFaces) wrong.push(`with ${name} selected ${faces.length} faces light up, but the Body panel says it has ${shownFaces}`);
         }
         blocks.push(faces);
       }
