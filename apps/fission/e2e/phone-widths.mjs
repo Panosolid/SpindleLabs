@@ -139,6 +139,35 @@ for (const width of [320, 340, 375]) {
 }
 console.log("ok - the guide's Close is on the screen at 320, 340 and 375 px");
 
+// Weak-spot hunt A15 (2026-10-29): on a phone held sideways the guide's chapter dots ran taller than the screen (456 px at
+// 390) and three sat over Close's right edge, so a thumb on Close jumped chapter. Every dot is on the screen, clear of
+// Close and of the Back/Next buttons below.
+for (const [width, height] of [[844, 390], [780, 360]]) { // under 760 px wide the guide shows no dots
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: true });
+  const page = await context.newPage();
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`${url}?guide`);
+  await page.waitForSelector("dialog[open] .guide-rail button");
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => {
+    const box = (e) => e.getBoundingClientRect();
+    const meets = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const dots = [...document.querySelectorAll("dialog[open] .guide-rail button")].map(box);
+    const close = box(document.querySelector("dialog[open] .guide-close"));
+    const nav = [...document.querySelectorAll("dialog[open] .guide-nav button")].map(box);
+    return {
+      dots: dots.length,
+      off: dots.filter((d) => d.top < 0 || d.bottom > innerHeight).length,
+      onClose: dots.filter((d) => meets(d, close)).length,
+      onNav: dots.filter((d) => nav.some((n) => meets(d, n))).length,
+    };
+  });
+  assert.ok(r.dots > 0 && r.off === 0 && r.onClose === 0 && r.onNav === 0, `A15: ${width} × ${height}: the guide's dots ${JSON.stringify(r)}`);
+  if (shots) await page.screenshot({ path: `${shots}/guide-dots-${width}x${height}.png` });
+  await context.close();
+}
+console.log("ok - sideways at 844 × 390 and 780 × 360 every guide dot is on the screen, clear of Close and of Back and Next");
+
 assert.deepEqual(errors, [], "console errors");
 console.log("ok - no errors in the console");
 await browser.close();

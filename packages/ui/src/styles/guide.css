@@ -60,6 +60,12 @@
 .guide .guide-rail { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 9px; }
 .guide .guide-rail button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.7); background: transparent; cursor: pointer; }
 .guide .guide-rail button[aria-current] { background: var(--look-accent); border-color: var(--look-accent); box-shadow: var(--look-glow); transform: scale(1.3); }
+/* A short screen (a phone held sideways): the dots fill the room between Close and Back/Next, smaller and closer, so
+   none runs off the screen or sits on Close (24 dots made a 456 px column at 390 px: weak-spot hunt A15). */
+@media (max-height: 520px) {
+  .guide .guide-rail { top: 62px; bottom: 74px; transform: none; justify-content: space-between; gap: 0; }
+  .guide .guide-rail button { width: 8px; height: 8px; }
+}
 .guide .guide-nav { position: absolute; right: 52px; bottom: 22px; display: flex; gap: 8px; }
 .guide .guide-hint { position: absolute; left: 50%; bottom: 26px; transform: translate(-50%, 8px); max-width: calc(100vw - 32px); margin: 0; padding: 7px 14px; border-radius: var(--look-radius-pill); font-size: 13.5px; line-height: 1.35; text-align: center; background: var(--look-float); border: 1px solid var(--look-edge); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: 0; pointer-events: none; transition: opacity 0.4s ease, transform 0.4s ease; }
 .guide .guide-hint[data-shown] { opacity: 1; transform: translate(-50%, 0); }
