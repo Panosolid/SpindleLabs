@@ -152,3 +152,14 @@ export async function gridSnapOn(page) {
   await page.check("#sketch-grid-snap");
   await closePanels(page);
 }
+
+/**
+ * Picks a sketch plane after Create sketch: on the bar over the view at phone width (phone-float.ts, Ben's iPhone notes
+ * 10-28: the plane prompt no longer opens the Properties sheet), else the sketch panel's button.
+ */
+export async function pickPlane(page, id = "XY", tap) {
+  tap ??= await page.evaluate(() => navigator.maxTouchPoints > 0);
+  await page.waitForSelector(`#float-plane-${id}:visible, #sketch-plane-${id}:visible`);
+  const sel = (await page.isVisible(`#float-plane-${id}`)) ? `#float-plane-${id}` : `#sketch-plane-${id}`;
+  await (tap ? page.tap(sel) : page.click(sel));
+}
