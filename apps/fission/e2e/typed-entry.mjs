@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { TOP, clickPlane, screenPoint } from "./sketch-screen.mjs";
-import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4203, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4203/";
@@ -72,7 +72,7 @@ const undoLabel = (page) => page.getAttribute("#undo", "title");
 async function sketch(page, tap = false) {
   await (tap ? page.tap("#create-sketch") : page.click("#create-sketch"));
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  await (tap ? page.tap("#sketch-plane-XY") : page.click("#sketch-plane-XY"));
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await gridSnapOn(page);
   // A 1 mm grid, so a hover lands on whole millimetres; then nothing focused, as after drawing.

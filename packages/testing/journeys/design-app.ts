@@ -271,6 +271,10 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
       open();
       await settle();
     },
+    /** The project's design replaced by `doc` while Design stays mounted, as another workspace or the assistant would change the shared project: what Design must notice when its own kernel call returns. */
+    changeDesign(doc: DesignDocument) {
+      ctx.project = { ...ctx.project, workspaces: { ...ctx.project.workspaces, design: doc } };
+    },
     /** Another workspace shown, then Design again (X7: asleep, then woken). */
     async away() {
       view.sleep?.();

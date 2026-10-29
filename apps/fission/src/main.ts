@@ -20,9 +20,11 @@ import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS,
 import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
-import { localStore, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus } from "@fission/storage";
+import { localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
+import { watchKernel } from "./kernel-lost.ts";
+import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { designWorkspace } from "@fission/design";
 import { renderWorkspace } from "@fission/render";
@@ -49,6 +51,8 @@ const workspaces: WorkspacePlugin[] = [
 ];
 
 const kernel = new KernelClient();
+// The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
+watchKernel(kernel);
 // The one conversion layer: every workspace says what it can hand over.
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
@@ -516,9 +520,23 @@ const local = (() => {
   }
 })();
 // Marks the project being opened, so one that froze or crashed the tab isn't
-// reopened on the next visit (audit S2, reopen.ts in @fission/storage).
-const guard = reopenGuard(local);
+// reopened on the next visit (audit S2, reopen.ts in @fission/storage). The
+// tabs ask each other over a channel, so a tab started while another is still
+// opening the project doesn't take that for a freeze (real-use hunt A3).
+const guard = reopenGuard(local, {
+  channel: (() => {
+    try {
+      return new BroadcastChannel(OPENING_KEY) as OpeningChannel; // its MessageEvent carries the `data` the guard reads
+    } catch {
+      return null; // no channel: a mark found is taken for a freeze, as before
+    }
+  })(),
+});
 window.addEventListener("pagehide", () => guard.finished());
+// A phone locked or the app switched: the OS may kill the tab later with no pagehide (real-use hunt D1).
+document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? guard.putAway() : guard.back()));
+document.addEventListener("freeze", () => guard.putAway());
+document.addEventListener("resume", () => guard.back());
 let autosave: Autosave | null = null;
 // Leaving (timeline hunt, finding 1): when the page is hidden, reloaded or
 // closed, the changes not stored yet go to the unsaved-changes journal at
@@ -903,8 +921,8 @@ for (const slot of ["browser", "properties"] as const) {
   toggle.addEventListener("sheet-close", () => set(false));
 }
 // At phone width what a tool asks for lives in the Properties sheet, so the sheet opens when it appears
-// (the plane to sketch on, Edit feature, Extrude's distance and OK, Move's boxes once a body is picked, so the view stays clear to
-// pick them: without the sheet open they are out of reach) and closes again, if it opened it, when
+// (Edit feature, Move's boxes once a body is picked: without the sheet open they are out of reach; not the plane prompt or
+// Extrude's box: the bar over the view, phone-float.ts, holds the planes, Finish and Cancel) and closes again, if it opened it, when
 // that is done, leaving the view clear to draw in; as the folded panel opens for a tool's box on a wide screen.
 {
   const toggle = $("properties-toggle");
@@ -914,7 +932,7 @@ for (const slot of ["browser", "properties"] as const) {
   // `turned`: the screen just became phone width (a sketch started sideways, then the phone turned upright), so a prompt already up is shown.
   const update = (turned: boolean) => {
     const props = $("properties"); // a workspace's mount replaces the slot, so it is looked up each time
-    const now = props.querySelector("#sketch-panel:not([hidden]) #sketch-plane-XY") !== null || props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#extrude-panel:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
+    const now = props.querySelector<HTMLElement>("#feature-edit:not([hidden])") !== null || props.querySelector("#move-panel:not([hidden]) #move-bodies:not([hidden])") !== null;
     if (now === wanted && !(turned && now)) return;
     wanted = now;
     const open = toggle.getAttribute("aria-expanded") === "true";
@@ -936,6 +954,10 @@ for (const slot of ["browser", "properties"] as const) {
   phone.addEventListener("change", () => phone.matches && update(true));
   new MutationObserver(() => update(false)).observe($("workspace"), { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
 }
+// At phone width the bar over the view (phone-float.ts) ends the tool in use; a tool ending puts the Properties sheet away.
+startPhoneFloat($("workspace"), $("viewport"), () => {
+  if (window.matchMedia("(max-width: 640px)").matches) $("properties-toggle").dispatchEvent(new CustomEvent("sheet-close"));
+});
 // Body facts (Inspect ▾) shows the numbers in the Properties sheet, which at phone width stays shut unless asked (demo rehearsal 10-28).
 $("workspace").addEventListener("properties-reveal", () => {
   const toggle = $("properties-toggle");
@@ -945,7 +967,7 @@ $("workspace").addEventListener("properties-reveal", () => {
 {
   const phone = window.matchMedia("(max-width: 640px)");
   $("workspace").addEventListener("pointerdown", (e) => {
-    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport")) return;
+    if (!phone.matches || !(e.target instanceof Element) || !e.target.closest("#viewport") || e.target.closest("#phone-float")) return; // the bar over the view ends a tool, which puts the sheet away itself
     for (const slot of ["browser", "properties"]) {
       const toggle = $(`${slot}-toggle`);
       if (toggle.getAttribute("aria-expanded") === "true") toggle.click();
@@ -990,7 +1012,7 @@ async function start() {
   }
   let opened: string | undefined;
   try {
-    if (newest && guard.stuck(newest)) {
+    if (newest && (await guard.check(newest))) {
       keepOnFirstChange();
       fileStatus("The last project didn't finish opening on your last visit, so a new one was started. The old one is still kept in this browser: reload the page now, before changing anything, to try it again.");
     } else if (newest) {
@@ -1002,7 +1024,7 @@ async function start() {
     } else keep(newId());
   } catch (e) {
     guard.finished(); // refused with a message, which is not a freeze
-    keep(newId());
+    keepOnFirstChange(); // stored only once changed, so a reload tries the old one again (real-use hunt A1)
     fileStatus(`Couldn't open the last project (${why(e)}), so a new one was started. The old one is still kept in this browser.`);
   }
   show(fromHash());

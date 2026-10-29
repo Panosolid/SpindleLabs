@@ -23,6 +23,8 @@
 .move-panel .move-panel-buttons { display: flex; gap: 6px; margin-top: 6px; }
 .move-panel #move-ok { background: var(--look-primary-fill, #3d98f2); border-color: transparent; color: var(--look-on-accent, #07111c); font-weight: 600; box-shadow: var(--look-primary-glow, none); }
 .move-panel button:disabled { opacity: 0.45; cursor: default; }
+/* Snap (35e2d) lit while it picks what to snap and where it lands. */
+.move-panel #move-snap[aria-pressed="true"] { background: #23384f; border-color: var(--look-accent, #4aa8ff); color: var(--look-accent-text, #8cc8ff); }
 @media (max-width: 700px) {
   .move-panel button, .move-panel .move-panel-box input { min-height: 44px; }
   .move-panel .move-panel-pivot summary { min-height: 44px; display: flex; align-items: center; }

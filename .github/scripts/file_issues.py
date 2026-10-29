@@ -24,7 +24,15 @@ marker in its body (the kind's hash), so issues never pile up:
 - every issue it files or updates is locked, so strangers can't comment on
   it (Claude sessions read these issues; see `lock`).
 
-`kinds_of` and `plan` are pure (tested in test_file_issues.py); `run` does
+Failures that leave no failure folder are filed too (`check_kinds`, from
+the run's reports and its jobs' results in JOBS): a journey that FAILs, an
+UNEXPLAINED TypeScript mutant, a whole-kernel mutants shard that stopped
+with an error, and any job that went red without reporting anything more
+specific (a fuzzer that crashed or ran out of time, a golden run that
+stopped). Before 2026-10-28 only failure folders filed anything, so these
+went red on the Actions tab and nowhere else.
+
+`kinds_of`, `check_kinds` and `plan` are pure (tested in test_file_issues.py); `run` does
 the `gh` calls.
 
 Usage: file_issues.py <incoming dir> [--dry-run]; needs RUN_URL, COMMIT,
@@ -208,6 +216,87 @@ def kinds_of(folder_files):
     return out
 
 
+# Which artifact folders each job of the four workflows writes, so a red
+# job whose folders gave a kind already isn't filed twice. A job missing
+# here is always filed when it goes red.
+JOB_DIRS = {
+    "journeys": ("journeys",), "golden": ("golden",), "monkey": ("monkey",), "ts-mutants": ("ts-mutants-",),
+    "project": ("fuzz-project",), "sessions": ("fuzz-sessions",), "timeline": ("fuzz-timeline",), "stack": ("fuzz-stack",),
+    "test": ("endless-a-",), "test-second-leg": ("endless-b-",), "mutants": ("mutants-",),
+    "stl": ("fuzz-stl",), "kernel": ("fuzz-kernel-",),
+}
+# cargo mutants: 0 all caught, 2 some missed (filed as new survivors), 3
+# some timed out; 124/130 the shard was cut off at the deadline (expected).
+MUTANTS_FINE = {"0", "2", "3", "124", "130"}
+
+
+def check_kinds(reports, jobs, explained_dirs):
+    """Kinds for failures without a failure folder. reports: {path in the
+    incoming folder: text} for journeys/report.txt, ts-mutants-*/<t>.txt and
+    mutants-*/exit-code.txt; jobs: {job: result} (the workflow's `needs`);
+    explained_dirs: the incoming folders whose failure folders gave a kind.
+    Returns [(kind, example)], each kind starting "check "."""
+    kinds = []
+    dirs_with_kinds = set(explained_dirs)
+    for path, text in sorted(reports.items()):
+        top = path.split("/")[0]
+        found = []
+        if path == "journeys/report.txt":
+            lines = text.splitlines()
+            for i, line in enumerate(lines):
+                if line.startswith("FAIL "):
+                    detail = [l for l in lines[i + 1:i + 4] if l.startswith("  ")]
+                    found.append((f"check journeys: {numbers_out(line[len('FAIL '):]).strip()[:150]}", "\n".join([line, *detail])))
+        elif top.startswith("ts-mutants-"):
+            for line in text.splitlines():
+                if line.startswith("UNEXPLAINED"):
+                    found.append((f"check TypeScript mutants: {numbers_out(line).strip()[:150]}", line))
+        elif top.startswith("mutants-") and path.endswith("/exit-code.txt"):
+            code = text.strip()
+            if code not in MUTANTS_FINE:
+                why = "the unmutated tests failed" if code == "4" else f"cargo mutants stopped with exit code {code}"
+                found.append((f"check whole-kernel mutants: {why}", f"{top}: exit code {code}"))
+        if found:
+            dirs_with_kinds.add(top)
+            kinds += found
+    for job, result in sorted(jobs.items()):
+        if result != "failure":
+            continue
+        prefixes = JOB_DIRS.get(job, ())
+        if prefixes and any(d.startswith(prefixes) for d in dirs_with_kinds):
+            continue
+        kinds.append((f"check the {job} job failed with nothing more specific reported", f"job {job}: {result}"))
+    return kinds
+
+
+def read_checks(incoming):
+    """({path: text} of the reports `check_kinds` reads, {job: result} from
+    JOBS, the workflow's `toJSON(needs)`)."""
+    reports = {}
+    for run in sorted(os.listdir(incoming)) if os.path.isdir(incoming) else []:
+        d = os.path.join(incoming, run)
+        if not os.path.isdir(d):
+            continue
+        names = []
+        if run == "journeys":
+            names = ["report.txt"]
+        elif run.startswith("ts-mutants-"):
+            names = [f for f in sorted(os.listdir(d)) if f.endswith(".txt")]
+        elif run.startswith("mutants-"):
+            names = ["exit-code.txt"]
+        for f in names:
+            p = os.path.join(d, f)
+            if os.path.isfile(p):
+                with open(p, errors="replace") as fh:
+                    reports[f"{run}/{f}"] = fh.read()
+    try:
+        needs = json.loads(os.environ.get("JOBS") or "{}")
+    except json.JSONDecodeError:
+        needs = {}
+    jobs = {j: (v.get("result") if isinstance(v, dict) else v) for j, v in needs.items()} if isinstance(needs, dict) else {}
+    return reports, jobs
+
+
 def key(kind):
     return hashlib.sha1(kind.encode()).hexdigest()[:12]
 
@@ -340,6 +429,23 @@ def texts(action, kind, hits, run_url, commit, branch):
             "main reopens it; one closed as not planned is not reported again."
         )
         return f"Devious parts: {kind.removeprefix('devious part ').removeprefix('devious ')}"[:250], body
+    if action == "create" and kind.startswith("check "):
+        body = (
+            f"{MARK.format(key(kind))}\n"
+            f"A nightly check failed without leaving a failure folder ({where}).\n\n"
+            f"**Kind:** {kind}\n\n"
+            f"Example:\n{fenced(example)}\n\n"
+            f"Seen {len(seeds)} time(s) in this run.\n\n"
+            "The run's logs say more: journeys/latest.txt, ts-mutants/latest.txt and mutants/log.csv on the "
+            "test-results branch, and the job's own log at the run's link. A journey FAIL is an extra click or "
+            "a walk past its limit (apps/fission/e2e/journeys.mjs); an UNEXPLAINED mutant needs a test that kills "
+            "it or a line in packages/testing/stryker/explained.json; a job that failed with nothing more specific "
+            "crashed, ran out of time or stopped before writing its report.\n\n"
+            "Close this issue as completed once it is fixed, or as not planned "
+            "if it is not a bug (say why in a comment): a kind closed as fixed that comes back on main reopens it; "
+            "one closed as not planned is not reported again."
+        )
+        return f"Nightly check: {kind[len('check '):]}"[:250], body
     if action == "create":
         body = (
             f"{MARK.format(key(kind))}\n"
@@ -358,8 +464,24 @@ def texts(action, kind, hits, run_url, commit, branch):
         )
         return f"Random testing: {kind}"[:250], body
     head = "Seen again after this issue was closed" if action == "reopen" else "Seen again"
+    if kind.startswith("check "):
+        return None, f"{head} ({where}):\n{fenced(example)}"
     folder = "fuzz/failures" if kind.startswith("fuzzing the ") else "failures"
     return None, f"{head} ({where}), in {len(seeds)} round(s):\n{seed_list(seeds, folder)}"
+
+
+def folder_dirs(incoming, folders):
+    """The incoming folders holding a failure folder that gave a kind."""
+    dirs = set()
+    for run in sorted(os.listdir(incoming)) if os.path.isdir(incoming) else []:
+        path = os.path.join(incoming, run)
+        if not os.path.isdir(path):
+            continue
+        for name in os.listdir(path):
+            seed = name[len("seed-"):]
+            if name.startswith("seed-") and seed in folders and kinds_of(folders[seed]):
+                dirs.add(run)
+    return dirs
 
 
 def read_folders(incoming):
@@ -383,11 +505,15 @@ def read_folders(incoming):
     return folders
 
 
-def gather(folders):
+def gather(folders, checks=()):
+    """{kind: [(seed, example), ...]} from the failure folders, then the
+    `check_kinds` (each under the seed "run")."""
     found = {}
     for seed, files in sorted(folders.items()):
         for kind, example in kinds_of(files).items():
             found.setdefault(kind, []).append((seed, example))
+    for kind, example in checks:
+        found.setdefault(kind, []).append(("run", example))
     return found
 
 
@@ -410,7 +536,9 @@ def lock(number, log):
 
 def run(incoming, dry_run=False, log=print):
     run_url, commit, branch = os.environ["RUN_URL"], os.environ["COMMIT"], os.environ["BRANCH"]
-    found = gather(read_folders(incoming))
+    folders = read_folders(incoming)
+    reports, jobs = read_checks(incoming)
+    found = gather(folders, check_kinds(reports, jobs, folder_dirs(incoming, folders)))
     if not found:
         log("No problems found in this run.")
         return []
