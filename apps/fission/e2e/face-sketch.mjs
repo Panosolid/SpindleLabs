@@ -401,6 +401,13 @@ try {
       const ids = await page.$$eval("#timeline [data-item]", (lis) => lis.map((li) => li.dataset.item));
       assert.equal(ids.length, 3);
       const [box, sketch, ext] = ids;
+      // The Extrude hid the sketch it used (Ben, 2026-10-29); its eye in the Browser shows it again, so its lines can be probed below.
+      await until(page, () => document.querySelector("#viewport").dataset.sketchLines === "0", null, "the used sketch hidden");
+      await openPanel(page, "browser", tap);
+      await press(page, `#browser [data-eye="sketches/${sketch}"]`, tap);
+      await until(page, (id) => document.querySelector(`#browser [data-eye="sketches/${id}"]`)?.getAttribute("aria-label") === "Hide Sketch 1", sketch, "the sketch shown again");
+      await until(page, () => document.querySelector("#viewport").dataset.sketchLines !== "0", null, "its lines drawn");
+      await closePanels(page, tap);
       /** Each bar item's flags: s suppressed, g greyed, w warned, f failed. */
       const flags = async () => {
         await rebuilt(page);
