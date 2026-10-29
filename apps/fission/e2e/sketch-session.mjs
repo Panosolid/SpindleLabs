@@ -22,7 +22,7 @@ import { preview } from "vite";
 import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { isClosed, modelOutline, openWords, shoelace } from "../../../packages/testing/src/outline-model.ts";
-import { gridSnapOn, startWithBox } from "./start.mjs";
+import { gridSnapOn, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4196, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4196/";
@@ -230,7 +230,7 @@ async function randomStep(page, m, r) {
 
 async function startSketch(page) {
   await page.click("#create-sketch");
-  await page.click("#sketch-plane-XY");
+  await pickPlane(page, "XY", false);
   await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true", null, { timeout: 5000 });
   // Grid snap is off by default since sketch feel SF1; this session models a
   // sketch on the grid (clicks up to 2 mm off a node land on it), so it ticks

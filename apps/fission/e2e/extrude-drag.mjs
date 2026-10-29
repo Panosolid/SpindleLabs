@@ -205,7 +205,7 @@ try {
       const page = await fresh(width, touch);
       const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
       await press("#extrude");
-      if (touch) await closePanels(page, true); // the Properties sheet opens by itself for Extrude's box; put away, the view is clear to tap and drag in
+      if (touch) await closePanels(page, true); // the view clear to tap and drag in (Extrude leaves the sheet shut; a no-op then)
       // Both sketches, then the box's six flat faces (UX1c).
       await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces", panelState);
       // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.

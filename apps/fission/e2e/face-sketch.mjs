@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { launch, browserName } from "./browser.mjs";
 import { decodePng } from "./png.mjs";
 import { preview } from "vite";
-import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { chooseShape, closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4195, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4195/?test-hooks";
@@ -339,7 +339,7 @@ try {
   await check("375 px, taps: the front plane from its button is looked at from the front, a rectangle tapped on it and extruded", async () => {
     const page = await fresh(375, true);
     await createSketch(page, true);
-    await page.tap("#sketch-plane-XZ");
+    await pickPlane(page, "XZ", true);
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const cam = await settle(page);
     near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking from the front");
