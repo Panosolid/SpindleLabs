@@ -348,7 +348,7 @@ test("recoverUnsaved: a store that refuses keeps the entry for the next visit, w
     throw new Error("browser storage is full");
   };
   assert.deepEqual(await recoverUnsaved(store, journal, []), [
-    "unsaved changes from your last visit couldn't be stored (browser storage is full); they are kept in this browser for the next visit",
+    "unsaved changes from your last visit couldn't be stored (browser storage is full); they are shown, and kept in this browser until it has room: Save keeps them as a file",
   ]);
   assert.ok(journal.items.has(unsavedKey("p")));
 });
