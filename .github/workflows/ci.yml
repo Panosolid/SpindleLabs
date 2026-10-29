@@ -313,6 +313,12 @@ jobs:
         working-directory: apps/fission
         env:
           E2E_BROWSER: webkit
+      # The kernel's files lost to a deploy or the network, on a phone (e2e/app-updated.mjs, blind spots B2).
+      - run: node e2e/app-updated.mjs
+        if: ${{ !cancelled() }}
+        working-directory: apps/fission
+        env:
+          E2E_BROWSER: webkit
 
   # The sketch browser tests (and, reported only, the smoke test) in the other two engines
   # people use: Firefox and WebKit (Safari's engine). Pixel probes run in
