@@ -8,6 +8,8 @@ leak would look like (a panic naming a source file, a mutant quoting a
 source line, a RESULT line with something extra after it)."""
 
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -26,9 +28,9 @@ class Filter(unittest.TestCase):
 
     def test_leaks_are_dropped(self):
         leaks = [
-            "thread 'main' panicked at src/boolean/facts.rs:812:9",
-            "src/ops/profile.rs:40:5: replace + with - in Seg::from_bulge",
-            "RESULT clippy PASS 12 fn split_edge(e: Edge)",
+            "thread 'main' panicked at src/widget/gear.rs:812:9",
+            "src/widget/cog.rs:40:5: replace + with - in Cog::from_teeth",
+            "RESULT clippy PASS 12 fn spin_gear(g: Gear)",
             "RESULT Clippy PASS 12",
             "result clippy PASS 12",
             "count 4 mutants in fn x",
@@ -53,10 +55,10 @@ class Run(unittest.TestCase):
             return out, f.read()
 
     def test_a_pass_prints_one_line_and_logs_the_rest(self):
-        out, log = self.run_it("bash", "-c", "echo 'panicked at src/boolean/facts.rs:812:9'; echo seed 42 >&2")
+        out, log = self.run_it("bash", "-c", "echo 'panicked at src/widget/gear.rs:812:9'; echo seed 42 >&2")
         self.assertRegex(out.stdout, r"^RESULT rounds PASS [0-9]+\n$")
         self.assertEqual((out.stderr, out.returncode), ("", 0))
-        self.assertEqual(log, "panicked at src/boolean/facts.rs:812:9\nseed 42\n")
+        self.assertEqual(log, "panicked at src/widget/gear.rs:812:9\nseed 42\n")
 
     def test_a_failure_keeps_its_exit_code(self):
         out, log = self.run_it("bash", "-c", "echo leak >&2; exit 3")
@@ -97,8 +99,6 @@ class Describe(unittest.TestCase):
         self.assertEqual(old, "Failed: tests,clippytests,clippy\n")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class Save(unittest.TestCase):
@@ -150,6 +150,16 @@ class Save(unittest.TestCase):
         self.assertEqual((out.returncode, out.stdout), (0, "saved checks\n"))
         self.assertIn("ci/pr-3/abc/1-1/checks/tests.log", self.saved())
 
+    def test_random_testing_saves_without_a_label(self):
+        # Regression: random testing's and fuzzing's jobs set RESULTS_PATH but
+        # not LABEL or HEAD_SHA, and the commit message read both, so every
+        # save there died with "LABEL: unbound variable" (set -u).
+        env = {k: v for k, v in os.environ.items() if k not in ("LABEL", "HEAD_SHA")}
+        env.update(RESULTS_REPO=self.remote, RESULTS_PATH="runs/7-1")
+        out = subprocess.run(["bash", SCRIPT, "save", "test-0", self.logs], capture_output=True, text=True, env=env)
+        self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "saved test-0\n", ""))
+        self.assertIn("runs/7-1/test-0/tests.log", self.saved())
+
     def test_a_refused_push_says_why_without_naming_files(self):
         # The way GitHub refuses a file over 100 MB, from a hook.
         hook = os.path.join(self.remote, "hooks", "pre-receive")
@@ -161,3 +171,174 @@ class Save(unittest.TestCase):
         self.assertEqual(out.returncode, 1)
         self.assertEqual(out.stdout, "could not save checks (GH001,exceeds,rejected)\n")
         self.assertNotIn("secret_name", out.stdout + out.stderr)
+
+
+def git(*args, cwd=None):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+class Checkout(unittest.TestCase):
+    """kernel_ci.sh checkout against a local repo standing in for the kernel
+    (KERNEL_SOURCE). actions/checkout printed the kernel commit's subject
+    ("HEAD is now at <sha> <subject>") and, with fetch-depth 0, every kernel
+    branch and tag name into the public log; this prints nothing.
+
+    The repo, worked by hand: base (on main) <- feature (branch
+    "claude/secret-branch", subject "Secret subject"), and merge, GitHub's
+    merge of feature into main: parents base (first) and feature (second).
+    So for a pull request run sha=merge, the statuses may go on feature
+    (merge's second parent) and nowhere else; for main, sha=head=base."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        t = self.tmp.name
+        self.src = os.path.join(t, "kernel")
+        g = lambda *a: git("-c", "user.name=t", "-c", "user.email=t@t", *a, cwd=self.src)
+        os.makedirs(os.path.join(self.src, "prototypes", "oracle"))
+        os.makedirs(os.path.join(self.src, "kernel"))
+        git("init", "-q", "-b", "main", self.src)
+        g("config", "uploadpack.allowAnySHA1InWant", "true")
+        for name in ("prototypes/oracle/o.py", "kernel/lib.txt"):
+            with open(os.path.join(self.src, name), "w") as f:
+                f.write("base\n")
+        g("add", "-A"); g("commit", "-qm", "Base")
+        self.base = g("rev-parse", "HEAD")
+        g("checkout", "-qb", "claude/secret-branch")
+        with open(os.path.join(self.src, "kernel", "lib.txt"), "w") as f:
+            f.write("feature\n")
+        g("commit", "-qam", "Secret subject"); g("tag", "kernel-9.9.9-secret-tag")
+        self.feature = g("rev-parse", "HEAD")
+        g("checkout", "-q", "main")
+        g("merge", "-q", "--no-ff", "-m", "Merge", self.feature)
+        self.merge = g("rev-parse", "HEAD")
+        self.dest = os.path.join(t, "k")
+
+    def checkout(self, *args, **env):
+        e = {k: v for k, v in os.environ.items() if k not in ("HEAD_SHA", "SPARSE")}
+        e.update(KERNEL_SOURCE=self.src, KERNEL_READ="the-secret-key", **env)
+        return subprocess.run(["bash", SCRIPT, "checkout", self.dest, *args], capture_output=True, text=True, env=e)
+
+    def assert_quiet_ok(self, out):
+        self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
+
+    def test_checks_out_the_commit_and_prints_nothing(self):
+        out = self.checkout(self.merge, self.base)
+        self.assert_quiet_ok(out)
+        self.assertEqual(git("rev-parse", "HEAD", cwd=self.dest), self.merge)
+        with open(os.path.join(self.dest, "kernel", "lib.txt")) as f:
+            self.assertEqual(f.read(), "feature\n")
+        # The mutants' base is there too, for git diff BASE HEAD.
+        git("cat-file", "-e", self.base + "^{commit}", cwd=self.dest)
+        # No other branch or tag came along, and the key is nowhere in .git.
+        self.assertEqual(git("for-each-ref", "--format=%(refname)", cwd=self.dest), "refs/heads/tested")
+        config = open(os.path.join(self.dest, ".git", "config")).read()
+        self.assertNotIn("the-secret-key", config)
+
+    def test_a_branch_name_works(self):
+        self.assert_quiet_ok(self.checkout("main"))
+        self.assertEqual(git("rev-parse", "HEAD", cwd=self.dest), self.merge)
+
+    def test_sparse_limits_the_files(self):
+        self.assert_quiet_ok(self.checkout("main", SPARSE="prototypes/oracle"))
+        self.assertTrue(os.path.exists(os.path.join(self.dest, "prototypes", "oracle", "o.py")))
+        self.assertFalse(os.path.exists(os.path.join(self.dest, "kernel", "lib.txt")))
+
+    def test_a_failed_fetch_says_so_in_words_only(self):
+        out = self.checkout("claude/no-such-branch")
+        self.assertEqual((out.returncode, out.stdout, out.stderr), (1, "could not check out the kernel\n", ""))
+
+    def test_bad_refs_are_refused_before_git_runs(self):
+        for args in (["-x"], ["main;id"], ["main", "not-a-sha"]):
+            out = self.checkout(*args)
+            self.assertEqual((out.returncode, out.stdout), (1, "bad kernel ref\n"), args)
+
+    def test_statuses_go_on_the_tested_head_only(self):
+        # Pull request: merge tested, statuses on feature (its second parent).
+        self.assert_quiet_ok(self.checkout(self.merge, HEAD_SHA=self.feature))
+        # main: tested and statuses on the same commit.
+        shutil.rmtree(self.dest)
+        self.assert_quiet_ok(self.checkout(self.base, HEAD_SHA=self.base))
+        # Refused: the first parent (main's tip, not the pull request), and a
+        # commit merge doesn't contain at all (base tested, feature marked).
+        for sha, head in ((self.merge, self.base), (self.base, self.feature)):
+            shutil.rmtree(self.dest)
+            out = self.checkout(sha, HEAD_SHA=head)
+            self.assertEqual((out.returncode, out.stdout), (1, "the statuses' commit is not the one tested\n"))
+
+
+class NoNoisyKernelCheckout(unittest.TestCase):
+    """No workflow checks the kernel out with actions/checkout, which prints
+    the commit's subject (and with fetch-depth 0 every branch and tag name)
+    into the public log: they use kernel_ci.sh checkout."""
+
+    WORKFLOWS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workflows")
+
+    @staticmethod
+    def noisy(text):
+        return re.findall(r"repository:\s*Panosolid/kernel\s*$", text, re.M)
+
+    def test_no_workflow_uses_it(self):
+        for name in sorted(os.listdir(self.WORKFLOWS)):
+            with open(os.path.join(self.WORKFLOWS, name)) as f:
+                self.assertEqual(self.noisy(f.read()), [], name)
+
+    def test_the_check_catches_it(self):
+        planted = "      - uses: actions/checkout@abc # v7\n        with:\n          repository: Panosolid/kernel\n"
+        self.assertEqual(len(self.noisy(planted)), 1)
+        self.assertEqual(self.noisy("repository: Panosolid/kernel-results\n"), [])
+
+
+def jobs(text):
+    """{job name: its lines} of a workflow, read by hand (no YAML library on
+    the runners): each job starts at a two-space-indented key under jobs:."""
+    body = text[text.index("\njobs:\n"):]
+    found = {}
+    for part in re.split(r"(?m)^(?=  [a-z][a-z0-9-]*:\n)", body)[1:]:
+        found[part.split(":", 1)[0].strip()] = part
+    return found
+
+
+class SecretsOnlyOnMain(unittest.TestCase):
+    """Every job that uses the kernel's keys or the merge queue's token names
+    the environment holding them, which only main may use: as plain
+    repository secrets, any branch's workflow could read them (and the key
+    clones the private kernel). No such job runs npm, so no npm package's
+    install or test code ever runs beside the key."""
+
+    WORKFLOWS = NoNoisyKernelCheckout.WORKFLOWS
+    NEEDS = {"KERNEL_READ": "kernel", "RESULTS_WRITE": "kernel", "MERGE_QUEUE_TOKEN": "merge"}
+
+    def problems(self, name, text):
+        out = []
+        for job, lines in jobs(text).items():
+            used = {env for secret, env in self.NEEDS.items() if f"secrets.{secret}" in lines}
+            if not used:
+                continue
+            m = re.search(r"(?m)^    environment: (\S+)$", lines)
+            if len(used) > 1 or not m or m.group(1) not in used:
+                out.append(f"{name} {job}: needs environment {'/'.join(sorted(used))}")
+            if re.search(r"\bnpm (ci|install|run|exec)\b", lines):
+                out.append(f"{name} {job}: runs npm beside a key")
+        return out
+
+    def test_every_workflow(self):
+        found = []
+        for name in sorted(os.listdir(self.WORKFLOWS)):
+            with open(os.path.join(self.WORKFLOWS, name)) as f:
+                found += self.problems(name, f.read())
+        self.assertEqual(found, [])
+
+    def test_the_check_catches_each_break(self):
+        def wf(job):
+            return "on: push\njobs:\n  a:\n    runs-on: x\n" + job
+        ok = "    environment: kernel\n    steps:\n      - env:\n          K: ${{ secrets.KERNEL_READ }}\n"
+        self.assertEqual(self.problems("w", wf(ok)), [])
+        # No environment, the wrong one, and npm beside the key.
+        self.assertEqual(self.problems("w", wf(ok.replace("    environment: kernel\n", ""))), ["w a: needs environment kernel"])
+        self.assertEqual(self.problems("w", wf(ok.replace("kernel", "merge"))), ["w a: needs environment kernel"])
+        self.assertEqual(self.problems("w", wf(ok + "      - run: npm ci\n")), ["w a: runs npm beside a key"])
+
+
+if __name__ == "__main__":
+    unittest.main()
