@@ -113,10 +113,10 @@ for (const [width, height, touch] of [[1280, 800, false], [393, 852, true]]) {
 await check("deliberately broken: with the 200 ms wait taken out, the early-frames rule fails", async () => {
   const { page, context, release } = await fresh({ hold: true });
   try {
-    // The built stylesheet, served with the wait taken out of every skeleton.
+    // The built stylesheet, served with the wait taken out of every skeleton (shown at once, no fade-in).
     await context.route(/\.css(\?|$)/, async (route) => {
       const res = await route.fetch();
-      await route.fulfill({ response: res, body: (await res.text()) + "\n.skeleton { animation-delay: 0s !important; animation-duration: 1ms !important; }" });
+      await route.fulfill({ response: res, body: (await res.text()) + "\n.skeleton { animation: none !important; opacity: 1 !important; }" });
     });
     await page.goto(url + "#design", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(400);
