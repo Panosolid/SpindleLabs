@@ -87,7 +87,9 @@ export interface BooleanBody {
 
 export interface BooleanRebuild {
   /** In made order (rule 1's "earliest-made"). */
-  bodies: readonly BooleanBody[];
+  bodies: readonly (Omit<BooleanBody, "faces"> & { faces: readonly DescribedFace[]; edges: readonly BooleanEdge[] })[];
+  /** A face's tag among every face carrying `name` (rule 3). */
+  tagFor(face: DescribedFace, name: string): readonly string[];
   /** Each feature that failed, with why in words; its bodies stay as they were. */
   failed: ReadonlyMap<string, string>;
 }
@@ -107,7 +109,12 @@ export type BooleanFault =
   | "merge-tool-first" // rule 4: a merged face shows the tool's name first
   | "merge-one-name" // rule 4: a merged face keeps only its shown name
   | "empty-allowed" // F3: a cut leaving nothing makes the body vanish
-  | "pinch-allowed"; // decision 2: an edge or corner touch is not refused
+  | "pinch-allowed" // decision 2: an edge or corner touch is not refused
+  | "tag-all-neighbours" // rule 3: a tag lists every neighbour, the shared ones too
+  | "split-silent" // rule 3: a reference finding its face split says nothing
+  | "largest-first" // rule 3: the largest piece taken over the one holding the origin
+  | "guess-shared" // rule 3: pieces with the same tag (or two largest) guessed between
+  | "edge-no-ends"; // rule 5: edges meeting the same two faces twice not told apart
 
 export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
   "keep-largest",
@@ -121,6 +128,11 @@ export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
   "merge-one-name",
   "empty-allowed",
   "pinch-allowed",
+  "tag-all-neighbours",
+  "split-silent",
+  "largest-first",
+  "guess-shared",
+  "edge-no-ends",
 ];
 
 export const faceName = (feature: string, role: string): string => `face:${esc(feature)}/${role}`;
@@ -606,15 +618,255 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
   }
 
   const shown = [...bodies].sort((a, b) => lexCompare(bodyMade(a.id), bodyMade(b.id)));
-  return {
-    bodies: shown.map((b) => ({
-      id: b.id,
-      volume: volumeOf(g, b.solid.cells),
-      low: lowOf(g, b.solid.cells),
-      faces: facesOf(g, b.solid, KEEP_ORDER, NONE)
-        .sort((x, y) => lexCompare(made(x.names[0]), made(y.names[0])) || lexCompare(x.low, y.low))
-        .map((x) => ({ names: x.names, facing: FACINGS[x.d], at: x.low[x.d >> 1], area: x.area, low: x.low })),
-    })),
-    failed,
+  return { ...describe(g, shown, made, fs), failed };
+}
+
+// Split faces, edges and references (rules 3 and 5; step 34a3) ---------------
+
+/** A face's region as boxes of no thickness, [low corner, high corner], for "which piece holds this point". */
+export type Rect3 = readonly [readonly [number, number, number], readonly [number, number, number]];
+
+export interface BooleanEdge {
+  /** Rule 5's name; null when another edge would have it too (shared, never guessed). */
+  name: string | null;
+  /** Its two faces' full names, sorted. */
+  faces: readonly [string, string];
+  /** The shown names of the other faces meeting at its two ends, sorted, without repeats. */
+  ends: readonly string[];
+  length: number;
+}
+
+/**
+ * Rule 5: each edge `edge:<face>+<face>`, the two faces' full names
+ * sorted; when two edges have the same two faces, `;ends:` and the end
+ * faces' shown names; a name still given twice is null (shared) for both.
+ */
+export function nameEdges(raw: readonly { faces: readonly [string, string]; ends: readonly string[] }[]): (string | null)[] {
+  const pair = (e: (typeof raw)[number]) => `edge:${e.faces.join("+")}`;
+  const pairs = new Map<string, number>();
+  for (const e of raw) pairs.set(pair(e), (pairs.get(pair(e)) ?? 0) + 1);
+  const named = raw.map((e) => (pairs.get(pair(e))! > 1 ? `${pair(e)};ends:${e.ends.join(",")}` : pair(e)));
+  const count = new Map<string, number>();
+  for (const n of named) count.set(n, (count.get(n) ?? 0) + 1);
+  return named.map((n) => (count.get(n) === 1 ? n : null));
+}
+
+/**
+ * Rule 3: a face's tag among `pieces` (every face carrying one name): the
+ * sorted shown names of its neighbours that border none of the other
+ * pieces. `neighbours` gives each face's neighbours' shown names.
+ */
+export function tagAmong(face: number, pieces: readonly number[], neighbours: (f: number) => ReadonlySet<string>): string[] {
+  const others = new Set<string>();
+  for (const p of pieces) if (p !== face) for (const n of neighbours(p)) others.add(n);
+  return [...neighbours(face)].filter((n) => !others.has(n)).sort();
+}
+
+/** A face with everything rules 3 and 5 need: `full` is the shown name with its tag when it has one. */
+export interface DescribedFace extends BooleanFace {
+  full: string;
+  /** Rule 3's tag among the faces carrying its shown name; null when no other face carries it. */
+  tag: readonly string[] | null;
+  rects: readonly Rect3[];
+}
+
+interface Described {
+  bodies: (Omit<BooleanBody, "faces"> & { faces: DescribedFace[]; edges: BooleanEdge[] })[];
+  /** Each face's tag among the faces carrying `name`, by face (as in `bodies`' faces, flattened in order). */
+  tagFor(face: DescribedFace, name: string): readonly string[];
+}
+
+function describe(g: Grid, bodies: readonly Body[], made: Made, faults: ReadonlySet<BooleanFault>): Described {
+  // Every face of every body, in one list; each patch's face.
+  const all: { body: number; face: Face }[] = [];
+  const faceOf: Map<number, number>[] = [];
+  bodies.forEach((b, bi) => {
+    const map = new Map<number, number>();
+    for (const f of facesOf(g, b.solid, KEEP_ORDER, NONE).sort((x, y) => lexCompare(made(x.names[0]), made(y.names[0])) || lexCompare(x.low, y.low))) {
+      for (const c of f.patches) map.set(key(c, f.d), all.length);
+      all.push({ body: bi, face: f });
+    }
+    faceOf.push(map);
+  });
+  // Every edge segment: the two faces meeting along one grid step.
+  const segments: { body: number; axis: number; at: [number, number]; step: number; faces: [number, number] }[] = [];
+  bodies.forEach((b, bi) => {
+    const cells = b.solid.cells;
+    const n = [g.nx, g.ny, g.nz];
+    for (let axis = 0; axis < 3; axis++) {
+      const [u, v] = [(axis + 1) % 3, (axis + 2) % 3];
+      for (let iu = 1; iu < n[u]; iu++)
+        for (let iv = 1; iv < n[v]; iv++)
+          for (let ia = 0; ia < n[axis]; ia++) {
+            const cell = (su: number, sv: number) => {
+              const p = [0, 0, 0];
+              p[axis] = ia;
+              p[u] = iu - 1 + su;
+              p[v] = iv - 1 + sv;
+              return cellAt(g, p[0], p[1], p[2]);
+            };
+            const quad = [cell(0, 0), cell(1, 0), cell(0, 1), cell(1, 1)];
+            const filled = quad.map((c) => cells[c] === 1);
+            const count = filled.filter(Boolean).length;
+            if (count !== 1 && count !== 3) continue;
+            // The patch of a filled cell facing its empty neighbour across u, and across v.
+            const lone = filled.indexOf(count === 1);
+            const [su, sv] = [lone & 1, lone >> 1];
+            let pu: number;
+            let pv: number;
+            if (count === 1) {
+              pu = key(quad[lone], 2 * u + (su === 0 ? 1 : 0));
+              pv = key(quad[lone], 2 * v + (sv === 0 ? 1 : 0));
+            } else {
+              pu = key(quad[(1 - su) | (sv << 1)], 2 * u + (su === 1 ? 1 : 0));
+              pv = key(quad[su | ((1 - sv) << 1)], 2 * v + (sv === 1 ? 1 : 0));
+            }
+            const [fa, fb] = [faceOf[bi].get(pu)!, faceOf[bi].get(pv)!];
+            segments.push({ body: bi, axis, at: [iu, iv], step: ia, faces: fa < fb ? [fa, fb] : [fb, fa] });
+          }
+    }
+  });
+  const shownOf = (f: number) => all[f].face.names[0];
+  const neighbours = all.map(() => new Set<string>());
+  for (const s of segments) {
+    neighbours[s.faces[0]].add(shownOf(s.faces[1]));
+    neighbours[s.faces[1]].add(shownOf(s.faces[0]));
+  }
+  const carrying = new Map<string, number[]>();
+  all.forEach((x, f) => {
+    for (const n of x.face.names) carrying.set(n, [...(carrying.get(n) ?? []), f]);
+  });
+  const tagOf = (f: number, name: string) => tagAmong(f, carrying.get(name) ?? [f], (p) => neighbours[p]);
+  const tags = all.map((x, f) => ((carrying.get(x.face.names[0])?.length ?? 0) > 1 ? tagOf(f, x.face.names[0]) : null));
+  const full = all.map((x, f) => (tags[f] === null ? x.face.names[0] : `${x.face.names[0]}#${tags[f]!.join(",")}`));
+
+  // Edges: runs of segments along one grid line with the same two faces.
+  const runs: { body: number; faces: [number, number]; ends: string[]; length: number }[] = [];
+  const sorted = [...segments].sort((x, y) => x.body - y.body || x.axis - y.axis || x.at[0] - y.at[0] || x.at[1] - y.at[1] || x.step - y.step);
+  const n = [g.nx, g.ny, g.nz];
+  const steps = [g.xs, g.ys, g.zs];
+  /** The shown names of the faces at grid point p of `body`, but `not`'s. */
+  const at = (body: number, p: number[], not: readonly number[]) => {
+    const out = new Set<string>();
+    for (let b = 0; b < 8; b++) {
+      const o = [b & 1, (b >> 1) & 1, b >> 2];
+      const q = p.map((x, i) => x - 1 + o[i]);
+      if (q.some((x, i) => x < 0 || x >= n[i])) continue;
+      const c = cellAt(g, q[0], q[1], q[2]);
+      for (let d = 0; d < 6; d++) {
+        // The patch on cell c facing d passes through p when it is on p's side of the cell.
+        if ((d & 1) === o[d >> 1]) continue;
+        const f = faceOf[body].get(key(c, d));
+        if (f !== undefined && !not.includes(f)) out.add(shownOf(f));
+      }
+    }
+    return out;
   };
+  for (let i = 0; i < sorted.length; ) {
+    const s = sorted[i];
+    let j = i + 1;
+    while (j < sorted.length) {
+      const t = sorted[j];
+      if (t.body !== s.body || t.axis !== s.axis || t.at[0] !== s.at[0] || t.at[1] !== s.at[1] || t.step !== sorted[j - 1].step + 1 || t.faces[0] !== s.faces[0] || t.faces[1] !== s.faces[1]) break;
+      j++;
+    }
+    const [u, v] = [(s.axis + 1) % 3, (s.axis + 2) % 3];
+    const point = (step: number) => {
+      const p = [0, 0, 0];
+      p[s.axis] = step;
+      p[u] = s.at[0];
+      p[v] = s.at[1];
+      return p;
+    };
+    const first = sorted[i].step;
+    const last = sorted[j - 1].step + 1;
+    const ends = new Set([...at(s.body, point(first), s.faces), ...at(s.body, point(last), s.faces)]);
+    runs.push({ body: s.body, faces: s.faces, ends: [...ends].sort(), length: steps[s.axis][last] - steps[s.axis][first] });
+    i = j;
+  }
+  const raw = runs.map((r) => ({ faces: [full[r.faces[0]], full[r.faces[1]]].sort() as [string, string], ends: r.ends }));
+  let names = nameEdges(raw);
+  if (faults.has("edge-no-ends")) names = raw.map((e) => `edge:${e.faces.join("+")}`);
+
+  const rectOf = (f: Face): Rect3[] =>
+    f.patches.map((c) => {
+      const lo = patchLow(g, c, f.d);
+      const size = cellSize(g, c);
+      size[f.d >> 1] = 0;
+      return [lo, [lo[0] + size[0], lo[1] + size[1], lo[2] + size[2]]] as const;
+    });
+  const described = bodies.map((b, bi) => ({
+    id: b.id,
+    volume: volumeOf(g, b.solid.cells),
+    low: lowOf(g, b.solid.cells),
+    faces: all.flatMap((x, f) =>
+      x.body !== bi
+        ? []
+        : [
+            {
+              names: x.face.names,
+              facing: FACINGS[x.face.d],
+              at: x.face.low[x.face.d >> 1],
+              area: x.face.area,
+              low: x.face.low,
+              full: faults.has("tag-all-neighbours") && tags[f] !== null ? `${x.face.names[0]}#${[...neighbours[f]].sort().join(",")}` : full[f],
+              tag: faults.has("tag-all-neighbours") && tags[f] !== null ? [...neighbours[f]].sort() : tags[f],
+              rects: rectOf(x.face),
+            },
+          ],
+    ),
+    edges: runs.flatMap((r, k) => (r.body !== bi ? [] : [{ name: names[k], faces: raw[k].faces, ends: r.ends, length: r.length }])),
+  }));
+  const index = new Map<DescribedFace, number>();
+  let k = 0;
+  for (const b of described) for (const f of b.faces) index.set(f, k++);
+  return { bodies: described, tagFor: (face, name) => tagOf(index.get(face)!, name) };
+}
+
+/** A reference to a face by name (a sketch's plane): the name it holds, its tag if it was made on a piece, and the sketch's origin. */
+export interface FaceReference {
+  name: string;
+  tag?: readonly string[];
+  origin?: readonly [number, number, number];
+}
+
+export type FaceFound =
+  | { found: DescribedFace; body: string; warning: "split" | null }
+  | { lost: true }
+  | { ambiguous: number };
+
+const holds = (f: DescribedFace, p: readonly number[]) => f.rects.some(([lo, hi]) => lo.every((x, i) => x <= p[i] && p[i] <= hi[i]));
+
+/**
+ * Rule 3's references: one face carrying the name is it (a tagged
+ * reference included: the face is whole again); among pieces, a tagged
+ * reference takes the one piece with its tag; one made on the whole face
+ * takes the piece holding its origin, else the largest, with a warning.
+ * Two pieces with the same tag, or two largest, are never guessed between.
+ */
+export function resolveFace(r: BooleanRebuild, ref: FaceReference, faults: Iterable<BooleanFault> = []): FaceFound {
+  const fs = new Set(faults);
+  const pieces = r.bodies.flatMap((b) => b.faces.filter((f) => f.names.includes(ref.name)).map((f) => ({ f, body: b.id })));
+  if (pieces.length === 0) return { lost: true };
+  if (pieces.length === 1) return { found: pieces[0].f, body: pieces[0].body, warning: null };
+  if (ref.tag !== undefined) {
+    const want = ref.tag.join(",");
+    const match = pieces.filter((p) => r.tagFor(p.f, ref.name).join(",") === want);
+    if (match.length === 0) return { lost: true };
+    if (match.length > 1 && !fs.has("guess-shared")) return { ambiguous: match.length };
+    return { found: match[0].f, body: match[0].body, warning: null };
+  }
+  const origin = ref.origin;
+  const holding = origin === undefined || fs.has("largest-first") ? [] : pieces.filter((p) => holds(p.f, origin));
+  if (holding.length === 1) return { found: holding[0].f, body: holding[0].body, warning: fs.has("split-silent") ? null : "split" };
+  const largest = Math.max(...pieces.map((p) => p.f.area));
+  const big = pieces.filter((p) => p.f.area === largest);
+  if (big.length > 1 && !fs.has("guess-shared")) return { ambiguous: big.length };
+  return { found: big[0].f, body: big[0].body, warning: fs.has("split-silent") ? null : "split" };
+}
+
+/** An edge by rule 5's name: found when exactly one edge has it, ambiguous when shared, else lost. */
+export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string } | { lost: true } {
+  for (const b of r.bodies) for (const e of b.edges) if (e.name === name) return { found: e, body: b.id };
+  return { lost: true };
 }
