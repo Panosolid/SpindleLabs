@@ -264,6 +264,7 @@ try {
       await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
       await press(page, "#sketch-extrude", tap);
       await until(page, () => /makes a closed outline/.test(document.querySelector("#extrude-status")?.textContent ?? ""), null, "the extrude panel says it closes");
+      await page.fill("#extrude-distance", "10"); // Extrude starts at 0 mm
       await page.press("#extrude-distance", "Enter");
       await until(page, () => document.querySelector("#volume")?.textContent === "12,000 mm³", null, "the traced rectangle extruded 10: 12,000 mm³").catch(async (e) => assert.fail(`${e.message} (shown: ${await page.textContent("#volume")})`));
     });

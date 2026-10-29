@@ -18,7 +18,7 @@ export { faceEdgeTargets, inSketch, pinNow, pointWords, sketchEdgeTargets, verte
 export { CURVED_FACE, sketchableFaces, sketchSpot, UNNAMED_FACE, type SketchSpot } from "./face-pick.ts";
 export { clickAt, hoverTool, SAME_LINE, SKETCH_TOOLS, startTool, switchTool, toolBusy, type LineTool, type RectangleTool, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 export { CURVED_EXTRUDE, FACE_NEW_BODY, FACE_WITH_HOLES, faceLabel, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
-export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, featureBuild, featureSpec, isFlipped, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, previewSpec, setExtrudeDistance, setExtrudeFlip, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
+export { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, extrudeStep, featureBuild, featureSpec, isFlipped, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, previewSpec, setExtrudeDistance, setExtrudeFlip, signedDistance, ZERO_DISTANCE, ZERO_OK } from "./extrude.ts";
 export { PART_VIEW, syncGraph } from "./graph.ts";
 export { designLookup, designObjects, outlineProducer, registerDesign, type FeatureHandle, type OutlineSource } from "./representations.ts";
 export { bodyReference, designReference, NAME_NOTE, profileReference, readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
