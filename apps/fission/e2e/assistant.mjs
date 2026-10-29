@@ -34,7 +34,7 @@ import { launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { gridSnapOn, reloadEmpty, sheetsClearFor, startWithBox, switchTo } from "./start.mjs";
+import { gridSnapOn, reloadEmpty, sheetsClearFor, startWithBox, switchTo, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4181, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4181/";
@@ -441,7 +441,7 @@ try {
         if (width === 375) await page.setViewportSize({ width: 375, height: 800 });
         // Sketch 1: a 40 × 30 rectangle from (0, 0), extruded 10 mm (Extrude 1, item 3): the part is the extrude, 40 · 30 · 10 = 12,000 mm³.
         await page.click("#create-sketch");
-        await page.click("#sketch-plane-XY");
+        await pickPlane(page, "XY", false);
         await page.waitForFunction(() => document.querySelector("#viewport").dataset.sketching === "true");
         await gridSnapOn(page);
         await page.evaluate(() => (document.getElementById("workspace").scrollTop = 0)); // ticking it scrolled the panel into view at phone width

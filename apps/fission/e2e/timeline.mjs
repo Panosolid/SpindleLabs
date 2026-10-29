@@ -25,7 +25,7 @@ import { browserName, launch } from "./browser.mjs";
 import { clickPlane, TOP } from "./sketch-screen.mjs";
 import { preview } from "vite";
 import { withPropertiesFolded, pinProperties } from "./properties.mjs";
-import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, gridSnapOn, openPanel, sheetsClearFor, startWithBox, pickPlane } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4211, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4211/?test-hooks";
@@ -199,7 +199,7 @@ async function clickModel(page, [x, y], tap) {
 async function addSquare(page, tap, layout, live = false) {
   await press(page, "#create-sketch", tap);
   await openPanel(page, "properties", tap); // phone: the plane choice is in the Properties sheet, closed until its toggle (U5)
-  await press(page, "#sketch-plane-XY", tap);
+  await pickPlane(page, "XY", tap);
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
   await openPanel(page, "properties", tap); // phone: the sketch's panel is a sheet, closed until its toggle (U5)
   await gridSnapOn(page);
@@ -685,7 +685,7 @@ try {
       // 7. While a new sketch is edited (Sketch 2, last), going to the start would roll it back: off, with why, and
       // a drag there is refused with the same words; stepping back to just after it is still allowed.
       await press(page, "#create-sketch", dragTap);
-      await press(page, "#sketch-plane-XY", dragTap);
+      await pickPlane(page, "XY", dragTap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       const words = "The marker can't go before Sketch 2 while it is being edited: finish the sketch first";
       assert.equal(await page.getAttribute('#timeline [data-button="start"]', "aria-disabled"), "true");
@@ -1456,7 +1456,7 @@ try {
 
       // Finding 4: Go to the start while Sketch 1 is being edited is refused, and the words are on the screen beside the bar.
       await press(page, "#create-sketch", tap);
-      await press(page, "#sketch-plane-XY", tap);
+      await pickPlane(page, "XY", tap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
       // Off (aria-disabled) but still pressable, saying why: Playwright waits for an enabled element unless forced.
       await (tap ? page.tap('#timeline [data-button="start"]', { force: true }) : page.click('#timeline [data-button="start"]', { force: true }));
