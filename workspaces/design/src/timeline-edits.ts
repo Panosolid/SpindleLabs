@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { EYE_ROWS, isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -98,7 +98,49 @@ export function hideBody(doc: DesignDocument, id: string, hide: boolean): Design
   if (isHidden(doc, id) === hide) return doc;
   if (!hide) return withoutHidden(doc, id);
   const now = new Set([...(doc.hidden ?? []), id]);
-  return { ...doc, hidden: doc.timeline.features.flatMap((f) => (now.has(f.id) ? [f.id] : [])) };
+  return { ...doc, hidden: [...doc.timeline.features.flatMap((f) => (now.has(f.id) ? [f.id] : [])), ...EYE_ROWS.filter((r) => now.has(r))] };
+}
+
+/**
+ * Any eye in the browser (Ben, 2026-10-29: an eye on everything, as in
+ * Fusion): `id` shut (`hide`) or opened. A solid feature's body as
+ * `hideBody`; a sketch by its item's id, not drawn but built as ever
+ * (and drawn while it is edited); an origin axis ("origin-x") or a
+ * folder (EYE_FOLDERS) listed in `hidden` after the items; an origin
+ * plane ("origin-xy"), hidden until shown, listed in `shownPlanes`. The
+ * same document back when nothing changes; a Move (no body of its own),
+ * an id not in the timeline nor an eye's, is refused.
+ */
+export function hideRow(doc: DesignDocument, id: string, hide: boolean): DesignDocument {
+  if ((ORIGIN_PLANES as readonly string[]).includes(id)) {
+    const shownNow = doc.shownPlanes?.includes(id) ?? false;
+    if (shownNow === !hide) return doc;
+    const next = new Set([...(doc.shownPlanes ?? []), id]);
+    if (hide) next.delete(id);
+    const { shownPlanes: _, ...rest } = doc;
+    const list = ORIGIN_PLANES.filter((p) => next.has(p));
+    return list.length === 0 ? rest : { ...rest, shownPlanes: list };
+  }
+  if (!EYE_ROWS.includes(id)) {
+    const item = itemIn(doc, id);
+    if (!isSketchItem(item)) return hideBody(doc, id, hide);
+  }
+  if (isHidden(doc, id) === hide) return doc;
+  if (!hide) return withoutHidden(doc, id);
+  const now = new Set([...(doc.hidden ?? []), id]);
+  return { ...doc, hidden: [...doc.timeline.features.flatMap((f) => (now.has(f.id) ? [f.id] : [])), ...EYE_ROWS.filter((r) => now.has(r))] };
+}
+
+/**
+ * The design an extrude of sketch `id` records, with the sketch's eye shut
+ * (Ben, 2026-10-29, as Fusion does: once a solid is made from a sketch the
+ * sketch is hidden, so it doesn't stay on the floor after the body is
+ * moved); its eye shows it again where it was drawn. Anything but a sketch
+ * in the timeline gives `doc` back.
+ */
+export function usedSketchHidden(doc: DesignDocument, id: string): DesignDocument {
+  const f = doc.timeline.features.find((x) => x.id === id);
+  return f !== undefined && isSketchItem(f) ? hideRow(doc, id, true) : doc;
 }
 
 /**

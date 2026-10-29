@@ -3,7 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
+import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
 import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
@@ -965,7 +965,9 @@ export class Viewer implements SharedViewport {
   private host: ViewHost;
   /** The ground grid and the model's axes, hidden while a sketch with its own grid and axes is edited. */
   private grid: THREE.GridHelper;
-  private axes = new THREE.AxesHelper(20);
+  private axes = new THREE.Group();
+  /** The origin's planes the browser's eyes show (showOrigin): faint squares, none at first. */
+  private originPlanes = new THREE.Group();
   /** The edited sketch's grid and axes (redrawn when the main view's camera moves), what it was drawn for, and its minor lines' material (faded by zoom). */
   private sketchGridGroup = new THREE.Group();
   private gridFor: { plane: Plane; step: number | null } | null = null;
@@ -1004,15 +1006,23 @@ export class Viewer implements SharedViewport {
     // Blue-grey lines on the blue backdrop (UX2): the middle pair stronger.
     const grid = (this.grid = new THREE.GridHelper(200, 20, 0x46536a, 0x2a3242));
     grid.rotation.x = Math.PI / 2; // lay the grid on the XY plane
-    for (const ground of [grid, this.axes]) {
+    // The model's axes, three.js's own, one helper per axis (each drawing only its own two points) so an eye can hide one.
+    for (let k = 0; k < 3; k++) {
+      const axis = new THREE.AxesHelper(20);
+      axis.geometry.setDrawRange(2 * k, 2);
+      axis.userData.axis = k;
+      this.axes.add(axis);
+    }
+    for (const ground of [grid, ...this.axes.children as THREE.AxesHelper[]]) {
       ground.renderOrder = GROUND_ORDER;
       (ground.material as THREE.Material).depthWrite = false;
     }
+    this.element.dataset.origin = "x y z"; // read by the e2e test
     const key = new THREE.DirectionalLight(0xffffff, 2.2);
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
+    this.scene.add(grid, this.axes, this.originPlanes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
 
     this.host = {
       scene: this.scene,
@@ -1276,7 +1286,7 @@ export class Viewer implements SharedViewport {
       }
       if (d.editing.snap) segments(d.editing.snap.marks, SKETCH_COLOURS.snap, 7);
     }
-    this.grid.visible = this.axes.visible = this.editedPlane === null;
+    this.grid.visible = this.axes.visible = this.originPlanes.visible = this.editedPlane === null;
     this.gridCamera = this.gridKey = ""; // drawn again on the next frame, for this sketch
     if (!this.gridFor) this.drawGrid(null);
     this.fadeBody();
@@ -1422,6 +1432,34 @@ export class Viewer implements SharedViewport {
     this.element.dataset.planes = planes.map((p) => `${p.id}${p.offered ? "" : " (not offered)"}`).join(", "); // read by the e2e test
     this.element.dataset.pickFaces = faces.join(" "); // read by the e2e test
     delete this.element.dataset.hoverPlane;
+  }
+
+  /**
+   * The origin's axes and planes the browser's eyes show (Ben, 2026-10-29):
+   * each axis drawn or not; each plane shown a faint square from the
+   * origin, as an offered plane is drawn but quieter (never clicked: the
+   * planes offered for a sketch are showPlanes'). Hidden with the grid while
+   * a sketch is edited, which has its own axes.
+   */
+  showOrigin(shown: OriginShown) {
+    for (const a of this.axes.children) a.visible = shown.axes[a.userData.axis as number];
+    clearGroup(this.originPlanes);
+    const half = Math.max(10, 0.8 * this.bodyFraming().radius);
+    const behindBody = { transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor, depthTest: false, depthWrite: false };
+    for (const { plane } of shown.planes) {
+      const world = ([[0, 0], [2 * half, 0], [2 * half, 2 * half], [0, 2 * half]] as SketchXY[]).map((c) => toWorld(plane, c));
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      const fill = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: SKETCH_COLOURS.planeOff, opacity: PLANE_OPACITY.off, side: THREE.DoubleSide, ...behindBody }));
+      const outline = new THREE.BufferGeometry();
+      outline.setAttribute("position", new THREE.Float32BufferAttribute(world.flat(), 3));
+      const rim = new THREE.LineLoop(outline, new THREE.LineBasicMaterial({ color: SKETCH_COLOURS.planeOff, opacity: 0.4, ...behindBody }));
+      fill.renderOrder = rim.renderOrder = PLANE_ORDER;
+      this.originPlanes.add(fill, rim);
+    }
+    const names = ["x", "y", "z"].filter((_, k) => shown.axes[k]);
+    this.element.dataset.origin = [...names, ...shown.planes.map((p) => p.id)].join(" "); // read by the e2e test
   }
 
   /** The offered plane under the pointer drawn brighter (PLANE_OPACITY.hover); said on the element for the e2e test. */

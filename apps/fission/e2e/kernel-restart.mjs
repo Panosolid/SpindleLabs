@@ -40,12 +40,14 @@ async function check(name, fn) {
 const rebuilt = (page) => page.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false", null, { timeout: 15000 });
 /** The timeline's items, each with whether it is drawn red. */
 const items = (page) => page.$$eval("#timeline li[data-item]", (lis) => lis.map((li) => ({ id: li.dataset.item, failed: li.dataset.failed === "true" })));
+const ALL = ["sketch-1", "feature-10", "sketch-11", "sketch-12", "feature-35", "sketch-36", "feature-42", "feature-43"];
 const open = async (page) => {
   await page.setInputFiles("#open-file", { name: "phone.spindle", mimeType: "application/octet-stream", buffer: project });
-  await page.waitForTimeout(300);
+  // The project's items in the timeline (a slow engine, WebKit on a phone, can take longer than a fixed wait), then
+  // its build; noneRed still says what is there if they never come.
+  await page.waitForFunction((all) => [...document.querySelectorAll("#timeline li[data-item]")].map((li) => li.dataset.item).join() === all.join(), ALL, { timeout: 15000 }).catch(() => {});
   await rebuilt(page);
 };
-const ALL = ["sketch-1", "feature-10", "sketch-11", "sketch-12", "feature-35", "sketch-36", "feature-42", "feature-43"];
 const noneRed = async (page, when) => {
   const got = await items(page);
   assert.deepEqual(got.map((i) => i.id), ALL, `${when}: the items`);

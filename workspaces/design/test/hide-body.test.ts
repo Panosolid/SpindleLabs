@@ -76,14 +76,15 @@ test("the reader takes a hidden list in any order, and refuses each way of break
   assert.deepEqual(reopen(hideBody(suppressItem(d, "feature-11", true), "feature-11", true)).hidden, ["feature-11"]);
   assert.deepEqual(reopen(hideBody(moveMarker(d, "feature-1"), "feature-11", true)).hidden, ["feature-11"]);
   const refused = (hidden: unknown) => () => readDesignDocument({ ...structuredClone(d), hidden });
-  const NOT_LIST = { message: "Design data's hidden bodies are not a list of solid feature ids (left out when every body shows)" };
+  const NOT_LIST = { message: "Design data's hidden list is not a list of ids (left out when everything shows)" };
   assert.throws(refused([]), NOT_LIST, "an empty list is left out instead");
   assert.throws(refused("feature-1"), NOT_LIST);
   assert.throws(refused({ 0: "feature-1" }), NOT_LIST);
   assert.throws(refused(null), NOT_LIST);
-  assert.throws(refused(["sketch-2"]), { message: 'Design data hides sketch-2, which is not a solid feature in the timeline' });
-  assert.throws(refused(["feature-99"]), { message: 'Design data hides feature-99, which is not a solid feature in the timeline' });
-  assert.throws(refused([1]), { message: "Design data hides 1, which is not a solid feature in the timeline" });
+  // A sketch may be hidden since Ben's eye on everything (2026-10-29; eyes.test.ts); anything else not a solid feature is refused.
+  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a solid feature or sketch in the timeline, an origin axis or a folder` });
+  assert.throws(refused(["feature-99"]), NOT_HIDEABLE("feature-99"));
+  assert.throws(refused([1]), NOT_HIDEABLE("1"));
   assert.throws(refused(["feature-1", "feature-1"]), { message: "Design data hides feature-1 twice" });
 });
 
@@ -109,7 +110,7 @@ test("deleting a hidden item takes it out of the list, and the list goes with it
 /** Each row's icon, in the tree's shape: [group, icon, rows] or [row, icon]. */
 const icons = (nodes: BrowserNode[]): unknown[] => nodes.map((n) => (n.children ? [n.label, n.icon, icons(n.children)] : [n.label, n.icon]));
 
-test("hand-listed: every row's icon, and the eye on each Body row only", () => {
+test("hand-listed: every row's icon, and the eye on each Body, sketch and origin row and their folders", () => {
   const d = hideBody(part(), "feature-11", true);
   const tree = browserTree(d);
   assert.deepEqual(icons(tree), [
@@ -119,9 +120,23 @@ test("hand-listed: every row's icon, and the eye on each Body row only", () => {
     ["Bodies", "folder", [["Body 1", "body"], ["Body 2", "body"]]],
     ["Origin", "origin", [["XY plane", "plane"], ["XZ plane", "plane"], ["YZ plane", "plane"], ["X axis", "axis"], ["Y axis", "axis"], ["Z axis", "axis"]]],
   ]);
-  // `hidden` is set on Body rows (false or true) and left out on every other row.
+  // `hidden` is set (false or true) on the rows that draw something and their folders (Ben, 2026-10-29: an eye on everything), the origin's planes hidden at
+  // first as in Fusion; left out on the Timeline and its rows and the Profiles (drawn by nothing of their own).
   const flat = (nodes: BrowserNode[]): BrowserNode[] => nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
-  assert.deepEqual(flat(tree).filter((n) => n.hidden !== undefined).map((n) => [n.id, n.hidden]), [["body-1", false], ["body-2", true]]);
+  assert.deepEqual(flat(tree).filter((n) => n.hidden !== undefined).map((n) => [n.id, n.hidden]), [
+    ["sketches", false],
+    ["sketches/sketch-2", false],
+    ["bodies", false],
+    ["body-1", false],
+    ["body-2", true],
+    ["origin", false],
+    ["origin-xy", true],
+    ["origin-xz", true],
+    ["origin-yz", true],
+    ["origin-x", false],
+    ["origin-y", false],
+    ["origin-z", false],
+  ]);
   // A preset's own shape has its own icon (the slot's); a feature type with none has the plain feature icon.
   const slot = flat(browserTree(partDocument("slot", 60, 20, 5)));
   assert.equal(slot.find((n) => n.id === "feature-1")!.icon, "slot");

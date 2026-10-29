@@ -151,12 +151,39 @@ export interface DesignDocument {
   timeline: { features: Feature[]; marker?: Marker };
   /** Each extrude's kept shape while its sketch is lost (24d2), by the extrude's id; left out when there is none. */
   kept?: Record<string, KeptShape>;
-  /** The solid features whose bodies are hidden by the browser's eye (U0f3), by id in timeline order; left out when every body shows. */
+  /**
+   * What the browser's eyes hide (U0f3; Ben 2026-10-29, an eye on
+   * everything): solid features' bodies and sketches by their items' ids
+   * in timeline order, then the origin's axes ("origin-x"…) and the
+   * folders ("folder-bodies"…) whose eyes are shut, in EYE_ROWS' order;
+   * left out when nothing is hidden.
+   */
   hidden?: string[];
+  /** The origin's planes shown by their eyes ("origin-xy"…, in ORIGIN_PLANES' order), hidden at first as in Fusion; left out when none shows. */
+  shownPlanes?: string[];
 }
 
-/** Whether feature `id`'s body is hidden by the browser's eye (U0f3): built as ever, but not drawn, picked or exported as a whole. */
+/** Whether `id` has its own eye shut (U0f3): a solid feature's body or a sketch built as ever, but not drawn, picked or exported as a whole; an axis or a folder hidden. */
 export const isHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => doc.hidden?.includes(id) ?? false;
+
+/** The origin's axes with an eye, X, Y then Z: shown at first. */
+export const ORIGIN_AXES = ["origin-x", "origin-y", "origin-z"] as const;
+/** The origin's planes with an eye: hidden at first (Fusion's). */
+export const ORIGIN_PLANES = ["origin-xy", "origin-xz", "origin-yz"] as const;
+/** The browser's folders with an eye: shut, it hides every row in it (the Timeline lists items, not things drawn; the Profiles are drawn by nothing). */
+export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches", origin: "folder-origin" } as const;
+/** Every id `hidden` may list that is not a timeline item's, in the order it lists them. */
+export const EYE_ROWS: readonly string[] = [...ORIGIN_AXES, ...Object.values(EYE_FOLDERS)];
+
+/** Whether solid feature `id`'s body is hidden: its own eye shut, or the Bodies folder's. */
+export const bodyHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.bodies);
+/** Whether sketch `id` is hidden: its own eye shut (an extrude of it shuts it, as Fusion does), or the Sketches folder's. */
+export const sketchHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.sketches);
+/** Whether an origin axis or plane is drawn: an axis unless its eye is shut, a plane only once its eye is opened; neither while the Origin folder's is shut. */
+export function originDrawn(doc: Pick<DesignDocument, "hidden" | "shownPlanes">, id: string): boolean {
+  if (isHidden(doc, EYE_FOLDERS.origin)) return false;
+  return (ORIGIN_PLANES as readonly string[]).includes(id) ? (doc.shownPlanes?.includes(id) ?? false) : !isHidden(doc, id);
+}
 
 const profileNames: Record<ProfileKind, string> = {
   "l-bracket": "L-bracket",
@@ -946,15 +973,26 @@ export function readDesignDocument(data: unknown): DesignDocument {
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
     }
   }
-  // Hidden bodies (U0f3): each a solid feature in the timeline, once.
+  // What the eyes hide (U0f3): each a solid feature or a sketch in the timeline, an origin axis or a folder, once.
   if (Object.hasOwn(d, "hidden")) {
     const hidden: unknown = (d as { hidden?: unknown }).hidden;
-    if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden bodies are not a list of solid feature ids (left out when every body shows)");
+    if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden list is not a list of ids (left out when everything shows)");
     const once = new Set<string>();
     for (const id of hidden) {
       const at = byId.get(id as string);
-      if (typeof id !== "string" || !at || !makesBody(at.item)) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature in the timeline`);
+      if (typeof id !== "string" || !((at && (makesBody(at.item) || isSketchItem(at.item))) || EYE_ROWS.includes(id))) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature or sketch in the timeline, an origin axis or a folder`);
       if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
+      once.add(id);
+    }
+  }
+  // The origin's planes shown by their eyes: each one of them, once.
+  if (Object.hasOwn(d, "shownPlanes")) {
+    const planes: unknown = (d as { shownPlanes?: unknown }).shownPlanes;
+    if (!Array.isArray(planes) || planes.length === 0) throw new Error("Design data's shown planes are not a list of origin planes (left out when none shows)");
+    const once = new Set<string>();
+    for (const id of planes) {
+      if (typeof id !== "string" || !(ORIGIN_PLANES as readonly string[]).includes(id)) throw new Error(`Design data shows ${shown(id)}, which is not an origin plane`);
+      if (once.has(id)) throw new Error(`Design data shows ${id} twice`);
       once.add(id);
     }
   }
