@@ -13,7 +13,7 @@ export interface KernelOps {
   snap_to_grid: { args: [x: number, y: number, spacing: number]; result: [number, number] };
   place_freely: { args: [x: number, y: number, pixel: number]; result: [number, number] };
   sketch_outline: { args: [lines: SketchLine[], circles: SketchCircle[], arcs: SketchArc[]]; result: SketchOutline };
-  /** The body store (kernel/src/store.rs): build and keep a body, read it by handle, free it. */
+  /** The kernel's body store: build and keep a body, read it by handle, free it. */
   body_build: { args: [spec: BodySpec]; result: BodyHandle };
   body_view: { args: [body: BodyHandle]; result: BodyView };
   body_stl: { args: [body: BodyHandle, name: string]; result: StlFile };

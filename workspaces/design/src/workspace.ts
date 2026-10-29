@@ -25,7 +25,7 @@ import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from
 import { startHint } from "./start-hint.ts";
 import { bodyRows, browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
-import { DEFAULT_SIZES, parameterRows, propertiesPanel, SIZE_KEYS, type SizeKey } from "./properties.ts";
+import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
@@ -44,16 +44,16 @@ import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./p
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
 import { FACE_NEW_BODY, faceOpen, faceProfile, type FaceProfile } from "./face-extrude.ts";
-import { rounding, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
+import { rounding, SNAP_PIXELS, snapOnSketch, snapsNow, withSnap, type BodySnaps, type Snap } from "./snap.ts";
 import { aimOf, anchorOf, lengthRefused, liveValues, NO_AIM, typedFields, withLocks, type Locks } from "./typed-entry.ts";
 import { typedBoxes } from "./typed-boxes.ts";
 import { hintOf, pointerHint } from "./pointer-hint.ts";
-import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, type SketchTool, type ToolKind } from "./sketch-tool.ts";
+import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawStep, GRID_ATE_RADIUS, NO_RADIUS, ORIGIN_PLANES, originPlanes, sketchDrawings, startTool, switchTool, toolBusy, unfinishedWords, type SketchTool, type ToolKind } from "./sketch-tool.ts";
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
-import { COPY_SVG, DOWNLOAD_STL, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
 /**
  * What the user last entered (as typed), kept while other workspaces are
@@ -65,6 +65,13 @@ let framed: Framing | null = null;
 let framedKind: PartKind | null = null;
 /** Design was put away by an Undo or Redo made in another workspace: the next mount is that restore's, not an opened file's. */
 let putAwayByRestore = false;
+/**
+ * Rebuilds asked for and not answered yet, per view element: its `data-rebuilding` says whether any is, so a test reads
+ * the page only once it shows the last edit (the monkey). Counted across mounts: every Undo remounts Design on the same
+ * view, and a rebuild of the Design put away that ends first must not say "done" while the new one's still runs
+ * (real-use hunt C2, 2026-10-28).
+ */
+const rebuildsOn = new WeakMap<HTMLElement, number>();
 /**
  * The sketch being edited and its grid, kept across mounts: Undo and Redo
  * re-mount Design, and you stay in the sketch (the chain in progress ends,
@@ -459,14 +466,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
 
   /** Runs a registered verb on these targets and shows what it said. */
-  async function runAction(id: string, targets: readonly Selected[]) {
+  async function runAction(id: string, targets: readonly Selected[], note = "") {
     const action = ctx.actions.get(id);
     if (!action) return panel.showActionNote(`No action ${id} is registered.`, true);
     // Design's own runs know the bodies drawn (actions.ts, DesignRun: the precision overlay marks only those that warned);
     // the shell's context stays the prototype, so its getters (the project, the graph) read live as ever.
     const run: DesignRun = Object.assign(Object.create(ctx) as WorkspaceContext, { scene: lastScene });
     const outcome = await action.run(targets, run);
-    if (shown) panel.showActionNote(outcome.message, outcome.bad);
+    if (shown) panel.showActionNote([outcome.message, note].filter(Boolean).join(" "), outcome.bad);
   }
 
   // The body is built from the part's feature intent (document.ts); an extrude of a sketch asks the kernel for the outline (extrude.ts).
@@ -594,7 +601,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const doc = ctx.project.workspaces.design as DesignDocument | undefined;
       const bodies = doc ? shownBodyRefs(doc, failedNow) : [];
       if (bodies.length === 0) return panel.showActionNote(doc ? noBodyWords(doc, failedNow) : NO_BODY_STL, true);
-      return runAction(DOWNLOAD_STL, bodies);
+      // Hidden bodies are left out, as in Fusion; the note says which (beginner play-test 2026-10-28).
+      return runAction(DOWNLOAD_STL, bodies, hiddenStlNote(doc!, failedNow));
     }
     if (command.op === "create_sketch") return aiSketch(String(command.on));
     if (DRAW_OPS.includes(command.op)) return aiDraw(command);
@@ -624,9 +632,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   }
   /** Leaving a size box whose text was refused: the size the design last took comes back, and the words go. */
   function restoreRefused(i: number) {
-    if (saved === null || refusedSize(shape) === null) return;
+    const why = saved === null ? null : refusedSize(shape);
+    if (saved === null || why === null) return;
+    const typed = inputs[i].value;
     inputs[i].value = saved.sizes[i];
-    if (refusedSize(shape) === null) panel.showError("");
+    // It went back without a word (beginner play-test 2026-10-28): say so, until the next size typed.
+    if (refusedSize(shape) === null) panel.showError(revertedNote(why, typed, saved.sizes[i], shape === "sketch-extrude"));
   }
 
   /**
@@ -857,17 +868,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   };
 
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
-  /** Rebuilds asked for and not answered yet: the viewport's `data-rebuilding` says whether any is, so a test reads the page only once it shows the last edit (the monkey). */
-  let rebuilding = 0;
   /** The design last shown and built: a sketch left after edits to it differs, and is rebuilt (25a3). */
   let shownDoc: DesignDocument | null = null;
   async function show(doc: DesignDocument, kind: PartKind) {
     shownDoc = doc;
-    viewport.element.dataset.rebuilding = String(++rebuilding > 0);
+    const view = viewport.element;
+    rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
+    view.dataset.rebuilding = "true";
     try {
       await showBuilt(await settled(doc), kind);
     } finally {
-      viewport.element.dataset.rebuilding = String(--rebuilding > 0);
+      const left = rebuildsOn.get(view)! - 1;
+      rebuildsOn.set(view, left);
+      view.dataset.rebuilding = String(left > 0);
     }
   }
   /**
@@ -1015,7 +1028,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** While editing: the tool, the grid, where the pointer landed (snapped) and why, with the pixel size it was snapped at. */
   type Mode = { kind: "none" } | { kind: "pick" } | { kind: "edit"; tool: SketchTool; grid: number; pointer: SketchXY | null; snap: Snap | null; pixel?: number };
   let mode: Mode = { kind: "none" };
-  const sketchBox = sketchPanel(ctx.properties, {
+  const sketchPanelBox = sketchPanel(ctx.properties, {
     pickPlane: (id) => pickPlane(id),
     cancel: () => leaveSketch(),
     grid: (typed) => void setGrid(typed),
@@ -1024,6 +1037,44 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extrude: () => startExtrude(),
     lookAt: () => lookAtSketch(),
   });
+  /**
+   * Why the last click or press did nothing, also shown by the pointer
+   * (`hint`) while sketching: on a phone the panel is in the Properties
+   * sheet, closed while drawing, so a refused click said nothing at all
+   * (beginner play-test 2026-10-28). Empty when there is nothing to say.
+   */
+  let sketchNote = "";
+  const sketchBox: typeof sketchPanelBox = {
+    ...sketchPanelBox,
+    showError(message) {
+      sketchPanelBox.showError(message);
+      if (message === sketchNote) return;
+      sketchNote = message;
+      if (mode.kind === "edit") drawSketches();
+    },
+    // A panel shown afresh has no note, and neither has the pointer.
+    showPick: () => ((sketchNote = ""), sketchPanelBox.showPick()),
+    showEditing: (...args) => ((sketchNote = ""), sketchPanelBox.showEditing(...args)),
+    hide: () => ((sketchNote = ""), sketchPanelBox.hide()),
+  };
+  /** The tool whose unfinished shape Extrude or Finish sketch last warned of: pressed again with it unchanged, it goes on (`unfinishedWords`). */
+  let warnedUnfinished: SketchTool | null = null;
+  /** True when `verb` must wait: the tool has a shape half drawn that it would drop, and this is the first press since. */
+  function holdUnfinished(verb: "Extrude" | "Finish sketch"): boolean {
+    if (mode.kind !== "edit") return false;
+    // A click still waiting for the kernel may finish the shape, or start one: asked again once it has landed.
+    if (waiting > 0) {
+      const again = () => void (mode.kind === "edit" && (verb === "Extrude" ? startExtrude() : finishSketch()));
+      clicks = clicks.then(again, again);
+      return true;
+    }
+    if (warnedUnfinished === mode.tool) return false;
+    const words = unfinishedWords(mode.tool, verb);
+    if (words === null) return false;
+    warnedUnfinished = mode.tool;
+    sketchBox.showError(words);
+    return true;
+  }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
   const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on) });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
@@ -1066,7 +1117,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!editing) return (typed.hide(), hint.hide());
     const width = viewport.element.clientWidth;
     typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
-    if (editing.pointer) hint.show(hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y);
+    // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
+    if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
     else hint.hide();
   }
 
@@ -1353,17 +1405,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Finish Sketch (the toolbar's or the panel's): back to modelling, the camera at the home view (as the owner's CAD suite does, not the view from before the sketch). */
   function finishSketch() {
     if (mode.kind !== "edit") return leaveSketch();
-    // A click still waiting for the kernel is drawn first, then the sketch closes: closed at once, the click's turn came
-    // for a sketch no longer open and it was dropped (a slow phone tapping fast lost its last circle; found in 27b).
-    if (waiting > 0) {
-      const finish = () => {
-        if (mode.kind !== "edit") return; // left meanwhile (Escape, Undo, another Finish)
-        leaveSketch();
-        viewport.setView("home");
-      };
-      clicks = clicks.then(finish, finish);
-      return;
-    }
+    // A click still waiting for the kernel is drawn first, then the sketch closes (`holdUnfinished` asks again once it has
+    // landed): closed at once, the click's turn came for a sketch no longer open and it was dropped (a slow phone tapping fast
+    // lost its last circle; found in 27b).
+    if (holdUnfinished("Finish sketch")) return;
     leaveSketch();
     viewport.setView("home");
   }
@@ -1470,6 +1515,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * sketch's closed outline is offered in the view to click.
    */
   function startExtrude() {
+    if (holdUnfinished("Extrude")) return;
     leaveEdit();
     leaveMove();
     const doc = ctx.project.workspaces.design as DesignDocument | undefined;
@@ -2132,7 +2178,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         // Undo, Escape or a tool change while the kernel looked: the click was for a sketch that is no longer there.
         if (mode.kind !== "edit" || toolChanges !== changes || designDoc() !== before) return;
       }
-      sketchBox.showError(done.note ?? "");
+      // A circle's rim the grid rounded onto its centre from further out than a snap's reach (so not a click on the centre)
+      // says the grid did it (a small circle at phone zoom; beginner play-test 2026-10-28).
+      sketchBox.showError(done.note === NO_RADIUS && snapsNow(snapOn, held, gridSnap).grid && rounded[0] === snapped[0] && rounded[1] === snapped[1] && pointer.pixel !== undefined && Math.sqrt((at[0] - snapped[0]) ** 2 + (at[1] - snapped[1]) ** 2) > SNAP_PIXELS * pointer.pixel ? GRID_ATE_RADIUS : (done.note ?? ""));
       if (done.tool !== mode.tool && locks === took) unlock(); // the sizes it placed with, not any typed since
       mode.tool = done.tool;
       // What the pointer snaps to now, with the new point and the tool's next step: where a hover answered since the

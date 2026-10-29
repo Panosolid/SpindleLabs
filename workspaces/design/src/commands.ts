@@ -19,7 +19,7 @@ export const SHAPES: readonly ShapeKind[] = ["box", "cylinder", "sphere", "l-bra
 
 /**
  * Where a draw command's coordinates may go, in mm either way: the kernel's
- * largest feature size (1 km, MAX_SIZE in kernel/src/tolerance.rs), so a
+ * largest feature size (1 km, MAX_SIZE in kernel.json), so a
  * sketch's numbers stay within a part's reach. The kernel holds the exact
  * limits when it looks for the outline, as it does for the tools.
  */

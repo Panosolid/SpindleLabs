@@ -63,7 +63,7 @@ test("anything not built says so in its own words (placeholders never pretend)",
 
 test("the facts the guide states match the kernel's numbers", () => {
   const all = CHAPTERS.map(words).join(" ");
-  // kernel/src/tolerance.rs: LINEAR = 1e-5 mm = 10 nm; the modelling range 1 µm to 1 km.
+  // The kernel's LINEAR = 1e-5 mm = 10 nm; the modelling range 1 µm to 1 km.
   assert.match(all, /tolerance is 10 nanometres/);
   assert.match(all, /1 micrometre to 1 kilometre/);
   // The bracket's counts (checked against its B-rep in guide-scenes.test.ts).

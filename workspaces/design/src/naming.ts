@@ -69,7 +69,7 @@ export type CurveOf = (boundary: number, piece: number) => string | null;
  * own, piece before piece after. It is unless the kernel turned the loop
  * round: it builds an outer loop counter-clockwise, turning one given
  * clockwise, and a flipped body from the outline mirrored, which turns it
- * again (kernel/src/ops/extrude.rs, ops/place.rs). With three pieces or
+ * again (the kernel's extrude and placing). With three pieces or
  * more the body says so itself (`cornerEnds`).
  */
 export interface PieceWays {
@@ -218,7 +218,7 @@ export function pieceWays(outline: Outline, flip: boolean): PieceWays | undefine
 /**
  * Twice the area a loop of corners and bulges encloses, positive when it
  * runs counter-clockwise, as the kernel works it out to decide whether to
- * turn it (ops/profile.rs `signed_area`): the shoelace sum over the
+ * turn it: the shoelace sum over the
  * corners, plus for each arc piece r² (σ − sin σ), the segment between the
  * arc and its chord, where the arc turns σ = 4 atan(bulge) and its radius
  * is r = c (1 + bulge²) / (4 |bulge|) for a chord c long. Used for loops of

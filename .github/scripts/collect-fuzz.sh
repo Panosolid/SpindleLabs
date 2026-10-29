@@ -84,5 +84,11 @@ done
 
 # Every run, not only one with a failure folder: a fuzzer that crashed or
 # ran out of time leaves none, and its red job (JOBS) is filed all the same.
-RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$here/file_issues.py" "$IN" ||
+# A kind that couldn't be filed turns the job red at the end (the results are on test-results all the same), so a
+# night's unfiled kinds are seen on the Actions tab instead of passing quietly (weak-spot hunt 10-29).
+filing=0
+RUN_URL="$RUN_URL" COMMIT="$short" BRANCH="$BRANCH" python3 "$here/file_issues.py" "$IN" || {
+  filing=1
   echo "Filing issues failed; the results are on test-results all the same."
+}
+[ "$filing" = 0 ] || { echo "Some kinds were not filed (see above)."; exit 1; }
