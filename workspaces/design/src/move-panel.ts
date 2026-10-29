@@ -194,8 +194,8 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   return {
     show(m) {
       editing = m.id;
-      kind = m.kind;
       open = true;
+      kind = m.kind;
       // An edited Move keeps its pivot; a new one follows its bodies.
       pivotTyped = m.id !== null;
       title.textContent = m.id === null ? m.name : `Edit ${m.name}`;
