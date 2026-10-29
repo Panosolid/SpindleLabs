@@ -45,6 +45,7 @@ export const SECONDS = {
   "bodies.mjs": 53,
   "move.mjs": 21,
   "move-drag.mjs": 37,
+  "move-face-sketch.mjs": 30,
   "timeline.mjs": 288,
   "sketch-shell.mjs": 18,
   "assistant.mjs": 109,
