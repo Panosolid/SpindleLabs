@@ -44,7 +44,7 @@ export function sketchSpot(pick: ViewportPick, scene: Scene | null): SketchSpot 
   const ref = designReference("face", body.names, hit.index);
   const feature = ref === null ? null : faceFeature(ref.id);
   if (ref === null || feature !== body.feature) return { kind: "refused", message: UNNAMED_FACE };
-  return { kind: "face", face: { plane: ref.id, feature }, drawn };
+  return { kind: "face", face: { plane: ref.id, feature }, drawn: body.frame ? { ...drawn, body: body.frame } : drawn };
 }
 
 /** The faces of the bodies on screen a sketch can go on (joined numbering, for the viewport to light): the flat ones with a name of their own. */

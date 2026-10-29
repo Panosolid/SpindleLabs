@@ -5,7 +5,8 @@
 // the kernel's index there, and so to its stable name (naming.ts), which
 // already carries the feature that built it.
 
-import type { BodyView, DisplayMesh, GeometryReference } from "@fission/core";
+import type { BodyView, DisplayMesh, GeometryReference, Plane } from "@fission/core";
+import { bodyFrame } from "./face-sketch.ts";
 import { bodyFeatures } from "./browser.ts";
 import { bodyHidden, type DesignDocument } from "./document.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
@@ -19,6 +20,8 @@ export interface ShownBody {
   place: number;
   view: BodyView;
   names: BodyNames;
+  /** Where the Moves before it put its own frame (face-sketch.ts `bodyFrame`); none when not moved. */
+  frame?: Plane;
 }
 
 /** The bodies shown, in build order, and their joined mesh. */
@@ -56,7 +59,8 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
     if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
     const spec = r.spec;
     const view = await cache.view(r.body);
-    shown.push({ feature: f.id, place: i + 1, view, names: featureNames(f.id, { spec, curves: r.curves }, view) });
+    const frame = bodyFrame(spec);
+    shown.push({ feature: f.id, place: i + 1, view, names: featureNames(f.id, { spec, curves: r.curves }, view), ...(frame ? { frame } : {}) });
   }
   return shown;
 }

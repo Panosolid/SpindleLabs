@@ -17,12 +17,17 @@
 // - On every rebuild the frame turns with the face the shortest way from
 //   the frame as drawn (never from the last one: two shortest turns are
 //   not one), keeping the side of the face its normal was on.
+// - From 35e2h it is first carried by what the Moves before it did to the
+//   face's body since it was drawn (`body`: where they had put the body's
+//   own frame, the world's, when drawn; `bodyFrame` now), so a Move edited
+//   to slide the face along itself, or turn it about its normal, takes the
+//   sketch with it, as it takes the face.
 //
 // Every frame is worked out in doubles and squared up (unit axes, x square
 // to the normal) before the kernel sees it: the kernel refuses a frame off
 // by more than 64 ulps (the kernel's FRAME_SQUARE).
 
-import type { BodyView, Feature, GeometryReference, Plane, StableId } from "@fission/core";
+import type { BodySpec, BodyView, Feature, GeometryReference, Motion, Plane, StableId } from "@fission/core";
 import { readDesignReference } from "./references.ts";
 
 type Vec3 = [number, number, number];
@@ -31,6 +36,8 @@ type Vec3 = [number, number, number];
 export interface SketchPlacement {
   plane: Plane;
   side: 1 | -1;
+  /** Where the Moves before it had put the face's body's own frame when picked (`bodyFrame`); none when not moved. */
+  body?: Plane;
 }
 
 /** Why a face sketch is held at its last placement: its face's name finds no face, or two. */
@@ -52,6 +59,8 @@ export interface SketchFace {
   frame: Plane;
   side: 1 | -1;
   held?: Plane;
+  /** Where the Moves before it had put the face's body's own frame (the world's) when drawn; none when it was not moved (35e2h). */
+  body?: Plane;
 }
 
 /** The origin planes in the order a tie is broken (sketch.ts PLANES; the model's ORIGIN_FRAMES). */
@@ -162,16 +171,92 @@ export function drawnOnFace(view: BodyView, face: number): SketchPlacement | nul
   return outward ? drawnFrame(outward, view.face_centroids[face]) : null;
 }
 
+/** The world's own frame: where a body that no Move has moved keeps its own. */
+const WORLD: Plane = { origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, 0, 1] };
+
+/**
+ * `v` turned `angle` radians counter-clockwise looking down unit `k` (the
+ * right-hand rule, as the kernel's `turn`), by Rodrigues' formula:
+ * R v = v cos a + (k × v) sin a + k (k · v)(1 − cos a).
+ */
+function spun(v: readonly number[], k: readonly number[], angle: number): Vec3 {
+  const c = Math.cos(angle);
+  return add(add(scale(v, c), scale(cross(k, v), Math.sin(angle))), scale(k, dot(k, v) * (1 - c)));
+}
+
+/**
+ * Where a body's moves (its spec's, in order: kernel-types.ts `Motion`) put
+ * the body's own frame, the world's: its origin shifted and turned about
+ * each pivot line, its axes turned. Null when nothing moved it (no moves,
+ * or a spec that is not moved), so a sketch on a body never moved keeps no
+ * `body` and is placed exactly as before 35e2h.
+ */
+export function bodyFrame(spec: BodySpec): Plane | null {
+  const moves: readonly Motion[] = "moved" in spec ? spec.moved.moves : [];
+  if (moves.length === 0) return null;
+  let o: Vec3 = [0, 0, 0];
+  let x: Vec3 = [1, 0, 0];
+  let n: Vec3 = [0, 0, 1];
+  for (const m of moves) {
+    if ("move" in m) {
+      o = add(o, m.move);
+      continue;
+    }
+    const k = unit(m.turn.axis);
+    const p = m.turn.pivot;
+    o = add(spun([o[0] - p[0], o[1] - p[1], o[2] - p[2]], k, m.turn.angle), p);
+    x = spun(x, k, m.turn.angle);
+    n = spun(n, k, m.turn.angle);
+  }
+  return squared({ origin: o, xAxis: x, normal: n });
+}
+
+/** Whether two frames are the same, part by part. */
+const sameFrame = (a: Plane, b: Plane): boolean => [0, 1, 2].every((k) => a.origin[k] === b.origin[k] && a.xAxis[k] === b.xAxis[k] && a.normal[k] === b.normal[k]);
+
+/**
+ * The rigid motion taking frame `from` onto frame `to` (each the world's
+ * when not given), as a map of points (or, with `vector`, directions): a
+ * point's parts along `from`'s x, y = normal × x and normal, laid along
+ * `to`'s. Null when the two are the same frame, so nothing is worked out
+ * (not even a rounding) for a body that has not moved since.
+ */
+export function carried(from: Plane | undefined, to: Plane | undefined): ((p: readonly number[], vector: boolean) => Vec3) | null {
+  const a = from ?? WORLD;
+  const b = to ?? WORLD;
+  if (sameFrame(a, b)) return null;
+  const ay = cross(a.normal, a.xAxis);
+  const by = cross(b.normal, b.xAxis);
+  return (p, vector) => {
+    const d = vector ? [p[0], p[1], p[2]] : [p[0] - a.origin[0], p[1] - a.origin[1], p[2] - a.origin[2]];
+    const v = add(add(scale(b.xAxis, dot(d, a.xAxis)), scale(by, dot(d, ay))), scale(b.normal, dot(d, a.normal)));
+    return vector ? v : add(v, b.origin);
+  };
+}
+
 /**
  * Where the frame drawn as `drawn` lies now that its face's outward unit
  * normal is `outward` and `point` is on its plane (rule 8): the normal is
  * ±outward, on the side the drawn normal was (exactly square, the outward
  * one), x turned the shortest way from the drawn frame's, and the origin
- * the plane's nearest point to the world's origin.
+ * the plane's nearest point to the world's origin. With `carry` (35e2h:
+ * the motion of the face's body since drawn, `carried`), the drawn frame
+ * and the world's origin are carried by it first, so the sketch slides and
+ * turns with its face; the face's plane still has the last word.
  */
-export function frameNow(drawn: Plane, outward: readonly number[], point: readonly number[]): Plane {
+export function frameNow(drawn: Plane, outward: readonly number[], point: readonly number[], carry: ReturnType<typeof carried> = null): Plane {
+  if (carry !== null) return carriedNow(drawn, outward, point, carry);
   const n = scale(unit(outward), sign(dot(drawn.normal, outward)));
   return squared({ origin: scale(n, dot(point, n)), xAxis: turned(drawn.xAxis, drawn.normal, n), normal: n })!;
+}
+
+/** `frameNow` with a carry: the drawn axes and the world's origin carried first, the origin then put on the face's plane square on. */
+function carriedNow(drawn: Plane, outward: readonly number[], point: readonly number[], carry: NonNullable<ReturnType<typeof carried>>): Plane {
+  const x = carry(drawn.xAxis, true);
+  const along = carry(drawn.normal, true);
+  const n = scale(unit(outward), sign(dot(along, outward)));
+  const o = carry([0, 0, 0], false);
+  return squared({ origin: add(o, scale(n, dot(point, n) - dot(o, n))), xAxis: turned(x, along, n), normal: n })!;
 }
 
 /** Whether a sketch item's plane is a face's name, not an origin plane. */

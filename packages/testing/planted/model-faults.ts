@@ -330,7 +330,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "plane-stays-put": {
     fault: "plane-stays-put",
     what: "a face sketch stays on the plane it was drawn on, whatever its face does",
-    edits: [{ file: REBUILD, find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: p.side };", replace: "const placement = { plane: squared(p.frame)!, side: p.side };" }],
+    edits: [{ file: REBUILD, find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };", replace: "const placement = { plane: squared(p.frame)!, side: p.side };" }],
     run: ["naming"],
     caught: "Fusion answers",
   },
@@ -340,8 +340,8 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
     edits: [
       {
         file: REBUILD,
-        find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: p.side };",
-        replace: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face]), side: frameNow(squared(p.frame)!, outward, view.face_centroids[face]).normal.reduce((a, x, k) => a + x * outward[k], 0) < 0 ? -1 : 1 };",
+        find: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };",
+        replace: "const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry).normal.reduce((a, x, k) => a + x * outward[k], 0) < 0 ? -1 : 1 };",
       },
     ],
     run: ["naming"],
