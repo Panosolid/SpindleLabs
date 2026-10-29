@@ -3,7 +3,7 @@
 // overlays) go to the viewer, so every view draws the same thing; camera
 // methods (fit, setView, fitSelection, lookAt) and an image (showImage, clearImage)
 // go to that pane's view only.
-import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, Plane, SharedViewport, SketchDrawing, SketchPointer, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
+import type { AnalysisOverlay, DisplayMesh, ExtrudePointer, ExtrudeShow, Framing, ImageRep, MoveHandlesShow, MovePointer, OriginPlane, Plane, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "@fission/core";
 
 /** What a pane needs of its view: the element it fills and its camera. */
 export interface PaneCamera {
@@ -50,6 +50,7 @@ export function paneViewports(scene: SharedViewport): (view: PaneCamera) => Shar
       fitSelection: () => view.fitSelection(),
       lookAt: (plane: Plane, side?: 1 | -1) => view.lookAt(plane, side),
       editedScreenPoints: () => scene.editedScreenPoints(),
+      sketchScreenPoint: (at: SketchXY) => scene.sketchScreenPoint(at),
       showImage: (image: ImageRep | null) => view.showImage(image),
       clearImage: () => view.clearImage(),
       setOverlay: (overlay: AnalysisOverlay) => scene.setOverlay(overlay),
