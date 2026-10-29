@@ -38,7 +38,8 @@
   .move-panel .move-panel-row { grid-template-columns: 4.2em repeat(3, minmax(0, 1fr)); align-items: center; margin: 4px 0; }
   .move-panel .move-panel-legend { grid-column: auto; font-size: 0.8em; line-height: 1.2; }
   .move-panel .move-panel-pivot .move-panel-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .move-panel h2 { display: inline; font-size: 1.05em; margin-right: 8px; }
+  /* :not(#none) outweighs theme.css's `#workspace aside h2` margin, which ran the title into the bodies ("MoveBody: Box 1"). */
+  .move-panel h2:not(#none) { display: inline; font-size: 1.05em; margin-right: 8px; }
   .move-panel .move-panel-bodies, .move-panel #move-pick { display: inline; }
   .move-panel .move-panel-bodies[hidden], .move-panel #move-pick[hidden] { display: none; }
   .move-panel .move-panel-pivot, .move-panel .move-panel-buttons { margin: 4px 0 0; }

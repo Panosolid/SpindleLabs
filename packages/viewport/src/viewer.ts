@@ -15,7 +15,7 @@ import { clampZoom, cubeDragAngles, dragAction, orbitBy, dragZoomFactor, panBy, 
 import { navBar } from "./nav-bar.ts";
 import { ARROW_GRAB_PX, ARROW_PX, arrowDistance, arrowLength } from "./extrude-pick.ts";
 import { ExtrudeLayer } from "./extrude-layer.ts";
-import { handleAxis, handleLines, handleNear, isRing, ringAngle, turnBetween } from "./move-handles.ts";
+import { gripPoint, handleAxis, handleNear, isRing, MOVE_GRAB_PX, placedLine, placeHandles, ringAngle, turnBetween, type Placed } from "./move-handles.ts";
 import { MoveLayer } from "./move-layer.ts";
 import { paintBackdrop } from "./backdrop.ts";
 import { BASE_COLOUR, EDGE_WIDTH_PX, faceMixes, segmentColours, SELECTION_COLOUR, tint, type Rgb } from "./highlight.ts";
@@ -109,6 +109,8 @@ export class ViewportView {
    * centre at the press, where along the arrow (mm) or round the ring
    * (radians) the press was and the pointer last was, and the turn so far.
    */
+  /** The kind of pointer last pressed on the view, whose reach places and grabs the Move handles (a finger's wider); a coarse pointer's at first. */
+  private pointerKind: "mouse" | "touch" = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? "touch" : "mouse";
   private moveDrag: { id: number; handle: MoveHandle; centre: [number, number, number]; start: number; last: number; turned: number; amount: number } | null = null;
 
   constructor(host: ViewHost, container: HTMLElement) {
@@ -190,7 +192,7 @@ export class ViewportView {
         // Move's handles (35e2c): one under the pointer lights, and nothing else does; held, it stays lit.
         if (this.host.moving()) {
           if (this.moveDrag) return;
-          const handle = pointer ? this.handleAt(pointer.x, pointer.y, "mouse") : null;
+          const handle = pointer ? this.handleAt(pointer.x, pointer.y, this.pointerKind) : null;
           this.host.setMoveHot(handle);
           if (handle) return this.host.setHover(null, null);
         }
@@ -407,7 +409,7 @@ export class ViewportView {
 
   /**
    * Dragging a Move handle (35e2c), as Extrude's arrow is dragged: a press
-   * within ARROW_GRAB_PX of one (more room for a finger) grabs it, whatever
+   * within MOVE_GRAB_PX of one (more room for a finger) grabs it, whatever
    * the navigation mode, and neither the camera nor the click picker hears
    * it. An arrow hands on how far the point of its line nearest the
    * pointer's ray has gone since the press (extrude-pick.ts arrowDistance);
@@ -421,7 +423,8 @@ export class ViewportView {
     this.element.addEventListener("pointerdown", (e) => {
       const centre = this.host.move.state?.centre;
       if (e.target !== canvas || this.moveDrag || !e.isPrimary || e.button !== 0 || !this.host.moving() || !centre) return;
-      const handle = this.handleAt(e.clientX, e.clientY, e.pointerType === "touch" ? "touch" : "mouse");
+      this.pointerKind = e.pointerType === "touch" ? "touch" : "mouse";
+      const handle = this.handleAt(e.clientX, e.clientY, this.pointerKind);
       const at = handle === null ? null : this.alongHandle(handle, centre, e.clientX, e.clientY);
       if (handle === null || at === null) return;
       e.preventDefault(); // keeps the focus where it was, so Enter after a drag is the panel's OK
@@ -473,37 +476,46 @@ export class ViewportView {
     return mm === null ? null : mm / ARROW_PX;
   }
 
-  /** Each Move handle's line on screen (client pixels, NaN for a point behind the camera); empty while none are shown. */
-  private handleScreen(): { handle: MoveHandle; screen: { x: number; y: number }[] }[] {
+  /**
+   * Where each Move or Rotate handle sits in this view now (move-handles.ts
+   * placeHandles: none whose press area overlaps another's, at the reach of
+   * the last pointer used) and its line on screen (client pixels, NaN for a
+   * point behind the camera); empty while none are shown.
+   */
+  private handleScreen(): { handle: MoveHandle; placed: Placed; screen: { x: number; y: number }[] }[] {
     const pixel = this.movePixel();
-    const centre = this.host.move.state?.centre;
+    const state = this.host.move.state;
     const rect = this.renderer.domElement.getBoundingClientRect();
-    if (pixel === null || !centre || rect.width === 0 || rect.height === 0) return [];
-    return handleLines(centre, pixel).map(({ handle, points }) => ({
-      handle,
-      screen: points.map((p) => {
-        const v = new THREE.Vector3(...p).project(this.camera);
-        return v.z >= -1 && v.z <= 1 ? ndcToClient(v, rect) : { x: NaN, y: NaN };
-      }),
+    if (pixel === null || !state || rect.width === 0 || rect.height === 0) return [];
+    const project = (p: readonly number[]) => {
+      const v = new THREE.Vector3(p[0], p[1], p[2]).project(this.camera);
+      return v.z >= -1 && v.z <= 1 ? ndcToClient(v, rect) : null;
+    };
+    const view = new THREE.Vector3(...state.centre).sub(this.camera.position).toArray();
+    return placeHandles(state.kind, state.centre, pixel, view, project, MOVE_GRAB_PX[this.pointerKind]).map((placed) => ({
+      handle: placed.handle,
+      placed,
+      screen: placedLine(state.centre, pixel, placed).map((p) => project(p) ?? { x: NaN, y: NaN }),
     }));
   }
 
-  /** The Move handle under a point on screen (within ARROW_GRAB_PX), or null. */
+  /** The Move or Rotate handle under a point on screen (within MOVE_GRAB_PX), or null. */
   private handleAt(clientX: number, clientY: number, pointer: "mouse" | "touch"): MoveHandle | null {
-    return this.host.moving() ? handleNear(this.handleScreen(), { x: clientX, y: clientY }, ARROW_GRAB_PX[pointer]) : null;
+    return this.host.moving() ? handleNear(this.handleScreen(), { x: clientX, y: clientY }, MOVE_GRAB_PX[pointer]) : null;
   }
 
   /**
-   * Sizes Move's handles for this view as it draws, and says on the element
-   * where a press grabs each (`data-move-handles`: "x 412.0,300.5 y …",
-   * client pixels, an arrow's middle and a point an eighth of the way round
-   * a ring; read by the e2e test).
+   * Sizes and places the Move or Rotate handles for this view as it draws,
+   * and says on the element where a press grabs each (`data-move-handles`:
+   * "x 412.0,300.5 y …", client pixels, an arrow's middle and a grip's
+   * dot; read by the e2e test).
    */
   private placeMoveHandles() {
     const pixel = this.movePixel();
-    if (pixel !== null) this.host.move.placeAt(pixel);
-    const said = pixel === null ? "" : this.handleScreen().flatMap(({ handle, screen }) => {
-      const p = isRing(handle) ? screen[screen.length >> 3] : { x: (screen[0].x + screen[1].x) / 2, y: (screen[0].y + screen[1].y) / 2 };
+    const lines = pixel === null ? [] : this.handleScreen();
+    if (pixel !== null) this.host.move.placeAt(pixel, lines.map((l) => l.placed));
+    const said = lines.flatMap(({ handle, screen }) => {
+      const p = gripPoint(screen, handle);
       return Number.isFinite(p.x) && Number.isFinite(p.y) ? [`${handle} ${p.x.toFixed(1)},${p.y.toFixed(1)}`] : [];
     }).join(" ");
     if ((this.element.dataset.moveHandles ?? "") === said) return;

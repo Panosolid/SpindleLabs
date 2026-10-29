@@ -149,9 +149,13 @@ export type ExtrudePointer = { kind: "pick"; profile: string | null; face?: numb
 /** A handle of the Move tool's gizmo (35e2c): the arrow along X, Y or Z, or the ring turning about it. */
 export type MoveHandle = "x" | "y" | "z" | "turnX" | "turnY" | "turnZ";
 
-/** What the Move tool shows in the view while its panel is open (35e2c): three arrows along X, Y and Z and three rings about them, at `centre` (mm), where the pivot ends up. */
+/** Which tool's handles are shown (Ben, 2026-10-29: Move and Rotate are separate tools): Move's arrows or Rotate's grips. */
+export type MoveKind = "move" | "rotate";
+
+/** What the Move or Rotate tool shows in the view while its panel is open (35e2c): Move's three arrows along X, Y and Z, or Rotate's three grips turning about them, at `centre` (mm), where the pivot ends up. */
 export interface MoveHandlesShow {
   centre: [number, number, number];
+  kind: MoveKind;
 }
 
 /**

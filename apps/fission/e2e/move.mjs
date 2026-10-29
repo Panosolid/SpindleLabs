@@ -4,7 +4,9 @@
 // the box's middle (20, 15, 10); typing previews the move at once (a pixel
 // where the box was turns to background, and back on Escape); OK records
 // one undo step, "Move bodies", and the exported STL is where the Move put
-// it, worked by hand; Edit feature on the Move reopens its numbers, and the
+// it, worked by hand; Rotate is its own tool (Ben, 2026-10-29): Move's
+// panel shows only distances and Snap, Rotate's only angles and the pivot,
+// a Rotate is its own undo step and timeline item "Rotate 1"; Edit feature on the Move reopens its numbers, and the
 // change is one step "Edit Move 1"; an empty box counts as 0 and keeps the
 // preview up; a move out past model space is refused, recording nothing. At 1280 px with a mouse
 // and at 375 px with taps; at 393 × 852 (Ben's iPhone) Move with nothing
@@ -97,6 +99,9 @@ const opened = (page) => until(page, () => document.getElementById("move-panel")
 const closed = (page) => until(page, () => document.getElementById("move-panel")?.hidden === true, null, "the Move panel closed");
 const undoTitle = (page) => page.getAttribute("#undo", "title");
 const items = (page) => page.$$eval("#timeline [data-item]", (els) => els.map((e) => e.dataset.item));
+/** Which of the panel's rows show: the distances, the angles, the pivot, Snap. */
+const rowsShown = (page) => page.evaluate(() => ["move-distance", "move-angle", "move-pivot-fold", "move-snap"].filter((id) => !document.getElementById(id).hidden));
+
 /** Types `text` in box `key` (x, turnZ, pivotX…), as a person would: its old text selected and replaced. */
 async function type(page, key, text) {
   await page.fill(`#move-${key}`, text);
@@ -154,19 +159,43 @@ try {
         await type(page, "x", "0");
         assert.ok(!differs(await colourAt(page, top), lit), "typed back: the box drawn where it was");
         assert.equal(await undoTitle(page), before, "nothing recorded by typing");
-        // Turned 90° about Z through (20, 15, 10), then 10 along X: about the middle (x, y) → (−(y − 15), x − 20),
-        // so x 20 − 15..20 + 15 = 5..35 and y 15 − 20..15 + 20 = −5..35; shifted 10: x 15..45. z stays 0..20.
+        // Move slides and nothing else (Ben, 2026-10-29): its angles and pivot aren't in its panel, and Snap is.
+        assert.deepEqual(await rowsShown(page), ["move-distance", "move-snap"], "Move's rows");
+        assert.equal(await page.getAttribute("#move-panel", "data-kind"), "move");
+        // 10 along X: x 10..50.
         await type(page, "x", "10");
-        await type(page, "turnZ", "90");
         await press(page, "#move-ok", tap);
         await closed(page);
         await rebuilt(page);
         assert.match(await undoTitle(page), /Move bodies/);
         assert.deepEqual(await items(page), ["feature-1", "feature-2"], "Move 1 in the timeline after the box");
-        assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Move 1\nMove Box 1 by (10, 0, 0) mm, turned 90° about Z");
+        assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Move 1\nMove Box 1 by (10, 0, 0) mm");
         assert.equal(await page.evaluate(() => document.body.dataset.selection), "", "the picked bodies let go once moved");
-        near(await stlBounds(page, tap), [[15, 45], [-5, 35], [0, 20]], "the STL after the Move");
-        // One Undo takes it all back.
+        near(await stlBounds(page, tap), [[10, 50], [0, 30], [0, 20]], "the STL after the Move");
+        // Rotate, its own tool: the angles and the pivot, no distances, no Snap; the box picked by a corner of its top.
+        await press(page, "#rotate", tap);
+        await opened(page);
+        p = await panel(page);
+        assert.equal(p.title, "Rotate");
+        assert.equal(await page.getAttribute("#move-panel", "data-kind"), "rotate");
+        assert.deepEqual(await rowsShown(page), ["move-angle", "move-pivot-fold"], "Rotate's rows");
+        await pressAt(page, [14, 4, 20], tap);
+        await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the moved box picked to turn");
+        // Its middle now (30, 15, 10). Turned 90° about Z through it: (x, y) → (30 − (y − 15), 15 + (x − 30)),
+        // so x 30 − 15..30 + 15 = 15..45 and y 15 − 20..15 + 20 = −5..35; z stays 0..20.
+        assert.deepEqual([(p = await panel(page)).boxes.pivotX, p.boxes.pivotY, p.boxes.pivotZ], ["30", "15", "10"]);
+        await type(page, "turnZ", "90");
+        await press(page, "#move-ok", tap);
+        await closed(page);
+        await rebuilt(page);
+        assert.match(await undoTitle(page), /Rotate bodies/);
+        assert.deepEqual(await items(page), ["feature-1", "feature-2", "feature-3"]);
+        assert.equal(await page.getAttribute('#timeline [data-item="feature-3"]', "title"), "3. Rotate 1\nRotate Box 1 turned 90° about Z");
+        near(await stlBounds(page, tap), [[15, 45], [-5, 35], [0, 20]], "the STL after the Rotate");
+        // One Undo takes the Rotate back, the next the Move.
+        await press(page, "#undo", tap);
+        await rebuilt(page);
+        near(await stlBounds(page, tap), [[10, 50], [0, 30], [0, 20]], "the STL after one Undo");
         await press(page, "#undo", tap);
         await rebuilt(page);
         near(await stlBounds(page, tap), [[0, 40], [0, 30], [0, 20]], "the STL after Undo");
@@ -240,15 +269,14 @@ try {
           await press(page, "#row-menu-edit", tap);
           await opened(page);
         }
-        // Up 12 instead, turned 90° about X about the kept pivot (20, 15, 10): (y, z) → (15 − (z − 10), 10 + (y − 15)),
-        // y 15 − 10..15 + 10 = 5..25, z 10 − 15..10 + 15 = −5..25, then up 12: z 7..37.
+        // Up 12 instead: z 12..32. An edited Move opens in Move: no angles to see.
+        assert.deepEqual(await rowsShown(page), ["move-distance", "move-snap"], "Edit Move 1's rows");
         await type(page, "z", "12");
-        await type(page, "turnX", "90");
         await press(page, "#move-ok", tap);
         await closed(page);
         await rebuilt(page);
         assert.match(await undoTitle(page), /Edit Move 1/);
-        near(await stlBounds(page, tap), [[0, 40], [5, 25], [7, 37]], "after the edit");
+        near(await stlBounds(page, tap), [[0, 40], [0, 30], [12, 32]], "after the edit");
         await press(page, "#undo", tap);
         await rebuilt(page);
         near(await stlBounds(page, tap), [[0, 40], [0, 30], [5, 25]], "Undo puts the Move's old numbers back");
@@ -268,6 +296,7 @@ try {
       // What to do is said over the view instead, clear of the part.
       assert.equal(await page.isVisible("#move-hint"), true, "the hint over the view");
       assert.equal(await page.textContent("#move-hint"), "Move: click or tap the bodies to move");
+      assert.match(await page.textContent("#phone-float"), /Finish Move/);
       if (shots) await page.screenshot({ path: `${shots}/move-pick-393.png` });
       await pressAt(page, [20, 15, 20], true);
       await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "the sheet opens with the boxes once a body is picked");
@@ -276,8 +305,8 @@ try {
       const [sheet, view] = await Promise.all([page.locator("#properties").boundingBox(), page.locator("#viewport").boundingBox()]);
       const covered = Math.max(0, Math.min(sheet.y + sheet.height, view.y + view.height) - Math.max(sheet.y, view.y)) / view.height;
       assert.ok(covered <= 0.4, `the sheet covers ${(covered * 100).toFixed(0)}% of the view`);
-      // Everything to make the Move is in reach in the sheet: the three distances, the three angles, OK and Cancel.
-      for (const id of ["move-x", "move-y", "move-z", "move-turnX", "move-turnY", "move-turnZ", "move-ok", "move-cancel"]) {
+      // Everything to make the Move is in reach in the sheet: the three distances, OK and Cancel.
+      for (const id of ["move-x", "move-y", "move-z", "move-ok", "move-cancel"]) {
         const b = await page.locator(`#${id}`).boundingBox();
         assert.ok(b && b.y >= sheet.y && b.y + b.height <= sheet.y + sheet.height + 1, `${id} is in the sheet`);
       }
@@ -296,6 +325,47 @@ try {
       await page.waitForTimeout(300);
       const [grown, view2] = await Promise.all([page.locator("#properties").boundingBox(), page.locator("#viewport").boundingBox()]);
       assert.ok(grown.height / view2.height > 0.4, `without the rule the sheet covers ${((grown.height / view2.height) * 100).toFixed(0)}%: the check can fail`);
+    } finally {
+      await page.context().close();
+    }
+  });
+  await check("393 × 852 (Ben's iPhone): Rotate says what to do over the view, and once the box is picked its angles are in the sheet, at most 40% of the view", async () => {
+    const page = await fresh(393, 852, true);
+    try {
+      await page.tap("#rotate");
+      await until(page, () => document.getElementById("move-panel")?.hidden === false, null, "the Rotate panel open");
+      await page.waitForTimeout(300);
+      assert.equal(await page.getAttribute("#properties-toggle", "aria-expanded"), "false", "the Properties sheet stays shut while nothing is picked");
+      assert.equal(await page.textContent("#move-hint"), "Rotate: click or tap the bodies to turn");
+      assert.match(await page.textContent("#phone-float"), /Finish Rotate/);
+      // The hint clears what floats over the top of the view: the two pills and the Finish bar.
+      const hint = await page.locator("#move-hint").boundingBox();
+      for (const sel of ["#browser-toggle", "#properties-toggle", "#phone-float"]) {
+        const b = await page.locator(sel).boundingBox();
+        const apart = hint.x >= b.x + b.width || b.x >= hint.x + hint.width || hint.y >= b.y + b.height || b.y >= hint.y + hint.height;
+        assert.ok(apart, `the hint (${JSON.stringify(hint)}) clear of ${sel} (${JSON.stringify(b)})`);
+      }
+      if (shots) await page.screenshot({ path: `${shots}/rotate-pick-393.png` });
+      await pressAt(page, [6, 4, 20], true);
+      await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "the sheet opens once a body is picked");
+      await page.waitForTimeout(300);
+      const [sheet, view] = await Promise.all([page.locator("#properties").boundingBox(), page.locator("#viewport").boundingBox()]);
+      const covered = Math.max(0, Math.min(sheet.y + sheet.height, view.y + view.height) - Math.max(sheet.y, view.y)) / view.height;
+      assert.ok(covered <= 0.4, `the sheet covers ${(covered * 100).toFixed(0)}% of the view`);
+      for (const id of ["move-turnX", "move-turnY", "move-turnZ", "move-ok", "move-cancel"]) {
+        const b = await page.locator(`#${id}`).boundingBox();
+        assert.ok(b && b.y >= sheet.y && b.y + b.height <= sheet.y + sheet.height + 1, `${id} is in the sheet`);
+      }
+      assert.equal(await page.isVisible("#move-x"), false, "no distances in Rotate");
+      // The title and the bodies on one line with a gap between ("Rotate Body: Box 1", not "RotateBody: Box 1").
+      const [title, bodies] = await Promise.all([page.locator("#move-title").boundingBox(), page.locator("#move-bodies").boundingBox()]);
+      assert.ok(Math.abs(title.y - bodies.y) < 8 && bodies.x - (title.x + title.width) >= 6, `title ${JSON.stringify(title)}, bodies ${JSON.stringify(bodies)}`);
+      if (shots) await page.screenshot({ path: `${shots}/rotate-sheet-393.png` });
+      await page.fill("#move-turnZ", "30");
+      if (shots) await page.screenshot({ path: `${shots}/rotate-typed-393.png` });
+      await page.tap("#move-ok");
+      await until(page, () => document.getElementById("move-panel")?.hidden === true, null, "closed");
+      assert.equal(await page.getAttribute('#timeline [data-item="feature-2"]', "title"), "2. Rotate 1\nRotate Box 1 turned 30° about Z");
     } finally {
       await page.context().close();
     }

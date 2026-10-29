@@ -3,8 +3,9 @@
 // the X arrow lights under the pointer; dragged 15.3 mm along X it fills the
 // X box with 15 (whole millimetres), the handles follow to (35, 15, 10), and
 // the box stays picked (the drag neither picks nor turns the camera);
-// dragged a quarter turn round the Z ring it fills 90 (15° steps); OK
-// builds it and the STL is where it was put, worked by hand. Edit feature on
+// OK builds it; then in Rotate, its own tool (Ben, 2026-10-29: Move has
+// arrows only, Rotate grips only), the Z grip dragged a quarter turn fills
+// 90 (15° steps), and the STL is where it was put, worked by hand. Edit feature on
 // the Move shows the handles at its moved pivot, and dragging the Z arrow
 // moves the box in the view before OK (35e2b drew it as built until OK).
 // At 1280 px with a mouse and at 375 px with a finger; at 393 × 852 (Ben's
@@ -115,7 +116,7 @@ async function drag(page, from, path, touch) {
 /**
  * A drag of the arrow along `axis` (0 X, 1 Y, 2 Z) by `mm` along it: pressed
  * where the view says the arrow is grabbed, which is `s0` mm from the
- * centre along the arrow (the s whose point on screen is nearest the grab
+ * centre along the axis (either way: an arrow may point back along it) (the s whose point on screen is nearest the grab
  * point), then through the points `s0 + mm·k/12` on screen.
  */
 async function dragArrow(page, axis, mm, touch) {
@@ -129,12 +130,11 @@ async function dragArrow(page, axis, mm, touch) {
   let s0 = 0;
   let best = Infinity;
   const canvas = await page.locator("#viewport canvas").boundingBox();
-  for (let s = 0; s <= 200; s += 0.01) {
+  for (let s = -200; s <= 200; s += 0.01) {
     const p = centre.map((c, k) => (k === axis ? c + s : c));
     const q = screenPoint(canvas, p, framed);
     const d = Math.hypot(q.x - from[0], q.y - from[1]);
     if (d < best) [best, s0] = [d, s];
-    if (d > best + 50) break;
   }
   const path = [];
   for (let k = 1; k <= 12; k++) path.push(await along(s0 + (mm * k) / 12));
@@ -145,12 +145,28 @@ async function dragArrow(page, axis, mm, touch) {
   await drag(page, from, path, touch);
 }
 
-/** A drag round the ring about Z from where the view says it is grabbed (45° round from +X) on to `to` degrees, through points on its plane 20 mm out. */
-async function dragRingZ(page, to, touch) {
+/**
+ * A drag round the ring about Z by `by` degrees (counter-clockwise looking
+ * down Z), from its grip: the grip's dot sits in the middle of one of the
+ * ring's four quarters (45°, 135°, 225° or 315° from +X, whichever the view
+ * placed it on), found as the one whose direction from the centre on
+ * screen is nearest the grab point's; then through points on its plane
+ * 20 mm out.
+ */
+async function dragRingZ(page, by, touch) {
   const { centre, grab } = await handles(page);
+  const middle = await screenAt(page, centre);
+  const facing = [];
+  for (const deg of [45, 135, 225, 315]) {
+    const a = (deg * Math.PI) / 180;
+    const q = await screenAt(page, [centre[0] + 20 * Math.cos(a), centre[1] + 20 * Math.sin(a), centre[2]]);
+    const [ux, uy, gx, gy] = [q.x - middle.x, q.y - middle.y, grab.turnZ[0] - middle.x, grab.turnZ[1] - middle.y];
+    facing.push([(ux * gx + uy * gy) / Math.hypot(ux, uy) / Math.hypot(gx, gy), deg]);
+  }
+  const from = facing.reduce((a, b) => (b[0] > a[0] ? b : a))[1];
   const path = [];
   for (let k = 1; k <= 12; k++) {
-    const a = ((45 + ((to - 45) * k) / 12) * Math.PI) / 180;
+    const a = ((from + (by * k) / 12) * Math.PI) / 180;
     const q = await screenAt(page, [centre[0] + 20 * Math.cos(a), centre[1] + 20 * Math.sin(a), centre[2]]);
     path.push([q.x, q.y]);
   }
@@ -199,7 +215,7 @@ try {
   for (const [width, height, tap] of [[1280, 800, false], [375, 667, true]]) {
     const at = `${width} px${tap ? ", a finger" : ""}`;
 
-    await check(`${at}: the X arrow dragged 15.3 mm fills 15, a quarter turn round Z fills 90, the box stays picked; OK builds it where it was put, by hand`, async () => {
+    await check(`${at}: the X arrow dragged 15.3 mm fills 15, the box stays picked, Move shows no grips; OK builds it where it was put, by hand`, async () => {
       const page = await fresh(width, height, tap);
       try {
         await press(page, "#move", tap);
@@ -216,15 +232,41 @@ try {
         assert.deepEqual((await handles(page)).centre, [35, 15, 10], "the handles followed");
         assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-1", "the drag picked nothing");
         if (shots) await page.screenshot({ path: `${shots}/move-dragged-${width}.png` });
-        await dragRingZ(page, 135, tap);
-        assert.equal(await boxValue(page, "turnZ"), "90", "a quarter turn");
-        // Turned 90° about Z through (20, 15, 10): (x, y) → (20 − (y − 15), 15 + (x − 20)), so x 5..35 and y −5..35;
-        // then 15 along X: x 20..50. z stays 0..20.
+        // Move has arrows only (Ben, 2026-10-29: Rotate is its own tool): no grips said by the view.
+        assert.deepEqual(Object.keys((await handles(page)).grab).sort(), ["x", "y", "z"]);
         await press(page, "#move-ok", tap);
         await closed(page);
         await rebuilt(page);
-        assert.equal(await viewData(page, "moveHandles"), undefined, "OK takes the handles away");
-        near(await stlBounds(page, tap), [[20, 50], [-5, 35], [0, 20]], "the STL after the dragged Move");
+        near(await stlBounds(page, tap), [[15, 55], [0, 30], [0, 20]], "the STL after the dragged Move");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    await check(`${at}: Rotate shows its grips only; the Z grip dragged a quarter turn fills 90, the box stays picked; OK builds it where it was put, by hand`, async () => {
+      const page = await fresh(width, height, tap);
+      try {
+        await press(page, "#rotate", tap);
+        await opened(page);
+        assert.equal(await viewData(page, "moveHandles"), undefined, "no grips before a body is picked");
+        await pressAt(page, [6, 4, 20], tap);
+        await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked");
+        if (tap) await closePanels(page, true);
+        const turning = await handles(page);
+        assert.deepEqual(turning.centre, [20, 15, 10]);
+        assert.deepEqual(Object.keys(turning.grab).sort(), ["turnX", "turnY", "turnZ"]);
+        if (shots) await page.screenshot({ path: `${shots}/rotate-grips-${width}.png` });
+        await dragRingZ(page, 90, tap);
+        assert.equal(await boxValue(page, "turnZ"), "90", "a quarter turn");
+        assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-1", "the drag picked nothing");
+        if (shots) await page.screenshot({ path: `${shots}/rotate-dragged-${width}.png` });
+        // Turned 90° about Z through (20, 15, 10): (x, y) → (20 − (y − 15), 15 + (x − 20)), so x 5..35 and y −5..35;
+        // z stays 0..20.
+        await press(page, "#move-ok", tap);
+        await closed(page);
+        await rebuilt(page);
+        assert.equal(await viewData(page, "moveHandles"), undefined, "OK takes the grips away");
+        near(await stlBounds(page, tap), [[5, 35], [-5, 35], [0, 20]], "the STL after the dragged Rotate");
       } finally {
         await page.context().close();
       }
@@ -359,6 +401,36 @@ try {
       await dragArrow(page, 1, -12.2, true);
       assert.equal(await boxValue(page, "y"), "-12");
       if (shots) await page.screenshot({ path: `${shots}/move-dragged-393.png` });
+    } finally {
+      await page.context().close();
+    }
+  });
+  await check("393 × 852 (Ben's iPhone): Rotate's grips are in the view above the sheet, a finger's reach apart, and a finger turns one", async () => {
+    const page = await fresh(393, 852, true);
+    try {
+      await page.tap("#rotate");
+      await opened(page);
+      await pressAt(page, [6, 4, 20], true);
+      await until(page, () => document.getElementById("properties-toggle").getAttribute("aria-expanded") === "true", null, "the sheet up with the angles");
+      await page.waitForTimeout(300);
+      const { grab } = await handles(page);
+      assert.deepEqual(Object.keys(grab).sort(), ["turnX", "turnY", "turnZ"], "all three grips in the home view");
+      const sheet = await page.locator("#properties").boundingBox();
+      for (const [h, [x, y]] of Object.entries(grab)) {
+        assert.ok(y < sheet.y, `the ${h} grip (y ${y.toFixed(0)}) is above the sheet (y ${sheet.y.toFixed(0)})`);
+        assert.equal(await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.tagName, [x, y]), "CANVAS", `the ${h} grip is on the view`);
+      }
+      // A finger's press area is 24 px round each grip (MOVE_GRAB_PX.touch): the dots at least twice that apart.
+      const dots = Object.entries(grab);
+      for (let i = 0; i < dots.length; i++)
+        for (let j = i + 1; j < dots.length; j++) {
+          const d = Math.hypot(dots[i][1][0] - dots[j][1][0], dots[i][1][1] - dots[j][1][1]);
+          assert.ok(d >= 48, `${dots[i][0]} and ${dots[j][0]} only ${d.toFixed(1)} px apart`);
+        }
+      if (shots) await page.screenshot({ path: `${shots}/rotate-grips-393.png` });
+      await dragRingZ(page, 90, true);
+      assert.equal(await boxValue(page, "turnZ"), "90");
+      if (shots) await page.screenshot({ path: `${shots}/rotate-dragged-393.png` });
     } finally {
       await page.context().close();
     }
