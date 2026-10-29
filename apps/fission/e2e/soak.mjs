@@ -23,7 +23,8 @@
 //   warm-up. Before the first reading the page visits every workspace and
 //   the phone width once, so first-visit caches count as warm-up.
 // Each cycle prints what it did, so a failure says what led to it.
-// SOAK_CYCLES (default 40) sets the length, SOAK_EVERY (default 5) how often
+// SOAK_CYCLES (default 40) sets the length (the heap needs about 30 cycles
+// to settle: shorter runs fail its verdict on the engine's warm-up), SOAK_EVERY (default 5) how often
 // it reads, SOAK_SCREEN=wide or phone keeps every cycle at that size,
 // SOAK_REPORT=<file> writes the readings as JSON, SOAK_DEBUG=1 prints which
 // nodes changed between readings, SOAK_SHOT=<png> takes a screenshot when a
@@ -40,7 +41,7 @@ import { rng } from "./monkey-core.mjs";
 import { clickPlane, EMPTY_TOP } from "./sketch-screen.mjs";
 import { pinProperties } from "./properties.mjs";
 import { chooseFile, closePanels, gridSnapOn, insertPreset, openPanel, sheetsClearFor, switchTo } from "./start.mjs";
-import { judgeSoak } from "./soak-judge.mjs";
+import { judgeSoak, WARM_UP } from "./soak-judge.mjs";
 import { expected, matchesModel, sameState, stlFacts } from "./soak-model.mjs";
 
 const CYCLES = Number(process.env.SOAK_CYCLES ?? 40);
@@ -78,7 +79,6 @@ const context = await browser.newContext({ viewport: WIDE, acceptDownloads: true
 const page = await openApp(context, "the page");
 const cdp = await context.newCDPSession(page);
 await cdp.send("Performance.enable");
-await cdp.send("DOM.enable");
 
 const until = (p, fn, arg) => p.waitForFunction(fn, arg);
 const saveFile = join(tmpdir(), `soak-${process.pid}.spindle`);
@@ -225,7 +225,8 @@ async function cycle(i, random) {
     await visit(id);
     did.push(id);
   }
-  if (screen === WIDE && (i <= 2 || random() < 0.5)) {
+  // Never in cycle 2, so the warm-up ends one cycle with the Move's handles still made, whatever the screen (see the warm-up).
+  if (screen === WIDE && i !== 2 && (i === 1 || random() < 0.5)) {
     did.push("split");
     await page.click("#split-toggle");
     await until(page, () => !!document.body.dataset.split);
@@ -288,9 +289,16 @@ async function domNodes() {
     while (walk.nextNode()) n++;
     return n;
   });
+  // DevTools keeps every node it has named alive until its DOM agent is switched off again, so it is on only while asking:
+  // left on, each reading kept whatever detached tree was waiting for collection then (a download's link), forever.
+  await cdp.send("DOM.enable");
   const { detachedNodes } = await cdp.send("DOM.getDetachedDomNodes");
+  await cdp.send("DOM.disable");
   if (process.env.SOAK_DEBUG) await printCensus(detachedNodes);
-  return inPage + detachedNodes.reduce((s, d) => s + d.retainedNodeIds.length, 0);
+  // A file handed to the browser (save-file.ts `download`) is a link never put in the page: Chromium holds it while the
+  // download starts, so a reading taken then counted it or not by chance (1,144 or 1,145 over 30 wide cycles).
+  const held = detachedNodes.filter((d) => !(d.treeNode.nodeName === "A" && d.treeNode.attributes?.includes("download")));
+  return inPage + held.reduce((s, d) => s + d.retainedNodeIds.length, 0);
 }
 
 /** SOAK_DEBUG: the page's nodes by name and nearest id, and the detached trees by their root, printed where they differ from the last reading. */
@@ -330,7 +338,9 @@ const t0 = Date.now();
 const readings = [];
 let failure = null;
 try {
-  // Warm-up before the first reading: snap to grid ticked in a sketch (it lasts for the page) and that sketch undone, every workspace visited, the phone width shown.
+  // Warm-up before the first reading: snap to grid ticked in a sketch (it lasts for the page) and that sketch undone, every workspace visited, the phone width shown,
+  // and a box moved (the Move's handles made once). The main view keeps the Move's 20 handle geometries once made, until split
+  // view remakes it, so readings go 11 or 31 by the cycle's last steps; cycle 2 (phone width, no split view) puts 31 in the warm-up's high.
   await sketchOnGround(page);
   await gridSnapOn(page);
   await page.keyboard.press("ControlOrMeta+z");
@@ -339,12 +349,22 @@ try {
   await page.setViewportSize(PHONE);
   await page.waitForTimeout(300);
   await page.setViewportSize(WIDE);
+  await insertPreset(page, "box");
+  await untilShown(page, 1);
+  await pickBody(page, 1);
+  await page.click("#move");
+  await until(page, () => document.getElementById("move-panel")?.hidden === false);
+  await page.fill("#move-z", "5");
+  await page.click("#move-ok");
+  await until(page, () => document.getElementById("move-panel")?.hidden === true);
+  await emptyDesign(page);
   readings.push(await reading(0));
 
   const random = rng(SEED);
   for (let i = 1; i <= CYCLES; i++) {
     await cycle(i, random);
-    if (i % EVERY === 0 || i === CYCLES) {
+    // Every cycle of the warm-up is read, so its high includes cycle 2's end (see the warm-up above).
+    if (i <= CYCLES * WARM_UP || i % EVERY === 0 || i === CYCLES) {
       const r = await reading(i);
       readings.push(r);
       console.log(`cycle ${i}: heap ${(r.heap / 1e6).toFixed(2)} MB, nodes ${r.nodes}, listeners ${r.listeners}, bodies ${r.bodies}, wasm ${(r.wasm / 1e6).toFixed(1)} MB, geometries ${r.geometries}, textures ${r.textures}, programs ${r.programs}, objects ${r.objects}${problems.length ? `; ${problems.length} design problems so far` : ""}`);
@@ -367,7 +387,9 @@ if (failure) {
   console.log(`FAIL the soak's cycle stopped (seed ${SEED}): ${failure.message.split("\n").slice(0, 3).join(" ")}`);
   process.exit(1);
 }
-const more = [...judgeSoak(readings), ...errors.map((e) => `the page said: ${e}`)];
+// Reading 0 is reported but not judged: taken straight after the warm-up's tour, it held more than any cycle's end
+// (1,222 nodes against 1,144 on 2026-10-29), so as the warm-up's high it hid 60 nodes of growth over 40 cycles.
+const more = [...judgeSoak(readings.filter((r) => r.cycle > 0)), ...errors.map((e) => `the page said: ${e}`)];
 for (const p of more) console.log(`FAIL ${p}`);
 problems = [...problems, ...more];
 console.log(`${problems.length ? "FAIL" : "PASS"} soak: seed ${SEED}, ${CYCLES} cycles in ${seconds.toFixed(0)} s`);

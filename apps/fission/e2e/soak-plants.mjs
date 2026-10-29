@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** What each plant breaks, and text the soak's FAIL line for it contains. */
+/** What each plant breaks, text the soak's FAIL line for it contains, and any settings of its own for the soak. */
 export const SOAK_PLANTS = {
   "move-listener-kept": {
     what: "every Move panel opened adds a key listener to the page and never takes it off",
@@ -29,6 +29,8 @@ export const SOAK_PLANTS = {
   "workspace-node-kept": {
     what: "every workspace put to sleep keeps a removed element alive",
     expect: "nodes keeps growing",
+    // Wide screens only, so the phone-width panel leak (fixed in #49) can't be what grows.
+    env: { SOAK_SCREEN: "wide" },
     edits: [{ file: "apps/fission/src/main.ts", find: "    view.sleep?.();\n", replace: '    view.sleep?.();\n    { const d = document.createElement("div"); document.body.append(d); d.remove(); (window as any).plantedNodes = [...((window as any).plantedNodes ?? []), d]; }\n' }],
   },
   "extrude-ignores-typed": {
@@ -69,9 +71,9 @@ function restore(before) {
 /** Builds the app as it is into `outDir` (vite only). */
 const build = (outDir) => execFileSync("npx", ["vite", "build", "--logLevel", "error", "--emptyOutDir", "--outDir", outDir], { cwd: app, stdio: "inherit" });
 /** A short soak on the build in `outDir`: its FAIL lines (none when it passed). */
-function soak(outDir, port) {
+function soak(outDir, port, extra = {}) {
   return new Promise((done) => {
-    const env = { ...process.env, SOAK_DIST: outDir, SOAK_PORT: String(port), SOAK_CYCLES: process.env.SOAK_PLANT_CYCLES || "8", SOAK_EVERY: "2", SOAK_SEED: "1" };
+    const env = { ...process.env, SOAK_DIST: outDir, SOAK_PORT: String(port), SOAK_CYCLES: process.env.SOAK_PLANT_CYCLES || "8", SOAK_EVERY: "2", SOAK_SEED: "1", ...extra };
     let out = "";
     const child = spawn("node", ["e2e/soak.mjs"], { cwd: app, env });
     child.stdout.on("data", (d) => (out += d));
@@ -94,7 +96,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       } finally {
         restore(before);
       }
-      const fails = await soak(join(base, name), 4300 + n);
+      const fails = await soak(join(base, name), 4300 + n, p.env);
       const hit = fails.find((l) => l.includes(p.expect));
       if (hit) console.log(`caught ${name} (${p.what}):\n  ${hit.slice(0, 300)}`);
       else {
