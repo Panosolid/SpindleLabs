@@ -1689,6 +1689,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (why) extrudeBox.showError(why);
       return;
     }
+    extrudeBox.dragging(!pointer.done); // the distance box glows while the arrow is held
     const d = snapDistance(pointer.distance);
     if (d === extruding.distance) return;
     extrudeBox.showDistance(String(d));
@@ -1998,6 +1999,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       dragFrom = read.values;
     }
     moveBox.setValue(pointer.handle, draggedValues(dragFrom, pointer.handle, pointer.amount)[pointer.handle]);
+    moveBox.dragging(pointer.done ? null : pointer.handle); // the box being changed glows while the drag lasts
     if (pointer.done) dragFrom = null;
     previewMove();
   };

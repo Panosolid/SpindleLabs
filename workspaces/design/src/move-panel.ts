@@ -49,6 +49,12 @@ export interface MovePanel {
   setPivot(p: readonly [number, number, number]): void;
   /** One box set from a drag of the view's handles (35e2c): typed values follow the drag. */
   setValue(key: MoveParam, value: number): void;
+  /**
+   * The box a handle's drag is changing glows softly while the drag lasts
+   * (Ben, 2026-10-28: "make the changing value in the properties glow a lil
+   * bit to avoid confusion"); null when the drag ends, and on show.
+   */
+  dragging(key: MoveParam | null): void;
   /** The distance and angle boxes set from a snap (35e2d), each to the number itself (already rounded by move-snap.ts), so the bodies land exactly. */
   setValues(values: MoveValues): void;
   /**
@@ -217,6 +223,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       title.textContent = m.id === null ? m.name : `Edit ${m.name}`;
       box.setAttribute("aria-label", kind === "rotate" ? "Rotate" : "Move");
       box.dataset.kind = kind; // read by the e2e test
+      this.dragging(null);
       exact.clear();
       for (const k of MOVE_PARAMS) put(k, m.values[k]);
       showRows();
@@ -238,6 +245,9 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
     },
     setValue(key, value) {
       put(key, value);
+    },
+    dragging(key) {
+      for (const [k, input] of inputs) input.classList.toggle("move-panel-dragged", k === key);
     },
     setValues(values) {
       for (const k of ["x", "y", "z", "turnX", "turnY", "turnZ"] as const) (inputs.get(k)!.value = String(values[k] + 0)), exact.delete(k);

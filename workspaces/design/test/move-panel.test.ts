@@ -64,3 +64,21 @@ test("a snap that turns shows the angles it set, and one back to no turn hides t
   panel.setValues({ ...NO_MOVE, turnZ: 1e-9 });
   assert.ok(shownRows().includes("move-angle"));
 });
+
+test("hand-worked: the box a handle's drag changes glows while the drag lasts, and only that box (Ben, 2026-10-28)", () => {
+  const { doc, panel } = setup();
+  const glowing = () => ["x", "y", "z", "turnX", "turnY", "turnZ", "pivotX", "pivotY", "pivotZ"].filter((k) => doc.getElementById(`move-${k}`)!.classList.contains("move-panel-dragged"));
+  panel.show(show({}));
+  assert.deepEqual(glowing(), [], "nothing glows before a drag");
+  // The X arrow held: X alone glows; a drag of the Z grip after it moves the glow to Z; the drag ending puts it out.
+  panel.dragging("x");
+  assert.deepEqual(glowing(), ["x"]);
+  panel.dragging("turnZ");
+  assert.deepEqual(glowing(), ["turnZ"]);
+  panel.dragging(null);
+  assert.deepEqual(glowing(), []);
+  // A drag cut short by the panel opening again (Cancel, then Rotate) leaves no glow behind.
+  panel.dragging("y");
+  panel.show(show({ kind: "rotate", name: "Rotate" }));
+  assert.deepEqual(glowing(), []);
+});

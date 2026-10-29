@@ -44,3 +44,7 @@
   .move-panel .move-panel-bodies[hidden], .move-panel #move-pick[hidden] { display: none; }
   .move-panel .move-panel-pivot, .move-panel .move-panel-buttons { margin: 4px 0 0; }
 }
+/* The box a handle's drag is changing glows softly while the drag lasts, and fades as it ends (Ben, 2026-10-28: "make the
+   changing value in the properties glow a lil bit to avoid confusion"). */
+.move-panel .move-panel-box input { transition: box-shadow 0.3s, border-color 0.3s, background-color 0.3s; }
+.move-panel .move-panel-box input.move-panel-dragged { border-color: var(--look-accent, #4aa8ff); background-color: color-mix(in srgb, var(--look-accent, #4aa8ff) 12%, var(--look-field, #0f141c)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--look-accent, #4aa8ff) 55%, transparent), 0 0 12px color-mix(in srgb, var(--look-accent, #4aa8ff) 45%, transparent); }
