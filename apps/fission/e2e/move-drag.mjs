@@ -279,7 +279,8 @@ try {
         await press(page, "#move-snap", tap);
         await snapStage(page, "from");
         assert.equal(await page.textContent("#move-hint"), "Snap: click or tap a face or edge to move");
-        assert.equal(await viewData(page, "moveHandles"), undefined, "no handles while Snap picks: a click is a pick, never a grab");
+        // No handles while Snap picks: a click is a pick, never a grab (the view takes them off on its next frame).
+        await until(page, () => document.getElementById("viewport").dataset.moveHandles === undefined, null, "the handles gone while Snap picks");
         if (shots) await page.screenshot({ path: `${shots}/move-snap-from-${width}.png` });
         await pressAt(page, CYLINDER_TOP, tap);
         await snapStage(page, "to");
