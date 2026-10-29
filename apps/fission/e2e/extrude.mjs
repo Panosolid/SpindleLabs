@@ -310,6 +310,8 @@ try {
       d.timeline.features = d.timeline.features.filter((f) => f.id !== sketch.id);
       d.sketches = [];
       d.kept = kept;
+      // The extrude hid its sketch (Ben, 2026-10-29): a file from outside that deletes the sketch takes it out of `hidden` too, as Delete does.
+      delete d.hidden;
     });
     await until(page, (w) => document.querySelector("#kept-warning").textContent === w, "Extrude 1 keeps its last shape. Sketch 1 was deleted.", "the deleted warning");
     await volume(page, "12,000 mm³");
