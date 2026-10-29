@@ -36,7 +36,8 @@ run-name: ${{ github.event_name == 'schedule' && 'Kernel random testing, nightly
 
 on:
   schedule:
-    - cron: "0 15 * * *"
+    # 15:17, not on the hour: GitHub delays top-of-the-hour schedules most.
+    - cron: "17 15 * * *"
   workflow_dispatch:
     inputs:
       ref:
@@ -65,6 +66,7 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 5
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
@@ -89,8 +91,15 @@ jobs:
           now=$(date +%s)
           if [ "$NIGHTLY" = true ]; then
             # 22:35 UTC of the day the run started (it is meant to start at
-            # 15:00 UTC, so this is the same UTC day).
+            # 15:17 UTC, so this is the same UTC day). GitHub can start a
+            # scheduled run hours late: one that starts after 22:05 UTC (or
+            # after midnight, when "today's" 22:35 would be a whole day of
+            # runners away) skips the night instead.
             deadline=$(date -u -d "$(date -u +%F) 22:35" +%s)
+            hour=$(date -u +%-H)
+            if [ "$hour" -lt 14 ] || [ $(( deadline - now )) -lt 1800 ]; then
+              echo "Tonight's run started too late ($(date -u '+%H:%M UTC')); skipped"; exit 1
+            fi
             jobs="[0,1,2,3,4,5,6,7]" shards=4
           else
             deadline=$(( now + MINUTES * 60 ))
@@ -117,6 +126,7 @@ jobs:
   test:
     needs: plan
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     permissions:
       # actions: read lets stop-on-merge.sh see waiting runs and CI jobs.
@@ -130,13 +140,11 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -175,6 +183,7 @@ jobs:
     needs: [plan, test]
     if: ${{ !cancelled() && needs.plan.outputs.second_leg == 'true' }}
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     permissions:
       actions: read
@@ -187,13 +196,11 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -232,6 +239,7 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.shards != '[]' }}
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 350
     strategy:
       fail-fast: false
@@ -242,13 +250,11 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: Panosolid/kernel
-          ref: ${{ needs.plan.outputs.sha }}
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          persist-credentials: false
+      - name: Check out the kernel (quietly, the log is public)
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          REF: ${{ needs.plan.outputs.sha }}
+        run: .github/scripts/kernel_ci.sh checkout k "$REF"
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
@@ -287,6 +293,7 @@ jobs:
     needs: [plan, test, test-second-leg, mutants]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-latest
+    environment: kernel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
