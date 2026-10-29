@@ -68,6 +68,10 @@ REQUIRED_CHECKS = ("kernel", "app", "e2e", "mutants-in-diff", "baseline")
 # ci.yml's matrix jobs whose shares ("e2e (2/3)", "mutants-shard (0)") a
 # required job gathers (e2e, mutants-in-diff).
 SHARDS = ("e2e", "mutants-shard")
+# ci.yml's jobs that run only on some heads (pull requests that change the
+# app) and, when they ran, gate the merge like a required one: a head
+# without them is not untested.
+GATES_WHEN_RUN = ("phone",)
 PASSING = ("success", "skipped", "neutral")
 # ci.yml's browser check in a quick run (only while main requires the merge
 # queue): a head with it had only the quick checks.
@@ -83,7 +87,7 @@ def counts(check):
     the job over the shares only appears once every share has finished, and
     until then the head is being tested, not untested (as "none" it would be
     sent to CI again, and the new run would cancel this one)."""
-    return check.get("app", {}).get("slug") != "github-actions" or check["name"] in REQUIRED_CHECKS or (
+    return check.get("app", {}).get("slug") != "github-actions" or check["name"] in REQUIRED_CHECKS + GATES_WHEN_RUN or (
         " (" in check["name"] and check["name"].split(" (")[0] in SHARDS)
 
 
@@ -486,7 +490,10 @@ def run_queue(gh, dry_run=False, log=print, now=None, files_for=conflicted_files
 
 
 def note_dequeued(gh, number, head_sha, reason, dry_run=False, log=print):
-    """One comment per head when the queue removes a pull request."""
+    """One comment per head when the queue removes a pull request; none when
+    it left because it merged (reason MERGE), which isn't a failure."""
+    if reason == "MERGE":
+        return False
     comments = bot_comments(gh, number)
     if any(DEQUEUED.format(head_sha) in c for c in comments):
         return False

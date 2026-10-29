@@ -9,7 +9,7 @@
 // classes removed) the page scrolls, as it did when Properties stacked under
 // the view. Screenshots go to E2E_SHOTS when set. Run with `npm run e2e`.
 import assert from "node:assert/strict";
-import { launch } from "./browser.mjs";
+import { browserName, launch } from "./browser.mjs";
 import { preview } from "vite";
 import { startWithBox } from "./start.mjs";
 
@@ -60,7 +60,7 @@ for (const [width, height] of [[375, 667], [667, 375]]) {
     const ws = await box(page, "#workspace");
     assert.equal(props.hidden, false, "375: Properties opens");
     assert.ok(Math.abs(props.bottom - ws.bottom) < 1, "375: Properties sits on the bottom edge");
-    assert.ok(props.height <= ws.height * 0.6 + 1, `375: Properties is ${props.height} of ${ws.height}`); // 60% of the workspace
+    assert.ok(props.height <= ws.height * 0.45 + 1, `375: Properties is ${props.height} of ${ws.height}`); // 45% of the workspace, under half the view
     assert.equal((await box(page, "#viewport")).height, view0.height, "375: the view is not resized");
     s = await pageScroll(page);
     assert.deepEqual([s.moved, s.extra <= 0], [0, true], "375: the page scrolls with Properties open");
@@ -238,6 +238,111 @@ function checkPhoneLook(m) {
   await slim.evaluate((el) => el.remove());
   checkPhoneLook(await phoneLook(page));
   await context.close();
+}
+
+// Ben's iPhone (2026-10-29): dragging a sheet's handle down moved only the handle (the words bounced) and the sheet never
+// closed. With real touches (Chrome's touch input, not made-up events) at 375 and 393 px: a drag on the handle moves the
+// whole sheet with the finger, a short slow one lets it slide back, a long one closes it (a flick's speed is
+// timed in e2e/sheet-drag.test.mjs: Chrome's touch input arrives a frame apart, too unevenly to time here); once the words are
+// scrolled a drag in them scrolls them and does not close it, while the handle still does; the pill tapped again and a tap
+// on the view close it too; Browser and Properties take at most 45% of the workspace (under half the view) with nothing selected.
+/** A finger on the touchscreen: down at (x, y), moved by `steps` of [dx, dy] `ms` apart, then lifted unless `lift` is false. */
+async function finger(cdp, page, x, y, steps, ms, lift = true) {
+  const at = (px, py) => [{ x: px, y: py, id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(x, y) });
+  for (const [dx, dy] of steps) {
+    await page.waitForTimeout(ms);
+    x += dx;
+    y += dy;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(x, y) });
+  }
+  if (lift) await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+}
+const down = (px, n) => Array.from({ length: n }, () => [0, px]);
+const isOpen = (page, slot) => page.evaluate((s) => (s === "assistant" ? !document.getElementById("assistant").hidden : document.getElementById(`${s}-toggle`).getAttribute("aria-expanded") === "true"), slot);
+const sheetTop = (page, slot) => page.$eval(`#${slot}`, (e) => e.getBoundingClientRect().top);
+async function openSheet(page, slot) {
+  if (slot === "assistant") {
+    await page.tap("#menu-toggle");
+    await page.tap("#assistant-toggle");
+  } else await page.tap(`#${slot}-toggle`);
+  await page.waitForSelector(`#${slot}`, { state: "visible" });
+  await page.waitForTimeout(250); // the sheet's opening slide (styles/motion.css)
+  await page.$eval(`#${slot}`, (e) => { e.scrollTop = 0; }); // a sheet keeps its scroll when put away; each check starts at the top
+}
+/** Every way a sheet closes, at one width; `tag` names the screenshots. */
+async function checkSheetClosing(page, cdp, width, tag) {
+  const mid = width / 2;
+  const ws = await box(page, "#workspace");
+  for (const slot of ["properties", "browser", "assistant"]) {
+    await openSheet(page, slot);
+    const sheet = await box(page, `#${slot}`);
+    if (slot !== "assistant") assert.ok(sheet.height <= ws.height * 0.45 + 1, `${width} ${slot}: the sheet is ${sheet.height} of the workspace's ${ws.height} (at most 45%)`);
+    // Held 40 px down by the handle, slowly: the whole sheet follows the finger, not just its handle.
+    await finger(cdp, page, mid, sheet.top + 12, down(10, 4), 50, false);
+    const held = await sheetTop(page, slot);
+    const handleIn = await page.$eval(`#${slot}`, (e) => e.scrollTop);
+    if (shots && slot === "properties") await page.screenshot({ path: `${shots}/phone-sheet-drag-${tag}.png` });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    assert.ok(Math.abs(held - sheet.top - 40) <= 2 && handleIn === 0, `${width} ${slot}: the sheet follows the finger 40 px down (its top went from ${sheet.top} to ${held}, its words scrolled ${handleIn})`);
+    await page.waitForTimeout(300);
+    assert.equal(await isOpen(page, slot), true, `${width} ${slot}: a short slow drag lets the sheet slide back open`);
+    assert.ok(Math.abs((await sheetTop(page, slot)) - sheet.top) <= 1, `${width} ${slot}: and back where it was`);
+    // A long slow drag closes it.
+    await finger(cdp, page, mid, sheet.top + 12, down(10, 16), 50);
+    await page.waitForTimeout(300);
+    assert.equal(await isOpen(page, slot), false, `${width} ${slot}: a 160 px drag down by the handle closes the sheet`);
+    if (slot === "properties" && shots) await page.screenshot({ path: `${shots}/phone-sheet-dragged-shut-${tag}.png` });
+    // A tap on the view closes it.
+    await openSheet(page, slot);
+    await page.touchscreen.tap(mid, Math.max(ws.top + 80, sheet.top - 60));
+    await page.waitForTimeout(100);
+    assert.equal(await isOpen(page, slot), false, `${width} ${slot}: a tap on the view closes the sheet`);
+    if (slot === "assistant") continue;
+    // The pill tapped again closes it.
+    await openSheet(page, slot);
+    await page.tap(`#${slot}-toggle`);
+    assert.equal(await isOpen(page, slot), false, `${width} ${slot}: its pill tapped again closes the sheet`);
+  }
+  // Properties' words scrolled: a drag down in them scrolls them back (the sheet stays), a drag on the handle still closes it.
+  await openSheet(page, "properties");
+  const props = await box(page, "#properties");
+  const scrolled = await page.$eval("#properties", (e) => { e.scrollTop = 80; return e.scrollTop; });
+  assert.ok(scrolled > 0, `${width}: Properties' words are taller than its sheet, so they scroll`);
+  await finger(cdp, page, mid, props.top + props.height / 2, down(10, 5), 50);
+  await page.waitForTimeout(300);
+  const after = await page.$eval("#properties", (e) => e.scrollTop);
+  assert.equal(await isOpen(page, "properties"), true, `${width}: a drag down in scrolled words does not close the sheet`);
+  assert.ok(after < scrolled, `${width}: it scrolls the words back (scrollTop ${scrolled} → ${after})`);
+  await page.$eval("#properties", (e) => { e.scrollTop = 80; });
+  await finger(cdp, page, mid, props.top + 12, down(10, 16), 50);
+  await page.waitForTimeout(300);
+  assert.equal(await isOpen(page, "properties"), false, `${width}: the handle closes it even with its words scrolled`);
+}
+if (browserName === "chromium") {
+  for (const [width, height, tag] of [[375, 667, "375"], [393, 852, "393"]]) {
+    const { page, context } = await open(width, height);
+    const cdp = await context.newCDPSession(page);
+    await checkSheetClosing(page, cdp, width, tag);
+    if (width === 393) {
+      await openSheet(page, "properties");
+      if (shots) await page.screenshot({ path: `${shots}/phone-sheet-properties-393.png` });
+      await page.tap("#properties-toggle");
+      // It can fail: with the sheet's drag gone (its touches stopped before they reach it) the sheet stays put under the finger,
+      // and at the old 60% Properties covers more than 45% of the workspace.
+      await page.evaluate(() => { window.__noDrag = (e) => e.stopImmediatePropagation(); for (const t of ["touchstart", "touchmove", "touchend"]) window.addEventListener(t, window.__noDrag, { capture: true, passive: true }); });
+      await assert.rejects(checkSheetClosing(page, cdp, width, "broken"), /the sheet follows the finger/);
+      await page.evaluate(() => { for (const t of ["touchstart", "touchmove", "touchend"]) window.removeEventListener(t, window.__noDrag, { capture: true }); });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }).catch(() => {});
+      if (await isOpen(page, "properties")) await page.tap("#properties-toggle");
+      const tall = await page.addStyleTag({ content: ".phone-sheet :is(#browser, #properties):not(#none):not(#no-such-id) { max-height: 60%; }" });
+      await assert.rejects(checkSheetClosing(page, cdp, width, "broken"), /at most 45%/);
+      await tall.evaluate((el) => el.remove());
+      if (await isOpen(page, "properties")) await page.tap("#properties-toggle");
+      await checkSheetClosing(page, cdp, width, "393-again");
+    }
+    await context.close();
+  }
 }
 
 // Rules off, the old layout: Properties stacked under the view and the page scrolled.

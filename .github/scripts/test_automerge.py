@@ -79,6 +79,12 @@ class CiState(unittest.TestCase):
         # and the nightly fuzzing's kernel targets, whatever their name starts with.
         self.assertEqual(ci_state(both + [check("browsers (firefox)", "in_progress", None),
                                           check("kernel (extrude)", conclusion="failure")]), "success")
+        # The phone check (WebKit, on pull requests that change the app)
+        # gates the merge once it has run, and its absence is no gap.
+        self.assertEqual(ci_state(both + [check("phone", conclusion="failure")]), "failure")
+        self.assertEqual(ci_state(both + [check("phone", "in_progress", None)]), "pending")
+        self.assertEqual(ci_state(both + [check("phone", conclusion="skipped")]), "success")
+        self.assertEqual(ci_state(both + [check("phone")]), "success")
         # On a push run the job is skipped, which passes; the coverage
         # report never blocks.
         self.assertEqual(ci_state(both + [check("mutants-in-diff", conclusion="skipped"),
@@ -814,6 +820,14 @@ class QueueCalls(unittest.TestCase):
         self.assertEqual(gh.writes, [("GRAPHQL", "enqueuePullRequest", {"id": "N1"}, "owner")])
         gh = queue_repo(comments=[stranger(marker)])
         self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_FAILURE", log=lambda s: None))
+
+    def test_a_merged_pull_request_gets_no_dequeued_note(self):
+        # Regression: the queue also "removes" a pull request when it merges
+        # it (reason MERGE), and every merge got a "fix what failed" comment.
+        gh = queue_repo()
+        self.assertFalse(automerge.note_dequeued(gh, 1, "h1", "MERGE", log=lambda s: None))
+        self.assertEqual(gh.writes, [])
+        self.assertTrue(automerge.note_dequeued(gh, 1, "h1", "CI_TIMEOUT", log=lambda s: None))
 
     def test_dequeued_note_once_per_head(self):
         gh = queue_repo()
