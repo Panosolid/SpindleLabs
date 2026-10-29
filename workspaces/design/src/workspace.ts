@@ -533,7 +533,25 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       else heals = 0;
     });
   };
+  /** Kernel restarts so far: a panel's question cut off by one is asked again on the fresh kernel (onceMoreAfterRestart). */
+  let restarts = 0;
+  /**
+   * `ask`, and once more if the kernel restarted while it was asked: the answer it gave (often "the geometry kernel ...
+   * was started again", or a body the restart left unbuilt) is the old kernel's, not the question's (weak-spot hunt C3:
+   * Extrude's outline check stuck with OK off, Move's OK saying the box was not built though it was drawn again).
+   */
+  async function onceMoreAfterRestart<T>(ask: () => Promise<T>): Promise<T> {
+    const seen = restarts;
+    try {
+      const answer = await ask();
+      if (restarts === seen) return answer;
+    } catch (e) {
+      if (restarts === seen) throw e;
+    }
+    return ask();
+  }
   const stopHealing = kernel.onRestart?.(() => {
+    restarts++;
     bodies.forget();
     if (healing) again = true;
     else heal();
@@ -1689,6 +1707,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (why) extrudeBox.showError(why);
       return;
     }
+    extrudeBox.dragging(!pointer.done); // the distance box glows while the arrow is held
     const d = snapDistance(pointer.distance);
     if (d === extruding.distance) return;
     extrudeBox.showDistance(String(d));
@@ -1753,7 +1772,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     extrudeBox.showStatus(sketch.curves.length === 0 ? `${name} has nothing drawn yet.` : `Checking ${name}…`, false);
     if (sketch.curves.length === 0) return;
     try {
-      const { current, value } = await extrudeOutline(sketchCurves(sketch));
+      const { current, value } = await onceMoreAfterRestart(() => extrudeOutline(sketchCurves(sketch)));
       if (!current || extruding?.sketch !== id) return;
       if ("closed" in value) {
         // A face's extrude is a new body until Combine (35f): said plainly (UX1c).
@@ -1998,6 +2017,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       dragFrom = read.values;
     }
     moveBox.setValue(pointer.handle, draggedValues(dragFrom, pointer.handle, pointer.amount)[pointer.handle]);
+    moveBox.dragging(pointer.done ? null : pointer.handle); // the box being changed glows while the drag lasts
     if (pointer.done) dragFrom = null;
     previewMove();
   };
@@ -2093,7 +2113,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     moveBox.busy(true);
     let refused: string | null;
     try {
-      refused = await refusedMove(kernel, next, moved);
+      refused = await onceMoreAfterRestart(() => refusedMove(kernel, next, moved));
     } catch (e) {
       refused = e instanceof Error ? e.message : String(e);
     }
@@ -2145,6 +2165,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (now) heldShow = setTimeout(show, HELD_SHOW_MS);
     else if (!chord) show();
     if (!now) chord = false;
+  };
+  /** The window lost focus (Alt-Tab, Ctrl+Tab): a held Ctrl or Cmd's release will never arrive here, so it counts as let go now. */
+  const onLostFocus = () => {
+    clearTimeout(heldShow);
+    chord = false;
+    if (!modHeld) return;
+    modHeld = false;
+    if (shown && mode.kind === "edit" && lastHover) onSketchPointer(lastHover);
   };
   /** Clicks are handled one after another, each on the document the last one left. */
   let clicks = Promise.resolve();
@@ -2392,6 +2420,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     resized?.observe(viewport.element);
     globalThis.addEventListener?.("keydown", onHeldKey);
     globalThis.addEventListener?.("keyup", onHeldKey);
+    globalThis.addEventListener?.("blur", onLostFocus);
     if (mode.kind === "pick") viewport.showPlanes(originPlanes(), sketchableFaces(lastScene));
     drawSketches();
     showMoveHint();
@@ -2420,6 +2449,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     resized?.disconnect();
     globalThis.removeEventListener?.("keydown", onHeldKey);
     globalThis.removeEventListener?.("keyup", onHeldKey);
+    globalThis.removeEventListener?.("blur", onLostFocus);
     clearTimeout(heldShow);
     typed.hide();
     hint.hide();

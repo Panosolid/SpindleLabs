@@ -23,6 +23,8 @@ const boxes = (page) =>
     const others = [
       ...[...document.querySelectorAll("#panel-toggles button")].filter(shown).map((e) => [e.id || "panel toggle", box(e)]),
       ...[...document.querySelectorAll("#viewport .view-cube, #viewport .view-controls, #undo-redo")].filter(shown).map((e) => [e.id || e.className, box(e)]),
+      // Sideways the desktop layout keeps the Browser open over the view's left (weak-spot hunt A, F2: the card lay over it at 667 × 375).
+      ...[...document.querySelectorAll("#browser")].filter(shown).map((e) => ["browser", box(e)]),
     ];
     return { card: box(document.getElementById("start-hint")), view: box(document.getElementById("viewport")), others };
   });

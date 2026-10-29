@@ -748,9 +748,24 @@ $("open-file").addEventListener("change", async () => {
 // for a workspace not on screen asks first ("Open in Image?"; the owner's
 // ask, 2026-10-28): Cancel opens nothing and leaves you where you were.
 const elsewhere = openElsewhere(document);
+/** A file the browser can no longer read: moved or deleted after the drag began, a cloud placeholder, a permission change. */
+class Unreadable extends Error {}
+async function readBytes(file: File, part: Blob): Promise<ArrayBuffer> {
+  try {
+    return await part.arrayBuffer();
+  } catch {
+    throw new Unreadable(`Couldn't read “${file.name}”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.`);
+  }
+}
 async function receive(files: File[]) {
   await started; // or the project being reopened would replace what this opens
-  const heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await f.slice(0, HEAD_BYTES).arrayBuffer()) })));
+  let heads;
+  try {
+    heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, HEAD_BYTES))) })));
+  } catch (e) {
+    if (e instanceof Unreadable) return fileStatus(e.message);
+    throw e;
+  }
   const route = routeFiles(representations, heads);
   if (!route) return;
   if (route.kind === "refused") return fileStatus(route.message);
@@ -761,8 +776,9 @@ async function receive(files: File[]) {
     if (!(await elsewhere.ask(file.name, formatInfo(route.format).one, workspaceName(target), here ? workspaceName(here) : null))) return;
   }
   try {
-    await route.importer.open(file.name, new Uint8Array(await file.arrayBuffer()));
+    await route.importer.open(file.name, new Uint8Array(await readBytes(file, file)));
   } catch (e) {
+    if (e instanceof Unreadable) return fileStatus(e.message);
     return fileStatus(`Couldn't open “${file.name}”: ${e instanceof Error ? e.message : String(e)}`);
   }
   fileStatus("");

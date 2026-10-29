@@ -152,6 +152,14 @@ try {
     await shot(page, "snap-held-1280");
     await page.keyboard.up("Control");
     await shown(page, "sketchSnap", "edge endpoint 40,30");
+    // Control pressed, then the window loses focus (Alt-Tab, Ctrl+Tab), so its release never arrives here: the snap is
+    // back at once with the pointer still, not only after the next move (backlog 2026-10-29, weak-spot hunt B).
+    await page.keyboard.down("Control");
+    await shown(page, "sketchSnap", "");
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await shown(page, "sketchSnap", "edge endpoint 40,30");
+    await page.keyboard.up("Control"); // Playwright's own record of the key, which the page has already let go of
+    await shown(page, "sketchSnap", "edge endpoint 40,30");
     // A click with Control held lands where the pointer is (to within half a pixel), not on the corner.
     await page.keyboard.down("Control");
     await at(page, nearCorner);

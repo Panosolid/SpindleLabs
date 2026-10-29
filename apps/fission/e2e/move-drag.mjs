@@ -95,19 +95,22 @@ async function handles(page) {
 /**
  * A drag by mouse or finger: pressed at `from` (client px), then through
  * `path` (client px), then let go; waits until the view heard its end.
+ * `during`, if given, runs while still held, after the last move.
  */
-async function drag(page, from, path, touch) {
+async function drag(page, from, path, touch, during) {
   const ended = Number((await viewData(page, "moveDrags")) ?? 0) + 1;
   if (!touch) {
     await page.mouse.move(...from);
     await page.mouse.down();
     for (const p of path) await page.mouse.move(p[0], p[1]);
+    if (during) await during();
     await page.mouse.up();
   } else {
     const cdp = await page.context().newCDPSession(page);
     const touchAt = (type, [x, y]) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
     await touchAt("touchStart", from);
     for (const p of path) await touchAt("touchMove", p);
+    if (during) await during();
     await touchAt("touchEnd", path.at(-1));
   }
   await until(page, (n) => Number(document.getElementById("viewport").dataset.moveDrags ?? 0) >= n, ended, "the drag's end heard by the view");
@@ -119,7 +122,7 @@ async function drag(page, from, path, touch) {
  * centre along the axis (either way: an arrow may point back along it) (the s whose point on screen is nearest the grab
  * point), then through the points `s0 + mm·k/12` on screen.
  */
-async function dragArrow(page, axis, mm, touch) {
+async function dragArrow(page, axis, mm, touch, during) {
   const { centre, grab } = await handles(page);
   const from = grab[["x", "y", "z"][axis]];
   const along = async (s) => {
@@ -142,7 +145,7 @@ async function dragArrow(page, axis, mm, touch) {
     await page.mouse.move(...from);
     await until(page, (h) => document.getElementById("viewport").dataset.moveHot === h, ["x", "y", "z"][axis], "the arrow lit under the pointer");
   }
-  await drag(page, from, path, touch);
+  await drag(page, from, path, touch, during);
 }
 
 /**
@@ -153,7 +156,7 @@ async function dragArrow(page, axis, mm, touch) {
  * screen is nearest the grab point's; then through points on its plane
  * 20 mm out.
  */
-async function dragRingZ(page, by, touch) {
+async function dragRingZ(page, by, touch, during) {
   const { centre, grab } = await handles(page);
   const middle = await screenAt(page, centre);
   const facing = [];
@@ -170,8 +173,20 @@ async function dragRingZ(page, by, touch) {
     const q = await screenAt(page, [centre[0] + 20 * Math.cos(a), centre[1] + 20 * Math.sin(a), centre[2]]);
     path.push([q.x, q.y]);
   }
-  await drag(page, grab.turnZ, path, touch);
+  await drag(page, grab.turnZ, path, touch, during);
 }
+
+/**
+ * The Move panel's boxes that glow (Ben, 2026-10-28: the value a drag changes glows): each with the class and a drawn
+ * glow (its box-shadow not "none", so a style that loses to another rule fails too).
+ */
+const glowing = (page) =>
+  page.evaluate(() =>
+    ["x", "y", "z", "turnX", "turnY", "turnZ"].filter((k) => {
+      const box = document.getElementById(`move-${k}`);
+      return box.classList.contains("move-panel-dragged") && getComputedStyle(box).boxShadow !== "none";
+    }),
+  );
 
 /** The toolbar's STL: [min, max] of its corners for x, y and z (mm). */
 async function stlBounds(page, tap) {
@@ -227,7 +242,13 @@ try {
         // The box spans 0..40, 0..30, 0..20: the handles at its middle.
         assert.deepEqual((await handles(page)).centre, [20, 15, 10]);
         if (shots) await page.screenshot({ path: `${shots}/move-handles-${width}.png` });
-        await dragArrow(page, 0, 15.3, tap);
+        let held = null;
+        await dragArrow(page, 0, 15.3, tap, async () => {
+          held = await glowing(page);
+          if (shots && !tap) await page.screenshot({ path: `${shots}/move-glow-${width}.png` });
+        });
+        assert.deepEqual(held, ["x"], "X's box glows while its arrow is held");
+        await until(page, () => !document.querySelector(".move-panel-dragged"), null, "the glow goes when the drag ends");
         assert.equal(await boxValue(page, "x"), "15", "15.3 mm snaps to 15");
         assert.deepEqual((await handles(page)).centre, [35, 15, 10], "the handles followed");
         assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-1", "the drag picked nothing");
@@ -258,7 +279,13 @@ try {
         assert.deepEqual(turning.centre, [20, 15, 10]);
         assert.deepEqual(Object.keys(turning.grab).sort(), ["turnX", "turnY", "turnZ"]);
         if (shots) await page.screenshot({ path: `${shots}/rotate-grips-${width}.png` });
-        await dragRingZ(page, 90, tap);
+        let held = null;
+        await dragRingZ(page, 90, tap, async () => {
+          held = await glowing(page);
+          if (shots && !tap) await page.screenshot({ path: `${shots}/rotate-glow-${width}.png` });
+        });
+        assert.deepEqual(held, ["turnZ"], "Z's angle box glows while its grip is held");
+        await until(page, () => !document.querySelector(".move-panel-dragged"), null, "the glow goes when the drag ends");
         assert.equal(await boxValue(page, "turnZ"), "90", "a quarter turn");
         assert.equal(await page.evaluate(() => document.body.dataset.selection), "body:feature-1", "the drag picked nothing");
         if (shots) await page.screenshot({ path: `${shots}/rotate-dragged-${width}.png` });
@@ -403,6 +430,32 @@ try {
       await dragArrow(page, 1, -12.2, true);
       assert.equal(await boxValue(page, "y"), "-12");
       if (shots) await page.screenshot({ path: `${shots}/move-dragged-393.png` });
+    } finally {
+      await page.context().close();
+    }
+  });
+  await check("1280 px: a drag whose release never arrives (Alt-Tab, a dialog mid-drag) ends at the next move with no button held", async () => {
+    // Backlog 2026-10-29 (weak-spot hunt D, F1c): the box kept following a hovering pointer until the next click.
+    const page = await fresh(1280, 800, false);
+    try {
+      await press(page, "#move", false);
+      await opened(page);
+      await pressAt(page, [20, 15, 20], false);
+      await until(page, () => document.body.dataset.selection === "body:feature-1", null, "the box picked");
+      const g = (await handles(page)).grab.x;
+      const ended = Number((await viewData(page, "moveDrags")) ?? 0) + 1;
+      const cdp = await page.context().newCDPSession(page);
+      const mouse = (type, k, buttons) => cdp.send("Input.dispatchMouseEvent", { type, x: g[0] + k * 8, y: g[1], button: buttons ? "left" : "none", buttons, clickCount: buttons ? 1 : 0 });
+      await mouse("mouseMoved", 0, 0);
+      await mouse("mousePressed", 0, 1);
+      for (let k = 1; k <= 4; k++) await mouse("mouseMoved", k, 1);
+      const held = await boxValue(page, "x");
+      assert.notEqual(held, "0", "the drag moved the box first");
+      // The release is lost: the pointer moves on with no button held.
+      for (let k = 5; k <= 12; k++) await mouse("mouseMoved", k, 0);
+      await until(page, (n) => Number(document.getElementById("viewport").dataset.moveDrags ?? 0) >= n, ended, "the drag ended at the first move with no button");
+      assert.equal(await boxValue(page, "x"), held, "a hovering pointer moved the box");
+      assert.equal(await viewData(page, "moveHot"), undefined, "the handle let go");
     } finally {
       await page.context().close();
     }
