@@ -11,7 +11,13 @@
    ran into the workspace button at 667 px. */
 @media (min-width: 641px) and (max-width: 760px) {
   .phone-short #topbar .app-bar-end button.with-icon:not(#none) { padding-left: 6px; padding-right: 6px; }
-  .phone-short #topbar .app-bar-end .tool-word, .phone-short #topbar .app-bar-end #ai-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .phone-short #topbar .app-bar-end .tool-word, .phone-short #topbar .app-bar-end #ai-status, .phone-short #save-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* "Saved" takes 49 px a wider font can't spare between the workspace button and AI (CI's ran 1 px into it at 641): the status stays for screen readers, and the tick of the phone layout (save-mark.css) shows it beside the name. */
+  .phone-short .save-mark { position: relative; }
+  .phone-short .save-mark:has(~ #save-status[data-state="saved"])::after,
+  .phone-short .save-mark:has(~ #save-status[data-state="saving"])::after { position: absolute; right: -8px; top: 2px; font-size: 8px; font-weight: normal; }
+  .phone-short .save-mark:has(~ #save-status[data-state="saved"])::after { content: "✓"; }
+  .phone-short .save-mark:has(~ #save-status[data-state="saving"])::after { content: "…"; }
 }
 /* Short (500 px tall or less, a phone sideways): each toolbar group in one
    line, its name first, every button 32 px, so the toolbar is one 45 px row
