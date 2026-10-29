@@ -11,7 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
-import { draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
+import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
@@ -1852,10 +1852,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       previewMove();
     },
   });
-  /** The bodies the Move panel moves (feature ids): a new Move's are the selection's, an edited one's its own. */
+  /** The bodies the Move panel moves (feature ids): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
-  /** Whether a new Move is picking its bodies: the panel open on no Move yet. */
-  const picksBodies = () => moveBox.shown && moveBox.editing === null;
+  /** Whether the Move panel is picking its bodies: a new Move's, or since 35e2i an edited one's (a click adds a body or takes it out). */
+  const picksBodies = () => moveBox.shown;
   /** Over the view while a new Move has no body yet: on a phone the panel's own words wait in the shut sheet, so the view stays clear to tap. */
   const moveHint = viewport.element.ownerDocument.createElement("p");
   moveHint.id = "move-hint"; // read by the e2e test
@@ -1878,6 +1878,15 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
   }
   const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === id)!));
+  /** An edited Move's bodies' names: a body deleted since keeps the name the Move knew it by. */
+  const heldLabels = (ids: readonly string[]) => {
+    const doc = designDoc();
+    const move = moveBox.editing === null ? undefined : doc.timeline.features.find((f) => f.id === moveBox.editing);
+    return ids.map((id) => {
+      const f = doc.timeline.features.find((x) => x.id === id);
+      return f ? itemName(f) : (move?.provenance.from.find((r) => r.id === id)?.label ?? id);
+    });
+  };
 
   // The panel folds away until something is selected or a tool's box is in it (U0b); the user's pin is kept across mounts.
   fold = propertiesFold(
@@ -1957,7 +1966,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const f = doc.timeline.features.find((x) => x.id === id)!;
       moveBodies = [...f.dependsOn];
       moveBox.show({ id, kind: moveKindOf(f), name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
-      return previewMove();
+      // Its bodies picked as a new Move's are (35e2i), so a click adds one or takes one out; this comes back through pickMoveBodies.
+      const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.feature));
+      ctx.selection.set(f.dependsOn.filter((b) => shownNow.has(b)).map(bodyReference));
+      return pickMoveBodies();
     }
     moveBodies = pickedBodies(ctx.selection.items, lastScene);
     const [pivotX, pivotY, pivotZ] = startPivot(moveBodies, lastScene);
@@ -1972,15 +1984,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * follow.
    */
   function pickMoveBodies() {
-    const picked = pickedBodies(ctx.selection.items, lastScene);
+    const id = moveBox.editing;
+    let picked = pickedBodies(ctx.selection.items, lastScene);
+    // An edited Move (35e2i) can't move a body made after it: the pick is let go, saying why.
+    const edited = id === null ? null : editedBodies(designDoc(), id, moveBodies, picked, lastScene);
+    if (edited?.refused) {
+      moveBox.showError(edited.refused);
+      picked = picked.filter((b) => edited.bodies.includes(b));
+    }
     const refs = picked.map(bodyReference);
     const items = ctx.selection.items;
     if (items.length !== refs.length || items.some((r, i) => r.kind !== "body" || r.id !== refs[i].id)) return ctx.selection.set(refs); // comes back here
-    moveBodies = picked;
+    moveBodies = edited ? edited.bodies : picked;
     if (snapping?.from && !picked.includes(snapping.from.body)) snapping.from = null;
     if (snapping && picked.length === 0) snapping = null;
     showMoveHint();
-    moveBox.setBodies(bodyLabels(picked));
+    moveBox.setBodies(edited ? heldLabels(moveBodies) : bodyLabels(picked));
     moveBox.setPivot(startPivot(picked, lastScene));
     previewMove();
   }
@@ -1998,7 +2017,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const read = readMoveBoxes(moveBox.typed);
     const v = moveBox.shown && "values" in read && previewable(read.values) ? read.values : null;
     const id = moveBox.editing;
-    viewport.showBody(v === null ? lastScene.mesh : id === null ? movedMesh(lastScene, moveBodies, v) : editedMoveMesh(lastScene, designDoc(), resultsNow, id, v));
+    viewport.showBody(v === null ? lastScene.mesh : id === null ? movedMesh(lastScene, moveBodies, v) : editedMoveMesh(lastScene, designDoc(), resultsNow, id, v, moveBodies));
     showMoveHandles();
   }
 
@@ -2082,9 +2101,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     previewMove();
   }
 
-  /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected. */
+  /** The Move panel put away, its preview with it; a new Move's picked bodies stay selected, an edited one's are let go (35e2i). */
   function leaveMove() {
     if (!moveBox.shown) return;
+    const edited = moveBox.editing !== null;
     moveBox.hide();
     moveBodies = [];
     dragFrom = null;
@@ -2092,6 +2112,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     showMoveHint();
     viewport.showMoveHandles(null);
     if (lastScene) viewport.showBody(lastScene.mesh);
+    if (edited) ctx.selection.clear();
   }
 
   /** OK's words when the design changed while the kernel checked the Move: nothing was recorded. */
@@ -2118,7 +2139,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (id === null) {
         if (v.x === 0 && v.y === 0 && v.z === 0 && v.turnX === 0 && v.turnY === 0 && v.turnZ === 0 && moveBodies.length > 0) return leaveMove();
         ({ doc: next, id: moved } = insertMove(before, moveBodies, v, moveBox.kind));
-      } else [next, moved] = [changedMove(before, id, v), id];
+      } else [next, moved] = [changedMove(before, id, v, moveBodies), id];
     } catch (e) {
       return moveBox.showError(e instanceof Error ? e.message : String(e));
     }
@@ -2398,7 +2419,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     // Snap (35e2d): the click picks what to snap, then where it lands, and picks no bodies.
     if (moveBox.shown && snapping) return snapPick(pick);
-    // A new Move (35e2b): a click on a body adds it or takes it out; empty space keeps what is picked. An edited Move's bodies are its own.
+    // A Move (35e2b; an edited one too since 35e2i): a click on a body adds it or takes it out; empty space keeps what is picked.
     if (moveBox.shown) {
       const c = pickChange({ ...pick, shift: true }, lastScene);
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;

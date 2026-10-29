@@ -210,7 +210,7 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
   const setBodies = (names: readonly string[]) => {
     bodies.textContent = names.length === 0 ? "" : `${names.length === 1 ? "Body" : "Bodies"}: ${names.join(", ")}`;
     bodies.hidden = names.length === 0 || !snapNote.hidden;
-    pick.hidden = names.length > 0 || editing !== null;
+    pick.hidden = names.length > 0; // an edited Move whose bodies were all taken out asks again (35e2i)
     snap.disabled = names.length === 0;
   };
   return {

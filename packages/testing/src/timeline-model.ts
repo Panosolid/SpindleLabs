@@ -255,7 +255,7 @@ export type ConcreteOp =
   | { op: "marker"; at: Marker }
   /** 35e2: a Move of built bodies before where it goes in, and a Move's numbers changed. */
   | { op: "add-move"; bodies: string[]; shift: Vec3; turnZ: number; pivot: Point }
-  | { op: "set-move"; item: string; shift: Vec3; turnZ: number; pivot: Point }
+  | { op: "set-move"; item: string; shift: Vec3; turnZ: number; pivot: Point; bodies?: string[] }
   | { op: "undo" }
   | { op: "redo" };
 
@@ -296,7 +296,8 @@ export type ModelFault =
   | "face-sketch-unbound"
   | "move-shift-then-turn"
   | "move-not-held"
-  | "sketch-not-carried";
+  | "sketch-not-carried"
+  | "move-bodies-kept";
 
 export const MODEL_FAULTS: readonly ModelFault[] = [
   "reorder-past-dependency",
@@ -330,6 +331,7 @@ export const MODEL_FAULTS: readonly ModelFault[] = [
   "move-shift-then-turn",
   "move-not-held",
   "sketch-not-carried",
+  "move-bodies-kept",
 ];
 
 /** "item-3/side:curve-5": a face name as one string, for maps and messages. */
@@ -1069,6 +1071,8 @@ function edit(doc: ModelDoc, op: Exclude<ConcreteOp, { op: "undo" | "redo" }>, f
       const item = find(doc, op.item);
       if (item.kind !== "move") throw new Error(`${op.item} is not a move`);
       [item.shift, item.turnZ, item.pivot] = [[...op.shift], op.turnZ, [...op.pivot]];
+      // 35e2i: the bodies it moves changed when given. Planted bug ("move-bodies-kept"): an edit keeps the old ones.
+      if (op.bodies && !faults.has("move-bodies-kept")) item.bodies = [...op.bodies];
       return { kind: "done", ids: [] };
     }
   }
