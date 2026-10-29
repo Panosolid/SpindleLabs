@@ -320,11 +320,11 @@ test("every old file is as its SpindleLabs saved it: the outer format 2 and Desi
   }
 });
 
-test("every old file opens through today's reader, upgraded to version 3 with its items, flags, marker and counter as worked out", () => {
+test("every old file opens through today's reader, upgraded to version 4 with its items, flags, marker and counter as worked out", () => {
   for (const file of files()) {
     const want = CORPUS[file];
     const doc = open(text(file)).workspaces.design as DesignDocument;
-    assert.equal(doc.version, 3, file);
+    assert.equal(doc.version, 4, file);
     assert.deepEqual(doc.timeline.features.map((f) => [f.id, f.intent.type, f.suppressed]), want.items, file);
     assert.equal(doc.nextId, want.nextId, file);
     assert.equal(doc.timeline.marker, want.marker, file);

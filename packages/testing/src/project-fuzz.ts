@@ -42,6 +42,7 @@ import {
   isSketchItem,
   migrateDesignV1,
   migrateDesignV2,
+  withShortNames,
   moveMarker,
   partDocument,
   partFeature,
@@ -554,7 +555,7 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   const again = guard("opening the saved project", () => projectToJson(projectFromJson(saved, readers)));
   if (isProblem(again)) return again;
   if (again !== saved) return { kind: "saving, opening and saving again changed the text", detail: "" };
-  // Design's own upgrades (version 1 → 2 → 3, docs/project-format.md) are the one change a save may make.
+  // Design's own upgrades (version 1 → 2 → 3 → 4, docs/project-format.md) are the one change a save may make.
   const upgraded = structuredClone(want.upgraded) as { workspaces: Record<string, unknown> };
   const old = upgraded.workspaces.design;
   if (isObj(old) && old.version === 1) upgraded.workspaces.design = migrateDesignV2(migrateDesignV1(old));
@@ -569,6 +570,9 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
       // not Design's data: nothing to repair
     }
   }
+  // Version 3 to 4 renames the old preset names (the data opened, so it is a whole design by now).
+  const v3 = upgraded.workspaces.design;
+  if (isObj(v3) && v3.version === 3) upgraded.workspaces.design = withShortNames({ ...v3, version: 4 } as unknown as DesignDocument);
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;
 }
