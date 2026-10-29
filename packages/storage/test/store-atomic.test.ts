@@ -61,3 +61,17 @@ test("memoryKeyValue.update: reads the keys, writes what change returns, and wri
   );
   assert.deepEqual([...kv.entries].sort(), [["a", "2"], ["c", "3"]]);
 });
+
+test("a project whose entries were cleared under the tab (site data cleared) is saved again, not refused as another tab's change", async () => {
+  // Real-use hunt B4: once reconnected, the first save found no summary and threw ProjectChangedError, so autosave
+  // stopped for good ("changed in another tab") and the page's journal refused to keep the work.
+  const kv = memoryKeyValue();
+  const store = projectStore(kv, []);
+  await store.save("p", part(40), new Date(1000));
+  kv.entries.clear(); // the browser emptied the database
+  await store.save("p", part(45), new Date(2000), new Date(1000));
+  assert.equal(widthOf(await store.open("p")), 45);
+  // A summary that is there but can't be read, or holds another time, still refuses.
+  await kv.set("summary/p", "{ cut sh");
+  await assert.rejects(store.save("p", part(50), new Date(3000), new Date(2000)), ProjectChangedError);
+});

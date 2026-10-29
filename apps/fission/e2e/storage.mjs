@@ -104,6 +104,22 @@ try {
     assert.ok([45, 70].includes(race.width), String(race.width));
     assert.deepEqual([race.refused, race.still], ["no", race.width]);
   });
+  // Real-use hunt B4: the database deleted under an open connection (as clearing site data does): the connection is
+  // let go and opened afresh, and the next save stores the tab's state again instead of failing every time.
+  const cleared = await inPage(`
+    const box = (w) => ({ formatVersion: 2, name: "Kept", units: { length: "mm" }, materials: [], links: [], workspaces: { design: { version: 1, width: w } } });
+    await store.save("c", box(40), new Date(1000));
+    const deleted = await new Promise((done) => {
+      const r = indexedDB.deleteDatabase("fission");
+      r.onsuccess = () => done("deleted");
+      r.onblocked = () => setTimeout(() => done("blocked by the open connection"), 2000);
+    });
+    const saved = await store.save("c", box(45), new Date(2000), new Date(1000)).then(() => "saved", (e) => e.message);
+    return { deleted, saved, width: (await store.open("c")).workspaces.design.width, ids: (await store.list()).map((x) => x.id) };
+  `);
+  check("the database deleted under the tab: the connection lets go, and the next save stores the work again", () => {
+    assert.deepEqual(cleared, { deleted: "deleted", saved: "saved", width: 45, ids: ["c"] });
+  });
   check("no page errors", () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

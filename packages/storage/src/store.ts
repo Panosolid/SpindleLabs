@@ -102,7 +102,9 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       // The check and both writes in one step (KeyValue.update): no other tab's save lands between them, and a tab
       // killed mid-save leaves both entries or neither (real-use hunt B6, B7).
       await kv.update([SUMMARY + id], ([summary]) => {
-        if (unchangedSince !== undefined) {
+        // No summary at all: the browser emptied the store under this tab (site data cleared), so this tab's state is
+        // the only copy left and is stored again, rather than taken for another tab's change (real-use hunt B4).
+        if (unchangedSince !== undefined && summary !== undefined) {
           const holds = readSummary(id, summary);
           if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
         }

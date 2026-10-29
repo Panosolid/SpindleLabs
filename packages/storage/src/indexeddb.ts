@@ -26,21 +26,44 @@ function request<T>(r: IDBRequest<T>, doing: string): Promise<T> {
  */
 export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefined = globalThis.indexedDB): KeyValue {
   let db: Promise<IDBDatabase> | undefined;
+  let promise: Promise<IDBDatabase> | undefined;
   const open = () =>
-    (db ??= new Promise((resolve, reject) => {
+    (db ??= promise = new Promise((resolve, reject) => {
       if (!factory) return reject(new Error("IndexedDB is not available"));
       const r = factory.open(name, 1);
       r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-      r.onsuccess = () => resolve(r.result);
+      r.onsuccess = () => {
+        // The browser closing the database (site data cleared) or another page deleting it: let it go, and open it
+        // afresh on the next call instead of failing every call after (real-use hunt B4).
+        const opened = r.result;
+        const forget = () => {
+          if (db === promise) db = undefined;
+        };
+        opened.onclose = forget;
+        opened.onversionchange = () => {
+          opened.close();
+          forget();
+        };
+        resolve(opened);
+      };
       r.onerror = () => {
         db = undefined; // let the next call try again
         reject(failure(r.error, "open the project database"));
       };
       r.onblocked = () => reject(new Error("browser storage is busy: close other SpindleLabs tabs and try again"));
     }));
+  /** A transaction on the store; a connection the browser is closing is let go, and the failure said in words. */
+  const transaction = (opened: IDBDatabase, mode: IDBTransactionMode, doing: string) => {
+    try {
+      return opened.transaction(STORE, mode);
+    } catch (e) {
+      db = undefined; // the next call opens the database afresh
+      throw failure(e instanceof DOMException ? e : null, doing);
+    }
+  };
   /** Runs one request in its own transaction; a write resolves only once it is committed. */
   const run = async <T>(mode: IDBTransactionMode, doing: string, make: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
-    const tx = (await open()).transaction(STORE, mode);
+    const tx = transaction(await open(), mode, doing);
     const result = request(make(tx.objectStore(STORE)), doing);
     const done = new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
@@ -53,7 +76,7 @@ export function indexedDbKeyValue(name = "fission", factory: IDBFactory | undefi
   /** KeyValue.update: the reads, `change` and the writes in one readwrite transaction, which IndexedDB runs alone among those touching this store, in every tab. */
   const update: KeyValue["update"] = async (keys, change) => {
     const doing = `save "${keys.join('", "')}"`;
-    const tx = (await open()).transaction(STORE, "readwrite");
+    const tx = transaction(await open(), "readwrite", doing);
     const store = tx.objectStore(STORE);
     const values: (string | undefined)[] = [];
     let thrown: { error: unknown } | null = null;
