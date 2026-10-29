@@ -5,7 +5,7 @@
 // autosave on top of them (autosave.ts), with the journal that keeps
 // changes when the page goes before they are stored (unsaved.ts), and the
 // guard that reopens the last project only when it opened fine last time
-// (reopen.ts).
+// (reopen.ts), and the request that the browser keep the store (persist.ts).
 
 import type { DataReader } from "@fission/core";
 import { indexedDbKeyValue } from "./indexeddb.ts";
@@ -14,7 +14,8 @@ import { projectStore, type ProjectStore } from "./store.ts";
 export { indexedDbKeyValue } from "./indexeddb.ts";
 export { memoryKeyValue, type KeyValue } from "./key-value.ts";
 export { startAutosave, QUIET_MS, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
-export { ProjectChangedError, projectStore, type ProjectStore, type ProjectSummary } from "./store.ts";
+export { ProjectChangedError, projectStore, storedCopy, type ProjectStore, type ProjectSummary } from "./store.ts";
+export { keepStorage, type PersistentStorage } from "./persist.ts";
 export { journalEntry, keptEntry, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
 export { ASK_MS, OPENING_KEY, reopenGuard, SETTLED_MS, type MarkStorage, type OpeningChannel, type ReopenGuard } from "./reopen.ts";
 

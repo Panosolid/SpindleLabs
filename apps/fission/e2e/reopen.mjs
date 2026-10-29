@@ -443,6 +443,91 @@ try {
     });
   }
 
+  await check("the same file opened three times is kept once, the copy a reload opens; a changed copy is a project of its own (real-use hunt B3)", async () => {
+    const { context, page } = await fresh(1280);
+    try {
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      const box = await page.evaluate(() => document.body.dataset.projectId);
+      /** Drops `text` and waits until it has shown and its autosave has stored it: keep() sets the id again. */
+      const open = async (text) => {
+        await page.evaluate(() => (document.body.dataset.projectId = "opening"));
+        await dropText(page, "plate.fission.json", text);
+        await page.waitForFunction(() => document.body.dataset.projectId !== "opening", null, { timeout: 15_000 });
+        await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+        return page.evaluate(() => document.body.dataset.projectId);
+      };
+      const plateId = await open(plate);
+      assert.notEqual(plateId, box);
+      assert.equal(await open(plate), plateId, "opened again: the stored copy");
+      assert.equal(await open(plate), plateId, "and again");
+      assert.deepEqual(await keptProjects(page), [`project/${box}`, `project/${plateId}`].sort(), "the box and one plate");
+      // A copy with another name is another project: stored as a new one, the plate's copy left as it was.
+      const renamed = JSON.stringify({ ...JSON.parse(plate), name: "Plate 2" });
+      const other = await open(renamed);
+      assert.ok(other !== plateId && other !== box);
+      assert.equal((await keptProjects(page)).length, 3);
+      // The plate opened again after it: stored again under its id, so it is the newest save and a reload opens it.
+      assert.equal(await open(plate), plateId);
+      await page.reload();
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      assert.equal(await page.evaluate(() => document.body.dataset.projectId), plateId, "the reload opens the plate, not Plate 2");
+      assert.equal((await keptProjects(page)).length, 3);
+    } finally {
+      await context.close();
+    }
+  });
+
+  await check("the browser is asked to keep the projects once, after the first save, never on load (real-use hunt B3)", async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.addInitScript(() => {
+      window.persistAsked = 0;
+      Object.defineProperty(navigator.storage, "persist", { value: async () => (window.persistAsked++, true) });
+    });
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(e.message));
+    try {
+      const asked = () => page.evaluate(() => window.persistAsked);
+      await page.goto(url);
+      await page.waitForSelector("#start-hint", { state: "visible" });
+      await page.waitForTimeout(1500);
+      assert.equal(await asked(), 0, "an empty new project: nothing saved, nothing asked");
+      await startWithBox(page);
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      await page.waitForFunction(() => window.persistAsked > 0);
+      assert.equal(await asked(), 1, "asked after the first save");
+      await page.reload();
+      await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      await page.waitForTimeout(1500);
+      assert.equal(await asked(), 0, "the box reopened on load: nothing asked");
+      await pinProperties(page);
+      await page.fill("#width", "50");
+      await page.press("#width", "Enter");
+      await page.waitForFunction(() => window.persistAsked > 0);
+      assert.equal(await asked(), 1, "asked once the width typed is saved");
+    } finally {
+      await context.close();
+    }
+    // A file opened in a new browser: its first save is the user's work too.
+    const other = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await other.addInitScript(() => {
+      window.persistAsked = 0;
+      Object.defineProperty(navigator.storage, "persist", { value: async () => (window.persistAsked++, true) });
+    });
+    try {
+      const page = await other.newPage();
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(url);
+      await page.waitForSelector("#start-hint", { state: "visible" });
+      await page.waitForTimeout(1500);
+      assert.equal(await page.evaluate(() => window.persistAsked), 0);
+      await dropText(page, "plate.fission.json", plate);
+      await page.waitForFunction(() => window.persistAsked > 0, null, { timeout: 15_000 });
+      assert.equal(await page.evaluate(() => window.persistAsked), 1, "asked once the opened file is saved");
+    } finally {
+      await other.close();
+    }
+  });
+
   await check("no page errors", async () => assert.deepEqual(errors, []));
 } finally {
   await browser.close();

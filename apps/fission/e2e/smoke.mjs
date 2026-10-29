@@ -1328,18 +1328,30 @@ try {
       assert.equal(await kept.textContent("#area"), "6,200 mm²"); // A = 2(50·30 + 30·20 + 50·20) = 2·3100
       assert.equal(await kept.evaluate(() => document.body.dataset.projectId), id, "the same stored project");
       assert.equal(await kept.textContent("#save-status"), "Saved");
-      // Opening a file makes a new stored project; the autosaved one is kept.
-      await kept.setInputFiles("#open-file", "e2e/saved.spindle");
-      await kept.waitForFunction((old) => document.body.dataset.projectId !== old, id);
-      await kept.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
-      const stored = await kept.evaluate(async () => {
-        const db = await new Promise((ok, no) => Object.assign(indexedDB.open("fission"), { onsuccess: (e) => ok(e.target.result), onerror: no }));
-        const store = db.transaction(db.objectStoreNames[0]).objectStore(db.objectStoreNames[0]);
-        const keys = await new Promise((ok) => (store.getAllKeys().onsuccess = (e) => ok(e.target.result)));
-        db.close();
-        return keys.filter((k) => String(k).startsWith("project/")).length;
-      });
-      assert.equal(stored, 2);
+      const stored = () =>
+        kept.evaluate(async () => {
+          const db = await new Promise((ok, no) => Object.assign(indexedDB.open("fission"), { onsuccess: (e) => ok(e.target.result), onerror: no }));
+          const store = db.transaction(db.objectStoreNames[0]).objectStore(db.objectStoreNames[0]);
+          const keys = await new Promise((ok) => (store.getAllKeys().onsuccess = (e) => ok(e.target.result)));
+          db.close();
+          return keys.filter((k) => String(k).startsWith("project/")).length;
+        });
+      /** Opens `text` as a file and waits until it is kept: keep() sets the id again. */
+      const open = async (text) => {
+        await kept.evaluate(() => (document.body.dataset.projectId = "opening"));
+        await kept.setInputFiles("#open-file", { name: "saved.spindle", mimeType: "application/json", buffer: Buffer.from(text) });
+        await kept.waitForFunction(() => document.body.dataset.projectId !== "opening");
+        await kept.waitForFunction(() => document.querySelector("#save-status").dataset.state === "saved");
+        return kept.evaluate(() => document.body.dataset.projectId);
+      };
+      // saved.spindle is this same Untitled 50 × 30 × 20 box: opening it goes on with the stored copy, not a second
+      // one (real-use hunt B3); a file that differs (another name) makes a new stored project, the autosaved one kept.
+      const file = readFileSync("e2e/saved.spindle", "utf8");
+      assert.equal(await open(file), id, "the same project, kept once");
+      assert.equal(await stored(), 1);
+      const other = await open(JSON.stringify({ ...JSON.parse(file), name: "Another" }));
+      assert.notEqual(other, id);
+      assert.equal(await stored(), 2);
     } finally {
       await kept.close();
     }
