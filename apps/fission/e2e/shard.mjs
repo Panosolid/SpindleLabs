@@ -13,6 +13,7 @@ export const SECONDS = {
   "storage.mjs": 2,
   "reopen.mjs": 57,
   "kernel-restart.mjs": 17,
+  "restart-panels.mjs": 12,
   "image.mjs": 29,
   "styles.mjs": 1,
   "files.mjs": 20,
