@@ -292,6 +292,41 @@ try {
     }
   });
 
+  await check("a tab put away soon after the project shows, then killed by the phone, leaves it to reopen", async () => {
+    // Real-use hunt D1: locked within SETTLED_MS of showing, frozen, then killed with no pagehide and no timer
+    // run, the tab left its mark, and the next visit skipped the project as if it had crashed the tab.
+    const { context, page: first } = await fresh(375);
+    try {
+      await first.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
+      const id = await first.evaluate(() => document.body.dataset.projectId);
+      await first.close({ runBeforeUnload: true });
+      // A phone hides the page first (lock, app switch), then freezes it, then may kill it.
+      const page = await context.newPage();
+      await page.goto(url);
+      await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      assert.equal(await mark(page), id, "still settling");
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Page.setWebLifecycleState", { state: "frozen" });
+      // Read from another page of this site that doesn't start the app: the frozen one runs nothing.
+      const look = await context.newPage();
+      await look.goto(url + "icon-192.png");
+      assert.equal(await mark(look), null, "the mark went as the tab was put away");
+      await look.close();
+      // The OS kills it: no pagehide, no timer.
+      await page.close({ runBeforeUnload: false });
+      const next = await context.newPage();
+      await next.goto(url);
+      await next.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
+      assert.equal(await status(next), "", "reopened with no word of a freeze");
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const width of [1280, 375]) {
     await check(`${width} px: a last project slow to open offers Start fresh instead, which keeps it for the next visit`, async () => {
       const { context, page } = await freshValved(width);

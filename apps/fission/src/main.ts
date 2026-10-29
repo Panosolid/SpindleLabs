@@ -528,6 +528,10 @@ const guard = reopenGuard(local, {
   })(),
 });
 window.addEventListener("pagehide", () => guard.finished());
+// A phone locked or the app switched: the OS may kill the tab later with no pagehide (real-use hunt D1).
+document.addEventListener("visibilitychange", () => (document.visibilityState === "hidden" ? guard.putAway() : guard.back()));
+document.addEventListener("freeze", () => guard.putAway());
+document.addEventListener("resume", () => guard.back());
 let autosave: Autosave | null = null;
 // Leaving (timeline hunt, finding 1): when the page is hidden, reloaded or
 // closed, the changes not stored yet go to the unsaved-changes journal at

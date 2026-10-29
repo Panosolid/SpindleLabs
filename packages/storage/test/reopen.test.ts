@@ -164,13 +164,15 @@ function rng(seed: bigint) {
   };
 }
 
-type Outcome = "fine" | "froze-opening" | "froze-shown" | "closed-early" | "refused";
-const OUTCOMES: Outcome[] = ["fine", "froze-opening", "froze-shown", "closed-early", "refused"];
+// "put-away": the phone locked or the app switched (before or after showing), then the tab killed by the OS.
+type Outcome = "fine" | "froze-opening" | "froze-shown" | "closed-early" | "refused" | "put-away";
+const OUTCOMES: Outcome[] = ["fine", "froze-opening", "froze-shown", "closed-early", "refused", "put-away"];
 
 test("seeded visits against a model: skipped exactly when the visit before froze on that project", () => {
   // The model, written from the rule and not from the guard: a visit skips
   // its newest project iff the visit before tried that same project and
-  // froze (before or after showing it, short of SETTLED_MS). A skipped
+  // froze (before or after showing it, short of SETTLED_MS); a tab put away
+  // and then killed didn't freeze, its page ran the put-away. A skipped
   // visit opens nothing, so the next one tries again.
   for (let seed = 1n; seed <= 20n; seed++) {
     const random = rng(seed);
@@ -190,6 +192,13 @@ test("seeded visits against a model: skipped exactly when the visit before froze
       guard.opening(newest);
       if (outcome === "froze-opening") froze = newest;
       else if (outcome === "refused") guard.finished();
+      else if (outcome === "put-away") {
+        if (random() < 0.5) {
+          guard.shown(newest);
+          clock.advance(SETTLED_MS * random() * 0.99);
+        }
+        guard.putAway(); // and killed: nothing more runs
+      }
       else {
         guard.shown(newest);
         if (outcome === "froze-shown") {
@@ -390,4 +399,56 @@ test("seeded two-tab visits against a model: skipped exactly when the mark has n
     }
     assert.deepEqual([...seen].sort(), ["false", "true"], `seed ${seed} reached both answers`);
   }
+});
+
+// ---------- put away (real-use hunt D1) ----------
+// A phone locked or the app switched soon after the project shows: the OS
+// freezes the tab, and may kill it later with no pagehide and no timer run,
+// which left the mark as if the project had frozen the tab. A tab that runs
+// its put-away handler isn't hung, so its mark goes then, and comes back if
+// it is brought back while still opening.
+
+test("put away after showing: the mark goes at once, and the settle timer with it (worked by hand)", () => {
+  const storage = fakeStorage();
+  const clock = fakeTimers();
+  const guard = reopenGuard(storage, { timers: clock.timers });
+  guard.opening("p1");
+  guard.shown("p1");
+  clock.advance(500); // locked 0.5 s after showing, well inside SETTLED_MS
+  guard.putAway();
+  assert.equal(storage.items.has(OPENING_KEY), false, "a killed tab leaves no mark");
+  // Back again: shown already, so nothing comes back; the next visit opens p1.
+  guard.back();
+  clock.advance(SETTLED_MS);
+  assert.equal(storage.items.has(OPENING_KEY), false);
+  assert.equal(reopenGuard(storage).stuck("p1"), false);
+});
+
+test("put away while still opening: the mark goes, and comes back with the tab, until it settles", () => {
+  const storage = fakeStorage();
+  const clock = fakeTimers();
+  const guard = reopenGuard(storage, { timers: clock.timers });
+  guard.opening("p1");
+  guard.putAway();
+  assert.equal(storage.items.has(OPENING_KEY), false);
+  guard.back(); // still opening: a freeze from here on must still be caught
+  assert.equal(storage.items.get(OPENING_KEY), "p1");
+  guard.shown("p1");
+  clock.advance(SETTLED_MS);
+  assert.equal(storage.items.has(OPENING_KEY), false);
+  guard.back(); // settled: nothing to put back
+  assert.equal(storage.items.has(OPENING_KEY), false);
+});
+
+test("put away leaves another tab's mark alone, and a tab with nothing opening writes nothing", () => {
+  const storage = fakeStorage();
+  const t1 = reopenGuard(storage, { timers: fakeTimers().timers });
+  const t2 = reopenGuard(storage, { timers: fakeTimers().timers });
+  t1.opening("p1");
+  t2.putAway();
+  t2.back();
+  assert.equal(storage.items.get(OPENING_KEY), "p1");
+  t1.finished();
+  t2.back();
+  assert.equal(storage.items.has(OPENING_KEY), false);
 });

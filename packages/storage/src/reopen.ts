@@ -55,6 +55,14 @@ export interface ReopenGuard {
   shown(id: string): void;
   /** Call when opening ended without freezing the tab: it failed with a message, or the page was closed normally. Clears the mark only if it names what this tab was opening. */
   finished(): void;
+  /**
+   * Call when the page is hidden or frozen (a phone locked, the app switched): the OS may kill it later with no
+   * pagehide and no timer run, so this tab's mark goes now; a tab that runs this isn't hung (real-use hunt D1).
+   * Once shown, the project counts as opened; still opening, the mark comes back with `back()`.
+   */
+  putAway(): void;
+  /** Call when the page is shown or resumed again. */
+  back(): void;
 }
 
 /**
@@ -84,6 +92,8 @@ export function reopenGuard(
   let pending: unknown = null;
   /** The project this tab is opening, until it settles or opening ends: what it answers for. */
   let mine: string | null = null;
+  /** Whether this tab's mark was taken down by `putAway` while its project was still opening. */
+  let away = false;
   /** The question this tab is waiting on: the project asked about, and what to call once a tab answers for it. */
   let waiting: { id: string; answer: () => void } | null = null;
   if (channel)
@@ -126,6 +136,7 @@ export function reopenGuard(
       if (pending !== null) timers.clearTimeout(pending);
       pending = null;
       mine = id;
+      away = false;
       write(id);
     },
     shown(id) {
@@ -141,6 +152,20 @@ export function reopenGuard(
       pending = null;
       if (mine !== null && read() === mine) write(null);
       mine = null;
+    },
+    putAway() {
+      if (mine === null) return;
+      if (read() === mine) write(null);
+      if (pending !== null) {
+        // shown already: as good as settled
+        timers.clearTimeout(pending);
+        pending = null;
+        mine = null;
+      } else away = true;
+    },
+    back() {
+      if (mine !== null && away) write(mine);
+      away = false;
     },
   };
 }
