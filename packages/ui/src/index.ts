@@ -7,6 +7,7 @@ export { linkBadge, type LinkBadgeState } from "./link-badge.ts";
 export { workspaceSwitcher, type SwitcherEntry } from "./switcher.ts";
 export { SPLIT_MIN_WIDTH_PX, defaultSplit, splitChoices, type SplitEntry } from "./split.ts";
 export { WarmPool, type WarmHooks } from "./warm.ts";
+export { SETTINGS_KEY, SETTINGS_SECTIONS, SettingsStore, fillSettings, type SettingsParts, type SettingsSection, type SettingsStorage, type SettingValue } from "./settings.ts";
 export { shortcutList, type ShortcutGroup } from "./shortcut-list.ts";
 export { menuButton, menuPlace, MENU_GAP, type MenuButton, type MenuItem, type MenuSection } from "./menu-button.ts";
 export { ICONS, ICON_NAMES, iconSvg, withIcon, type IconName, type IconPart } from "./icons.ts";

@@ -17,7 +17,7 @@ import "@fission/ui/theme.css";
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
 import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
-import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, withIcon, workspaceSwitcher } from "@fission/ui";
+import { changeNote, fileMenu, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
 import { localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
@@ -841,6 +841,21 @@ function showShortcuts() {
   shortcutDialog.querySelector(".close")!.addEventListener("click", () => shortcutDialog.close());
   shortcutDialog.showModal();
 }
+// Settings: a card dialog of sections (@fission/ui settings.ts), kept in this
+// browser alone. Close, Escape and a tap outside the card all leave it.
+const settingsDialog = Object.assign(document.createElement("dialog"), { id: "settings", className: "settings" });
+settingsDialog.setAttribute("aria-labelledby", "settings-title");
+document.body.append(settingsDialog);
+let browserSettings: SettingsStore | null = null;
+const settings = () => (browserSettings ??= new SettingsStore(local));
+$("settings-open").addEventListener("click", () => {
+  settings(); // read once now, so the first real setting has its place
+  fillSettings(settingsDialog, { version: $("version").textContent ?? "", onShortcuts: showShortcuts });
+  settingsDialog.showModal();
+});
+settingsDialog.addEventListener("click", (e) => {
+  if (e.target === settingsDialog) settingsDialog.close(); // the backdrop belongs to the dialog element
+});
 // Undo and Redo (step 20b): the top bar's buttons and the keys above. Each
 // button says what it would take back or do again, and is off when there is
 // nothing; a snapshot that can't be put back says why and moves nothing.
@@ -886,6 +901,7 @@ showUndoRedo();
 withIcon($("assistant-toggle"), "ai", 16);
 withIcon($("guide-open"), "guide", 16);
 withIcon($("community"), "community", 16);
+withIcon($("settings-open"), "settings", 16);
 // One assistant panel for every workspace, beside the viewport.
 const setAssistant = (open: boolean) => {
   const panel = $("assistant");
