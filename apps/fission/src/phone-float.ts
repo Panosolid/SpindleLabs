@@ -54,6 +54,9 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Tool");
   bar.hidden = true;
+  // A press on the bar is not a press on the view: the view's own listeners on #viewport (the sketch's pointer
+  // position for its typed boxes, a sheet put away by a tap on the view) never hear it.
+  for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) bar.addEventListener(type, (e) => e.stopPropagation());
   viewport.append(bar);
   /** A bar button pressing the tool's own `target` (looked up at the press: a panel's buttons are rebuilt as it changes). */
   const proxy = (id: string, words: string, target: string, className = "") => {
