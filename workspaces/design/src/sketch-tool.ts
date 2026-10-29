@@ -21,7 +21,7 @@
 // with the sketch constraints (29).
 
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
-import { greyedItems, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
+import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
 import { arcThere, centreClick, centreHover, centrePreview, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
@@ -570,9 +570,10 @@ export function sketchDrawings(doc: DesignDocument, editing: { tool: SketchTool;
   const { features, marker } = doc.timeline;
   const end = marker === "start" ? 0 : marker === undefined ? features.length : features.findIndex((f) => f.id === marker) + 1;
   const rolled = new Set(features.slice(end).map((f) => f.id));
+  // Nor is one hidden by its eye or its folder's (an extrude of it shuts its eye, as in Fusion), save while it is edited.
   const off = (s: Sketch) => {
     const item = items.get(s.id);
-    return item !== undefined && editing?.tool.sketch !== s.id && (item.suppressed || greyed.has(item) || rolled.has(item.id));
+    return item !== undefined && editing?.tool.sketch !== s.id && (item.suppressed || greyed.has(item) || rolled.has(item.id) || sketchHidden(doc, s.id));
   };
   return doc.sketches.filter((s) => !off(s)).map((s) => {
     const plane: Plane = planeFor(items.get(s.id), s, placed);

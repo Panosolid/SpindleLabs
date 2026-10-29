@@ -60,3 +60,6 @@
 @media (min-width: 641px) and (hover: hover) {
   .browser-fold:is(#workspace:not([data-split="on"]) #browser > *) .delete-ask-row:not(:hover, :focus-within) > .delete-ask-more:not(#none) { opacity: 0; }
 }
+/* A folder's eye (Ben, 2026-10-29: an eye on everything) sits in its
+   title before its folder icon, centred on the words. */
+.browser-fold .tree summary > .browser-row-eye:not(#none) { vertical-align: middle; margin-right: 2px; }

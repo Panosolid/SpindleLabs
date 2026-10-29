@@ -2,10 +2,10 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, type BodySpec, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { latestOnly, NO_HIGHLIGHT, ORIGIN_AT_FIRST, type BodySpec, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isHidden, isMoveItem, isSketchItem, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_DISTANCE } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -23,14 +23,14 @@ import { iconSvg, toolGroup, type IconName, type MenuButton } from "@fission/ui"
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
-import { bodyRows, browserTree, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
+import { browserTree, eyeId, rowItem, rowReferences, type BrowserNode } from "./browser.ts";
 import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.ts";
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
-import { hideBody, itemName, renameItem, TIMELINE_STEPS } from "./timeline-edits.ts";
+import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from "./timeline-edits.ts";
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
@@ -39,7 +39,7 @@ import { isFaceSketch } from "./face-sketch.ts";
 import { droppedNote, highlightOf, panelFocus, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
-import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
+import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
 import { PROJECT_AGAIN, projectedOpen, projectPick, sketchEdgeCurves } from "./projection.ts";
 import { sketchEdgeTargets, sketchPlaneCorners } from "./face-edges.ts";
 import { sketchableFaces, sketchSpot, type SketchSpot } from "./face-pick.ts";
@@ -236,6 +236,24 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
   // The toggle event fires a task after the click, so a rebuild can come
   // first: read the folding from the tree being replaced, not only events.
   for (const d of slot.querySelectorAll<HTMLDetailsElement>("details[data-node]")) folding.set(d.dataset.node!, d.open);
+  // A row's eye (U0f3, Fusion's; on every row that draws something since Ben's ask 2026-10-29): hides or shows it, one undo step; a hidden row is dimmed.
+  const eyeOf = (n: BrowserNode): HTMLButtonElement | null => {
+    if (n.hidden === undefined) return null;
+    const eye = document.createElement("button");
+    eye.type = "button";
+    eye.className = "browser-row-eye";
+    eye.dataset.eye = n.id; // read by the e2e test
+    const words = `${n.hidden ? "Show" : "Hide"} ${n.label}`;
+    eye.setAttribute("aria-label", words);
+    eye.setAttribute("aria-pressed", String(!n.hidden)); // pressed while it shows
+    eye.title = words;
+    eye.append(iconSvg(document, n.hidden ? "eye-off" : "eye", 16));
+    eye.addEventListener("click", (e) => {
+      e.preventDefault(); // in a folder's summary: the press is the eye's, not the fold's
+      onEye(n.id);
+    });
+    return eye;
+  };
   const list = (nodes: BrowserNode[]) => {
     const ul = document.createElement("ul");
     ul.className = "tree";
@@ -251,6 +269,9 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
         const summary = document.createElement("summary");
         summary.textContent = n.label;
         summary.prepend(rowIcon(document, n.icon)); // U0f3: a folder before each group's name
+        // A folder's eye (Ben, 2026-10-29): shut, nothing in it is drawn; its press doesn't fold the folder.
+        const shut = eyeOf(n);
+        if (shut) summary.prepend(shut);
         details.append(summary, list(n.children));
         li.append(details);
       } else {
@@ -288,21 +309,16 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
           const line = document.createElement("div");
           line.className = "delete-ask delete-ask-row";
           line.append(row, more);
-          // A body's eye (U0f3, Fusion's): hides or shows it, one undo step; a hidden body's row is dimmed.
-          if (n.hidden !== undefined) {
-            const eye = document.createElement("button");
-            eye.type = "button";
-            eye.className = "browser-row-eye";
-            eye.dataset.eye = n.id; // read by the e2e test
-            const words = `${n.hidden ? "Show" : "Hide"} ${n.label}`;
-            eye.setAttribute("aria-label", words);
-            eye.setAttribute("aria-pressed", String(!n.hidden)); // pressed while the body shows
-            eye.title = words;
-            eye.append(iconSvg(document, n.hidden ? "eye-off" : "eye", 16));
-            eye.addEventListener("click", () => onEye(n.id));
-            line.prepend(eye);
-            if (n.hidden) line.classList.add("browser-row-hidden");
-          }
+          const eye = eyeOf(n);
+          if (eye) line.prepend(eye);
+          if (n.hidden || n.folderHidden) line.classList.add("browser-row-hidden");
+          li.append(line);
+        } else if (n.hidden !== undefined) {
+          // An origin row's eye, on a line of its own as an item row's.
+          const line = document.createElement("div");
+          line.className = "delete-ask delete-ask-row";
+          line.append(eyeOf(n)!, row);
+          if (n.hidden || n.folderHidden) line.classList.add("browser-row-hidden");
           li.append(line);
         } else li.append(row);
       }
@@ -402,6 +418,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden);
   }
 
+  /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
+  function showOrigin(doc: DesignDocument) {
+    viewport.showOrigin({
+      axes: [originDrawn(doc, ORIGIN_AXES[0]), originDrawn(doc, ORIGIN_AXES[1]), originDrawn(doc, ORIGIN_AXES[2])],
+      planes: EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })),
+    });
+  }
+
   /**
    * A Body row's eye (U0f3): hides its body, or shows it again, as one undo
    * step ("Hide Body 1"), in any mode (a sketch being drawn stays open, as
@@ -409,11 +433,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function toggleHidden(node: string) {
     const doc = designDoc();
-    const row = bodyRows(doc, failedNow).find((r) => r.id === node);
-    if (row === undefined) return;
-    const hide = !isHidden(doc, row.feature.id);
+    const flat = (nodes: readonly BrowserNode[]): BrowserNode[] => nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
+    const n = flat(browserTree(doc, failedNow)).find((r) => r.id === node);
+    const id = eyeId(doc, node, failedNow);
+    if (n?.hidden === undefined || id === null) return;
+    const hide = !n.hidden;
     if (hide) ctx.selection.clear();
-    void update(hide ? TIMELINE_STEPS.hide(row.label) : TIMELINE_STEPS.show(row.label), undefined, hideBody(doc, row.feature.id, hide));
+    void update(hide ? TIMELINE_STEPS.hide(n.label) : TIMELINE_STEPS.show(n.label), undefined, hideRow(doc, id, hide));
   }
 
   /** The browser's Body 1 row: a click selects the body, Shift adds or takes it out. */
@@ -924,6 +950,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // So does the Move panel's Move (35e2b).
     if (moveBox.editing !== null && !doc.timeline.features.some((f) => f.id === moveBox.editing)) leaveMove();
     drawBrowser(doc);
+    showOrigin(doc);
     showStart();
     showFailed(doc);
     showKept();
@@ -1168,7 +1195,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch(false);
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(d));
-    return update(extrudeStep(doc, id), undefined, made.doc);
+    return update(extrudeStep(doc, id), undefined, usedSketchHidden(made.doc, id));
   }
 
   /**
@@ -1703,7 +1730,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
-    await update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, made.doc);
+    await update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
   }
 
   // Edit feature (step 25a2): an earlier feature's sizes from its timeline item or browser row.
@@ -2435,6 +2462,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       stopHealing?.();
       void bodies.close();
       viewport.showSketches([]);
+      viewport.showOrigin(ORIGIN_AT_FIRST);
       typed.element.remove();
       hint.element.remove();
       moveHint.remove();

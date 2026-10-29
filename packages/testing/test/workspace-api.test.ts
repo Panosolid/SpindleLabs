@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { partDocument } from "@fission/design";
-import { ActionRegistry, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, createHistory, RepresentationRegistry, createSelection, NO_HIGHLIGHT, SHELL_SHORTCUTS, ShortcutTable, type BodyView, type GeometryReference, type KernelCalls, type SharedViewport, type StableId, type ViewportHighlight, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, createHistory, RepresentationRegistry, createSelection, NO_HIGHLIGHT, ORIGIN_AT_FIRST, SHELL_SHORTCUTS, ShortcutTable, type BodyView, type OriginShown, type GeometryReference, type KernelCalls, type SharedViewport, type StableId, type ViewportHighlight, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 
 const root = join(import.meta.dirname, "../../..");
 const workspaceDirs = readdirSync(join(root, "workspaces"), { withFileTypes: true })
@@ -154,6 +154,7 @@ function testContext({ empty = false } = {}): WorkspaceContext {
     showExtrude() {},
     onExtrudePointer: null,
     showMoveHandles() {},
+    showOrigin() {},
     onMovePointer: null,
   };
   // A new project's design starts empty (U0c); these tests work on a part, the 40 × 30 × 20 box (feature-1).
@@ -631,9 +632,11 @@ test("Design's eye hides Body 1 and shows it again, one undo step each, and a hi
   assert.equal(eye().nextElementSibling, bodyRow());
   assert.equal(bodyRow().tagName, "BUTTON");
   assert.equal(drawn.at(-1), 3, "the box is drawn");
-  // Every row and group has its icon before its words, and its words are its name alone.
+  // Every row and group has its icon before its words (a folder's title starts with its eye, Ben 2026-10-29, then the icon), and its words are its name alone.
   const rows = [...ctx.browser.querySelectorAll<HTMLElement>(".tree-row, .tree summary")];
-  assert.deepEqual(rows.filter((r) => r.firstElementChild?.matches("svg.browser-row-icon") !== true).map((r) => r.textContent), []);
+  const firstBesidesEye = (r: HTMLElement) => [...r.children].find((c) => !c.matches(".browser-row-eye"));
+  assert.deepEqual(rows.filter((r) => firstBesidesEye(r)?.matches("svg.browser-row-icon") !== true).map((r) => r.textContent), []);
+  assert.deepEqual(rows.filter((r) => r.firstElementChild?.matches(".browser-row-eye")).map((r) => r.textContent), ["Sketches", "Bodies", "Origin"], "only the folders' titles hold an eye");
   assert.equal(bodyRow().textContent, "Body 1");
   // Body 1 selected, then hidden: the selection goes, the row is dimmed and selects nothing, nothing is drawn.
   bodyRow().click();
@@ -666,6 +669,69 @@ test("Design's eye hides Body 1 and shows it again, one undo step each, and a hi
   assert.equal(mounted.fileEntries!().exports![0].off, undefined);
   assert.deepEqual(steps, ["Hide Body 1", "Show Body 1"]);
   mounted.unmount();
+});
+
+// An eye on everything (Ben, 2026-10-29): the folders' eyes in their
+// titles (pressing one doesn't fold it) and the origin's rows' eyes, each
+// one undo step by the row's name; the origin's axes and planes handed to
+// the view, and put back as they start when Design is put away.
+test("Design's folder and origin eyes: one undo step each, the view told, a folder's press not folding it, the origin put back on unmount", async () => {
+  const triangle = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], triangle_faces: [0], edge_lines: [], edge_line_edges: [] };
+  const view = { vertices: 8, edges: 12, faces: 6, face_types: Array(6).fill("plane"), edge_types: Array(12).fill("line"), face_roles: [{ role: "bottom" }, { role: "top" }, { role: "front" }, { role: "back" }, { role: "left" }, { role: "right" }], edge_faces: [[0, 4], [0, 3], [5, 0], [2, 0], [1, 2], [1, 5], [3, 1], [4, 1], [2, 5], [4, 2], [3, 4], [5, 3]], mesh: triangle, volume: 24000, area: 5200, errors: [] } as unknown as BodyView;
+  const base = testContext();
+  const steps: string[] = [];
+  const ctx: WorkspaceContext = {
+    ...base,
+    kernel: { call: ((op: string) => (op === "body_build" ? Promise.resolve(1) : op === "body_view" ? Promise.resolve(view) : op === "body_free" ? Promise.resolve() : Promise.reject(new Error("not in this test")))) as KernelCalls["call"] },
+    projectChanged: (label?: string) => void steps.push(label ?? ""),
+  };
+  const drawn: number[] = [];
+  const origins: OriginShown[] = [];
+  ctx.viewport.showBody = (mesh) => void drawn.push(mesh.indices.length);
+  ctx.viewport.showOrigin = (shown) => void origins.push(shown);
+  const design = plugins.find((p) => p.id === "design")!;
+  const mounted = design.mount(ctx);
+  await settle();
+  const eye = (id: string) => ctx.browser.querySelector<HTMLButtonElement>(`[data-eye="${id}"]`)!;
+  const said = (o: OriginShown | undefined) => o && [...o.axes, ...o.planes.map((p) => p.id)];
+  // At first: every axis and no plane, the planes' eyes shut and the axes' open.
+  assert.deepEqual(said(origins.at(-1)), [true, true, true]);
+  assert.deepEqual(["origin-xy", "origin-x", "bodies", "origin"].map((id) => [eye(id).getAttribute("aria-label"), eye(id).getAttribute("aria-pressed")]), [["Show XY plane", "false"], ["Hide X axis", "true"], ["Hide Bodies", "true"], ["Hide Origin", "true"]]);
+  // A folder's eye is in its title, before its icon; pressing it leaves the folder as it was (Bodies open, Origin folded).
+  const folder = (id: string) => ctx.browser.querySelector<HTMLDetailsElement>(`details[data-node="${id}"]`)!;
+  assert.equal(eye("bodies").parentElement!.tagName, "SUMMARY");
+  assert.equal(eye("bodies").nextElementSibling!.matches("svg.browser-row-icon"), true);
+  const wasOpen = [folder("bodies").open, folder("origin").open];
+  eye("bodies").click();
+  await settle();
+  assert.deepEqual([folder("bodies").open, folder("origin").open], wasOpen, "the eye's press doesn't fold or unfold");
+  assert.equal(drawn.at(-1), 0, "the Bodies folder shut: nothing drawn");
+  assert.ok(ctx.browser.querySelector("[data-eye=body-1]")!.parentElement!.classList.contains("browser-row-hidden"), "Body 1 dimmed by its folder");
+  assert.equal(eye("body-1").getAttribute("aria-label"), "Hide Body 1", "Body 1's own eye stays open");
+  // The XY plane shown, then the Y axis hidden: the view told each time.
+  eye("origin-xy").click();
+  await settle();
+  assert.deepEqual(said(origins.at(-1)), [true, true, true, "origin-xy"]);
+  eye("origin-y").click();
+  await settle();
+  assert.deepEqual(said(origins.at(-1)), [true, false, true, "origin-xy"]);
+  assert.ok(eye("origin-y").parentElement!.classList.contains("browser-row-hidden"));
+  // The Origin folder shut: nothing of it drawn; opened again, as it was.
+  eye("origin").click();
+  await settle();
+  assert.deepEqual(said(origins.at(-1)), [false, false, false]);
+  eye("origin").click();
+  await settle();
+  assert.deepEqual(said(origins.at(-1)), [true, false, true, "origin-xy"]);
+  eye("bodies").click();
+  await settle();
+  assert.equal(drawn.at(-1), 3, "the Bodies folder open: the box drawn again");
+  assert.deepEqual(steps, ["Hide Bodies", "Show XY plane", "Hide Y axis", "Hide Origin", "Show Origin", "Show Bodies"], "one undo step each, by the row's name");
+  assert.deepEqual((ctx.project.workspaces.design as { hidden?: string[]; shownPlanes?: string[] }).hidden, ["origin-y"]);
+  assert.deepEqual((ctx.project.workspaces.design as { shownPlanes?: string[] }).shownPlanes, ["origin-xy"]);
+  // Put away: the origin as every view starts, for the next workspace.
+  mounted.unmount();
+  assert.deepEqual(origins.at(-1), ORIGIN_AT_FIRST);
 });
 
 // Autosave (19c): the shell saves when told the project changed, so a

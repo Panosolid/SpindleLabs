@@ -40,6 +40,7 @@ function fake(): Fake {
     showExtrude() {},
     onExtrudePointer: null,
     showMoveHandles() {},
+    showOrigin() {},
     onMovePointer: null,
     showImage(rep) {
       if (rep === null) return void f.log.push("empty"); // Image's own empty view

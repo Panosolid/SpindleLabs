@@ -197,6 +197,8 @@ try {
     assert.equal(await data(page, "sketchLines"), "4", "the sketch is still drawn");
     await page.keyboard.press("Control+Shift+z");
     await volume(page, "12,000 mm³");
+    // The extrude back, its sketch hidden with it (Ben, 2026-10-29, as Fusion hides a sketch a solid is made from).
+    assert.equal(await data(page, "sketchLines"), "0", "the extruded sketch is hidden");
     assert.equal(await page.textContent("#height-label"), "Extrude by");
     // A preset after it is a new feature after it (24d1: nothing is replaced), keeping the sizes in the boxes
     // (the height box held the distance): a 40 × 30 × 10 box, the same 12,000 mm³ but a box, shown as the part
