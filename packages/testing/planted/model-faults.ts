@@ -302,7 +302,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "sketch-not-carried": {
     what: "a sketch on a moved face follows its height but not a Move's slide along it or turn about it (35e2h's compromise back)",
-    edits: [{ file: REBUILD, find: "const carry = p.body === undefined ? null : carried(", replace: "const carry = Number(\"0\") ? null : carried(" }],
+    edits: [{ file: REBUILD, find: "const carry = p.body === undefined ? null : carried(", replace: "const carry = Number(\"1\") ? null : carried(" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
