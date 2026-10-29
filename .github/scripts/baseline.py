@@ -45,6 +45,7 @@ which checks them in its CI (2026-10-27).
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -140,10 +141,11 @@ def reference(ref):
     """A checkout of `ref` beside this one with its packages installed, or None."""
     where = os.path.join(os.environ.get("RUNNER_TEMP", "/tmp"), "baseline-reference")
     try:
-        run(["git", "fetch", "--depth=1", "origin", ref], cwd=ROOT)
+        # A clone of its own: fetching into this checkout would make it shallow (found locally: a full clone lost its history).
+        url = run(["git", "remote", "get-url", "origin"], cwd=ROOT).stdout.strip()
         if os.path.exists(where):
-            run(["git", "worktree", "remove", "--force", where], cwd=ROOT)
-        run(["git", "worktree", "add", "--detach", where, "FETCH_HEAD"], cwd=ROOT)
+            shutil.rmtree(where)
+        run(["git", "clone", "--quiet", "--depth=1", "--branch", ref, url, where])
         run(["npm", "ci", "--no-audit", "--no-fund"], cwd=where)
     except (subprocess.CalledProcessError, OSError) as e:
         print(f"No reference build of {ref} ({e}); the fixed baseline's verdict stands")
