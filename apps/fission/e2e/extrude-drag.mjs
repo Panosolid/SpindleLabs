@@ -211,28 +211,26 @@ try {
       if (touch) await closePanels(page, true); // the view clear to tap and drag in (Extrude leaves the sheet shut; a no-op then)
       // Both sketches, then the box's six flat faces (UX1c).
       await until(page, (want) => document.querySelector("#viewport").dataset.extrudeProfiles === want, `${RECT.id} ${CIRCLE.id} ${BOX_FACES}`, "both outlines offered, then the box's faces", panelState);
-      // The newest is chosen first (Sketch 2, the circle): 64π · 10 = 2010.6 mm³ previewed.
+      // The newest is chosen first (Sketch 2, the circle), at 0 mm (Ben, 2026-10-28: Extrude starts at 0): nothing
+      // previewed, but its arrow stands on the circle, ready to drag.
       assert.equal(await page.textContent("#extrude-profile"), "Sketch 2");
-      await until(page, () => Math.abs(Number(document.querySelector("#extrude-panel").dataset.previewVolume) - 640 * Math.PI) < 1e-6, null, "the circle's preview");
+      assert.equal(await page.inputValue("#extrude-distance"), "0");
+      await arrow(page);
+      assert.equal(await view(page, "extrudeDistance"), "0");
+      assert.equal(await view(page, "extrudePreview"), "false", "0 mm previews nothing");
+      if (shots) await page.screenshot({ path: `${shots}/extrude-at-0-${width}.png` });
       // Hover: over the rectangle's middle it lights, beside it nothing.
       const rect = await hoverAt(page, RECT.centre, RECT.id);
       await hoverAt(page, [-40, 45, 0], "");
       await hoverAt(page, CIRCLE.centre, CIRCLE.id);
-      // A click (a tap) on the rectangle chooses it: 1200 · 10 = 12,000 mm³ previewed.
+      // A click (a tap) on the rectangle chooses it, still at 0 mm.
       if (touch) await page.touchscreen.tap(rect.x, rect.y);
       else await page.mouse.click(rect.x, rect.y);
       await until(page, (id) => document.querySelector("#viewport").dataset.extrudeChosen === id, RECT.id, "the rectangle chosen");
       assert.equal(await page.textContent("#extrude-profile"), "Sketch 1");
-      await until(page, () => document.querySelector("#extrude-panel").dataset.previewVolume === "12000", null, "the rectangle's preview");
-      assert.equal(await view(page, "extrudePreview"), "true");
-      // The chosen fill and its preview are bluer than the circle's offered fill (a pixel probe at each one's middle; the pointer off both).
-      await page.mouse.move(5, 5);
-      const chosen = await pixel(page, await screen(page, [-40, 15, 5]));
-      const offered = await pixel(page, await screen(page, CIRCLE.centre));
-      assert.ok(chosen[2] > chosen[0] + 30, `the preview is blue: ${chosen}`);
-      assert.ok(chosen[2] > offered[2] + 15, `the chosen one (${chosen}) is brighter than the one offered (${offered})`);
-      if (shots) await page.screenshot({ path: `${shots}/extrude-preview-${width}.png` });
-      // The arrow dragged up its own line by 90 px: a whole number of mm, more than 10, and the box, the arrow and the preview agree.
+      await until(page, () => document.querySelector("#viewport").dataset.extrudeDistance === "0", null, "the rectangle's arrow at 0");
+      assert.equal(await view(page, "extrudePreview"), "false");
+      // The arrow dragged up its own line from 0 by 90 px: a whole number of mm, more than 5, and the box, the arrow and the preview agree.
       // While held, the distance box glows (Ben, 2026-10-28: the value a drag changes glows), drawn (its box-shadow not "none");
       // it goes out when the drag ends.
       const glows = () => page.evaluate(() => { const box = document.querySelector("#extrude-distance"); return box.classList.contains("extrude-dragged") && getComputedStyle(box).boxShadow !== "none"; });
@@ -244,11 +242,18 @@ try {
       });
       assert.equal(held, true, "the distance box glows while the arrow is held");
       await until(page, () => !document.querySelector("#extrude-distance").classList.contains("extrude-dragged"), null, "the glow goes when the drag ends");
-      await until(page, () => document.querySelector("#extrude-distance").value !== "10", null, "the distance changed by the drag");
+      await until(page, () => document.querySelector("#extrude-distance").value !== "0", null, "the distance changed by the drag");
       const up = Number(await page.inputValue("#extrude-distance"));
-      assert.ok(Number.isInteger(up) && up > 10, `dragged up to ${up} mm`);
+      assert.ok(Number.isInteger(up) && up > 5, `dragged up to ${up} mm`);
       assert.equal(await view(page, "extrudeDistance"), String(up));
       await until(page, (v) => document.querySelector("#extrude-panel").dataset.previewVolume === v, String(RECT.area * up), `the preview at ${up} mm`);
+      assert.equal(await view(page, "extrudePreview"), "true");
+      // The chosen fill and its preview are bluer than the circle's offered fill (a pixel probe at each one's middle; the pointer off both).
+      await page.mouse.move(5, 5);
+      const chosen = await pixel(page, await screen(page, [-40, 15, 5]));
+      const offered = await pixel(page, await screen(page, CIRCLE.centre));
+      assert.ok(chosen[2] > chosen[0] + 30, `the preview is blue: ${chosen}`);
+      assert.ok(chosen[2] > offered[2] + 15, `the chosen one (${chosen}) is brighter than the one offered (${offered})`);
       if (shots) await page.screenshot({ path: `${shots}/extrude-dragged-${width}.png` });
       // Dragged back down past the plane: negative, the arrow now pointing down.
       // As far down the screen as the foot is above the plane's point under it, and 120 px more.
@@ -302,14 +307,16 @@ try {
       assert.equal(await page.textContent("#extrude-profile"), "Face of Box 1");
       // The kernel checks the face's outline first ("Checking Face of Box 1…"), then the status says the body is a new one.
       await until(page, () => /Joining the new body to the one under the face comes with the Combine tool\.$/.test(document.querySelector("#extrude-status").textContent), null, "the status saying the extrude is a new body", panelState);
-      // 10 · 10 · 10 = 1,000 mm³ on top of the box.
-      await until(page, () => document.querySelector("#extrude-panel").dataset.previewVolume === "1000", null, "the face's preview");
-      if (shots) await page.screenshot({ path: `${shots}/face-extrude-${width}.png` });
+      // At 0 mm nothing is previewed; the arrow stands on the face.
+      await until(page, () => document.querySelector("#viewport").dataset.extrudeDistance === "0", null, "the face's arrow at 0");
+      assert.equal(await view(page, "extrudePreview"), "false");
       await dragArrow(page, 60, touch);
-      await until(page, () => document.querySelector("#extrude-distance").value !== "10", null, "dragged");
+      await until(page, () => document.querySelector("#extrude-distance").value !== "0", null, "dragged");
       const up = Number(await page.inputValue("#extrude-distance"));
-      assert.ok(Number.isInteger(up) && up > 10, `dragged up to ${up} mm`);
+      assert.ok(Number.isInteger(up) && up > 0, `dragged up to ${up} mm`);
+      // 10 · 10 · up mm³ on top of the box.
       await until(page, (v) => document.querySelector("#extrude-panel").dataset.previewVolume === v, String(100 * up), `the preview at ${up} mm`);
+      if (shots) await page.screenshot({ path: `${shots}/face-extrude-${width}.png` });
       await press("#extrude-ok");
       await until(page, () => document.querySelector("#extrude-panel").hidden, null, "the panel gone");
       assert.equal(await undoTitle(page), "Undo Extrude Face of Box 1 (Ctrl+Z)");
@@ -325,10 +332,10 @@ try {
       const before = await undoTitle(page);
       await (touch ? page.tap("#extrude") : page.click("#extrude"));
       if (touch) await closePanels(page, true); // as above
-      await until(page, () => document.querySelector("#extrude-panel")?.dataset.previewVolume !== "", null, "a preview");
       await until(page, () => document.querySelector("#viewport").dataset.arrow, null, "the arrow");
       await dragArrow(page, 60, touch);
-      await until(page, () => document.querySelector("#extrude-distance").value !== "10", null, "dragged");
+      await until(page, () => document.querySelector("#extrude-distance").value !== "0", null, "dragged");
+      await until(page, () => document.querySelector("#extrude-panel")?.dataset.previewVolume !== "", null, "a preview");
       await page.keyboard.press("Escape");
       await until(page, () => document.querySelector("#extrude-panel").hidden, null, "the panel gone");
       assert.equal(await view(page, "extrudeProfiles"), "");

@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView, KernelCalls } from "@fission/core";
-import { addSketch, drawCircle, drawLine, drawRectangle, featureSpec, NO_USABLE_SKETCH, partDocument, PICK_PROFILE_STATUS, suppressItem, ZERO_DISTANCE, type DesignDocument } from "@fission/design";
+import { addSketch, drawCircle, drawLine, drawRectangle, featureSpec, NO_USABLE_SKETCH, partDocument, PICK_PROFILE_STATUS, suppressItem, ZERO_OK, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 import { seeded } from "../src/index.ts";
 import { app } from "./design-app.ts";
@@ -65,9 +65,15 @@ test("hand-worked: the newest sketch is chosen, both closed outlines offered, an
   await openExtrude(a);
   const sketches = a.doc().sketches.map((s) => s.id);
   assert.deepEqual(sketchOffers(a).map((p) => p.id), sketches, "both sketches close, so both are offered in the view");
-  // The newest, Sketch 2: a circle of radius 5 by the default 10 mm, π · 25 · 10 = 785.398 mm³.
+  // The newest, Sketch 2, at 0 mm (Ben, 2026-10-28: Extrude starts at 0): nothing previewed, the box says 0, and the
+  // arrow already stands on the circle's centre, pointing up, its foot on the plane (0 along it), ready to drag.
   assert.equal(shown(a)!.chosen, sketches[1]);
   assert.equal(a.$("#extrude-profile")!.textContent, "Sketch 2");
+  assert.equal((a.$("#extrude-distance") as HTMLInputElement).value, "0");
+  assert.equal(shown(a)!.preview, null, "0 mm previews nothing");
+  assert.deepEqual(shown(a)!.arrow, { base: [70, 15, 0], direction: [0, 0, 1], distance: 0 });
+  // Typed 10: a circle of radius 5 by 10 mm, π · 25 · 10 = 785.398 mm³.
+  await type(a, "10");
   near(previewVolume(a), Math.PI * 250, "the circle's preview");
   // The arrow: from the circle's centre on XY, straight up, its foot at the end cap.
   assert.deepEqual(shown(a)!.arrow, { base: [70, 15, 0], direction: [0, 0, 1], distance: 10 });
@@ -92,6 +98,7 @@ test("hand-worked: a click on the other outline chooses it; one on none keeps th
   await a.extrudePointer({ kind: "pick", profile: first });
   assert.equal(shown(a)!.chosen, first);
   assert.equal(a.$("#extrude-profile")!.textContent, "Sketch 1");
+  await type(a, "10");
   // 40 · 30 · 10 = 12,000 mm³; the arrow from the rectangle's centroid (20, 15, 0).
   near(previewVolume(a), 12000, "the rectangle's preview");
   assert.deepEqual(shown(a)!.arrow, { base: [20, 15, 0], direction: [0, 0, 1], distance: 10 });
@@ -141,12 +148,18 @@ test("Escape, Cancel and ✕ leave nothing behind; a 0 or empty box shows no pre
   assert.equal(a.$("#extrude-status")!.textContent, PICK_PROFILE_STATUS);
   assert.equal((a.$("#extrude-ok") as HTMLButtonElement).disabled, true);
   await a.extrudePointer({ kind: "pick", profile: a.doc().sketches[0].id });
+  assert.equal(shown(a)!.preview, null, "Extrude starts at 0 mm: nothing previewed");
+  (a.$("#extrude-ok") as HTMLButtonElement).click();
+  await a.settle();
+  assert.equal(a.$("#extrude-error")!.textContent, ZERO_OK, "OK at the start says what to do");
+  assert.equal(a.history.undoLabel(), null, "and records nothing");
+  await type(a, "10");
   assert.notEqual(shown(a)!.preview, null);
   await type(a, "0");
   assert.equal(shown(a)!.preview, null, "0 builds nothing");
   (a.$("#extrude-ok") as HTMLButtonElement).click();
   await a.settle();
-  assert.equal(a.$("#extrude-error")!.textContent, ZERO_DISTANCE);
+  assert.equal(a.$("#extrude-error")!.textContent, ZERO_OK);
   await type(a, "");
   assert.equal(shown(a)!.preview, null);
   await a.key("clear-selection");
@@ -232,6 +245,8 @@ test("a sketch on the box's bottom face: the arrow points down, out of the box, 
   const arrow = shown(a)!.arrow!;
   assert.deepEqual(arrow.direction.map((v) => v + 0), [0, 0, -1], "a sketch on the bottom faces down");
   assert.equal(arrow.base[2], 0);
+  assert.equal(arrow.distance, 0, "standing on the face at 0 mm, where Extrude starts");
+  await type(a, "10");
   near(previewVolume(a), 1000, "10 · 10 · 10");
   const preview = shown(a)!.preview!;
   const zs = Array.from({ length: preview.positions.length / 3 }, (_, i) => preview.positions[3 * i + 2]);

@@ -95,7 +95,8 @@ const extrudeStatus = (page, want) => until(page, (w) => document.querySelector(
  * closed (OK on): until then the panel takes no Enter, as OK takes no click.
  * The kernel's answer can come after the panel shows (CI's runners).
  */
-async function extrudeEnter(page) {
+async function extrudeEnter(page, distance = "10") {
+  await page.fill("#extrude-distance", distance); // Extrude starts at 0 mm (Ben, 2026-10-28)
   await until(page, () => document.querySelector("#extrude-ok")?.disabled === false, null, "Extrude's OK on");
   assert.match((await page.getAttribute("#extrude-ok", "title")) ?? "", /Enter/, "OK's tooltip names Enter");
   await page.press("#extrude-distance", "Enter");
@@ -144,7 +145,8 @@ try {
     // UX1b: no dropdown; the sketch just drawn is the profile chosen, its outline lit in the view.
     assert.equal(await page.textContent("#extrude-profile"), "Sketch 1");
     assert.equal(await page.getAttribute("#extrude-panel", "data-chosen"), "sketch-2");
-    assert.equal(await page.inputValue("#extrude-distance"), "10");
+    // Extrude starts at 0 mm (Ben, 2026-10-28: "instead of defaulting to 10mm just start at extrude of 0"); OK is on and says what to do.
+    assert.equal(await page.inputValue("#extrude-distance"), "0");
     await extrudeStatus(page, "Sketch 1 makes a closed outline.");
     assert.equal(await page.isEnabled("#extrude-ok"), true);
     if (shots) await page.screenshot({ path: `${shots}/extrude-panel-1280.png` });
@@ -152,7 +154,7 @@ try {
     await page.fill("#extrude-distance", "0");
     await page.click("#extrude-ok");
     await until(page, () => !document.querySelector("#extrude-error").hidden, null, "a refused distance");
-    assert.equal(await page.textContent("#extrude-error"), "Type a distance other than 0 mm: a negative one goes the other way.");
+    assert.equal(await page.textContent("#extrude-error"), "Drag the arrow or type a distance first: at 0 mm there is nothing to make. A negative distance goes the other way.");
     // 2 km is past the modeller's 1 km: refused up front in the box's own words (backlog 10-29: before, the kernel was asked),
     // the panel stays, nothing is recorded.
     await page.fill("#extrude-distance", "2000000");
@@ -255,7 +257,12 @@ try {
     }
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling");
     if (shots) await page.screenshot({ path: `${shots}/extrude-panel-375.png`, fullPage: true });
-    // ½ · 30 · 20 = 300 mm², by 10 mm: 3,000 mm³.
+    // At 0 mm (where Extrude starts) OK says what to do, in the panel and the bar's words; nothing is made.
+    await page.tap("#extrude-ok");
+    await until(page, () => /Drag the arrow or type a distance first/.test(document.getElementById("extrude-error")?.textContent ?? ""), null, "OK at 0 says what to do");
+    assert.equal(await page.textContent("#volume"), "24,000 mm³", "nothing made at 0: the box is still the part");
+    // ½ · 30 · 20 = 300 mm², by 10 mm typed: 3,000 mm³.
+    await page.fill("#extrude-distance", "10");
     await page.tap("#extrude-ok");
     await volume(page, "3,000 mm³");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 375), "no sideways scrolling after");
@@ -463,6 +470,7 @@ try {
       await statusStarts(page, `${pts.length - 1} lines, a closed outline`);
       await openPanel(page, "properties", tap); // the sketch's Extrude button is in the Properties sheet on a phone (U5)
       await press("#sketch-extrude");
+      await page.fill("#extrude-distance", "10"); // Extrude starts at 0 mm
       await press("#extrude-ok");
       await volume(page, volText);
       /** Presses a button that saves an STL; its name, triangle count and volume (Σ a·(b×c)/6). */
@@ -539,7 +547,8 @@ try {
       await openPanel(page, "properties", tap); // the sketch's Extrude button is in the Properties sheet on a phone (U5)
       await press("#sketch-extrude");
       await extrudeStatus(page, "Sketch 1 makes a closed outline");
-      assert.equal(await page.inputValue("#extrude-distance"), "10", "it starts going up");
+      assert.equal(await page.inputValue("#extrude-distance"), "0", "it starts at 0 mm");
+      await page.fill("#extrude-distance", "10");
       // UX1b: Flip turns the distance's sign (a 44 px button at phone width); the preview goes down at once.
       if (width === 375) assert.ok((await page.locator("#extrude-flip").boundingBox()).height >= 44, "Flip is 44 px tall");
       await press("#extrude-flip");

@@ -127,8 +127,11 @@ try {
       await press(page, "#extrude", tap);
       await until(page, () => document.querySelector("#viewport").dataset.sketching === "false", null, "sketch left");
       await openPanel(page, "properties", tap);
+      // Extrude starts at 0 mm (Ben, 2026-10-28): 10 typed.
+      await until(page, () => document.querySelector("#extrude-distance")?.value === "0", null, "Extrude starts at 0");
+      await page.fill("#extrude-distance", "10");
       await until(page, () => (document.getElementById("extrude-panel")?.dataset.previewVolume ?? "") !== "", null, "the preview built");
-      // π · 20² · 10 = 12,566.37… mm³ (the default 10 mm distance).
+      // π · 20² · 10 = 12,566.37… mm³ (10 mm typed).
       const v = Number(await page.getAttribute("#extrude-panel", "data-preview-volume"));
       assert.ok(Math.abs(v - Math.PI * 400 * 10) < 1e-6 * v, `preview volume ${v}`);
       await page.context().close();
@@ -172,6 +175,7 @@ try {
     await clickPlane(empty, [20, 10], EMPTY_TOP);
     await until(empty, () => /closed outline/.test(document.getElementById("sketch-status")?.textContent ?? ""), null, "the rectangle");
     await empty.click("#extrude");
+    await empty.fill("#extrude-distance", "10"); // Extrude starts at 0 mm
     await until(empty, () => (document.getElementById("extrude-panel")?.dataset.previewVolume ?? "") !== "", null, "the preview built");
     await empty.click("#extrude-ok");
     // 20 · 10 · 10 = 2,000 mm³.

@@ -186,6 +186,7 @@ async function designSketchToStl(on) {
     await page.waitForFunction(() => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.");
     await page.click("#sketch-extrude"); // extrude it
     await page.waitForFunction(() => document.querySelector("#extrude-status")?.textContent.startsWith("Sketch 1 makes a closed outline."));
+    await page.fill("#extrude-distance", "10"); // Extrude starts at 0 mm
     await page.click("#extrude-ok");
     await volume(page, "12,000 mm³"); // 40 × 30 × 10
     const [download] = await Promise.all([page.waitForEvent("download"), page.click("#toolbar [data-op=export_stl]")]); // Download STL
