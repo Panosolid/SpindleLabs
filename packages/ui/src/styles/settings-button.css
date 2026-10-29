@@ -1,0 +1,2 @@
+/* The top bar's gear: an icon alone, its word kept as its name out of sight (as Save's is), so the bar keeps its room at phone-landscape widths. */
+.settings-button .tool-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

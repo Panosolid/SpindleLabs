@@ -56,11 +56,15 @@ const OPENAI_KEY = "sk-proj-test-e2e-0123456789";
  * as the check allows (window.heldLines, window.allowLines), so the bar
  * can be seen part way.
  */
-async function fresh(answers = [], { ollama = true, builtIn = false, open = true, held = false } = {}) {
+async function fresh(answers = [], { ollama = true, builtIn = false, open = true, held = false, gpu = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
-  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "gpu", { get: () => undefined, configurable: true }));
+  // No WebGPU, unless `gpu`: a card that can run the in-browser model, as far as the check can see.
+  await page.addInitScript((gpu) => {
+    const card = { requestAdapter: async () => ({ features: new Set(["shader-f16"]), limits: { maxStorageBufferBindingSize: 2 ** 31 } }) };
+    Object.defineProperty(Navigator.prototype, "gpu", { get: () => (gpu ? card : undefined), configurable: true });
+  }, gpu);
   const builtInAsked = [];
   const builtInCreated = [];
   if (builtIn) {
@@ -898,6 +902,24 @@ try {
       assert.match(await page.textContent("#ai-found"), /Ollama on your computer, or an API key, will work instead/);
     } finally {
       await page.close();
+    }
+  });
+
+  await check("a page from before an update: the in-browser runner can't be loaded, and the panel says to reload, not the browser's import error (real-use hunt A4)", async () => {
+    const { page } = await fresh([], { open: false, gpu: true });
+    const before = errors.length;
+    try {
+      // A newer build is on the server: this page's chunks loaded on demand (the in-browser runner) are gone.
+      await page.route(/\/assets\/[^/]+\.js$/, (route) => route.fulfill({ status: 404, body: "" }));
+      await page.click("#assistant-toggle");
+      await looked(page);
+      const found = await page.textContent("#ai-found");
+      assert.match(found, /In your browser can't run here: the in-browser model's code couldn't be loaded: SpindleLabs may have been updated since this page opened, or the connection dropped\. Reload the page to try again/);
+      assert.doesNotMatch(found, /dynamically imported module/);
+    } finally {
+      await page.close();
+      // The 404s are this check's own doing.
+      errors.splice(before, Infinity, ...errors.slice(before).filter((e) => !/Failed to load resource|dynamically imported module/.test(e)));
     }
   });
 

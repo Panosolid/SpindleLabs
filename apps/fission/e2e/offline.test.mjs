@@ -13,7 +13,7 @@ import { buildInfo, filesIn, offlinePlugin, onDemandChunks, ON_DEMAND, writeServ
 // sw.js is a classic script (a service worker), not a module: run it as one, with a `module` to hand its rules out.
 const sandbox = { self: {}, module: { exports: {} } };
 vm.runInNewContext(readFileSync(new URL("../sw.js", import.meta.url), "utf8"), sandbox);
-const { cachesToDelete, keptFile, PREFIX } = sandbox.module.exports;
+const { cachesToDelete, fromAnywhere, keptFile, PREFIX } = sandbox.module.exports;
 const c = (v) => PREFIX + v;
 
 test("the version, worked by hand", () => {
@@ -128,4 +128,51 @@ test("a build into a folder given by its full path writes sw.js there (the plant
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
+});
+
+/** The network and the caches as fromAnywhere sees them: `net` answers with a status or throws; `cached` holds what any cache has. */
+function world({ net, cached = {} }) {
+  const put = [];
+  return {
+    put,
+    env: {
+      fetch: async (request) => {
+        if (net === "offline") throw new TypeError("Failed to fetch");
+        return { ok: net >= 200 && net < 300, status: net, from: "network", clone: () => ({ from: "copy" }) };
+      },
+      caches: {
+        match: async (request) => cached[request.url] ?? undefined,
+        open: async () => ({ put: (request, response) => put.push([request.url, response.from]) }),
+      },
+      current: "spindlelabs-B",
+    },
+  };
+}
+
+test("anything else: the network first, then any of our caches when it fails or no longer has the file", async () => {
+  const request = { url: "https://example.test/app/assets/kernel-A.wasm", mode: "cors" };
+  const old = { from: "A's cache" };
+  // A file of this build, fetched fine: from the network, and kept in this version's cache.
+  let w = world({ net: 200 });
+  assert.equal((await fromAnywhere(request, "assets/kernel-A.wasm", w.env)).from, "network");
+  assert.deepEqual(w.put, [[request.url, "copy"]]);
+  // Offline: from the cache that has it.
+  w = world({ net: "offline", cached: { [request.url]: old } });
+  assert.equal(await fromAnywhere(request, "assets/kernel-A.wasm", w.env), old);
+  // Real-use hunt A2: a tab still on build A, after another tab took B; the server now has only B's files,
+  // so A's .wasm is a 404 there, and A's cache (kept for such a tab) answers.
+  for (const status of [404, 410]) {
+    w = world({ net: status, cached: { [request.url]: old } });
+    assert.equal(await fromAnywhere(request, "assets/kernel-A.wasm", w.env), old, `${status}`);
+    assert.deepEqual(w.put, [], "an error is never kept");
+  }
+  // In no cache either: the server's own answer.
+  w = world({ net: 404 });
+  assert.equal((await fromAnywhere(request, "assets/kernel-A.wasm", w.env)).status, 404);
+  // A server error is the server's to report: not hidden by an old copy.
+  w = world({ net: 500, cached: { [request.url]: old } });
+  assert.equal((await fromAnywhere(request, "assets/kernel-A.wasm", w.env)).status, 500);
+  // Offline and in no cache: the network's error.
+  w = world({ net: "offline" });
+  await assert.rejects(fromAnywhere(request, "assets/kernel-A.wasm", w.env), /Failed to fetch/);
 });

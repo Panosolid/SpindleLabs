@@ -66,6 +66,13 @@ let framedKind: PartKind | null = null;
 /** Design was put away by an Undo or Redo made in another workspace: the next mount is that restore's, not an opened file's. */
 let putAwayByRestore = false;
 /**
+ * Rebuilds asked for and not answered yet, per view element: its `data-rebuilding` says whether any is, so a test reads
+ * the page only once it shows the last edit (the monkey). Counted across mounts: every Undo remounts Design on the same
+ * view, and a rebuild of the Design put away that ends first must not say "done" while the new one's still runs
+ * (real-use hunt C2, 2026-10-28).
+ */
+const rebuildsOn = new WeakMap<HTMLElement, number>();
+/**
  * The sketch being edited and its grid, kept across mounts: Undo and Redo
  * re-mount Design, and you stay in the sketch (the chain in progress ends,
  * since the point it ran from may be gone). Cleared by Finish sketch.
@@ -883,17 +890,19 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   };
 
   /** Shows a document the project now holds and builds its part: the browser, sketches, selection, then the body or the reason it failed. */
-  /** Rebuilds asked for and not answered yet: the viewport's `data-rebuilding` says whether any is, so a test reads the page only once it shows the last edit (the monkey). */
-  let rebuilding = 0;
   /** The design last shown and built: a sketch left after edits to it differs, and is rebuilt (25a3). */
   let shownDoc: DesignDocument | null = null;
   async function show(doc: DesignDocument, kind: PartKind) {
     shownDoc = doc;
-    viewport.element.dataset.rebuilding = String(++rebuilding > 0);
+    const view = viewport.element;
+    rebuildsOn.set(view, (rebuildsOn.get(view) ?? 0) + 1);
+    view.dataset.rebuilding = "true";
     try {
       await showBuilt(await settled(doc), kind);
     } finally {
-      viewport.element.dataset.rebuilding = String(--rebuilding > 0);
+      const left = rebuildsOn.get(view)! - 1;
+      rebuildsOn.set(view, left);
+      view.dataset.rebuilding = String(left > 0);
     }
   }
   /**

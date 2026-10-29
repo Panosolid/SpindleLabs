@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createProvider, gpuCanRun, IN_BROWSER_MODEL, inBrowserDownloadBytes, pickLocal, type BuiltInModelLike, type WebLLMLike, type WebLLMModel } from "../src/index.ts";
+import { createProvider, gpuCanRun, IN_BROWSER_MODEL, inBrowserDownloadBytes, inBrowserDownloadSize, pickLocal, type BuiltInModelLike, type WebLLMLike, type WebLLMModel } from "../src/index.ts";
 import { LOW_RESOURCE_BUFFER, FULL_BUFFER } from "../src/local.ts";
 import { fakeServer } from "./fakes.ts";
 
@@ -149,4 +149,31 @@ test("the browser's built-in model: only one that is there counts; one still to 
   assert.equal(created, 0, "check() never makes a session, so it never starts a download");
   // A model that is only downloadable is not picked for the user, whatever else is found.
   assert.equal(pickLocal([{ kind: "browser-built-in", ...(await createProvider({ kind: "browser-built-in" }, { builtIn: api("downloadable") }).check()) }]), null);
+});
+
+test("in the browser: no usable WebGPU is said without loading the in-browser runner (real-use hunt A4)", async () => {
+  // The runner is a 6 MB chunk loaded on demand: a browser that can't use it never needs it.
+  for (const g of [undefined, { requestAdapter: async () => null }]) {
+    let loads = 0;
+    const p = createProvider({ kind: "in-browser", model: small.model_id }, { gpu: g, loadWebLLM: async () => (loads++, fakeWebLLM([small]).webllm) });
+    const r = await p.check();
+    assert.equal(r.ok, false);
+    assert.equal(loads, 0, "the runner's chunk was never asked for");
+  }
+});
+
+test("in the browser: a runner that can't be loaded (the page is from before an update) says to reload, not the raw import error", async () => {
+  // An old tab after a deploy: its on-demand chunk is gone from the server.
+  const gone = async (): Promise<WebLLMLike> => {
+    throw new TypeError("Failed to fetch dynamically imported module: http://localhost/assets/lib-C9bBgd-S.js");
+  };
+  const p = createProvider({ kind: "in-browser", model: small.model_id }, { gpu: gpu(2 ** 30), loadWebLLM: gone });
+  const reason = "the in-browser model's code couldn't be loaded: SpindleLabs may have been updated since this page opened, or the connection dropped. Reload the page to try again";
+  assert.deepEqual(await p.check(), { ok: false, reason, suggest: "ollama" });
+  await assert.rejects(p.complete({ system: "S", messages: [{ role: "user", content: "hi" }] }), (e: Error) => e.message === reason);
+});
+
+test("the in-browser model's download size: a runner that can't be loaded says to reload too", async () => {
+  const gone = async (): Promise<WebLLMLike> => Promise.reject(new TypeError("Importing a module script failed."));
+  await assert.rejects(inBrowserDownloadSize(small.model_id, { loadWebLLM: gone }), (e: Error) => /^the in-browser model's code couldn't be loaded: .* Reload the page to try again$/.test(e.message));
 });
