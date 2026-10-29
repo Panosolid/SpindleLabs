@@ -4,7 +4,7 @@
 // out trapped (isTrap), and what a 10 mm box asked of the same kernel
 // after it gets.
 import { isTrap } from "@fission/core";
-import * as wasm from "../../core/src/kernel/wasm/fission_kernel.js";
+import { entry as wasm } from "../../core/src/kernel/entry-points.ts";
 import { loadKernel } from "../src/node-kernel.ts";
 
 loadKernel();
