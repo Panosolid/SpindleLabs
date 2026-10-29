@@ -15,4 +15,4 @@ export { toolGroup, TOOL_ICON_SIZE, type ToolGroup, type ToolGroupOptions } from
 export { fileMenu, fileSections, noExport, noNew, EXPORT_STL_ID, NEW_ID, type FileMenuEntry, type FileMenuParts } from "./file-menu.ts";
 export { openElsewhere, openElsewhereWords, type OpenElsewhere } from "./open-elsewhere.ts";
 export { commandSearch, matchCommands, type Command, type CommandSearch } from "./command-search.ts";
-export { askName, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";
+export { askName, GCODE_KIND, PROJECT_KIND, STL_KIND, baseNameOf, fileNameFor, pickerOf, saveFile, type FileHandle, type SaveKind, type SaveRequest, type SaveResult } from "./save-file.ts";

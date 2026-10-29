@@ -40,6 +40,7 @@ export function nodeKernel(): KernelCalls {
     body_step: (body) => entry.body_step(body),
     body_free: (body) => entry.body_free(body),
     body_count: () => entry.body_count(),
+    slice_stl: (stl, layerHeight, wallCount, infillPercent) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };
   return {
