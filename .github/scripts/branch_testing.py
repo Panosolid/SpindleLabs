@@ -1,5 +1,5 @@
 """Random testing started on a branch (nightly.yml's workflow_dispatch) shares
-the account's 20 runners with every pull request's CI, and merges come first
+the account's runners (60 jobs at once on GitHub Team since 2026-10-29) with every pull request's CI, and merges come first
 (Ben, 2026-10-26, after merges waited half an hour behind day runs). Three
 commands:
 
