@@ -210,14 +210,14 @@ class LeakGuard(unittest.TestCase):
     def test_a_rust_file_name_is_a_leak(self):
         # The public app is TypeScript, so any ".rs" file named in an entry is
         # the private kernel's; the guard must catch it and name the rule.
-        problems = changelog.leaks("changelog.d/x.md", "fix\n\n- Fixed a crash in tessellate.rs.")
+        problems = changelog.leaks("changelog.d/x.md", "fix\n\n- Fixed a crash in gearbox.rs.")
         self.assertEqual(len(problems), 1)
-        self.assertIn("tessellate.rs", problems[0])
+        self.assertIn("gearbox.rs", problems[0])
         self.assertIn("never how the kernel works", problems[0])
 
     def test_private_paths_and_internal_names_are_leaks(self):
         for text, tell in [
-            ("none\n\n- Checked against prototypes/boolean/facts_model.py.", "prototypes/"),
+            ("none\n\n- Checked against prototypes/demo/model.py.", "prototypes/"),
             ("none\n\n- A change in kernel/src somewhere.", "kernel/src"),
             ("none\n\n- The facts table is now exact.", "facts table"),
             ("none\n\n- Fixed in the facts_model.", "facts_model"),
@@ -231,9 +231,9 @@ class LeakGuard(unittest.TestCase):
         # file name added fails with the leak message (a deliberate break).
         clean = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster.\n")
         self.assertEqual(clean, [])
-        leaky = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster (section.rs).\n")
+        leaky = check_pr([("A", "changelog.d/new.md")], lambda p: "", lambda p: "none\n\n- Combine is faster (widget.rs).\n")
         self.assertEqual(len(leaky), 1)
-        self.assertIn("section.rs", leaky[0])
+        self.assertIn("widget.rs", leaky[0])
 
 
 class CheckPr(unittest.TestCase):

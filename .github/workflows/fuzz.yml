@@ -101,14 +101,12 @@ jobs:
         with:
           python-version: "3.12"
       # The oracle scripts are the private kernel repo's (prototypes/oracle).
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the kernel's oracle (quietly, the log is public)
         if: always()
-        with:
-          repository: Panosolid/kernel
-          token: ${{ secrets.KERNEL_READ }}
-          path: k
-          sparse-checkout: prototypes/oracle
-          persist-credentials: false
+        env:
+          KERNEL_READ: ${{ secrets.KERNEL_READ }}
+          SPARSE: prototypes/oracle
+        run: .github/scripts/kernel_ci.sh checkout k main
       - name: Compare the extrudes with exact values and OpenCascade
         if: always()
         env:
