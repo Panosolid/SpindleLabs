@@ -4,30 +4,34 @@
    answer, the first-send confirmation for a remote provider, and
    the settings. The panel's place in the layout is in theme.css (#assistant). */
 .assistant label { display: block; margin: 8px 0 4px; color: #b5bbc4; font-size: 13px; }
-.assistant textarea, .assistant input, .assistant select { box-sizing: border-box; width: 100%; padding: 6px 8px; margin-top: 4px; background: #10151e; color: #e6e8eb; border: 1px solid #2c3749; border-radius: var(--look-radius-s); font: inherit; }
+.assistant textarea, .assistant input, .assistant select { box-sizing: border-box; width: 100%; padding: 6px 8px; margin-top: 4px; background: var(--look-field); color: #e6e8eb; border: 1px solid var(--look-edge); border-radius: var(--look-radius-s); font: inherit; }
 .assistant textarea { resize: vertical; }
 .assistant [hidden] { display: none; }
 .assistant .ai-ask button { margin-top: 6px; }
 .assistant .ai-note { color: #8a919c; font-size: 13px; }
 .assistant .ai-error { color: #ff8a80; font-size: 13px; }
 .assistant .ai-rules { font-size: 13px; color: #8a919c; }
-.assistant .ai-preview, .assistant .ai-consent { margin: 10px 0; padding: 10px; border: 1px solid #4aa8ff; border-radius: var(--look-radius-s); background: #182330; }
+.assistant .ai-preview, .assistant .ai-consent { margin: 10px 0; padding: 10px; border: 1px solid var(--look-edge); border-radius: var(--look-radius-m); background: var(--look-float-raised); box-shadow: var(--look-top-light), var(--look-shadow-1); }
 .assistant .ai-preview table { border-collapse: collapse; margin: 6px 0; }
 .assistant .ai-preview th { text-align: left; padding-right: 10px; font-weight: normal; color: #b5bbc4; }
 .assistant .ai-preview td { padding: 2px 4px; font-variant-numeric: tabular-nums; }
 .assistant .ai-label { margin: 0; font-weight: 600; }
-.assistant .ai-working { margin: 8px 0; padding: 6px 8px; border-left: 3px solid #4aa8ff; background: #10151e; }
+.assistant .ai-working { margin: 8px 0; padding: 6px 10px; border-left: 3px solid var(--look-accent); border-radius: var(--look-radius-s); background: var(--look-field); }
 .assistant .ai-working-title { margin: 0 0 2px; color: #8a919c; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 .assistant .ai-working-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant .ai-working-none { color: #8a919c; font-style: italic; }
-.assistant .ai-cannot { border-color: #e0b04a; }
-.assistant pre { max-height: 200px; overflow: auto; font-size: 12px; background: #10151e; padding: 6px; white-space: pre-wrap; word-break: break-word; }
+.assistant .ai-cannot { border-color: #e0b04a; box-shadow: var(--look-top-light), var(--look-shadow-1); }
+.assistant pre { max-height: 200px; overflow: auto; font-size: 12px; background: var(--look-field); border-radius: var(--look-radius-s); padding: 6px; white-space: pre-wrap; word-break: break-word; }
 .assistant .ai-key button { margin: 6px 6px 0 0; }
-.assistant .ai-settings { margin-top: 16px; border-top: 1px solid #232c3b; }
+.assistant .ai-settings { margin-top: 16px; border-top: 1px solid var(--look-edge); }
 .assistant .ai-cannot .ai-working { border-left-color: #e0b04a; }
 .assistant .ai-progress { margin: 10px 0; }
 .assistant .ai-progress-stage { margin: 0 0 4px; font-variant-numeric: tabular-nums; }
-.assistant .ai-progress-track { height: 6px; border-radius: 3px; background: #232c3b; overflow: hidden; }
-.assistant .ai-progress-fill { height: 100%; width: 0; background: #4aa8ff; transition: width 0.2s ease-out; }
+.assistant .ai-progress-track { height: 6px; border-radius: 3px; background: var(--look-field); overflow: hidden; }
+.assistant .ai-progress-fill { height: 100%; width: 0; background: var(--look-primary-fill); box-shadow: var(--look-glow); transition: width 0.2s ease-out; }
 .assistant .ai-progress-note { margin: 4px 0 0; color: #8a919c; font-size: 12px; }
+/* UX2c: the panel is a near-black blue card column with a blue hairline, and Ask and Accept (the panel's main actions) take the bright blue fill. */
+.assistant:not(#none) { background: var(--look-float); border-left: 1px solid var(--look-edge); box-shadow: var(--look-top-light); }
+.assistant button[id="ai-ask-button"]:not(#none), .assistant button[id="ai-accept"]:not(#none) { background: var(--look-primary-fill); border-color: transparent; color: var(--look-on-accent); box-shadow: var(--look-primary-glow); font-weight: 600; }
+.assistant button[id="ai-accept"]:disabled:not(#none) { opacity: 0.45; box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .assistant .ai-progress-fill { transition: none; } }

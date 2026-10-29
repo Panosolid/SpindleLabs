@@ -5,7 +5,7 @@
 import init, * as kernel from "./wasm/fission_kernel.js";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
-import { KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
@@ -51,7 +51,8 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
     const fn = ops[op] as (...a: unknown[]) => unknown;
     reply = { id, ok: true, value: fn(...args) };
   } catch (e) {
-    reply = { id, ok: false, error: kernelFailure(e) };
+    // A trap leaves this kernel unfit for another call: the client replaces this worker (kernel-client.ts, restart).
+    reply = isTrap(e) ? { id, ok: false, error: kernelFailure(e), stopped: true } : { id, ok: false, error: kernelFailure(e) };
   }
   self.postMessage(reply);
 };
