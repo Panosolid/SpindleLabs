@@ -187,6 +187,9 @@ jobs:
           GH_REPO: Panosolid/kernel-results
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
+          # Each job's result: a red one with no failure folder (a fuzzer or an
+          # oracle run that crashed or ran out of time) files an issue too.
+          JOBS: ${{ toJSON(needs) }}
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           export BRANCH=$REF

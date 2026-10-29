@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from file_issues import MARK, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
+from file_issues import MARK, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
 
 # Lines copied from real reports on the test-results branch.
 ROTATE_A = ("  seed 0x12849982fbf1: step 3 (Rotate { target: 1, pivot: [0.0, 0.0, 0.0], axis: [1.0, 0.0, 0.0], "
@@ -303,6 +303,69 @@ class Golden(unittest.TestCase):
 
 
 
+class Checks(unittest.TestCase):
+    """Failures that leave no failure folder (test-the-tests hunt,
+    2026-10-28: before this they filed nothing)."""
+
+    def test_a_journey_fail_is_a_kind_and_a_flag_is_not(self):
+        report = "PASS sketch a box: 4 clicks, 1.2 s\nFLAG extrude: 5 clicks, limit 4\nFAIL export: 7 clicks, limit 4\n  the walk stopped at Save\n"
+        kinds = check_kinds({"journeys/report.txt": report}, {}, set())
+        # By hand: one FAIL line, its numbers out ("7 clicks, limit 4" -> "# clicks, limit #"),
+        # its indented detail kept in the example; the FLAG line is a warning only.
+        self.assertEqual(kinds, [("check journeys: export: # clicks, limit #", "FAIL export: 7 clicks, limit 4\n  the walk stopped at Save")])
+
+    def test_an_unexplained_ts_mutant_is_a_kind(self):
+        text = "design: 4 survivors\nUNEXPLAINED survivor at src/workspace.ts:1618: ConditionalExpression\n1 problem(s): kill each survivor\n"
+        self.assertEqual(check_kinds({"ts-mutants-design/design.txt": text}, {}, set()),
+                         [("check TypeScript mutants: UNEXPLAINED survivor at src/workspace.ts:#: ConditionalExpression",
+                           "UNEXPLAINED survivor at src/workspace.ts:1618: ConditionalExpression")])
+        self.assertEqual(check_kinds({"ts-mutants-design/design.txt": "design: 4 survivors, all explained: true\n"}, {}, set()), [])
+
+    def test_a_mutants_shard_that_stopped_is_a_kind(self):
+        # 0 all caught, 2 missed (filed as new survivors), 3 timed out, 124/130 cut off at the deadline: fine.
+        for code in ("0", "2", "3", "124", "130"):
+            self.assertEqual(check_kinds({"mutants-1/exit-code.txt": code + "\n"}, {}, set()), [], code)
+        self.assertEqual(check_kinds({"mutants-1/exit-code.txt": "4\n"}, {}, set()),
+                         [("check whole-kernel mutants: the unmutated tests failed", "mutants-1: exit code 4")])
+        self.assertEqual(check_kinds({"mutants-0/exit-code.txt": "1"}, {}, set()),
+                         [("check whole-kernel mutants: cargo mutants stopped with exit code 1", "mutants-0: exit code 1")])
+
+    def test_a_red_job_with_nothing_more_specific_is_a_kind(self):
+        red = "check the sessions job failed with nothing more specific reported"
+        # A fuzzer that crashed or ran out of time: red, and no folder gave a kind.
+        self.assertEqual([k for k, _ in check_kinds({}, {"sessions": "failure", "project": "success", "stack": "cancelled"}, set())], [red])
+        # Its own folder gave a kind already: not filed twice.
+        self.assertEqual(check_kinds({}, {"sessions": "failure"}, {"fuzz-sessions"}), [])
+        # Another job's folder doesn't explain it.
+        self.assertEqual([k for k, _ in check_kinds({}, {"sessions": "failure"}, {"fuzz-project"})], [red])
+        # A journey FAIL explains the red journeys job; a job not in JOB_DIRS is always filed.
+        self.assertEqual([k for k, _ in check_kinds({"journeys/report.txt": "FAIL a: 5 clicks\n"}, {"journeys": "failure", "new-job": "failure"}, set())],
+                         ["check journeys: a: # clicks", "check the new-job job failed with nothing more specific reported"])
+
+    def test_check_texts_and_the_whole_run(self):
+        kind = "check the golden job failed with nothing more specific reported"
+        title, body = texts("create", kind, [("run", "job golden: failure")], "u", "c", "main")
+        self.assertEqual(title, "Nightly check: the golden job failed with nothing more specific reported")
+        self.assertIn(MARK.format(key(kind)), body)
+        self.assertNotIn("failures/seed-", body)
+        _, again = texts("comment", kind, [("run", "job golden: failure")], "u", "c", "main")
+        self.assertIn("job golden: failure", again)
+        import file_issues
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "golden"))
+            with open(os.path.join(d, "golden", "report.txt"), "w") as f:
+                f.write("no report\n")
+            saved = dict(os.environ)
+            os.environ.update(RUN_URL="u", COMMIT="c", BRANCH="main", JOBS=json.dumps({"golden": {"result": "failure", "outputs": {}}}))
+            os.environ.pop("GH_TOKEN", None)
+            try:
+                actions = file_issues.run(d, log=lambda line: None)
+            finally:
+                os.environ.clear()
+                os.environ.update(saved)
+        self.assertEqual(actions, [("create", kind, None)])
+
+
 class Locking(unittest.TestCase):
     """Every issue the script files or updates is locked, so strangers can't
     comment on issues Claude sessions read (audit 2026-10-22, M2)."""
@@ -323,7 +386,7 @@ class Locking(unittest.TestCase):
                 raise subprocess.CalledProcessError(1, "gh", stderr="already locked")
             return ""
         saved = file_issues.gh, file_issues.gather, file_issues.read_folders, dict(os.environ)
-        file_issues.gh, file_issues.gather = fake_gh, lambda folders: {self.K: [("1", "e")]}
+        file_issues.gh, file_issues.gather = fake_gh, lambda folders, checks=(): {self.K: [("1", "e")]}
         file_issues.read_folders = lambda incoming: []
         os.environ.update(RUN_URL="u", COMMIT="c", BRANCH="main", GH_TOKEN="t")
         logs = []

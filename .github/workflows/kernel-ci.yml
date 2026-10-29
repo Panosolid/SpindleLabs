@@ -83,8 +83,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q mpmath cadquery-ocp >/dev/null 2>&1
-      # callgrind, for the kernel's speed baseline check.
-      - run: sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq valgrind >/dev/null 2>&1
+      # callgrind, for the kernel's speed baseline check; PrusaSlicer, the
+      # slicing engine's oracle (Ubuntu noble ships 2.7.2).
+      - run: sudo apt-get update -qq >/dev/null 2>&1 && sudo apt-get install -y -qq valgrind prusa-slicer >/dev/null 2>&1
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: wasm-pack
