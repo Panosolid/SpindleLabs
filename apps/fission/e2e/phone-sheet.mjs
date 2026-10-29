@@ -395,6 +395,26 @@ function checkPhoneLook(m) {
   await context.close();
 }
 
+// A short phone held sideways (568 × 320 and 640 × 360, weak-spot hunt A F3): with Extrude open and its Properties sheet up
+// the Distance box was below the screen's bottom (303..347 at 320 px), so typing a distance meant scrolling the sheet
+// first. It is now on the screen and tappable as soon as the sheet opens.
+for (const [width, height] of [[568, 320], [640, 360]]) {
+  const { page, context } = await open(width, height);
+  await page.tap("#extrude");
+  await page.waitForSelector("#extrude-panel", { state: "attached" });
+  await page.tap("#properties-toggle");
+  await page.waitForTimeout(400);
+  const d = await page.$eval("#extrude-distance", (b) => {
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom), onScreen: r.height > 0 && r.top >= 0 && r.bottom <= innerHeight, tappable: hit === b };
+  });
+  if (shots) await page.screenshot({ path: `${shots}/phone-extrude-${width}x${height}.png` });
+  assert.ok(d.onScreen && d.tappable, `${width} × ${height}: Extrude's Distance box on the screen and tappable with the sheet up ${JSON.stringify(d)}`);
+  await context.close();
+}
+console.log("ok - 568 × 320 and 640 × 360: Extrude's Distance box is on the screen and tappable as the sheet opens");
+
 // Ben's iPhone (2026-10-29): dragging a sheet's handle down moved only the handle (the words bounced) and the sheet never
 // closed. With real touches (Chrome's touch input, not made-up events) at 375 and 393 px: a drag on the handle moves the
 // whole sheet with the finger, a short slow one lets it slide back, a long one closes it (a flick's speed is
