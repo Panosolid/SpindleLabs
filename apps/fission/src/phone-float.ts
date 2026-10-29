@@ -75,10 +75,18 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
   // position for its typed boxes, a sheet put away by a tap on the view) never hear it.
   for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) bar.addEventListener(type, (e) => e.stopPropagation());
   viewport.append(bar);
+  // WebKit (Safari, every iPhone browser) moves a tap's click onto a button near the finger: a sketch corner tapped
+  // 15 px under the bar finished the sketch (CI run 40805491664). So a click from a press counts only when the press
+  // began on the bar; a keyboard's Enter or Space (a click with no presses, detail 0) still works.
+  let pressOnBar = false;
+  document.addEventListener("pointerdown", (e) => (pressOnBar = e.target instanceof Node && bar.contains(e.target)), true);
   /** A bar button pressing the tool's own `target` (looked up at the press: a panel's buttons are rebuilt as it changes). */
   const proxy = (id: string, words: string, target: string, className = "") => {
     const b = Object.assign(document.createElement("button"), { type: "button", id, className, textContent: words });
-    b.addEventListener("click", () => workspace.querySelector<HTMLButtonElement>(target)?.click());
+    b.addEventListener("click", (e) => {
+      if (e.detail !== 0 && !pressOnBar) return;
+      workspace.querySelector<HTMLButtonElement>(target)?.click();
+    });
     return b;
   };
   let last = "";

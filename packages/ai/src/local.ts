@@ -48,7 +48,19 @@ export interface WebLLMLike {
  * suggestion, never a failure later.
  */
 export async function gpuCanRun(gpu: GpuLike | undefined, model: WebLLMModel): Promise<{ ok: true } | { ok: false; reason: string; suggest: "ollama" }> {
-  const no = (reason: string) => ({ ok: false as const, reason: `${reason}. Ollama on your computer, or an API key, will work instead.`, suggest: "ollama" as const });
+  const adapter = await gpuAdapter(gpu);
+  if ("ok" in adapter) return adapter;
+  if (model.model_id.includes("f16") && !adapter.features.has("shader-f16")) return no(`your graphics card can't run 16-bit models such as ${model.model_id}`);
+  const need = model.low_resource_required ? LOW_RESOURCE_BUFFER : FULL_BUFFER;
+  if (!(adapter.limits.maxStorageBufferBindingSize >= need))
+    return no(`your graphics card's largest buffer is ${mib(adapter.limits.maxStorageBufferBindingSize)} and ${model.model_id} needs ${mib(need)}`);
+  return { ok: true };
+}
+
+const no = (reason: string) => ({ ok: false as const, reason: `${reason}. Ollama on your computer, or an API key, will work instead.`, suggest: "ollama" as const });
+
+/** The graphics card WebGPU offers, or why there is none: the part of `gpuCanRun` that needs no model, so no runner. */
+async function gpuAdapter(gpu: GpuLike | undefined): Promise<NonNullable<Awaited<ReturnType<GpuLike["requestAdapter"]>>> | ReturnType<typeof no>> {
   if (!gpu) return no("this browser has no WebGPU, which in-browser models need");
   let adapter: Awaited<ReturnType<GpuLike["requestAdapter"]>>;
   try {
@@ -56,13 +68,12 @@ export async function gpuCanRun(gpu: GpuLike | undefined, model: WebLLMModel): P
   } catch {
     adapter = null;
   }
-  if (!adapter) return no("the browser found no graphics card it can use for WebGPU");
-  if (model.model_id.includes("f16") && !adapter.features.has("shader-f16")) return no(`your graphics card can't run 16-bit models such as ${model.model_id}`);
-  const need = model.low_resource_required ? LOW_RESOURCE_BUFFER : FULL_BUFFER;
-  if (!(adapter.limits.maxStorageBufferBindingSize >= need))
-    return no(`your graphics card's largest buffer is ${mib(adapter.limits.maxStorageBufferBindingSize)} and ${model.model_id} needs ${mib(need)}`);
-  return { ok: true };
+  return adapter ?? no("the browser found no graphics card it can use for WebGPU");
 }
+
+/** Said when the runner's on-demand chunk can't be loaded: most often a page older than the build on the server (real-use hunt A4). */
+export const RUNNER_NOT_LOADED =
+  "the in-browser model's code couldn't be loaded: SpindleLabs may have been updated since this page opened, or the connection dropped. Reload the page to try again";
 
 const mib = (bytes: number) => `${Math.round(bytes / 2 ** 20)} MiB`;
 
@@ -98,7 +109,12 @@ export function inBrowserProvider(o: {
   const id = o.model?.trim() || IN_BROWSER_MODEL;
   let engine: ReturnType<WebLLMLike["CreateMLCEngine"]> | undefined;
   const info = async () => {
-    const webllm = await o.loadWebLLM();
+    let webllm: WebLLMLike;
+    try {
+      webllm = await o.loadWebLLM();
+    } catch {
+      throw new Error(RUNNER_NOT_LOADED);
+    }
     const model = webllm.prebuiltAppConfig.model_list.find((m) => m.model_id === id);
     if (!model) throw new Error(`${id} isn't a model the in-browser runner knows`);
     return { webllm, model };
@@ -107,6 +123,9 @@ export function inBrowserProvider(o: {
     kind: "in-browser",
     structuredOutput: true,
     async check() {
+      // The card first: a browser that can't run the model never loads the runner's 6 MB.
+      const adapter = await gpuAdapter(o.gpu);
+      if ("ok" in adapter) return adapter;
       try {
         return await gpuCanRun(o.gpu, (await info()).model);
       } catch (e) {
