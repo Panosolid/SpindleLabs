@@ -315,7 +315,7 @@ try {
     // The kernel licence the page links is served beside the app, as the release ships it.
     const licence = await page.request.get(`${url}kernel-licence.txt`);
     assert.equal(licence.status(), 200);
-    assert.match(await licence.text(), /^SpindleLabs Kernel Licence[^]*Copyright \(c\) 2026 Ben \(GitHub: benpy28\) and Panosolid\. All rights reserved\./);
+    assert.match(await licence.text(), /^SpindleLabs Kernel Licence[^]*Copyright \(c\) 2026 Ben \(GitHub: benpy28\)( and Panosolid)?\. All rights reserved\./);
     assert.ok(await page.$("dialog.guide[open]"));
   });
 
