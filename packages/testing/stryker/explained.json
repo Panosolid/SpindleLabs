@@ -854,6 +854,41 @@
     "why": "DEFAULT_MODELS has no entry for 'other', so looking it up gives the same undefined."
   },
   {
+    "file": "packages/ai/src/hosted.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!line.startsWith(\"data:\")",
+    "replacement": "false",
+    "why": "eventData is called only from anthropicStream and openaiStream, and both return early for any line that does not start with \"data:\" before calling it, so this check inside eventData never sees a non-data line."
+  },
+  {
+    "file": "packages/ai/src/hosted.ts",
+    "mutator": "StringLiteral",
+    "original": "\"data:\"",
+    "replacement": "\"\"",
+    "why": "eventData is called only from anthropicStream and openaiStream, and both return early for any line that does not start with \"data:\" before calling it, so this check inside eventData never sees a non-data line. (startsWith(\"\") is always true, so the check would just never fire, as it never does now.)"
+  },
+  {
+    "file": "packages/ai/src/hosted.ts",
+    "mutator": "UpdateOperator",
+    "original": "events++",
+    "replacement": "events--",
+    "why": "`events` is only compared with 0 and only ever moves one way from 0 (up by one per data line, or down by one with the change), so after the first data line it is non-zero either way and the comparison gives the same answer."
+  },
+  {
+    "file": "packages/ai/src/hosted.ts",
+    "mutator": "UpdateOperator",
+    "original": "events++",
+    "replacement": "events--",
+    "why": "`events` is only compared with 0 and only ever moves one way from 0 (up by one per data line, or down by one with the change), so after the first data line it is non-zero either way and the comparison gives the same answer."
+  },
+  {
+    "file": "packages/ai/src/ollama.ts",
+    "mutator": "MethodExpression",
+    "original": "endpoint.trim()",
+    "replacement": "endpoint",
+    "why": "new URL() already ignores leading and trailing whitespace in its input, so the host it reads is the same with or without the trim."
+  },
+  {
     "file": "packages/core/src/model/svg.ts",
     "mutator": "EqualityOperator",
     "original": "q < 4",
