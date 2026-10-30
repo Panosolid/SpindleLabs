@@ -788,8 +788,10 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
   const full = all.map((x, f) => (tags[f] === null ? x.face.names[0] : `${x.face.names[0]}#${tags[f]!.join(",")}`));
 
   // Edges: runs of segments along one grid line with the same two faces.
+  // The segments were made in order of body, axis, grid line, then step;
+  // two faces (planes facing two axes) cross in one line only, so the same
+  // two faces at the next step are the same edge going on.
   const runs: { body: number; faces: [number, number]; ends: string[]; length: number }[] = [];
-  const sorted = [...segments].sort((x, y) => x.body - y.body || x.axis - y.axis || x.at[0] - y.at[0] || x.at[1] - y.at[1] || x.step - y.step);
   const n = [g.nx, g.ny, g.nz];
   const steps = [g.xs, g.ys, g.zs];
   /** The shown names of the faces at grid point p of `body`, but `not`'s. */
@@ -809,12 +811,12 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
     }
     return out;
   };
-  for (let i = 0; i < sorted.length; ) {
-    const s = sorted[i];
+  for (let i = 0; i < segments.length; ) {
+    const s = segments[i];
     let j = i + 1;
-    while (j < sorted.length) {
-      const t = sorted[j];
-      if (t.body !== s.body || t.axis !== s.axis || t.at[0] !== s.at[0] || t.at[1] !== s.at[1] || t.step !== sorted[j - 1].step + 1 || t.faces[0] !== s.faces[0] || t.faces[1] !== s.faces[1]) break;
+    while (j < segments.length) {
+      const t = segments[j];
+      if (t.step !== segments[j - 1].step + 1 || t.faces[0] !== s.faces[0] || t.faces[1] !== s.faces[1]) break;
       j++;
     }
     const [u, v] = [(s.axis + 1) % 3, (s.axis + 2) % 3];
@@ -825,8 +827,8 @@ function describe(g: Grid, bodies: readonly Body[], made: Made, faults: Readonly
       p[v] = s.at[1];
       return p;
     };
-    const first = sorted[i].step;
-    const last = sorted[j - 1].step + 1;
+    const first = segments[i].step;
+    const last = segments[j - 1].step + 1;
     const ends = new Set([...at(s.body, point(first), s.faces), ...at(s.body, point(last), s.faces)]);
     runs.push({ body: s.body, faces: s.faces, ends: [...ends].sort(), length: steps[s.axis][last] - steps[s.axis][first] });
     i = j;
