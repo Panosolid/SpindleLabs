@@ -28,11 +28,12 @@ test("a slice in words, worked by hand", () => {
   assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220, printTimeS: 3900 })), "1 layer, 13 g of PLA (4.22 m of filament), about 1 h 5 min of printing (plus heating and levelling).");
   // An engine fault (not a number) shows no time rather than a wrong one.
   assert.equal(printWords(print({ printTimeS: Number.NaN })), "100 layers, 5.2 g of PLA (1.73 m of filament).");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: false }), "spindlelabs-0.16mm-3w-20pc.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off" }), "spindlelabs-0.16mm-3w-20pc.gcode");
   // Supports on gets its own name, so the same part with and without never overwrite each other.
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: true }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal" }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree" }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
   // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %, no supports.
-  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: false });
+  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off" });
 });
 
 test("print time in words rounds to the nearest minute, worked by hand", () => {
@@ -96,7 +97,8 @@ test("the dialog slices with the choices picked, then says what the slice came t
   assert.equal(t.$<HTMLSelectElement>("slice-print-quality").value, "0.2");
   assert.equal(t.$<HTMLSelectElement>("slice-print-walls").value, "2");
   assert.equal(t.$<HTMLSelectElement>("slice-print-infill").value, "15");
-  assert.equal(t.$<HTMLInputElement>("slice-print-supports").checked, false);
+  assert.equal(t.$<HTMLSelectElement>("slice-print-supports").value, "off");
+  assert.deepEqual([...t.$<HTMLSelectElement>("slice-print-supports").options].map((o) => o.textContent), ["Off", "Normal (columns)", "Tree (less plastic)"]);
   t.$<HTMLSelectElement>("slice-print-quality").value = "0.16";
   t.$<HTMLSelectElement>("slice-print-walls").value = "3";
   t.$<HTMLSelectElement>("slice-print-infill").value = "40";
@@ -105,15 +107,20 @@ test("the dialog slices with the choices picked, then says what the slice came t
   t.$<HTMLSelectElement>("slice-print-format").dispatchEvent(new t.window.Event("change") as unknown as Event);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: false }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: "off" }]);
   assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.16mm-3w-40pc.gcode: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
-  // Supports ticked: the next slice asks for them, and the file's name says so.
-  t.$<HTMLInputElement>("slice-print-supports").click();
+  // Normal supports picked: the next slice asks for them, and the file's name says so; then trees, likewise.
+  t.$<HTMLSelectElement>("slice-print-supports").value = "normal";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: true });
+  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: "normal" });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-supports\.gcode: /);
+  t.$<HTMLSelectElement>("slice-print-supports").value = "tree";
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.deepEqual(t.asked[2], { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree" });
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-tree-supports\.gcode: /);
   t.$("slice-print-close").click();
   assert.equal(t.d.open, false);
   await t.window.happyDOM.close();
@@ -153,7 +160,7 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   format.dispatchEvent(new t.window.Event("change") as unknown as Event);
   assert.equal(plate.disabled, false);
   // Names by hand, with supports and the other plate.
-  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: true }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
+  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal" }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
   await t.window.happyDOM.close();
 });
 
@@ -199,7 +206,7 @@ test("Preview slices with the choices picked and closes the dialog; a refusal ke
   t.$<HTMLSelectElement>("slice-print-infill").value = "25";
   t.$("slice-print-preview").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: false }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: "off" }]);
   assert.equal(t.d.open, false);
   const bad = dialog(async () => ({ print: print(), saved: true }), async () => {
     throw new Error("There is no body to slice: make or show one first.");
@@ -248,14 +255,15 @@ test("two bodies print together, each its own mesh; none is refused before slici
   await assert.rejects(sliceBodies(kernel, doc, [], PRINT_DEFAULTS), /no body to slice/);
 });
 
-test("supports on the shipped build: a plate on a column gets them, a cube needs none, and off means none", async () => {
+test("supports on the shipped build: a plate on a column gets them, normal or tree, a cube needs none, and off means none", async () => {
   const kernel = nodeKernel();
   // A 30 × 30 × 2 mm plate moved up onto a 10 × 10 × 10 mm column (both centred), made as the app makes them.
   const plate = insertPreset(partDocument("box", 10, 10, 10), "box", 30, 30, 2);
   const doc = insertMove(plate.doc, [plate.id], { ...NO_MOVE, z: 10 }).doc;
   const bodies = bodyFeatures(doc);
   const supportLayers = (p: SlicedPrint) => p.preview.filter((l) => l.paths.some((x) => x.role === "support")).length;
-  const on = await sliceBodies(kernel, doc, bodies, { ...PRINT_DEFAULTS, supports: true });
+  const on = await sliceBodies(kernel, doc, bodies, { ...PRINT_DEFAULTS, supports: "normal" });
+  const tree = await sliceBodies(kernel, doc, bodies, { ...PRINT_DEFAULTS, supports: "tree" });
   const off = await sliceBodies(kernel, doc, bodies, PRINT_DEFAULTS);
   // 12 mm / 0.2 mm = 60 layers either way.
   assert.equal(on.layers, 60);
@@ -269,9 +277,19 @@ test("supports on the shipped build: a plate on a column gets them, a cube needs
   assert.doesNotMatch(off.gcode, /;TYPE:Support/);
   // Supports cost plastic and time.
   assert.ok(on.filamentMm > off.filamentMm && on.printTimeS > off.printTimeS, `${on.filamentMm} vs ${off.filamentMm}`);
+  // Trees: the same 60 layers and the same roof (support up to layer 48, the gap layer 49 empty), but branches, not columns:
+  // a different slice, and less plastic than columns under the whole rim.
+  assert.equal(tree.layers, 60);
+  const topSupport = (p: SlicedPrint) => Math.max(...p.preview.flatMap((l, i) => (l.paths.some((x) => x.role === "support") ? [i] : [])));
+  assert.equal(topSupport(tree), 48);
+  assert.equal(topSupport(on), 48);
+  assert.match(tree.gcode, /^;TYPE:Support$/m);
+  assert.notEqual(tree.gcode, on.gcode);
+  assert.ok(tree.filamentMm > off.filamentMm && tree.filamentMm < on.filamentMm, `${tree.filamentMm} between ${off.filamentMm} and ${on.filamentMm}`);
   // A 20 mm cube has nothing hanging out: supports on still adds none.
   const cube = partDocument("box", 20, 20, 20);
-  assert.equal(supportLayers(await sliceBodies(kernel, cube, bodyFeatures(cube), { ...PRINT_DEFAULTS, supports: true })), 0);
+  assert.equal(supportLayers(await sliceBodies(kernel, cube, bodyFeatures(cube), { ...PRINT_DEFAULTS, supports: "normal" })), 0);
+  assert.equal(supportLayers(await sliceBodies(kernel, cube, bodyFeatures(cube), { ...PRINT_DEFAULTS, supports: "tree" })), 0);
 });
 
 /** The files of a ZIP of stored (uncompressed) files, read from its local headers: name → bytes. Throws on anything else. */
