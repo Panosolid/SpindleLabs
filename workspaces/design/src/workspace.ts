@@ -19,7 +19,7 @@ import { registerDesign } from "./representations.ts";
 import { DESIGN_COMMANDS, documentFor, DRAW_OPS, DRAW_STEPS, drawingFor, drawRefused, EXTRUDE_OP, commandDistance, extrudeTarget, RENAME_OP, renameTarget } from "./commands.ts";
 import { buildSpec } from "./spec.ts";
 import { SHAPE_LABELS, toolbarGroups, type ToolButton } from "./toolbar.ts";
-import { commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command as SearchCommand, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
+import { commandSearch, GCODE_KIND, iconSvg, saveFile, toolGroup, type Command as SearchCommand, type SaveKind, type IconName, type MenuButton, type MenuSection } from "@fission/ui";
 import { comingItems, type ComingGroup } from "./coming-soon.ts";
 import { INSERT_SIZES, INSERT_TITLE, inserted, insertSections, insertStep } from "./insert.ts";
 import { startHint } from "./start-hint.ts";
@@ -28,7 +28,7 @@ import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.t
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
-import { gcodeName, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
+import { gcodeName, P1S_KIND, printFileName, printFileOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
@@ -54,6 +54,7 @@ import { clickAt, curveCount, hoverTool, DEFAULT_GRID, DEFAULT_GRID_SNAP, drawSt
 import { sketchPanel } from "./sketch-panel.ts";
 import { sketchToolbar } from "./sketch-toolbar.ts";
 import type { Sketch, SketchPlane } from "./document.ts";
+import type { PrintFacts } from "./slice-print.ts";
 import { aiFaces, designAIView } from "./ai-view.ts";
 import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, registerDesignActions, shownBodyFeature, shownBodyRefs, STL_OVERLAY, targetsOf, type DesignRun } from "./actions.ts";
 
@@ -397,15 +398,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // S: the command search box over the page (Ben's keys 10-29), listing what the toolbar offers now.
   const searchBox = commandSearch(ctx.toolbar.ownerDocument, commands);
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
-  // File ▾ > Slice for printing (H2a): every body shown, as Export STL takes them, sliced and saved as G-code.
+  // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
-    async slice(choices) {
+    async slice(choices, file) {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
+      const save = async (print: PrintFacts, suggestedName: string, kind: SaveKind, bytes: Uint8Array<ArrayBuffer>) => {
+        const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind, bytes });
+        if (r.status === "failed") throw new Error(r.message);
+        return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
+      };
+      if (file.format === "p1s") {
+        const print = await printFileOf(kernel, doc!, features, choices, file.plate);
+        return save(print, printFileName(choices, file.plate), P1S_KIND, print.package);
+      }
       const print = await sliceBodies(kernel, doc!, features, choices);
-      const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName: gcodeName(choices), kind: GCODE_KIND, bytes: new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer> });
-      if (r.status === "failed") throw new Error(r.message);
-      return { print, saved: r.status === "saved" };
+      return save(print, gcodeName(choices), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
     async preview(choices) {

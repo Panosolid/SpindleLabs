@@ -7,7 +7,7 @@ import { entry as kernel } from "./entry-points.ts";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
-import type { BodyHandle, BodySpec, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BuildPlate, Outline, SketchArc, SketchCircle, SketchLine } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -57,6 +57,8 @@ const ops = {
   body_free: (body: BodyHandle) => kernel.body_free(body),
   body_count: () => kernel.body_count(),
   slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: boolean) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
+  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: boolean, plate: BuildPlate) =>
+    kernel.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
