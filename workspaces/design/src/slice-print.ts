@@ -61,10 +61,31 @@ export function gcodeName(choices: PrintChoices): string {
 
 const grams = (g: number) => (g < 10 ? g.toFixed(1) : Math.round(g).toString());
 
-/** What a slice came to, in words: "100 layers, 5.2 g of PLA (1.73 m of filament)." */
+/**
+ * The moves' time in words, rounded to the nearest minute: "4 min",
+ * "1 h 5 min"; under half a minute is "under a minute". Null for a time
+ * that is not a number or below 0 (an engine fault), so no figure shows.
+ */
+export function timeWords(s: number): string | null {
+  if (!(s >= 0) || !Number.isFinite(s)) return null;
+  const min = Math.round(s / 60);
+  if (min === 0) return "under a minute";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  return min % 60 === 0 ? `${h} h` : `${h} h ${min % 60} min`;
+}
+
+/**
+ * What a slice came to, in words: "100 layers, 5.2 g of PLA (1.73 m of
+ * filament), about 4 min of printing (plus heating and levelling)."
+ * The time is the engine's estimate of the moves alone, so the words say
+ * the printer's own warm-up comes on top.
+ */
 export function printWords(print: SlicedPrint): string {
   const layers = `${print.layers} ${print.layers === 1 ? "layer" : "layers"}`;
-  return `${layers}, ${grams(print.filamentG)} g of PLA (${(print.filamentMm / 1000).toFixed(2)} m of filament).`;
+  const time = timeWords(print.printTimeS);
+  const timePart = time === null ? "" : `, about ${time} of printing (plus heating and levelling)`;
+  return `${layers}, ${grams(print.filamentG)} g of PLA (${(print.filamentMm / 1000).toFixed(2)} m of filament)${timePart}.`;
 }
 
 /**
