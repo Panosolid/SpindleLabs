@@ -132,7 +132,7 @@ export function u3qr1f(p0, p1, p2) {
 export function uq4cun(p0, p1, p2, p3, p4) {
     const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3, isLikeNone(p4) ? 0xFFFFFF : p4 ? 1 : 0);
+    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3, p4);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -198,6 +198,10 @@ function __wbg_get_imports() {
         },
         __wbg___wbindgen_is_function_1f9d30630b8b1d3d: function(arg0) {
             const ret = typeof(arg0) === 'function';
+            return ret;
+        },
+        __wbg___wbindgen_is_null_e343b7d08827ba72: function(arg0) {
+            const ret = arg0 === null;
             return ret;
         },
         __wbg___wbindgen_is_object_3c45d4f2dde4e749: function(arg0) {
