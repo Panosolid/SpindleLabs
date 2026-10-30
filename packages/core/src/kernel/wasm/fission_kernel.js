@@ -1,4 +1,4 @@
-/*! SpindleLabs kernel. Copyright (c) 2026 Ben (GitHub: benpy28) and Panosolid. All rights reserved. Use only as part of SpindleLabs: see LICENSE-KERNEL.txt. */
+/*! SpindleLabs kernel. Copyright (c) 2026 Ben (GitHub: benpy28). All rights reserved. Use only as part of SpindleLabs: see LICENSE-KERNEL.txt. */
 
 export function at4a9p(p0) {
     const ptr0 = passStringToWasm0(p0, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -58,6 +58,18 @@ export function jgu9kn(p0, p1) {
     const ptr0 = passStringToWasm0(p1, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.jgu9kn(p0, ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+export function k7vbqz(p0, p1, p2, p3, p4, p5) {
+    const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(p5, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.k7vbqz(ptr0, len0, p1, p2, p3, p4, ptr1, len1);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
