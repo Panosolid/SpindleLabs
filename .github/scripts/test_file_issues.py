@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from file_issues import MARK, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
+from file_issues import MARK, MAX_NEW, OVERFLOW, cap, check_kinds, devious_kinds, fuzz_kinds, gather, golden_kinds, harness_kinds, key, kinds_of, oracle_kinds, plan, read_folders, texts, MAX_EXAMPLE  # noqa: E402
 
 # Lines copied from real reports on the test-results branch.
 ROTATE_A = ("  seed 0x12849982fbf1: step 3 (Rotate { target: 1, pivot: [0.0, 0.0, 0.0], axis: [1.0, 0.0, 0.0], "
@@ -317,9 +317,31 @@ class Checks(unittest.TestCase):
     def test_an_unexplained_ts_mutant_is_a_kind(self):
         text = "design: 4 survivors\nUNEXPLAINED survivor at src/workspace.ts:1618: ConditionalExpression\n1 problem(s): kill each survivor\n"
         self.assertEqual(check_kinds({"ts-mutants-design/design.txt": text}, {}, set()),
-                         [("check TypeScript mutants: UNEXPLAINED survivor at src/workspace.ts:#: ConditionalExpression",
+                         [("check TypeScript mutants: survivors no test kills in src/workspace.ts",
                            "UNEXPLAINED survivor at src/workspace.ts:1618: ConditionalExpression")])
         self.assertEqual(check_kinds({"ts-mutants-design/design.txt": "design: 4 survivors, all explained: true\n"}, {}, set()), [])
+
+    def test_ts_mutant_survivors_are_one_kind_per_file(self):
+        # Lines copied from the 2026-10-30 night, which filed one issue per survivor (100 of them).
+        text = (
+            "storage: 86 survivors, all explained: false\n"
+            "UNEXPLAINED survivor at packages/storage/src/unsaved.ts:41: packages/storage/src/unsaved.ts | OptionalChaining | journal?.getItem => journal.getItem\n"
+            "UNEXPLAINED survivor at packages/storage/src/store.ts:88: packages/storage/src/store.ts | EqualityOperator | v > 0 => v >= 0\n"
+            "UNEXPLAINED survivor at packages/storage/src/unsaved.ts:57: packages/storage/src/unsaved.ts | ConditionalExpression | entry == null => false\n"
+            "explained.json lists a mutant that no longer survives (remove it): packages/storage/src/autosave.ts | ConditionalExpression | journalVersion === null => false\n"
+            "62 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell\n"
+        )
+        lines = text.splitlines()
+        # By hand: three survivor lines in two files give two kinds, each listing its file's lines in order; the
+        # stale explained.json line is a third kind, named by its file (the text before the first " | ").
+        self.assertEqual(check_kinds({"ts-mutants-storage/storage.txt": text}, {}, set()), [
+            ("check TypeScript mutants: survivors no test kills in packages/storage/src/unsaved.ts", "\n".join([lines[1], lines[3]])),
+            ("check TypeScript mutants: survivors no test kills in packages/storage/src/store.ts", lines[2]),
+            ("check TypeScript mutants: explained.json lists mutants that no longer survive in packages/storage/src/autosave.ts", lines[4]),
+        ])
+        # A survivor more or fewer, or on another line, is the same kind: the issue gets a comment, not a sibling.
+        fewer = check_kinds({"ts-mutants-storage/storage.txt": lines[1].replace(":41:", ":40:")}, {}, set())
+        self.assertEqual(fewer[0][0], "check TypeScript mutants: survivors no test kills in packages/storage/src/unsaved.ts")
 
     def test_a_mutants_shard_that_stopped_is_a_kind(self):
         # 0 all caught, 2 missed (filed as new survivors), 3 timed out, 124/130 cut off at the deadline: fine.
@@ -470,6 +492,48 @@ class Locking(unittest.TestCase):
         calls, logs = self.run_with([issue(7, self.K)], lock_fails=True)
         self.assertEqual(calls[-1], ("issue", "lock", "7"))
         self.assertTrue(any("Could not lock #7" in line for line in logs))
+
+class Cap(unittest.TestCase):
+    """One run opens at most MAX_NEW issues (2026-10-30: one night opened 104)."""
+
+    def creates(self, n, prefix="monkey kind"):
+        return {f"{prefix} {i:03}": [("s", "e")] for i in range(n)}
+
+    def test_up_to_max_new_new_kinds_each_get_an_issue(self):
+        found = self.creates(MAX_NEW)
+        actions, after = cap(plan(found, [], "main"), found, [], "main")
+        self.assertEqual(len([a for a in actions if a[0] == "create"]), MAX_NEW)
+        self.assertNotIn(OVERFLOW, after)
+
+    def test_past_max_new_the_rest_wait_in_one_issue(self):
+        found = {**self.creates(MAX_NEW + 1, "check TypeScript mutants: survivors no test kills in"), **self.creates(3)}
+        actions, after = cap(plan(found, [], "main"), found, [], "main")
+        made = [k for a, k, _ in actions if a == "create"]
+        # By hand: 14 new kinds; MAX_NEW - 1 = 9 are filed plus the overflow issue, so 10 issues open. The 3 app kinds
+        # go first, then the first 6 mutant kinds; the other 5 mutant kinds are listed in the overflow issue.
+        self.assertEqual(len(made), MAX_NEW)
+        self.assertEqual(made[-1], OVERFLOW)
+        self.assertTrue(all(f"monkey kind {i:03}" in made for i in range(3)))
+        waiting = [k for k in found if k not in made]
+        self.assertEqual(len(waiting), MAX_NEW + 1 + 3 - (MAX_NEW - 1))
+        self.assertTrue(all(k.startswith("check TypeScript mutants") for k in waiting))
+        example = after[OVERFLOW][0][1]
+        self.assertTrue(all(f"- {k}" in example for k in waiting), example)
+
+    def test_an_open_overflow_issue_gets_a_comment(self):
+        found = self.creates(MAX_NEW + 1)
+        issues = [{"number": 7, "state": "OPEN", "body": MARK.format(key(OVERFLOW))}]
+        actions, _ = cap(plan(found, issues, "main"), found, issues, "main")
+        self.assertIn(("comment", OVERFLOW, 7), actions)
+        self.assertEqual(len([a for a in actions if a[0] == "create"]), MAX_NEW - 1)
+
+    def test_comments_and_reopens_are_never_held_back(self):
+        found = self.creates(MAX_NEW + 5)
+        issues = [{"number": i, "state": "OPEN", "body": MARK.format(key(k))} for i, k in enumerate(sorted(found)[:5], 1)]
+        actions, after = cap(plan(found, issues, "main"), found, issues, "main")
+        # 5 kinds already have issues (comments), 10 are new: exactly MAX_NEW new, so nothing waits.
+        self.assertEqual(len([a for a in actions if a[0] == "comment"]), 5)
+        self.assertNotIn(OVERFLOW, after)
 
 
 if __name__ == "__main__":
