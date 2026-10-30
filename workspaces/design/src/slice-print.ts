@@ -80,6 +80,8 @@ export function unprintedWords(print: SlicedPrint): string | null {
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file; false when the user closed the save box. */
   slice(choices: PrintChoices): Promise<{ print: SlicedPrint; saved: boolean }>;
+  /** Slices the bodies shown with these choices and opens the print preview (H2b, H2c); nothing is saved. */
+  preview(choices: PrintChoices): Promise<void>;
 }
 
 export interface SlicePrint {
@@ -136,9 +138,12 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   actions.className = "slice-print-actions";
   const close = el("button", "slice-print-close", "Close");
   close.type = "button";
+  const preview = el("button", "slice-print-preview", "Preview");
+  preview.type = "button";
+  preview.title = "Watch it print: the slice in 3D, layer by layer, with a time-lapse of the nozzle laying it down.";
   const go = el("button", "slice-print-go", "Slice and download");
   go.type = "button";
-  actions.append(close, go);
+  actions.append(close, preview, go);
   dialog.append(heading, printer, untested, quality.wrap, walls.wrap, infill.wrap, status, actions);
   slot.append(dialog);
 
@@ -162,6 +167,22 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     } finally {
       busy = false;
       go.disabled = false;
+    }
+  });
+  preview.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    go.disabled = preview.disabled = true;
+    say("Slicing…", false);
+    try {
+      await events.preview(choices());
+      say("", false);
+      dialog.close();
+    } catch (e) {
+      say(e instanceof Error ? e.message : String(e), true);
+    } finally {
+      busy = false;
+      go.disabled = preview.disabled = false;
     }
   });
   close.addEventListener("click", () => dialog.close());

@@ -39,7 +39,7 @@ test("plastic left out is warned about from half a hundredth of a mm³ (it round
 
 const { Window } = await import("happy-dom");
 
-function dialog(slice: (c: PrintChoices) => Promise<{ print: SlicedPrint; saved: boolean }>) {
+function dialog(slice: (c: PrintChoices) => Promise<{ print: SlicedPrint; saved: boolean }>, preview: (c: PrintChoices) => Promise<void> = async () => {}) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = doc.createElement("div");
@@ -47,7 +47,7 @@ function dialog(slice: (c: PrintChoices) => Promise<{ print: SlicedPrint; saved:
   const keys: string[] = [];
   doc.addEventListener("keydown", (e) => keys.push((e as KeyboardEvent).key));
   const asked: PrintChoices[] = [];
-  const d = slicePrint(slot, { slice: (c) => (asked.push(c), slice(c)) });
+  const d = slicePrint(slot, { slice: (c) => (asked.push(c), slice(c)), preview: (c) => (asked.push(c), preview(c)) });
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   const settle = () => new Promise((r) => setTimeout(r, 0));
   return { d, doc, keys, asked, $, settle, window };
@@ -109,6 +109,27 @@ test("a second click while slicing doesn't start a second slice", async () => {
   await t.settle();
   assert.equal(t.$<HTMLButtonElement>("slice-print-go").disabled, false);
   await t.window.happyDOM.close();
+});
+
+test("Preview slices with the choices picked and closes the dialog; a refusal keeps it open and says why", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.d.ask();
+  t.$<HTMLSelectElement>("slice-print-infill").value = "25";
+  t.$("slice-print-preview").click();
+  await t.settle();
+  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25 }]);
+  assert.equal(t.d.open, false);
+  const bad = dialog(async () => ({ print: print(), saved: true }), async () => {
+    throw new Error("There is no body to slice: make or show one first.");
+  });
+  bad.d.ask();
+  bad.$("slice-print-preview").click();
+  await bad.settle();
+  assert.equal(bad.d.open, true);
+  assert.equal(bad.$("slice-print-status").textContent, "There is no body to slice: make or show one first.");
+  assert.equal(bad.$<HTMLButtonElement>("slice-print-preview").disabled, false);
+  await t.window.happyDOM.close();
+  await bad.window.happyDOM.close();
 });
 
 test("a 20 mm cube, sliced on the shipped build: 100 layers of 0.2 mm, G-code a printer reads", async () => {

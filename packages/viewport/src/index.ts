@@ -8,3 +8,4 @@ export { CUBE_VIEW_HALF } from "./viewcube.ts";
 export { paneViewports, type PaneCamera } from "./pane.ts";
 export { snapDistance } from "./extrude-pick.ts";
 export { openGuide } from "./guide/guide.ts";
+export { KIND_COLOURS, PLATE_MM, printView, type PrintView } from "./print-view.ts";
