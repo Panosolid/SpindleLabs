@@ -1,0 +1,27 @@
+{
+  "$comment": "Mutation testing of the exact naming model of joins, cuts and Combine (step 34a5): its hand-worked tests, 12 seeded sessions against the unit-cell count (each mutant runs them; 40 took about 4 hours), and the old names' reader, which runs on it. Not yet a run.sh target: its first run (2026-10-30, 67 min locally at concurrency 4, 1,253 mutants, score 85.6%) left 180 survivors, which 34a5b kills or explains before adding it to run.sh, check.mjs, nightly.yml and collect-results.sh. Run by hand from packages/testing: ../../node_modules/.cache/stryker/node_modules/.bin/stryker run stryker/naming.json, then node stryker/check.mjs naming.",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "BOOLEAN_SESSIONS=12 node --experimental-strip-types --no-warnings --test --test-concurrency=1 test/boolean-naming-model.test.ts test/boolean-naming-split.test.ts test/boolean-naming-session.test.ts test/old-names.test.ts"
+  },
+  "mutate": [
+    "src/boolean-naming-model.ts"
+  ],
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "../../node_modules/.cache/stryker/naming.json"
+  },
+  "clearTextReporter": {
+    "allowColor": false,
+    "logTests": false,
+    "reportMutants": false
+  },
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [
+    "node_modules"
+  ],
+  "timeoutMS": 60000
+}
