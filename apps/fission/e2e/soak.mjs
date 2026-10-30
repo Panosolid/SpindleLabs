@@ -72,7 +72,7 @@ async function openApp(context, who) {
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   watch(page, who);
   await page.goto(URL);
-  await page.waitForSelector("#start-hint", { state: "visible" });
+  await page.locator("#start-hint").waitFor();
   return sheetsClearFor(page);
 }
 const context = await browser.newContext({ viewport: WIDE, acceptDownloads: true });
@@ -314,7 +314,7 @@ async function printCensus(detachedNodes) {
     return m;
   });
   for (const d of detachedNodes) {
-    const key = `detached ${d.treeNode.nodeName} ${JSON.stringify(d.treeNode.attributes).slice(0, 80)}`;
+    const key = `detached ${d.treeNode.nodeName} ${(JSON.stringify(d.treeNode.attributes) ?? "").slice(0, 80)}`;
     census[key] = (census[key] ?? 0) + d.retainedNodeIds.length;
   }
   for (const key of new Set([...Object.keys(lastCensus), ...Object.keys(census)])) if ((lastCensus[key] ?? 0) !== (census[key] ?? 0)) console.log(`  ${key}: ${lastCensus[key] ?? 0} -> ${census[key] ?? 0}`);
