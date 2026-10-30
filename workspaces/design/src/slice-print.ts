@@ -1,13 +1,16 @@
 // Slice for printing (H2a, the slicer's first step into the app): every
 // body shown, sliced by the slicing engine with the owner's printer's
 // defaults (Bambu Lab P1S, 0.4 mm nozzle, PLA) and the beginner's four
-// choices (quality, walls, infill, supports), downloaded as a G-code file. The workspace offers it as File ▾
+// choices (quality, walls, infill, supports), downloaded as the P1S's own
+// print file (.gcode.3mf, W6c: its start and end routines, for the build
+// plate chosen) or, for another printer, plain G-code. The workspace offers it as File ▾
 // > Slice for printing; its dialog holds the choices, says what the slice
 // came to (layers, filament) and warns about any part too thin to print.
 // Nothing is saved into the project: choices, never results (decision 6,
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
-import type { Feature, KernelCalls, SlicedPrint, StlFile } from "@fission/core";
+import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, StlFile } from "@fission/core";
+import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 
@@ -32,6 +35,37 @@ export const QUALITY_OPTIONS: readonly { label: string; value: number }[] = [
 export const WALL_OPTIONS: readonly number[] = [1, 2, 3, 4, 5, 6];
 export const INFILL_OPTIONS: readonly number[] = [0, 10, 15, 20, 25, 40, 60, 100];
 
+/** Which file to save: the P1S's print file, or plain G-code for another printer. */
+export type PrintFormat = "p1s" | "gcode";
+
+/** The file's choices: its kind and, for the P1S's, the build plate (the owner's textured PEI by default). */
+export interface FileChoices {
+  format: PrintFormat;
+  plate: BuildPlate;
+}
+
+export const FILE_DEFAULTS: FileChoices = { format: "p1s", plate: "textured" };
+
+/**
+ * The file kinds, as the dialog lists them. The plain file's start
+ * routine primes a line across the P1S plate's front-left corner, which
+ * the P1S keeps clear, so it is named as not for the P1S.
+ */
+export const FORMAT_OPTIONS: readonly { label: string; value: PrintFormat }[] = [
+  { label: "Bambu Lab P1S (.gcode.3mf)", value: "p1s" },
+  { label: "Plain G-code, not for the P1S (.gcode)", value: "gcode" },
+];
+export const PLATE_OPTIONS: readonly { label: string; value: BuildPlate }[] = [
+  { label: "Textured PEI plate", value: "textured" },
+  { label: "Smooth, cool or engineering plate", value: "smooth" },
+];
+
+/** The P1S's print file, as the save box names it. */
+export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
+
+/** What the dialog says of any slice, plain or packed. */
+export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume">;
+
 /**
  * The bodies' STL files back to back, one file per body, as the engine
  * reads them: each body stays its own mesh, so two that touch are never
@@ -47,18 +81,37 @@ export function stackStl(files: readonly Uint8Array[]): Uint8Array<ArrayBuffer> 
   return out;
 }
 
-/** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint> {
+/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back. */
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<Uint8Array<ArrayBuffer>> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
-  return kernel.call("slice_stl", stackStl(files.map((f) => f.bytes)), choices.layerHeight, choices.walls, choices.infill, choices.supports);
+  return stackStl(files.map((f) => f.bytes));
 }
 
-/** The file's name: the layer height, the walls and infill and whether it has supports, so two slices of one part never share a name. */
-export function gcodeName(choices: PrintChoices): string {
-  return `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${choices.supports ? "-supports" : ""}.gcode`;
+/** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
+export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint> {
+  const stl = await bodiesStl(kernel, doc, features);
+  return kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports);
 }
+
+/** The same slice as the P1S's print file for `plate`. */
+export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate): Promise<P1sPrintFile> {
+  const stl = await bodiesStl(kernel, doc, features);
+  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate);
+}
+
+/** The plain file's name: the layer height, the walls and infill and whether it has supports, so two slices of one part never share a name. */
+export function gcodeName(choices: PrintChoices): string {
+  return `${baseName(choices)}.gcode`;
+}
+
+/** The P1S file's name: as the plain file's, plus the plate, so a file for one plate is never taken for the other's. */
+export function printFileName(choices: PrintChoices, plate: BuildPlate): string {
+  return `${baseName(choices)}-${plate}${P1S_KIND.extension}`;
+}
+
+const baseName = (choices: PrintChoices) => `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${choices.supports ? "-supports" : ""}`;
 
 const grams = (g: number) => (g < 10 ? g.toFixed(1) : Math.round(g).toString());
 
@@ -82,7 +135,7 @@ export function timeWords(s: number): string | null {
  * The time is the engine's estimate of the moves alone, so the words say
  * the printer's own warm-up comes on top.
  */
-export function printWords(print: SlicedPrint): string {
+export function printWords(print: PrintFacts): string {
   const layers = `${print.layers} ${print.layers === 1 ? "layer" : "layers"}`;
   const time = timeWords(print.printTimeS);
   const timePart = time === null ? "" : `, about ${time} of printing (plus heating and levelling)`;
@@ -94,14 +147,14 @@ export function printWords(print: SlicedPrint): string {
  * than one line (0.4 mm) has no wall to print. Under a hundredth of a
  * mm³ rounds to nothing in the words, so it is not worth a warning.
  */
-export function unprintedWords(print: SlicedPrint): string | null {
+export function unprintedWords(print: Pick<PrintFacts, "unprintedVolume">): string | null {
   if (!(print.unprintedVolume >= 0.005)) return null;
   return `Some of the part is thinner than one printed line, so about ${print.unprintedVolume.toFixed(2)} mm³ of it won't print.`;
 }
 
 export interface SlicePrintEvents {
-  /** Slices the bodies shown with these choices and saves the file; false when the user closed the save box. */
-  slice(choices: PrintChoices): Promise<{ print: SlicedPrint; saved: boolean }>;
+  /** Slices the bodies shown with these choices and saves the file chosen; saved false when the user closed the save box, with the name it was saved under. */
+  slice(choices: PrintChoices, file: FileChoices): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
   /** Slices the bodies shown with these choices and opens the print preview (H2b, H2c); nothing is saved. */
   preview(choices: PrintChoices): Promise<void>;
 }
@@ -113,7 +166,7 @@ export interface SlicePrint {
   readonly open: boolean;
 }
 
-export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a G-code file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
+export const SLICE_PRINT_TITLE = "Slice for printing: turn the bodies shown into a print file for a Bambu Lab P1S (0.4 mm nozzle, PLA).";
 
 /**
  * The dialog, in the toolbar slot's page, modal (native <dialog>) like
@@ -135,8 +188,8 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const heading = el("h2", "slice-print-heading", "Slice for printing");
   const printer = el("p", "slice-print-printer", "For a Bambu Lab P1S with a 0.4 mm nozzle and PLA. Every body shown is printed, placed in the middle of the plate.");
   // Placeholders never pretend to work: until a real test print passes (H3a), the dialog says so.
-  const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so check one in a G-code viewer before printing it.");
-  const choice = (id: string, label: string, options: readonly { label: string; value: number }[], value: number) => {
+  const untested = el("p", "slice-print-untested", "First version: these files haven't been test-printed yet, so open one in Bambu Studio or a G-code viewer to check it before printing it.");
+  const choice = <T extends string | number>(id: string, label: string, options: readonly { label: string; value: T }[], value: T) => {
     const wrap = document.createElement("label");
     wrap.className = "slice-print-choice";
     wrap.textContent = label;
@@ -162,6 +215,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   supports.checked = PRINT_DEFAULTS.supports;
   supportsWrap.title = "Prints break-away supports under parts that hang out too far (more than 45° from upright) to print on thin air.";
   supportsWrap.append("Supports under overhangs", supports);
+  const format = choice("slice-print-format", "File", FORMAT_OPTIONS, FILE_DEFAULTS.format);
+  format.wrap.title = "The P1S's own print file, with its start and end routines, ready to send to the printer; or plain G-code for another printer.";
+  const plate = choice("slice-print-plate", "Build plate", PLATE_OPTIONS, FILE_DEFAULTS.plate);
+  plate.wrap.title = "The plate on the printer's bed: the textured plate's first layer prints 0.04 mm lower, as its bumps stop the nozzle when the printer finds the bed.";
+  // The plate matters to the P1S's file only.
+  const plateFor = () => {
+    plate.select.disabled = format.select.value !== "p1s";
+  };
+  format.select.addEventListener("change", plateFor);
   const status = el("p", "slice-print-status");
   status.setAttribute("role", "status");
   const actions = el("div", "slice-print-actions");
@@ -172,9 +234,10 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   preview.type = "button";
   preview.title = "Watch it print: the slice in 3D, layer by layer, with a time-lapse of the nozzle laying it down.";
   const go = el("button", "slice-print-go", "Slice and download");
+  go.title = "Slices the bodies shown and saves the file chosen above.";
   go.type = "button";
   actions.append(close, preview, go);
-  dialog.append(heading, printer, untested, quality.wrap, walls.wrap, infill.wrap, supportsWrap, status, actions);
+  dialog.append(heading, printer, untested, format.wrap, plate.wrap, quality.wrap, walls.wrap, infill.wrap, supportsWrap, status, actions);
   slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
@@ -182,6 +245,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     status.classList.toggle("slice-print-bad", bad);
   };
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supports.checked });
+  const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured" });
   let busy = false;
   go.addEventListener("click", async () => {
     if (busy) return;
@@ -189,9 +253,9 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     go.disabled = true;
     say("Slicing…", false);
     try {
-      const { print, saved } = await events.slice(choices());
+      const { print, saved, name } = await events.slice(choices(), file());
       const warning = unprintedWords(print);
-      say([saved ? `Saved ${gcodeName(choices())}:` : "Sliced, but not saved:", printWords(print), ...(warning ? [warning] : [])].join(" "), warning !== null);
+      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...(warning ? [warning] : [])].join(" "), warning !== null);
     } catch (e) {
       say(e instanceof Error ? e.message : String(e), true);
     } finally {

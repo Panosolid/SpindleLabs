@@ -1,6 +1,7 @@
 // Slice for printing (slice-print.ts): the files handed to the engine, the
 // words a slice is described in (worked by hand), the dialog in a real DOM
-// (happy-dom) with a stand-in slicer, and real slices on the shipped kernel build (a 20 mm cube; supports under a plate on a column).
+// (happy-dom) with a stand-in slicer, and real slices on the shipped kernel build (a 20 mm cube; supports under a plate on a column;
+// the cube's P1S print file, unpacked by the test's own reader).
 // The Chromium checks are apps/fission/e2e/slice-print.mjs and print-preview.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,7 +10,8 @@ import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
-import { gcodeName, PRINT_DEFAULTS, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type PrintChoices } from "../src/slice-print.ts";
+import { createHash } from "node:crypto";
+import { FILE_DEFAULTS, gcodeName, PRINT_DEFAULTS, printFileName, printFileOf, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -59,7 +61,10 @@ test("plastic left out is warned about from half a hundredth of a mm³ (it round
 
 const { Window } = await import("happy-dom");
 
-function dialog(slice: (c: PrintChoices) => Promise<{ print: SlicedPrint; saved: boolean }>, preview: (c: PrintChoices) => Promise<void> = async () => {}) {
+/** The name a stand-in saves under: the one the workspace offers. */
+const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate) : gcodeName(c));
+
+function dialog(slice: (c: PrintChoices, f: FileChoices) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices) => Promise<void> = async () => {}) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = doc.createElement("div");
@@ -67,10 +72,19 @@ function dialog(slice: (c: PrintChoices) => Promise<{ print: SlicedPrint; saved:
   const keys: string[] = [];
   doc.addEventListener("keydown", (e) => keys.push((e as KeyboardEvent).key));
   const asked: PrintChoices[] = [];
-  const d = slicePrint(slot, { slice: (c) => (asked.push(c), slice(c)), preview: (c) => (asked.push(c), preview(c)) });
+  const files: FileChoices[] = [];
+  const d = slicePrint(slot, {
+    slice: async (c, f) => {
+      asked.push(c);
+      files.push(f);
+      const r = await slice(c, f);
+      return { ...r, name: r.name ?? nameFor(c, f) };
+    },
+    preview: (c) => (asked.push(c), preview(c)),
+  });
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   const settle = () => new Promise((r) => setTimeout(r, 0));
-  return { d, doc, keys, asked, $, settle, window };
+  return { d, doc, keys, asked, files, $, settle, window };
 }
 
 test("the dialog slices with the choices picked, then says what the slice came to", async () => {
@@ -86,6 +100,9 @@ test("the dialog slices with the choices picked, then says what the slice came t
   t.$<HTMLSelectElement>("slice-print-quality").value = "0.16";
   t.$<HTMLSelectElement>("slice-print-walls").value = "3";
   t.$<HTMLSelectElement>("slice-print-infill").value = "40";
+  // Plain G-code here; the P1S's file (the default) has its own test below.
+  t.$<HTMLSelectElement>("slice-print-format").value = "gcode";
+  t.$<HTMLSelectElement>("slice-print-format").dispatchEvent(new t.window.Event("change") as unknown as Event);
   t.$("slice-print-go").click();
   await t.settle();
   assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: false }]);
@@ -102,8 +119,46 @@ test("the dialog slices with the choices picked, then says what the slice came t
   await t.window.happyDOM.close();
 });
 
+test("the dialog saves the P1S's print file by default, for the plate picked; the plate goes with that file only", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.d.ask();
+  const format = t.$<HTMLSelectElement>("slice-print-format");
+  const plate = t.$<HTMLSelectElement>("slice-print-plate");
+  // The owner's printer and plate: the P1S file on the textured PEI plate.
+  assert.deepEqual(FILE_DEFAULTS, { format: "p1s", plate: "textured" });
+  assert.equal(format.value, "p1s");
+  assert.equal(plate.value, "textured");
+  assert.equal(plate.disabled, false);
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured" }]);
+  // The name by hand: the plain file's spindlelabs-0.2mm-2w-15pc, then the plate, then the P1S's ending.
+  assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.2mm-2w-15pc-textured.gcode.3mf: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
+  plate.value = "smooth";
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth" });
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-smooth\.gcode\.3mf: /);
+  // Plain G-code: the plate box greys out, and the file is .gcode.
+  format.value = "gcode";
+  format.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(plate.disabled, true);
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(t.files[2].format, "gcode");
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc\.gcode: /);
+  // The plain option says it isn't for the P1S (its start primes a line across the corner the P1S keeps clear).
+  assert.match(format.querySelector('option[value="gcode"]')!.textContent!, /not for the P1S/);
+  format.value = "p1s";
+  format.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(plate.disabled, false);
+  // Names by hand, with supports and the other plate.
+  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: true }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
+  await t.window.happyDOM.close();
+});
+
 test("the dialog says a refusal in the engine's words, warns about plastic left out, and keeps its keys", async () => {
-  let answer: () => Promise<{ print: SlicedPrint; saved: boolean }> = async () => {
+  let answer: () => Promise<{ print: PrintFacts; saved: boolean }> = async () => {
     throw new Error("the part is bigger than the printer's bed");
   };
   const t = dialog(() => answer());
@@ -217,4 +272,70 @@ test("supports on the shipped build: a plate on a column gets them, a cube needs
   // A 20 mm cube has nothing hanging out: supports on still adds none.
   const cube = partDocument("box", 20, 20, 20);
   assert.equal(supportLayers(await sliceBodies(kernel, cube, bodyFeatures(cube), { ...PRINT_DEFAULTS, supports: true })), 0);
+});
+
+/** The files of a ZIP of stored (uncompressed) files, read from its local headers: name → bytes. Throws on anything else. */
+function storedZip(b: Uint8Array): Map<string, Uint8Array> {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const out = new Map<string, Uint8Array>();
+  let at = 0;
+  while (v.getUint32(at, true) === 0x04034b50) {
+    assert.equal(v.getUint16(at + 8, true), 0, "stored, not compressed");
+    const size = v.getUint32(at + 18, true);
+    const nameLen = v.getUint16(at + 26, true);
+    const extra = v.getUint16(at + 28, true);
+    const name = new TextDecoder().decode(b.subarray(at + 30, at + 30 + nameLen));
+    const start = at + 30 + nameLen + extra;
+    out.set(name, b.subarray(start, start + size));
+    at = start + size;
+  }
+  assert.equal(v.getUint32(at, true), 0x02014b50, "the central directory follows the files");
+  return out;
+}
+
+/** A file's layer moves, feeds left out: from the first layer's first path to the end routine. */
+function layerMoves(gcode: string): string[] {
+  const start = gcode.indexOf(";LAYER_CHANGE");
+  const first = gcode.indexOf(";TYPE:", start);
+  const end = gcode.search(/;===== end|; end/);
+  return gcode
+    .slice(first, end)
+    .split("\n")
+    .filter((l) => l.startsWith("G0 ") || l.startsWith("G1 "))
+    .map((l) => l.split(/\s+/).filter((w) => !w.startsWith("F")).join(" "));
+}
+
+test("the cube's P1S print file on the shipped build: a package the printer checks, for the plate picked, the same layers as the plain slice", async () => {
+  const kernel = nodeKernel();
+  const doc = partDocument("box", 20, 20, 20);
+  const f = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured");
+  assert.ok(f.package instanceof Uint8Array, "bytes, not a list of numbers");
+  const files = storedZip(f.package);
+  for (const name of ["[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model", "Metadata/plate_1.gcode", "Metadata/plate_1.gcode.md5", "Metadata/plate_1.json", "Metadata/slice_info.config"]) assert.ok(files.has(name), name);
+  const gcode = new TextDecoder().decode(files.get("Metadata/plate_1.gcode"));
+  // The printer checks the G-code against its MD5 (worked here by node's own MD5, apart from the engine's), upper-case hex.
+  assert.equal(new TextDecoder().decode(files.get("Metadata/plate_1.gcode.md5")), createHash("md5").update(files.get("Metadata/plate_1.gcode")!).digest("hex").toUpperCase());
+  // 20 mm / 0.2 mm = 100 layers, as the file marks them and the answer says.
+  assert.equal((gcode.match(/^;LAYER_CHANGE$/gm) ?? []).length, 100);
+  assert.equal(f.layers, 100);
+  assert.equal(f.unprintedVolume, 0);
+  assert.match(gcode, /^; total layer number: 100$/m);
+  // The textured plate: its key, and its first layer 0.04 mm lower.
+  assert.match(new TextDecoder().decode(files.get("Metadata/plate_1.json")), /"bed_type":"textured_plate"/);
+  assert.match(gcode, /^G29\.1 Z-0\.04/m);
+  // The printer model the P1S checks for (C12).
+  assert.match(new TextDecoder().decode(files.get("Metadata/slice_info.config")), /key="printer_model_id" value="C12"/);
+  // The smooth plate's file has no trim and its own key.
+  const smooth = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "smooth");
+  const smoothFiles = storedZip(smooth.package);
+  assert.match(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.json")), /"bed_type":"hot_plate"/);
+  assert.doesNotMatch(new TextDecoder().decode(smoothFiles.get("Metadata/plate_1.gcode")), /G29\.1 Z-0\.04/);
+  // Two code paths agreeing: the same layer moves as the plain slice of the same choices; 3 walls differ, so the comparison can fail.
+  const plain = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
+  assert.deepEqual(layerMoves(gcode), layerMoves(plain.gcode));
+  const three = await sliceBodies(kernel, doc, bodyFeatures(doc), { ...PRINT_DEFAULTS, walls: 3 });
+  assert.notDeepEqual(layerMoves(gcode), layerMoves(three.gcode));
+  // A plate the engine doesn't know is the app's bug, refused as a bad request.
+  await assert.rejects(printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "glass" as never), (e: Error & { kind?: string }) => e.kind === "bad-request" && /bad plate/.test(e.message));
+  await assert.rejects(printFileOf(kernel, doc, [], PRINT_DEFAULTS, "textured"), /no body to slice/);
 });

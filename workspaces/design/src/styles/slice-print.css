@@ -18,4 +18,7 @@
 @media (max-width: 640px) {
   .slice-print button:not(#none), .slice-print select { min-height: 44px; }
   .slice-print .slice-print-choice:has(#slice-print-supports) { min-height: 44px; }
+  /* Six choices and the answer fit a phone's height without scrolling. */
+  .slice-print .slice-print-choice { margin-bottom: 6px; }
+  .slice-print p { margin-bottom: 8px; }
 }

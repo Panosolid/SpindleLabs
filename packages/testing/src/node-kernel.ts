@@ -41,6 +41,7 @@ export function nodeKernel(): KernelCalls {
     body_free: (body) => entry.body_free(body),
     body_count: () => entry.body_count(),
     slice_stl: (stl, layerHeight, wallCount, infillPercent, supports) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
+    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };
   return {
