@@ -131,6 +131,24 @@ test("F2: a Combine join of two blocks apart keeps the target and makes the tool
   assert.equal(r.failed.size, 0);
 });
 
+test("F2: a Combine join keeps the target's id on the piece holding the target, even when a tool swallows it and a bigger tool lies apart", () => {
+  // Regression (found by the 34a5 sessions' unit-cell count, then built by
+  // hand): target a 1 mm cube at (1, 1, 1)–(2, 2, 2), inside tool 1, the
+  // 3 × 3 × 3 cube (0, 0, 0)–(3, 3, 3) = 27, with tool 2 apart, the
+  // 4 × 4 × 4 cube at x 10–14 = 64. Every face of the target ends inside
+  // tool 1, so none survives to point at a piece; section 8 still says the
+  // piece holding the target keeps its id: the 27 piece at (0, 0, 0). The
+  // 64 apart is the Combine's piece 1. The model gave the target's id to
+  // the bigger piece, ranked first by volume when no face reached either.
+  const r = rebuildBooleans([
+    block("feature-1", [1, 1, 2, 2], [1, 2]),
+    block("feature-2", [0, 0, 3, 3], [0, 3]),
+    block("feature-3", [10, 0, 14, 4], [0, 4]),
+    combine("feature-4", "body:feature-1", ["body:feature-2", "body:feature-3"], "join"),
+  ]);
+  assert.deepEqual(bodies(r), ["body:feature-1 27 0,0,0", "body:feature-4/piece:1 64 10,0,0"]);
+});
+
 test("F6's rule: an Extrude join bridging two bodies keeps the earliest-made id, and its top answers to all three names", () => {
   // Blocks x 0–10 and x 20–30 (10 × 10 × 10 each), then a join x 5–25
   // listing the later body first. The union is x 0–30: 30 × 10 × 10 = 3000,

@@ -114,7 +114,9 @@ export type BooleanFault =
   | "split-silent" // rule 3: a reference finding its face split says nothing
   | "largest-first" // rule 3: the largest piece taken over the one holding the origin
   | "guess-shared" // rule 3: pieces with the same tag (or two largest) guessed between
-  | "edge-no-ends"; // rule 5: edges meeting the same two faces twice not told apart
+  | "edge-no-ends" // rule 5: edges meeting the same two faces twice not told apart
+  | "made-by-id-text" // made order: features taken in the order of their ids' text, not their place in the timeline
+  | "grid-whole-mm"; // the grid takes every coordinate to the nearest whole millimetre
 
 export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
   "keep-largest",
@@ -134,6 +136,13 @@ export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
   "guess-shared",
   "edge-no-ends",
 ];
+
+/**
+ * Faults that break what names may depend on, not one rule: an order taken
+ * from ids' text, or from where the part is. Caught by the sessions'
+ * renaming and moving checks (test/boolean-naming-session.test.ts).
+ */
+export const ORDER_FAULTS: readonly BooleanFault[] = ["made-by-id-text", "grid-whole-mm"];
 
 export const faceName = (feature: string, role: string): string => `face:${esc(feature)}/${role}`;
 export const bodyName = (feature: string, piece?: number): string => `body:${esc(feature)}${piece === undefined ? "" : `/piece:${piece}`}`;
@@ -161,7 +170,7 @@ function axisOf(values: number[]): number[] {
   return sorted.length === 0 ? [0, 1] : [sorted[0] - 1, ...sorted, sorted[sorted.length - 1] + 1];
 }
 
-function gridOf(features: readonly BooleanFeature[]): Grid {
+function gridOf(features: readonly BooleanFeature[], faults: ReadonlySet<BooleanFault>): Grid {
   const xs: number[] = [];
   const ys: number[] = [];
   const zs: number[] = [];
@@ -171,7 +180,8 @@ function gridOf(features: readonly BooleanFeature[]): Grid {
     ys.push(f.rect[1], f.rect[3]);
     zs.push(f.z[0], f.z[1]);
   }
-  const g = { xs: axisOf(xs), ys: axisOf(ys), zs: axisOf(zs) };
+  const whole = (v: number[]) => (faults.has("grid-whole-mm") ? v.map(Math.round) : v);
+  const g = { xs: axisOf(whole(xs)), ys: axisOf(whole(ys)), zs: axisOf(whole(zs)) };
   return { ...g, nx: g.xs.length - 1, ny: g.ys.length - 1, nz: g.zs.length - 1 };
 }
 
@@ -441,13 +451,14 @@ function lowOf(g: Grid, cells: Uint8Array): [number, number, number] {
  * under its shown name) is not empty and lies in one piece names the
  * keeper. Every piece is ranked by the first face reaching it, its share
  * of that face, its volume (larger first) and its lowest corner; with no
- * face wholly in one piece the first by rank keeps the id.
+ * face wholly in one piece the first by rank keeps the id. `holder`, when
+ * given, is the keeper whatever the walk finds (a Combine join's target).
  */
-function ranked(g: Grid, beforeFaces: readonly Face[], after: Solid, pieces: { of: Int32Array; count: number }, made: Made, faults: ReadonlySet<BooleanFault>): { keeper: number; order: number[] } {
+function ranked(g: Grid, beforeFaces: readonly Face[], after: Solid, pieces: { of: Int32Array; count: number }, made: Made, faults: ReadonlySet<BooleanFault>, holder = -1): { keeper: number; order: number[] } {
   const walk = [...beforeFaces].sort((x, y) => lexCompare(made(x.names[0]), made(y.names[0])) || lexCompare(x.low, y.low));
   const first = new Array<number>(pieces.count).fill(Infinity);
   const share = new Array<number>(pieces.count).fill(0);
-  let keeper = -1;
+  let keeper = holder;
   walk.forEach((f, w) => {
     const reach = new Map<number, number>();
     for (const c of f.patches) {
@@ -504,9 +515,10 @@ class Failed extends Error {}
  */
 export function rebuildBooleans(features: readonly BooleanFeature[], faults: Iterable<BooleanFault> = []): BooleanRebuild {
   const fs = new Set(faults);
-  const g = gridOf(features);
+  const g = gridOf(features, fs);
   const place = new Map<string, number>();
   features.forEach((f, i) => place.set(esc(f.id), i));
+  if (fs.has("made-by-id-text")) [...place.keys()].sort().forEach((id, i) => place.set(id, i));
   // Made order of a face name: its feature's place, then start, end, the sides by line.
   const roleOrder = new Map<string, number>();
   for (const f of features)
@@ -607,7 +619,9 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
     const rank = rankBy([body.solid, ...tools]);
     const after = settled(g, raw, rank, fs);
     const pieces = piecesOf(g, after.cells);
-    const { keeper, order } = ranked(g, facesOf(g, body.solid, KEEP_ORDER, NONE), after, pieces, made, fs);
+    // A Combine join: the piece holding the target keeps its id, whether or not any of its faces survive (a tool may swallow it).
+    const holder = op === "join" ? pieces.of[body.solid.cells.indexOf(1)] : -1;
+    const { keeper, order } = ranked(g, facesOf(g, body.solid, KEEP_ORDER, NONE), after, pieces, made, fs, holder);
     const out: Body[] = [{ id: body.id, solid: pieceSolid(after, pieces, keeper) }];
     order.forEach((p, i) => {
       // The planted F2 bug: a tool's apart lump keeps the tool's own id.
