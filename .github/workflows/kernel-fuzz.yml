@@ -114,7 +114,10 @@ jobs:
 
   kernel:
     # Coverage-guided fuzzing (libFuzzer via cargo-fuzz) of the kernel's
-    # entry points, one job per target, from the committed seeds.
+    # entry points, one job per target, from the committed seeds. The
+    # boolean target judges its own answers (inclusion-exclusion, seeded
+    # points), so it has no oracle steps: they build its pairs' parts,
+    # not its answers.
     needs: plan
     runs-on: ubuntu-latest
     environment: kernel
@@ -122,7 +125,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [extrude, sketch, placed]
+        target: [extrude, sketch, placed, boolean]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -149,7 +152,7 @@ jobs:
       # OpenCascade and checked against exact volume, area and crossings; a
       # disagreement is a failure folder with oracle-disagreements.txt.
       - name: Compare the fuzzed bodies with exact values and OpenCascade
-        if: always()
+        if: always() && matrix.target != 'boolean'
         env:
           FISSION_ORACLE_TARGET: ${{ matrix.target }}
           FISSION_ORACLE_CORPUS: fuzz/corpus
@@ -170,7 +173,7 @@ jobs:
       # The STEP check's self-test: the saved seeds' bodies with a face
       # flipped in every file, each of which the oracle must report.
       - name: The oracle catches a planted flipped face in every fuzz body's STEP file
-        if: always()
+        if: always() && matrix.target != 'boolean'
         env:
           FISSION_ORACLE_TARGET: ${{ matrix.target }}
           FISSION_ORACLE_OUT: ${{ runner.temp }}/planted.jsonl
