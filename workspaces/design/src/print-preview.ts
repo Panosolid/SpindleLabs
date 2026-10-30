@@ -29,6 +29,13 @@ export const SPEEDS: readonly number[] = [1, 10, 100, 1000];
 /** How long the default speed's time-lapse may take at most (s): the slowest speed that plays the whole print within it. */
 export const TARGET_SECONDS = 40;
 
+/**
+ * The most real time (ms) one frame of the time-lapse moves the clock on by: a slow computer (a frame every few
+ * seconds) plays slower rather than skipping layers and running to the end before Pause can be pressed, and a tab
+ * hidden for a minute carries on from where it was when it comes back.
+ */
+export const MAX_FRAME_MS = 100;
+
 /** The default speed: the slowest offered that plays `seconds` of clock in TARGET_SECONDS or less, else the fastest. */
 export function defaultSpeed(seconds: number): number {
   return SPEEDS.find((s) => seconds / s <= TARGET_SECONDS) ?? SPEEDS[SPEEDS.length - 1];
@@ -234,7 +241,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   };
   const tick = (now: number) => {
     if (!playing) return;
-    if (last) api.advance(now - last);
+    if (last) api.advance(Math.min(now - last, MAX_FRAME_MS));
     last = now;
     if (playing) frame = window.requestAnimationFrame(tick);
   };

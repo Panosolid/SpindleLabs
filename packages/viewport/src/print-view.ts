@@ -1,12 +1,15 @@
-// The print preview's 3D view (H2b, H2c): a slice's plastic drawn as the
-// printed lines themselves, each a lit box as wide as its line and as tall
-// as its layer, on the printer's plate, coloured by kind (walls, infill,
+// The print preview's 3D view (H2b, H2c, H2d): a slice's plastic drawn as
+// the printed lines themselves, each a rounded strand as wide as its line
+// and as tall as its layer (a bead's cross-section: flat-ish top and
+// bottom, round sides), on the printer's textured plate, lit by a sky and
+// ground light, a warm sun that casts soft shadows and a rim light (no
+// reflection map: it cost a phone too much for what it added), coloured by kind (walls, infill,
 // supports), with the nozzle where the clock says it is. It has its own
 // small scene and camera (orbit with a drag or one finger, pan with the
 // right button or two fingers, zoom with the wheel or a pinch), since the
 // preview opens over the Design view rather than in it.
 //
-// Every line is one instance of a single box, in printing order, so
+// Every line is one instance of a single strand, in printing order, so
 // showing the print up to a moment is only how many instances are drawn,
 // plus the line being laid, drawn on its own and cut where the nozzle is.
 // What to draw comes from `Playback` (core's print/playback.ts), the
@@ -46,14 +49,76 @@ export interface PrintView {
   dispose(): void;
 }
 
-/** The plastic as one instanced box per line, in printing order. */
+/** How many points go round a strand's cross-section: enough to look round when lit, few enough for a phone. */
+export const BEAD_SEGMENTS = 8;
+
+/**
+ * One strand of unit length, width and height, along x from −½ to ½, y from −½ to ½, its top at z 0 and
+ * its bottom at z −1 (a line's top is at its layer's height). Its cross-section is a squircle,
+ * drawn as y = ½·sgn(cos θ)·|cos θ|^½, z = −½ + ½·sgn(sin θ)·|sin θ|^½: flat-ish on top and
+ * bottom where it meets the layers above and below, round at the sides as a printed bead is. Smooth normals
+ * make it shade round; the ends are closed flat, so it is a closed solid.
+ */
+export function beadGeometry(segments = BEAD_SEGMENTS): THREE.BufferGeometry {
+  const n = Math.max(4, Math.floor(segments));
+  const ring: [number, number][] = [];
+  const normal: [number, number][] = [];
+  const root = (v: number) => Math.sign(v) * Math.sqrt(Math.abs(v));
+  // Start half a step round so the top and bottom are flat edges rather than points; then stretch so the
+  // widest points reach y ±½ and the flat top and bottom z 0 and −1 exactly, keeping the strand as wide and tall as the file says.
+  const angle = (k: number) => ((k + 0.5) / n) * 2 * Math.PI;
+  let wide = 0;
+  let tall = 0;
+  for (let k = 0; k < n; k++) {
+    wide = Math.max(wide, Math.abs(root(Math.cos(angle(k)))));
+    tall = Math.max(tall, Math.abs(root(Math.sin(angle(k)))));
+  }
+  for (let k = 0; k < n; k++) {
+    const t = angle(k);
+    ring.push([(0.5 * root(Math.cos(t))) / wide, -0.5 + (0.5 * root(Math.sin(t))) / tall]);
+    // The cross-section's outward normal, near enough for shading: the circle's, pulled towards the flat top and bottom.
+    const ny = Math.cos(t) * 0.8;
+    const nz = Math.sin(t) * 1.25;
+    const l = Math.hypot(ny, nz);
+    normal.push([ny / l, nz / l]);
+  }
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  // Sides: two rings (x −½ and ½), one quad between each pair of neighbouring points.
+  for (const x of [-0.5, 0.5])
+    for (let k = 0; k < n; k++) {
+      positions.push(x, ring[k][0], ring[k][1]);
+      normals.push(0, normal[k][0], normal[k][1]);
+    }
+  for (let k = 0; k < n; k++) {
+    const a = k, b = (k + 1) % n;
+    indices.push(a, b, n + b, a, n + b, n + a);
+  }
+  // Flat ends, a fan from each end's first point, facing −x and +x.
+  for (const [x, nx] of [[-0.5, -1], [0.5, 1]] as const) {
+    const base = positions.length / 3;
+    for (let k = 0; k < n; k++) {
+      positions.push(x, ring[k][0], ring[k][1]);
+      normals.push(nx, 0, 0);
+    }
+    for (let k = 1; k < n - 1; k++) indices.push(...(nx < 0 ? [base, base + k + 1, base + k] : [base, base + k, base + k + 1]));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  g.setIndex(indices);
+  return g;
+}
+
+/** The plastic as one instanced strand per line, in printing order. */
 function plasticMesh(p: Playback): { mesh: THREE.InstancedMesh; index: Int32Array } {
-  const box = new THREE.BoxGeometry(1, 1, 1);
-  // The box's base sits on z 0, so a line's box stands on the layer below and reaches the line's own height.
-  box.translate(0, 0, -0.5);
-  const material = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 });
+  const box = beadGeometry();
+  const material = new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0 });
   const mesh = new THREE.InstancedMesh(box, material, Math.max(1, p.plasticCount));
   mesh.frustumCulled = false;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   const index = new Int32Array(p.plasticCount);
   const m = new THREE.Matrix4();
   const colour = new THREE.Color();
@@ -114,28 +179,89 @@ function lineMatrix(p: Playback, i: number, along: number, out: THREE.Matrix4) {
   out.compose(a, q, s);
 }
 
-/** The nozzle: a small brass cone pointing down at the plastic under a slim heater block, kept small so it hides little of the print. */
+/** The nozzle: a small polished brass cone pointing down at the plastic under a slim heater block, kept small so it hides little of the print, with a warm glow at its tip. */
 function nozzleMesh(): THREE.Object3D {
   const g = new THREE.Group();
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(1.2, 3.5, 24), new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.8, roughness: 0.3 }));
+  const brass = new THREE.MeshStandardMaterial({ color: 0xd4a93a, metalness: 0.55, roughness: 0.3 });
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(1.2, 3.5, 32), brass);
   tip.rotation.x = -Math.PI / 2; // the cone's point from +y to −z
   tip.position.z = 1.75;
-  const block = new THREE.Mesh(new THREE.BoxGeometry(6, 6, 3), new THREE.MeshStandardMaterial({ color: 0x8a9099, metalness: 0.5, roughness: 0.45 }));
+  const block = new THREE.Mesh(new THREE.BoxGeometry(6, 6, 3), new THREE.MeshStandardMaterial({ color: 0x9aa1ab, metalness: 0.3, roughness: 0.45 }));
   block.position.z = 5;
-  g.add(tip, block);
+  const glow = new THREE.PointLight(0xff9a4a, 6, 12, 2);
+  glow.position.z = 0.6;
+  for (const m of [tip, block]) m.castShadow = true;
+  g.add(tip, block, glow);
   return g;
 }
 
-/** The plate: a dark textured-PEI square with a 10 mm grid, its front-left corner at the origin like the printer's. */
+/** The textured plate's look, drawn once: dark speckled PEI, a fine 10 mm grid and a brighter line every 50 mm. */
+function plateTexture(): THREE.Texture | null {
+  if (typeof document === "undefined") return null;
+  const size = 2048;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  if (!g) return null;
+  g.fillStyle = "#353941";
+  g.fillRect(0, 0, size, size);
+  // The speckle: a fixed pattern (seeded), so every opening looks the same.
+  let seed = 12345;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let k = 0; k < 60000; k++) {
+    const v = 50 + Math.floor(rand() * 14);
+    g.fillStyle = `rgb(${v},${v + 2},${v + 6})`;
+    g.fillRect(rand() * size, rand() * size, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  const step = size / (PLATE_MM / 10);
+  for (let k = 0; k <= PLATE_MM / 10; k++) {
+    const major = k % 5 === 0;
+    g.strokeStyle = major ? "rgba(180, 195, 215, 0.3)" : "rgba(160, 175, 195, 0.13)";
+    g.lineWidth = major ? 3 : 2;
+    g.beginPath();
+    g.moveTo(k * step, 0);
+    g.lineTo(k * step, size);
+    g.moveTo(0, k * step);
+    g.lineTo(size, k * step);
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+/** The plate: a 4 mm thick textured-PEI slab with the grid, its top at z 0 and its front-left corner at the origin like the printer's. */
 function plateMesh(): THREE.Object3D {
   const g = new THREE.Group();
-  const plate = new THREE.Mesh(new THREE.PlaneGeometry(PLATE_MM, PLATE_MM), new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.9 }));
-  plate.position.set(PLATE_MM / 2, PLATE_MM / 2, -0.01);
-  const grid = new THREE.GridHelper(PLATE_MM, PLATE_MM / 10, 0x4a515c, 0x3a4048);
-  grid.rotation.x = Math.PI / 2;
-  grid.position.set(PLATE_MM / 2, PLATE_MM / 2, 0);
-  g.add(plate, grid);
+  const map = plateTexture();
+  const top = new THREE.MeshStandardMaterial({ color: map ? 0xffffff : 0x2b2f36, map, roughness: 0.85, metalness: 0.1 });
+  const edge = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.6, metalness: 0.2 });
+  // A box's faces in order: +x, −x, +y, −y, +z (the top), −z.
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(PLATE_MM, PLATE_MM, 4), [edge, edge, edge, edge, top, edge]);
+  plate.position.set(PLATE_MM / 2, PLATE_MM / 2, -2.01);
+  plate.receiveShadow = true;
+  g.add(plate);
   return g;
+}
+
+/** The backdrop: a soft vertical fade from slate to near black, so the print stands out. */
+function backdrop(): THREE.Texture | THREE.Color {
+  if (typeof document === "undefined") return new THREE.Color(0x1b1e23);
+  const c = document.createElement("canvas");
+  c.width = 4;
+  c.height = 256;
+  const g = c.getContext("2d");
+  if (!g) return new THREE.Color(0x1b1e23);
+  const fade = g.createLinearGradient(0, 0, 0, 256);
+  fade.addColorStop(0, "#3a4150");
+  fade.addColorStop(0.55, "#1d2128");
+  fade.addColorStop(1, "#0e1013");
+  g.fillStyle = fade;
+  g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 /** The preview's view of `p`, drawn into a new canvas in `host`. Needs WebGL; throws when the browser has none. */
@@ -143,6 +269,14 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x1b1e23);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.85;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // The sun doesn't move with the camera, so its shadows are only worked out again when the print shown changes.
+  renderer.shadowMap.autoUpdate = false;
+  // A phone (a coarse pointer) gets a smaller shadow map: a quarter of the memory and work.
+  const phone = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const canvas = renderer.domElement;
   canvas.className = "print-view-canvas";
   host.append(canvas);
@@ -151,13 +285,20 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = false;
-  const key = new THREE.DirectionalLight(0xffffff, 2.4);
-  key.position.set(-1, -2, 3);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.7);
+  const sky = backdrop();
+  scene.background = sky;
+  const key = new THREE.DirectionalLight(0xfff4e6, 1.9);
+  key.castShadow = true;
+  key.shadow.mapSize.set(phone ? 1024 : 2048, phone ? 1024 : 2048);
+  key.shadow.radius = 3;
+  const fill = new THREE.DirectionalLight(0xcfe0ff, 0.45);
   fill.position.set(2, 1, 1);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x404850, 0.8), key, fill, plateMesh());
+  const rim = new THREE.DirectionalLight(0xffffff, 0.6);
+  rim.position.set(1, 2, 1.2);
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a332c, 0.9), key, key.target, fill, rim, plateMesh());
   const { mesh, index } = plasticMesh(p);
-  const partial = new THREE.Mesh(mesh.geometry, new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }));
+  const partial = new THREE.Mesh(mesh.geometry, new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0 }));
+  partial.castShadow = true;
   const nozzle = nozzleMesh();
   const travels = travelPieces(p);
   const travelGeometry = new THREE.BufferGeometry();
@@ -178,9 +319,33 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   }
   if (bounds.isEmpty()) bounds.set(new THREE.Vector3(PLATE_MM / 2 - 10, PLATE_MM / 2 - 10, 0), new THREE.Vector3(PLATE_MM / 2 + 10, PLATE_MM / 2 + 10, 20));
 
+  // The sun from the front left and high up, its shadow box just round the part (with room for the nozzle above it).
+  {
+    const centre = bounds.getCenter(new THREE.Vector3());
+    const r = Math.max(bounds.getSize(new THREE.Vector3()).length() / 2, 10) + 8;
+    key.position.copy(centre).add(new THREE.Vector3(-0.45, -0.7, 1).normalize().multiplyScalar(r * 3));
+    key.target.position.copy(centre);
+    const cam = key.shadow.camera;
+    cam.left = cam.bottom = -r;
+    cam.right = cam.top = r;
+    cam.near = r;
+    cam.far = r * 5;
+    cam.updateProjectionMatrix();
+    // Small biases in millimetres: a strand is 0.2 mm tall, so anything bigger would lift the shadows off it.
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.02;
+  }
+
   let frameRequested = false;
+  let shadowsStale = true;
+  let shadowLayer = Number.NaN;
+  let shadowLaid = 0;
   const draw = () => {
     frameRequested = false;
+    if (shadowsStale) {
+      renderer.shadowMap.needsUpdate = true;
+      shadowsStale = false;
+    }
     renderer.render(scene, camera);
   };
   const redraw = () => {
@@ -208,6 +373,14 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
       }
       nozzle.visible = at !== null;
       if (at) nozzle.position.set(at.nozzle[0], at.nozzle[1], at.nozzle[2]);
+      // While it plays, the shadows are worked out again once a layer, not every frame: the line being laid casts next
+      // to nothing, and a phone keeps its frame rate.
+      const layer = at ? at.layer : -1;
+      if (layer !== shadowLayer || mesh.count < shadowLaid) shadowsStale = true;
+      if (shadowsStale) {
+        shadowLayer = layer;
+        shadowLaid = mesh.count;
+      }
       redraw();
     },
     setShown(kinds, travel) {
@@ -221,6 +394,7 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
       }
       mesh.instanceMatrix.needsUpdate = true;
       travelLines.visible = travel;
+      shadowsStale = true;
       view.setTime(time);
     },
     frame() {
@@ -255,9 +429,14 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
       scene.traverse((o) => {
         if (o instanceof THREE.Mesh && o !== mesh && o !== partial) {
           o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
+          // The plate has a material for each face (its top textured).
+          for (const mat of [o.material].flat() as THREE.MeshStandardMaterial[]) {
+            mat.map?.dispose();
+            mat.dispose();
+          }
         }
       });
+      if (sky instanceof THREE.Texture) sky.dispose();
       renderer.dispose();
       canvas.remove();
     },

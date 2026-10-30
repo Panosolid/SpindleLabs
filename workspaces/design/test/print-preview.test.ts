@@ -10,7 +10,7 @@ import { checkLayers, checkPrinter, checkProblems } from "../../../packages/test
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { partDocument } from "../src/document.ts";
-import { chipKinds, defaultSpeed, kindsIn, layerWords, NO_SUPPORTS, openPrintPreview, presetKinds, type PreviewView } from "../src/print-preview.ts";
+import { chipKinds, defaultSpeed, kindsIn, layerWords, MAX_FRAME_MS, NO_SUPPORTS, openPrintPreview, presetKinds, type PreviewView } from "../src/print-preview.ts";
 import { PRINT_DEFAULTS, sliceBodies } from "../src/slice-print.ts";
 
 const A = Math.PI * 0.875 * 0.875;
@@ -115,6 +115,31 @@ test("Play starts from the first move at the end, moves at the chosen speed and 
   t.preview.advance(Number.NaN);
   t.preview.advance(-5);
   assert.equal(t.preview.time, 2.04);
+  t.preview.close();
+  await t.window.happyDOM.close();
+});
+
+test("regression: a long gap between frames moves the time-lapse on by one frame's worth at most, never to its end", async () => {
+  // Found by the H2d2 browser test: a frame that took 2.7 s (a computer drawing without a graphics card) moved the
+  // clock 27 s at 10×, so the print ran to its end while the user went to press Pause, and the press started it again.
+  // A tab hidden for a minute did the same when it came back. Each frame now moves on at most MAX_FRAME_MS of real time.
+  const t = panel(TWO_LAYERS);
+  const frames: FrameRequestCallback[] = [];
+  t.window.requestAnimationFrame = ((f: FrameRequestCallback) => frames.push(f)) as typeof t.window.requestAnimationFrame;
+  const tick = (now: number) => frames.shift()!(now);
+  t.$("print-preview-play").click();
+  assert.equal(t.preview.time, 0);
+  tick(1000); // the first frame only notes the time
+  // 60 s later at 1×: 0.1 s of clock (MAX_FRAME_MS is 100), not 60 s (past the 2.04 s end).
+  tick(61000);
+  assert.equal(MAX_FRAME_MS, 100);
+  assert.ok(Math.abs(t.preview.time - 0.1) < 1e-12, `${t.preview.time}`);
+  assert.equal(t.preview.playing, true);
+  // At the cap's edges: a 90 ms frame (0.9×) moves 0.09 s, all of it; a 110 ms frame (1.1×) moves the cap's 0.1 s.
+  tick(61090);
+  assert.ok(Math.abs(t.preview.time - 0.19) < 1e-12, `${t.preview.time}`);
+  tick(61200);
+  assert.ok(Math.abs(t.preview.time - 0.29) < 1e-12, `${t.preview.time}`);
   t.preview.close();
   await t.window.happyDOM.close();
 });
