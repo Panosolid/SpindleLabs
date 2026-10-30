@@ -137,12 +137,28 @@ test("rule 5: two faces meeting twice are told apart by the faces at the ends (a
   const second = resolveEdge(r, `${pair};ends:face:feature-2/side:line-2,face:feature-3/side:line-2`);
   assert.ok("found" in first && first.found.length === 10);
   assert.ok("found" in second && second.found.length === 10);
-  // The pair alone names neither.
-  assert.ok("lost" in resolveEdge(r, pair));
+  // The pair alone names neither: a reference made while they met once
+  // (the U before its cut) fits both, so it is ambiguous, never guessed
+  // (it said "lost" until the 34a5 review: the edge is not gone, it is two).
+  assert.deepEqual(resolveEdge(r, pair), { ambiguous: 2 });
   // Edges, counted by hand: the block's 12; the U's top 4 and outer
   // uprights 4; each foot's 4 on the block's top (8); the cut's ceiling 4
   // and its walls' uprights 4: 36.
   assert.equal(r.bodies[0].edges.length, 36);
+});
+
+test("rule 5: an edge reference whose two faces come to meet twice is ambiguous, not lost", () => {
+  // Regression (fresh-eyes review, 34a5): a bar x 0–10, y 0–2, z 0–2, and
+  // an Extrude cut notch x 4–6, y −1–1, z 1–3 in its top front edge. The
+  // top (z = 2, the end cap) and the front (y = 0, line 1's side) both stay
+  // one face each (the notch bites a corner out of each), and now meet
+  // along x 0–4 and x 6–10: two edges, 4 long each. A reference made on
+  // the bar, by the pair alone, fits both.
+  const r = rebuildBooleans([block("feature-1", [0, 0, 10, 2], [0, 2]), block("feature-2", [4, -1, 6, 1], [1, 3], "cut", ["body:feature-1"])]);
+  const pair = "edge:face:feature-1/end+face:feature-1/side:line-1";
+  assert.equal(r.bodies.length, 1);
+  assert.deepEqual(r.bodies[0].edges.filter((e) => e.name?.startsWith(`${pair};`)).map((e) => e.length), [4, 4]);
+  assert.deepEqual(resolveEdge(r, pair), { ambiguous: 2 });
 });
 
 test("rule 5: a pair whose end faces tie too is shared, never guessed", () => {

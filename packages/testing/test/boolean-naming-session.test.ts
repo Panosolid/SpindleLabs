@@ -109,26 +109,27 @@ test("the sessions are the same for the same seed", () => {
   assert.notDeepEqual(randomBooleanSession(7n, STEPS).features, randomBooleanSession(8n, STEPS).features);
 });
 
-/** The first seed whose session each planted fault makes disagree (found by searching seeds 0–299 once, kept so it replays). */
+/** The first seed whose session each planted fault makes disagree (found by searching seeds 0–39 once, kept so it replays); each is caught by at least 2 of the 40. */
 const CAUGHT_AT: Record<BooleanFault, number> = {
-  "keep-largest": 6,
-  "keep-first-reached": 18,
-  "number-by-volume": 10,
-  "number-per-body": 34,
+  "keep-largest": 1,
+  "keep-first-reached": 4,
+  "number-by-volume": 12,
+  "number-per-body": 23,
   "join-latest": 4,
-  "tool-keeps-id": 6,
-  "wall-target-name": 0,
-  "merge-tool-first": 1,
-  "merge-one-name": 1,
-  "empty-allowed": 2,
-  "pinch-allowed": 2,
+  "tool-keeps-id": 0,
+  "wall-target-name": 1,
+  "merge-tool-first": 4,
+  "merge-one-name": 4,
+  "empty-allowed": 0,
+  "pinch-allowed": 13,
   "tag-all-neighbours": 0,
-  "split-silent": 10,
-  "largest-first": 10,
-  "guess-shared": 1,
-  "edge-no-ends": 7,
+  "split-silent": 4,
+  "largest-first": 4,
+  "guess-shared": 0,
+  "edge-no-ends": 0,
   "made-by-id-text": 0,
   "grid-whole-mm": 0,
+  "float-ties": 16,
 };
 
 test("every planted fault in the model makes a seeded session disagree with the unit-cell count", () => {
@@ -140,12 +141,13 @@ test("every planted fault in the model makes a seeded session disagree with the 
   }
 });
 
-test("an order taken from ids' text is caught by renaming, and coordinates taken to whole millimetres by moving", () => {
+test("an order taken from ids' text is caught by renaming, coordinates taken to whole millimetres by moving, and ties left to rounding by the inexact move", () => {
+  const by: Record<string, RegExp> = { "made-by-id-text": /renamed/, "grid-whole-mm": /moved/, "float-ties": /scaled by 0\.1/ };
+  assert.deepEqual(Object.keys(by), [...ORDER_FAULTS]);
   for (const fault of ORDER_FAULTS) {
     const s = randomBooleanSession(BigInt(CAUGHT_AT[fault]), STEPS);
     assert.equal(invarianceDifference(s), null);
-    const d = invarianceDifference(s, [fault]);
-    assert.match(d ?? "", fault === "made-by-id-text" ? /renamed/ : /moved/);
+    assert.match(invarianceDifference(s, [fault]) ?? "", by[fault]);
   }
 });
 

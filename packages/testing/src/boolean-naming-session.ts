@@ -8,10 +8,12 @@
 //   made so far (faces by name, with or without a tag and an origin, and
 //   edges by name) found the same way;
 // - names are about the part, not where it is or what its ids are called:
-//   the same session moved and scaled (by 2.5, and 1000.25 mm out) gives the
-//   same names, with volumes, areas and lengths scaled; the same session
-//   with every feature's and line's id renamed gives the same names with the
-//   ids renamed back (lists the rules sort by text sorted again).
+//   the same session moved and scaled (MOVES: once exactly in binary, once
+//   not, so rounding is in play) gives the same names and finds the same
+//   faces and edges for its references, with volumes, areas and lengths
+//   scaled; the same session with every feature's and line's id renamed
+//   gives the same names and finds, with the ids renamed back (lists the
+//   rules sort by text sorted again).
 //
 // `firstDifference` says where the two disagree, in words, or null; the
 // planted faults (BOOLEAN_FAULTS) must each make some seed disagree
@@ -27,8 +29,9 @@ import {
   type BooleanFeature,
   type BooleanRebuild,
   type CombineFeature,
+  type Rect,
 } from "./boolean-naming-model.ts";
-import { countOnCells, resolveOnCells, type CellsRebuild } from "./boolean-naming-cells.ts";
+import { countOnCells, resolveEdgeOnCells, resolveOnCells, type CellsRebuild } from "./boolean-naming-cells.ts";
 
 /** A reference a session made: a face by one of its names (with its tag when made on a piece, and the sketch's origin), or an edge by name. */
 export type SessionReference = { kind: "face"; name: string; tag?: readonly string[]; origin?: readonly [number, number, number] } | { kind: "edge"; name: string };
@@ -89,20 +92,40 @@ export function randomBooleanSession(seed: bigint, steps: number): BooleanSessio
     const id = `feature-${features.length + 1}`;
     const choice = r.next();
     const listed = () => (r.next() < 0.05 ? ["body:nowhere"] : some(r, ids, 2));
-    if (ids.length === 0 || choice < 0.26) features.push(randomBlock(r, id, "new"));
-    else if (choice < 0.42) features.push(randomBlock(r, id, "join", listed()));
-    else if (choice < 0.62) features.push(randomBlock(r, id, "cut", listed()));
-    else if (choice < 0.7) {
+    if (ids.length === 0 || choice < 0.24) features.push(randomBlock(r, id, "new"));
+    else if (choice < 0.38) features.push(randomBlock(r, id, "join", listed()));
+    else if (choice < 0.54) features.push(randomBlock(r, id, "cut", listed()));
+    else if (choice < 0.66) {
       // A slot through every body there is: an Extrude cut listing them all, numbering pieces on across them.
       features.push(randomBlock(r, id, "cut", some(r, ids, ids.length), true));
-    } else if (choice < 0.78 && features.length + 3 <= steps) {
-      // Two slots made as bodies, then cut from one body by a Combine: three or more pieces from one body.
-      const target = pick(r, ids);
-      features.push(randomBlock(r, id, "new", undefined, true));
-      features.push(randomBlock(r, `feature-${features.length + 1}`, "new", undefined, true));
+    } else if (choice < 0.8 && features.length + 4 <= steps) {
+      // Two slots made as bodies, then cut from one body by a Combine: three or more pieces from one body. A
+      // third of the time the body is a new bar the slots split evenly, so pieces tie on share and volume; a
+      // third a new tower the slots split flat, its middle piece (first reached by the sides) often the biggest.
+      const kind = int(r, 0, 2);
+      const x = int(r, 0, 1);
+      const y = int(r, 0, 6);
+      const z = int(r, 0, 4);
+      const slot = (rect: Rect, zs: readonly [number, number]): BlockFeature => ({ kind: "block", id: `feature-${features.length + 1}`, rect, z: zs, operation: "new" });
+      let target = `body:${id}`;
+      if (kind === 0) {
+        features.push({ kind: "block", id, rect: [x, y, x + 8, y + int(r, 1, 2)], z: [z, z + int(r, 1, 2)], operation: "new" });
+        features.push(slot([x + 2, -1, x + 3, 9], [-1, 7]));
+        features.push(slot([x + 5, -1, x + 6, 9], [-1, 7]));
+      } else if (kind === 1) {
+        const a = int(r, 1, 2);
+        const b = int(r, a + 2, 4);
+        features.push({ kind: "block", id, rect: [x, y, x + int(r, 1, 4), y + int(r, 1, 2)], z: [0, 6], operation: "new" });
+        features.push(slot([-1, -1, 9, 9], [a, a + 1]));
+        features.push(slot([-1, -1, 9, 9], [b, b + 1]));
+      } else {
+        target = pick(r, ids);
+        features.push(randomBlock(r, id, "new", undefined, true));
+        features.push(randomBlock(r, `feature-${features.length + 1}`, "new", undefined, true));
+      }
       const n = features.length;
       features.push({ kind: "combine", id: `feature-${n + 1}`, target, tools: [`body:feature-${n - 1}`, `body:feature-${n}`], operation: "cut", keepTools: r.next() < 0.25 });
-    } else if (choice < 0.82 && features.length + 4 <= steps) {
+    } else if (choice < 0.85 && features.length + 4 <= steps) {
       // A small block swallowed by a bigger one, joined by a Combine that also takes a block apart: the target's faces all vanish, and the piece holding it must still keep its id.
       const x = int(r, 1, 2);
       const y = int(r, 1, 6);
@@ -190,7 +213,7 @@ export function shapeDifference(a: Shape, b: Shape, labels: readonly [string, st
 function modelFinds(r: BooleanRebuild, ref: SessionReference, faults: readonly BooleanFault[]): string {
   if (ref.kind === "edge") {
     const e = resolveEdge(r, ref.name);
-    return "lost" in e ? "lost" : `${e.body} ${e.found.name}`;
+    return "lost" in e ? "lost" : "ambiguous" in e ? `ambiguous ${e.ambiguous}` : `${e.body} ${e.found.name}`;
   }
   const f = resolveFace(r, ref, faults);
   if ("lost" in f) return "lost";
@@ -200,8 +223,8 @@ function modelFinds(r: BooleanRebuild, ref: SessionReference, faults: readonly B
 
 function cellsFinds(r: CellsRebuild, ref: SessionReference): string {
   if (ref.kind === "edge") {
-    const hits = r.bodies.flatMap((b) => b.edges.filter((e) => e.name === ref.name).map(() => `${b.id} ${ref.name}`));
-    return hits.length === 1 ? hits[0] : "lost";
+    const e = resolveEdgeOnCells(r, ref.name);
+    return e === "lost" ? "lost" : "ambiguous" in e ? `ambiguous ${e.ambiguous}` : `${e.body} ${e.full}`;
   }
   const { found, warned } = resolveOnCells(r, ref);
   if (found === "lost") return "lost";
@@ -245,16 +268,16 @@ export function moved(features: readonly BooleanFeature[], scale: number, by: re
 }
 
 /** The model's answer for a moved session put back: places and corners back, volumes, areas and lengths unscaled. */
-function unmovedShape(r: BooleanRebuild, scale: number, by: readonly [number, number, number]): Shape {
-  const back = (p: readonly number[]) => p.map((x, i) => (x - by[i]) / scale);
+function unmovedShape(r: BooleanRebuild, scale: number, by: readonly [number, number, number], round: (x: number) => number): Shape {
+  const back = (p: readonly number[]) => p.map((x, i) => round((x - by[i]) / scale));
   const axis = { x: 0, y: 1, z: 2 } as const;
   return {
     bodies: r.bodies.map((b) => ({
       id: b.id,
-      volume: b.volume / scale ** 3,
+      volume: round(b.volume / scale ** 3),
       low: back(b.low),
-      faces: b.faces.map((f) => faceText({ ...f, at: (f.at - by[axis[f.facing[1] as "x" | "y" | "z"]]) / scale, area: f.area / scale ** 2, low: back(f.low) })),
-      edges: b.edges.map((e) => edgeText({ ...e, length: e.length / scale })).sort(),
+      faces: b.faces.map((f) => faceText({ ...f, at: round((f.at - by[axis[f.facing[1] as "x" | "y" | "z"]]) / scale), area: round(f.area / scale ** 2), low: back(f.low) })),
+      edges: b.edges.map((e) => edgeText({ ...e, length: round(e.length / scale) })).sort(),
     })),
     failed: [...r.failed.keys()].sort(),
   };
@@ -312,8 +335,19 @@ function sortedShape(r: BooleanRebuild): Shape {
   return namesBackShape(r, (id) => id);
 }
 
-export const SCALE = 2.5;
-export const MOVE: readonly [number, number, number] = [1000.25, -3.5, 0.125];
+/**
+ * The moves the sessions are checked under: one exact in binary (scaled by
+ * 2.5, 1000.25 mm out), whose answers must be equal to the last bit, and
+ * one that is not (scaled by 0.1, moved 0.3, 1000.1 and −7.7 mm), whose
+ * names must still be equal and its sizes equal to a millionth of a mm,
+ * so rounding can't decide a name.
+ */
+export const MOVES: readonly { scale: number; by: readonly [number, number, number]; exact: boolean }[] = [
+  { scale: 2.5, by: [1000.25, -3.5, 0.125], exact: true },
+  { scale: 0.1, by: [0.3, 1000.1, -7.7], exact: false },
+];
+const toMillionth = (x: number) => Math.round(x * 1e6) / 1e6 + 0;
+
 /**
  * New ids for every feature and line id in the session, in reverse text
  * order of where they first appear (so an order taken from ids' text turns
@@ -335,11 +369,33 @@ export function strangeIds(features: readonly BooleanFeature[]): Map<string, str
 /** The session moved and scaled, and renamed, against itself: the first disagreement in words, or null. */
 export function invarianceDifference(s: BooleanSession, faults: readonly BooleanFault[] = []): string | null {
   const plain = rebuildBooleans(s.features, faults);
-  const movedDiff = shapeDifference(modelShape(plain), unmovedShape(rebuildBooleans(moved(s.features, SCALE, MOVE), faults), SCALE, MOVE), ["as made", "moved"]);
-  if (movedDiff !== null) return `seed ${s.seed}, moved: ${movedDiff}`;
+  const asMade = (ref: SessionReference) => modelFinds(plain, ref, faults);
+  for (const { scale, by, exact } of MOVES) {
+    const round = exact ? (x: number) => x : toMillionth;
+    const there = rebuildBooleans(moved(s.features, scale, by), faults);
+    const label = `moved by ${by.join(", ")} scaled by ${scale}`;
+    const d = shapeDifference(unmovedShape(plain, 1, [0, 0, 0], round), unmovedShape(there, scale, by, round), ["as made", "moved"]);
+    if (d !== null) return `seed ${s.seed}, ${label}: ${d}`;
+    for (const { ref } of s.references) {
+      const movedRef: SessionReference = ref.kind === "face" && ref.origin ? { ...ref, origin: ref.origin.map((x, i) => x * scale + by[i]) as [number, number, number] } : ref;
+      const [m, t] = [asMade(ref), modelFinds(there, movedRef, faults)];
+      if (m !== t) return `seed ${s.seed}, ${label}: ${ref.kind} reference ${ref.name}: as made ${m}, moved ${t}`;
+    }
+  }
   const to = strangeIds(s.features);
   const from = new Map([...to].map(([a, b]) => [b, a]));
   const back = (id: string) => from.get(id) ?? id;
-  const renamedDiff = shapeDifference(sortedShape(plain), namesBackShape(rebuildBooleans(renamed(s.features, (id) => to.get(id) ?? id), faults), back), ["as made", "renamed"]);
-  return renamedDiff === null ? null : `seed ${s.seed}, renamed: ${renamedDiff}`;
+  const forth = (id: string) => to.get(id) ?? id;
+  const renamedRebuild = rebuildBooleans(renamed(s.features, forth), faults);
+  const renamedDiff = shapeDifference(sortedShape(plain), namesBackShape(renamedRebuild, back), ["as made", "renamed"]);
+  if (renamedDiff !== null) return `seed ${s.seed}, renamed: ${renamedDiff}`;
+  // A found answer's names put back (and lists sorted again) word by word; the ids inside names are encoded, so no space is in one.
+  const wordsBack = (text: string, f: (id: string) => string) => text.split(" ").map((w) => nameBack(w, f)).join(" ");
+  for (const { ref } of s.references) {
+    const renamedRef: SessionReference =
+      ref.kind === "edge" ? { kind: "edge", name: nameBack(ref.name, forth) } : { ...ref, name: nameBack(ref.name, forth), ...(ref.tag ? { tag: ref.tag.map((n) => nameBack(n, forth)).sort() } : {}) };
+    const [m, t] = [wordsBack(asMade(ref), (id) => id), wordsBack(modelFinds(renamedRebuild, renamedRef, faults), back)];
+    if (m !== t) return `seed ${s.seed}, renamed: ${ref.kind} reference ${ref.name}: as made ${m}, renamed ${t}`;
+  }
+  return null;
 }

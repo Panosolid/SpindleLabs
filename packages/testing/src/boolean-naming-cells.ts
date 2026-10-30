@@ -151,7 +151,7 @@ function squareLow(s: string): P {
 const lowest = (ps: readonly P[]): P => ps.reduce((m, p) => (before(p, m) < 0 ? p : m));
 
 /** Is there an edge or a corner where only edges or corners touch? Around each lattice point, the filled cells of the eight, and the empty ones, must each be one group through shared sides. */
-function pinches(filled: ReadonlySet<string>): boolean {
+function pinches(filled: ReadonlySet<string>, counts: (around: readonly string[]) => boolean = () => true): boolean {
   const points = new Set<string>();
   for (const c of filled) {
     const p = p3(c);
@@ -159,7 +159,8 @@ function pinches(filled: ReadonlySet<string>): boolean {
   }
   for (const pt of points) {
     const p = p3(pt);
-    const around = [...Array(8).keys()].map((b) => filled.has(k3([p[0] - 1 + (b & 1), p[1] - 1 + ((b >> 1) & 1), p[2] - 1 + (b >> 2)])));
+    const cells = [...Array(8).keys()].map((b) => k3([p[0] - 1 + (b & 1), p[1] - 1 + ((b >> 1) & 1), p[2] - 1 + (b >> 2)]));
+    const around = cells.map((c) => filled.has(c));
     for (const want of [true, false]) {
       const members = around.flatMap((x, b) => (x === want ? [b] : []));
       if (members.length === 0) continue;
@@ -173,7 +174,7 @@ function pinches(filled: ReadonlySet<string>): boolean {
             grew = true;
           }
       }
-      if (reached.size !== members.length) return true;
+      if (reached.size !== members.length && counts(cells)) return true;
     }
   }
   return false;
@@ -206,6 +207,9 @@ function lumps(filled: ReadonlySet<string>): Set<string>[] {
 
 class Refused extends Error {}
 
+/** No lone surrogate: text that can be written into a name. */
+const wellFormed = (id: string) => !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(id);
+
 export interface CellsBody {
   id: string;
   volume: number;
@@ -236,6 +240,7 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
     place.set(f.id, i);
     if (f.kind !== "block") return;
     const lines = f.lines ?? ["line-1", "line-2", "line-3", "line-4"];
+    if (![f.id, ...lines].every((x) => wellFormed(x))) return;
     made.set(`face:${esc(f.id)}/start`, [i, 0]);
     made.set(`face:${esc(f.id)}/end`, [i, 1]);
     lines.forEach((l, j) => made.set(`face:${esc(f.id)}/side:${esc(l)}`, [i, 2 + j]));
@@ -335,7 +340,7 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
       if (f.kind === "block") {
         const [x0, y0, x1, y1] = f.rect;
         const lines = f.lines ?? ["line-1", "line-2", "line-3", "line-4"];
-        if (!(x0 < x1 && y0 < y1 && f.z[0] < f.z[1]) || new Set(lines).size !== 4) throw new Refused();
+        if (!(x0 < x1 && y0 < y1 && f.z[0] < f.z[1]) || new Set(lines).size !== 4 || ![f.id, ...lines].every((x) => wellFormed(x))) throw new Refused();
         const block = blockCells(f);
         if (f.operation === "new") {
           bodies.push({ id: `body:${esc(f.id)}`, cells: block });
@@ -352,7 +357,11 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
           const order = [...inputs.map((b) => b.cells), block];
           let raw = order[0];
           for (const s of order.slice(1)) raw = apply(raw, s, "join");
-          if (pinches(raw.filled)) throw new Refused();
+          // An edge or corner touch is refused where the extrude is one of the cells round it, or where the cells round it end up one body;
+          // listed bodies that touched that way before and stay apart are not this feature's doing.
+          const joined = lumps(raw.filled);
+          const lumpOf = (c: string) => joined.findIndex((l) => l.has(c));
+          if (pinches(raw.filled, (cells) => cells.some((c) => block.filled.has(c)) || new Set(cells.filter((c) => raw.filled.has(c)).map(lumpOf)).size === 1)) throw new Refused();
           const after = settle(raw, fromParticipants(order));
           const out = lumps(after.filled).map((l) => {
             const holding = inputs.find((b) => [...b.cells.filled].some((c) => l.has(c)));
@@ -372,6 +381,7 @@ export function countOnCells(features: readonly BooleanFeature[]): CellsRebuild 
         bodies = bodies.flatMap((b) => out.get(b) ?? [b]);
         continue;
       }
+      if (!wellFormed(f.id)) throw new Refused();
       const target = get(f.target);
       const tools = f.tools.map(get);
       if (tools.length === 0 || tools.includes(target) || new Set(tools).size < tools.length) throw new Refused();
@@ -591,4 +601,15 @@ export function resolveOnCells(r: CellsRebuild, ref: { name: string; tag?: reado
   const most = Math.max(...carrying.map((x) => x.f.area));
   const largest = carrying.filter((x) => x.f.area === most);
   return largest.length === 1 ? { found: one(largest[0]), warned: true } : { found: { ambiguous: largest.length }, warned: false };
+}
+
+/** Section 8's edge references by words: the one edge with the name; two or more fitting it (its faces now meet more than once) ambiguous; else lost. */
+export function resolveEdgeOnCells(r: CellsRebuild, name: string): Found {
+  const exact = r.bodies.flatMap((b) => b.edges.filter((e) => e.name === name).map(() => ({ body: b.id, full: name })));
+  if (exact.length === 1) return exact[0];
+  const fits = r.bodies.flatMap((b) => b.edges).filter((e) => {
+    const pair = `edge:${e.faces.join("+")}`;
+    return name === pair || name === `${pair};ends:${e.ends.join(",")}`;
+  }).length;
+  return fits > 1 ? { ambiguous: fits } : "lost";
 }

@@ -116,7 +116,8 @@ export type BooleanFault =
   | "guess-shared" // rule 3: pieces with the same tag (or two largest) guessed between
   | "edge-no-ends" // rule 5: edges meeting the same two faces twice not told apart
   | "made-by-id-text" // made order: features taken in the order of their ids' text, not their place in the timeline
-  | "grid-whole-mm"; // the grid takes every coordinate to the nearest whole millimetre
+  | "grid-whole-mm" // the grid takes every coordinate to the nearest whole millimetre
+  | "float-ties"; // rule 1: shares and volumes compared to the last bit, so rounding decides ties
 
 export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
   "keep-largest",
@@ -142,7 +143,7 @@ export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
  * from ids' text, or from where the part is. Caught by the sessions'
  * renaming and moving checks (test/boolean-naming-session.test.ts).
  */
-export const ORDER_FAULTS: readonly BooleanFault[] = ["made-by-id-text", "grid-whole-mm"];
+export const ORDER_FAULTS: readonly BooleanFault[] = ["made-by-id-text", "grid-whole-mm", "float-ties"];
 
 export const faceName = (feature: string, role: string): string => `face:${esc(feature)}/${role}`;
 export const bodyName = (feature: string, piece?: number): string => `body:${esc(feature)}${piece === undefined ? "" : `/piece:${piece}`}`;
@@ -188,7 +189,17 @@ function gridOf(features: readonly BooleanFeature[], faults: ReadonlySet<Boolean
 function blockValid(f: BlockFeature): boolean {
   const [x0, y0, x1, y1] = f.rect;
   const n = [x0, y0, x1, y1, f.z[0], f.z[1]];
-  return n.every(Number.isFinite) && x0 < x1 && y0 < y1 && f.z[0] < f.z[1] && new Set(linesOf(f)).size === 4;
+  return n.every(Number.isFinite) && x0 < x1 && y0 < y1 && f.z[0] < f.z[1] && new Set(linesOf(f)).size === 4 && [f.id, ...linesOf(f)].every(writable);
+}
+
+/** Whether an id can be written into a name: encodeURIComponent refuses text with a lone surrogate. */
+function writable(id: string): boolean {
+  try {
+    esc(id);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const cellAt = (g: Grid, i: number, j: number, k: number) => i + g.nx * (j + g.ny * k);
@@ -233,6 +244,15 @@ const lexLess = (a: readonly number[], b: readonly number[]) => {
   return false;
 };
 const lexCompare = (a: readonly number[], b: readonly number[]) => (lexLess(a, b) ? -1 : lexLess(b, a) ? 1 : 0);
+
+/**
+ * Areas and volumes are sums of rounded products, so two that are equal on
+ * paper can differ in the last bits (3.3 − 1.3 and 6.3 − 4.3 are not one
+ * double); within a billionth of the larger they count as equal, so
+ * rounding never decides a name (section 8).
+ */
+export const TIE = 1e-9;
+const tieCompare = (a: number, b: number) => (Math.abs(a - b) <= TIE * Math.max(Math.abs(a), Math.abs(b)) ? 0 : a - b);
 
 // Solids with named patches -------------------------------------------------
 
@@ -405,13 +425,18 @@ function piecesOf(g: Grid, cells: Uint8Array): { of: Int32Array; count: number }
  * their faces. An edge touch splits the four round that edge two and two,
  * which shows at every grid point along it; a corner touch at that point.
  */
-function pinched(g: Grid, cells: Uint8Array): boolean {
+function pinched(g: Grid, cells: Uint8Array, matters: (around: readonly number[]) => boolean = () => true): boolean {
   for (let k = 1; k < g.nz; k++)
     for (let j = 1; j < g.ny; j++)
       for (let i = 1; i < g.nx; i++) {
         let mask = 0;
-        for (let b = 0; b < 8; b++) if (cells[cellAt(g, i - 1 + (b & 1), j - 1 + ((b >> 1) & 1), k - 1 + (b >> 2))]) mask |= 1 << b;
-        if (!connected8(mask) || !connected8(~mask & 255)) return true;
+        const around: number[] = [];
+        for (let b = 0; b < 8; b++) {
+          const c = cellAt(g, i - 1 + (b & 1), j - 1 + ((b >> 1) & 1), k - 1 + (b >> 2));
+          around.push(c);
+          if (cells[c]) mask |= 1 << b;
+        }
+        if ((!connected8(mask) || !connected8(~mask & 255)) && matters(around)) return true;
       }
   return false;
 }
@@ -481,8 +506,9 @@ function ranked(g: Grid, beforeFaces: readonly Face[], after: Solid, pieces: { o
     volume.push(volumeOf(g, cells));
     low.push(lowOf(g, cells));
   }
+  const sizeCompare = faults.has("float-ties") ? (a: number, b: number) => a - b : tieCompare;
   const order = [...Array(pieces.count).keys()].sort((p, q) =>
-    faults.has("number-by-volume") ? volume[q] - volume[p] || lexCompare(low[p], low[q]) : first[p] - first[q] || share[q] - share[p] || volume[q] - volume[p] || lexCompare(low[p], low[q]),
+    faults.has("number-by-volume") ? volume[q] - volume[p] || lexCompare(low[p], low[q]) : first[p] - first[q] || sizeCompare(share[q], share[p]) || sizeCompare(volume[q], volume[p]) || lexCompare(low[p], low[q]),
   );
   if (keeper < 0) keeper = order[0];
   if (faults.has("keep-largest")) keeper = [...order].sort((p, q) => volume[q] - volume[p] || p - q)[0];
@@ -517,12 +543,14 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
   const fs = new Set(faults);
   const g = gridOf(features, fs);
   const place = new Map<string, number>();
-  features.forEach((f, i) => place.set(esc(f.id), i));
+  features.forEach((f, i) => {
+    if (writable(f.id)) place.set(esc(f.id), i);
+  });
   if (fs.has("made-by-id-text")) [...place.keys()].sort().forEach((id, i) => place.set(id, i));
   // Made order of a face name: its feature's place, then start, end, the sides by line.
   const roleOrder = new Map<string, number>();
   for (const f of features)
-    if (f.kind === "block") {
+    if (f.kind === "block" && blockValid(f)) {
       roleOrder.set(blockFaceName(f, "start"), 0);
       roleOrder.set(blockFaceName(f, "end"), 1);
       for (const s of [1, 2, 3, 4] as const) roleOrder.set(blockFaceName(f, s), 1 + s);
@@ -551,13 +579,14 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
     });
     return (name) => [from.get(name) ?? order.length, ...made(name)];
   };
-  const refusePinch = (s: Solid) => {
-    if (!fs.has("pinch-allowed") && pinched(g, s.cells)) throw new Failed("the result would touch itself only along an edge or at a corner");
+  const refusePinch = (s: Solid, matters?: (around: readonly number[]) => boolean) => {
+    if (!fs.has("pinch-allowed") && pinched(g, s.cells, matters)) throw new Failed("the result would touch itself only along an edge or at a corner");
   };
 
   for (const f of features) {
     try {
       if (f.kind === "block") {
+        if (![f.id, ...linesOf(f)].every(writable)) throw new Failed("an id is not valid text");
         if (!blockValid(f)) throw new Failed("the rectangle or the heights are not valid");
         const block = blockSolid(g, f);
         if (f.operation === "new") {
@@ -570,7 +599,10 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
           const inputs = [...listed].sort((a, b) => lexCompare(bodyMade(a.id), bodyMade(b.id)));
           const order = [...inputs.map((b) => b.solid), block];
           const raw = order.slice(1).reduce((acc, s) => combine(g, acc, s, "join", fs), order[0]);
-          refusePinch(raw);
+          // Decision 2, for what this feature makes: a pinch where the extrude takes part, or inside one
+          // result body; listed bodies that already touched along an edge and stay apart are left as they were.
+          const lumps = piecesOf(g, raw.cells);
+          refusePinch(raw, (around) => around.some((c) => block.cells[c] === 1) || new Set(around.filter((c) => raw.cells[c] === 1).map((c) => lumps.of[c])).size === 1);
           const after = settled(g, raw, rankBy(order), fs);
           const pieces = piecesOf(g, after.cells);
           const out: Body[] = [];
@@ -594,6 +626,7 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
         bodies = bodies.flatMap((b) => replaced.get(b) ?? [b]);
         continue;
       }
+      if (!writable(f.id)) throw new Failed("an id is not valid text");
       const target = find(f.target);
       const tools = f.tools.map(find);
       if (tools.length === 0) throw new Failed("no tool bodies");
@@ -874,13 +907,24 @@ export function resolveFace(r: BooleanRebuild, ref: FaceReference, faults: Itera
   const holding = origin === undefined || fs.has("largest-first") ? [] : pieces.filter((p) => holds(p.f, origin));
   if (holding.length === 1) return { found: holding[0].f, body: holding[0].body, warning: fs.has("split-silent") ? null : "split" };
   const largest = Math.max(...pieces.map((p) => p.f.area));
-  const big = pieces.filter((p) => p.f.area === largest);
+  const big = pieces.filter((p) => tieCompare(p.f.area, largest) === 0);
   if (big.length > 1 && !fs.has("guess-shared")) return { ambiguous: big.length };
   return { found: big[0].f, body: big[0].body, warning: fs.has("split-silent") ? null : "split" };
 }
 
-/** An edge by rule 5's name: found when exactly one edge has it, ambiguous when shared, else lost. */
-export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string } | { lost: true } {
-  for (const b of r.bodies) for (const e of b.edges) if (e.name === name) return { found: e, body: b.id };
-  return { lost: true };
+/**
+ * An edge by rule 5's name: found when exactly one edge has it. When two or
+ * more edges fit it (its two faces now meet more than once, so they carry
+ * `;ends:` the name never had, or even their ends tie and they are
+ * shared), ambiguous, never guessed; else lost.
+ */
+export function resolveEdge(r: BooleanRebuild, name: string): { found: BooleanEdge; body: string } | { ambiguous: number } | { lost: true } {
+  let fits = 0;
+  for (const b of r.bodies)
+    for (const e of b.edges) {
+      if (e.name === name) return { found: e, body: b.id };
+      const pair = `edge:${e.faces.join("+")}`;
+      if (name === pair || name === `${pair};ends:${e.ends.join(",")}`) fits++;
+    }
+  return fits > 1 ? { ambiguous: fits } : { lost: true };
 }

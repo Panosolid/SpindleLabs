@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   BOOLEAN_FAULTS,
   rebuildBooleans,
+  TIE,
   type BlockFeature,
   type BooleanFault,
   type BooleanFeature,
@@ -149,6 +150,49 @@ test("F2: a Combine join keeps the target's id on the piece holding the target, 
   assert.deepEqual(bodies(r), ["body:feature-1 27 0,0,0", "body:feature-4/piece:1 64 10,0,0"]);
 });
 
+test("rule 1: pieces tied on share and volume are told apart by lowest corner, however rounding falls", () => {
+  // Regression (fresh-eyes review, 34a5): a bar x 1–9 cut by two slot
+  // bodies at x 3–4 and 6–7 in one Combine, the whole part moved 0.3 mm
+  // along x. Pieces x 1.3–3.3, 4.3–6.3 and 7.3–9.3. The bar's x = 9.3
+  // side is the first face wholly in one piece, so x 7.3–9.3 keeps the id;
+  // the other two are both first reached by the start cap, each 2 × 1 of
+  // it, each 2 × 1 × 1 = 2 mm³: tied, so the lower corner, x 1.3, is
+  // piece 1. In floats 3.3 − 1.3 and 6.3 − 4.3 are not the same double
+  // (2.0000000000000004 and 1.9999999999999996 or so), and the model let
+  // that noise number the pieces.
+  const m = 0.3;
+  const r = rebuildBooleans([
+    block("feature-1", [1 + m, 0, 9 + m, 1], [0, 1]),
+    block("feature-2", [3 + m, -1, 4 + m, 2], [-1, 2]),
+    block("feature-3", [6 + m, -1, 7 + m, 2], [-1, 2]),
+    combine("feature-4", "body:feature-1", ["body:feature-2", "body:feature-3"], "cut"),
+  ]);
+  assert.deepEqual(
+    r.bodies.map((b) => `${b.id} ${b.low[0]}`),
+    [`body:feature-1 ${7 + m}`, `body:feature-4/piece:1 ${1 + m}`, `body:feature-4/piece:2 ${4 + m}`],
+  );
+});
+
+test("rule 1's tie: sizes within a billionth count as equal (0.9× ties, 1.1× does not)", () => {
+  // A bar x 0–9 cut by slot bodies at x 2–3 and x (5 + d)–(6 + d): pieces
+  // x 0–2 (width 2), x 3–(5 + d) (width 2 + d) and the keeper x (6 + d)–9
+  // (it holds the bar's x = 9 side). The other two are both first reached by
+  // the start cap, their shares and volumes 2 and 2 + d (× 1 × 1). With
+  // d = 0.9 × TIE × 2 they differ by 0.9 billionths of the larger: a tie, so
+  // the lower corner, x 0, is piece 1; with d = 1.1 × TIE × 2, 1.1
+  // billionths: the larger, x 3, is piece 1.
+  const pieceOne = (d: number) =>
+    rebuildBooleans([
+      block("feature-1", [0, 0, 9, 1], [0, 1]),
+      block("feature-2", [2, -1, 3, 2], [-1, 2]),
+      block("feature-3", [5 + d, -1, 6 + d, 2], [-1, 2]),
+      combine("feature-4", "body:feature-1", ["body:feature-2", "body:feature-3"], "cut"),
+    ]).bodies.find((b) => b.id === "body:feature-4/piece:1")!.low[0];
+  assert.equal(TIE, 1e-9);
+  assert.equal(pieceOne(0.9 * TIE * 2), 0);
+  assert.equal(pieceOne(1.1 * TIE * 2), 3);
+});
+
 test("F6's rule: an Extrude join bridging two bodies keeps the earliest-made id, and its top answers to all three names", () => {
   // Blocks x 0–10 and x 20–30 (10 × 10 × 10 each), then a join x 5–25
   // listing the later body first. The union is x 0–30: 30 × 10 × 10 = 3000,
@@ -246,12 +290,50 @@ test("decision 2: bodies joined along only an edge or at only a corner are refus
   assert.equal(flush.failed.size, 0);
 });
 
+test("decision 2: an Extrude join is not refused over listed bodies that already touched along an edge and stay apart", () => {
+  // Regression (fresh-eyes review, 34a5): bodies a, x 0–2, y 0–2, and b,
+  // x 2–4, y 2–4 (both z 0–1), meeting only along the upright line x = 2,
+  // y = 2, as two bodies may. A join x 0–1, y −2–0 listing both touches
+  // only a: a grows by 1 × 2 × 1 to 4 + 2 = 6, b stays 4, and the line
+  // where a and b meet is as it was, not something this feature made.
+  const r = rebuildBooleans([
+    block("feature-1", [0, 0, 2, 2], [0, 1]),
+    block("feature-2", [2, 2, 4, 4], [0, 1]),
+    block("feature-3", [0, -2, 1, 0], [0, 1], "join", ["body:feature-1", "body:feature-2"]),
+  ]);
+  assert.equal(r.failed.size, 0);
+  assert.deepEqual(bodies(r), ["body:feature-1 6 0,-2,0", "body:feature-2 4 2,2,0"]);
+  // But a join bridging them, x 1–3, y 1–3 on top (z 1–2), standing on a's
+  // square x 1–2, y 1–2 and b's x 2–3, y 2–3, makes one body that touches
+  // itself along the old line: refused.
+  const bridge = rebuildBooleans([
+    block("feature-1", [0, 0, 2, 2], [0, 1]),
+    block("feature-2", [2, 2, 4, 4], [0, 1]),
+    block("feature-3", [1, 1, 3, 3], [1, 2], "join", ["body:feature-1", "body:feature-2"]),
+  ]);
+  assert.equal(bridge.failed.get("feature-3"), "the result would touch itself only along an edge or at a corner");
+  // And one touching only an untouched listed body along an edge is still refused: x 4–5, y 0–2 meets b only along x = 4, y = 2.
+  const edgeOnly = rebuildBooleans([
+    block("feature-1", [0, 0, 2, 2], [0, 1]),
+    block("feature-2", [2, 2, 4, 4], [0, 1]),
+    block("feature-3", [4, 0, 5, 2], [0, 1], "join", ["body:feature-1", "body:feature-2"]),
+  ]);
+  assert.equal(edgeOnly.failed.get("feature-3"), "the result would touch itself only along an edge or at a corner");
+});
+
 test("refusals: a target that is also a tool, a missing body, a broken block", () => {
   const a = block("feature-1", [0, 0, 10, 10], [0, 10]);
   assert.equal(rebuildBooleans([a, combine("feature-2", "body:feature-1", ["body:feature-1"], "join")]).failed.get("feature-2"), "the target is also a tool");
   assert.equal(rebuildBooleans([a, combine("feature-2", "body:feature-1", ["body:feature-9"], "cut")]).failed.get("feature-2"), "no body body:feature-9");
   assert.equal(rebuildBooleans([a, combine("feature-2", "body:feature-1", [], "cut")]).failed.get("feature-2"), "no tool bodies");
   assert.equal(rebuildBooleans([block("feature-1", [10, 0, 0, 10], [0, 10])]).failed.get("feature-1"), "the rectangle or the heights are not valid");
+  // An id with a lone surrogate can't be written into a name (encodeURIComponent throws): the feature fails with words, nothing throws (fresh-eyes review, 34a5).
+  const lone = "feature-\ud800";
+  const bad = rebuildBooleans([block("feature-1", [0, 0, 10, 10], [0, 10]), block(lone, [0, 0, 5, 5], [0, 5]), combine(lone, "body:feature-1", ["body:feature-1"], "join")]);
+  assert.deepEqual([...bad.failed.values()], ["an id is not valid text"]);
+  assert.deepEqual(bodies(bad), ["body:feature-1 1000 0,0,0"]);
+  const badCombine = rebuildBooleans([block("feature-1", [0, 0, 10, 10], [0, 10]), block("feature-2", [20, 0, 30, 10], [0, 10]), combine(lone, "body:feature-1", ["body:feature-2"], "join")]);
+  assert.equal(badCombine.failed.get(lone), "an id is not valid text");
   // A failed feature leaves what came before for what comes after.
   const r = rebuildBooleans([a, combine("feature-2", "body:feature-1", ["body:feature-1"], "join"), block("feature-3", [5, -1, 15, 11], [-1, 11], "cut", ["body:feature-1"])]);
   assert.deepEqual(bodies(r), ["body:feature-1 500 0,0,0"]);
