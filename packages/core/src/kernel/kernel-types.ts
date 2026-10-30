@@ -222,6 +222,9 @@ export interface SlicedPrint {
 /** The build plate a P1S print file is for: Bambu's textured PEI plate (its first layer prints 0.04 mm lower, as the plate's peaks stop the nozzle when homing), or a smooth one (smooth PEI, cool or engineering plate). */
 export type BuildPlate = "textured" | "smooth";
 
+/** Supports under overhangs (P5d3): none, normal (columns straight down) or tree (branches merging going down), both under the same dense roof. */
+export type SupportStyle = "off" | "normal" | "tree";
+
 /** A Bambu Lab P1S print file from the slicing engine (print_file_stl): the .gcode.3mf's bytes, with the P1S's own start and end routines for the plate, and what the slice came to (as SlicedPrint's). */
 export interface P1sPrintFile {
   package: Uint8Array<ArrayBuffer>;

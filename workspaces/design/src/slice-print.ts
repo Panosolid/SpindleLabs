@@ -9,21 +9,21 @@
 // Nothing is saved into the project: choices, never results (decision 6,
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
-import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, StlFile } from "@fission/core";
+import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, StlFile, SupportStyle } from "@fission/core";
 import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 
-/** The beginner's choices: layer height (mm), walls, infill (%), and supports under overhangs. */
+/** The beginner's choices: layer height (mm), walls, infill (%), and supports under overhangs (off, normal or tree). */
 export interface PrintChoices {
   layerHeight: number;
   walls: number;
   infill: number;
-  supports: boolean;
+  supports: SupportStyle;
 }
 
 /** The P1S's defaults for a 0.4 mm nozzle and PLA, as the engine's own (0.2 mm layers, 2 walls, 15 % infill, no supports). */
-export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: false };
+export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: "off" };
 
 /** Each choice's options, as the dialog lists them. */
 export const QUALITY_OPTIONS: readonly { label: string; value: number }[] = [
@@ -34,6 +34,11 @@ export const QUALITY_OPTIONS: readonly { label: string; value: number }[] = [
 ];
 export const WALL_OPTIONS: readonly number[] = [1, 2, 3, 4, 5, 6];
 export const INFILL_OPTIONS: readonly number[] = [0, 10, 15, 20, 25, 40, 60, 100];
+export const SUPPORT_OPTIONS: readonly { label: string; value: SupportStyle }[] = [
+  { label: "Off", value: "off" },
+  { label: "Normal (columns)", value: "normal" },
+  { label: "Tree (less plastic)", value: "tree" },
+];
 
 /** Which file to save: the P1S's print file, or plain G-code for another printer. */
 export type PrintFormat = "p1s" | "gcode";
@@ -101,7 +106,7 @@ export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, feat
   return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate);
 }
 
-/** The plain file's name: the layer height, the walls and infill and whether it has supports, so two slices of one part never share a name. */
+/** The plain file's name: the layer height, the walls and infill and its supports, so two slices of one part never share a name. */
 export function gcodeName(choices: PrintChoices): string {
   return `${baseName(choices)}.gcode`;
 }
@@ -111,7 +116,13 @@ export function printFileName(choices: PrintChoices, plate: BuildPlate): string 
   return `${baseName(choices)}-${plate}${P1S_KIND.extension}`;
 }
 
-const baseName = (choices: PrintChoices) => `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${choices.supports ? "-supports" : ""}`;
+const baseName = (choices: PrintChoices) => `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}`;
+
+/** Normal supports keep the name they had when supports were on or off. */
+const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-supports", tree: "-tree-supports" };
+
+/** The supports select's value as a style: anything it does not list is off. */
+const supportStyle = (v: string): SupportStyle => SUPPORT_OPTIONS.find((o) => o.value === v)?.value ?? "off";
 
 const grams = (g: number) => (g < 10 ? g.toFixed(1) : Math.round(g).toString());
 
@@ -208,14 +219,9 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const quality = choice("slice-print-quality", "Quality", QUALITY_OPTIONS, PRINT_DEFAULTS.layerHeight);
   const walls = choice("slice-print-walls", "Walls", WALL_OPTIONS.map((n) => ({ label: `${n} ${n === 1 ? "wall" : "walls"}`, value: n })), PRINT_DEFAULTS.walls);
   const infill = choice("slice-print-infill", "Infill", INFILL_OPTIONS.map((n) => ({ label: `${n} %`, value: n })), PRINT_DEFAULTS.infill);
-  // Supports: off by default, as most parts made to print need none; on, the engine props up every overhang steeper than 45° from upright.
-  const supportsWrap = document.createElement("label");
-  supportsWrap.className = "slice-print-choice";
-  const supports = el("input", "slice-print-supports");
-  supports.type = "checkbox";
-  supports.checked = PRINT_DEFAULTS.supports;
-  supportsWrap.title = "Prints break-away supports under parts that hang out too far (more than 45° from upright) to print on thin air.";
-  supportsWrap.append("Supports under overhangs", supports);
+  // Supports: off by default, as most parts made to print need none; otherwise the engine props up every overhang steeper than 45° from upright, as columns or as trees.
+  const supports = choice("slice-print-supports", "Supports", SUPPORT_OPTIONS, PRINT_DEFAULTS.supports);
+  supports.wrap.title = "Prints break-away supports under parts that hang out too far (more than 45° from upright) to print on thin air. Normal: columns straight down under the whole overhang. Tree: branches that merge on the way down, usually less plastic and easier to snap off.";
   const format = choice("slice-print-format", "File", FORMAT_OPTIONS, FILE_DEFAULTS.format);
   format.wrap.title = "The P1S's own print file, with its start and end routines, ready to send to the printer; or plain G-code for another printer.";
   const plate = choice("slice-print-plate", "Build plate", PLATE_OPTIONS, FILE_DEFAULTS.plate);
@@ -238,14 +244,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   go.title = "Slices the bodies shown and saves the file chosen above.";
   go.type = "button";
   actions.append(close, preview, go);
-  dialog.append(heading, printer, untested, format.wrap, plate.wrap, quality.wrap, walls.wrap, infill.wrap, supportsWrap, status, actions);
+  dialog.append(heading, printer, untested, format.wrap, plate.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, status, actions);
   slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
     status.textContent = text;
     status.classList.toggle("slice-print-bad", bad);
   };
-  const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supports.checked });
+  const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value) });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured" });
   let busy = false;
   go.addEventListener("click", async () => {

@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, StlFile } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, StlFile, SupportStyle } from "./kernel-types.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
 export interface KernelOps {
@@ -22,10 +22,10 @@ export interface KernelOps {
   body_free: { args: [body: BodyHandle]; result: void };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
-  /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%), and supports under overhangs (on or off). */
-  slice_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: boolean]; result: SlicedPrint };
+  /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%), and supports under overhangs (off, normal or tree). */
+  slice_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle]; result: SlicedPrint };
   /** The same slice as slice_stl, as a Bambu Lab P1S print file (.gcode.3mf) for the build plate. */
-  print_file_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: boolean, plate: BuildPlate]; result: P1sPrintFile };
+  print_file_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate]; result: P1sPrintFile };
   /** The size of the kernel's WebAssembly memory in bytes (it only ever grows): the soak test checks it levels off. */
   wasm_bytes: { args: []; result: number };
 }
