@@ -182,6 +182,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   const play = el("button", "print-preview-play", "Play");
   play.type = "button";
   const speed = el("select", "print-preview-speed");
+  speed.classList.add("dark-select"); // styles/dark-select.css (packages/ui)
   speed.setAttribute("aria-label", "Time-lapse speed");
   for (const s of SPEEDS) {
     const o = document.createElement("option");

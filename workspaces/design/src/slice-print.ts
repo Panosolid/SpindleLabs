@@ -194,6 +194,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     wrap.className = "slice-print-choice";
     wrap.textContent = label;
     const select = el("select", id);
+    select.classList.add("dark-select"); // styles/dark-select.css (packages/ui)
     for (const o of options) {
       const option = document.createElement("option");
       option.value = String(o.value);

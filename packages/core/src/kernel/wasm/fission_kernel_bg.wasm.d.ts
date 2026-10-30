@@ -6,6 +6,7 @@ export const guf4qz: (a: any) => [number, number, number];
 export const irk2fy: (a: number, b: number, c: number) => [number, number, number];
 export const jg9yot: (a: any, b: any, c: any) => [number, number, number];
 export const jgu9kn: (a: number, b: number, c: number) => [number, number, number];
+export const k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
 export const ld2gsx: (a: any, b: number) => [number, number, number];
 export const nwekzr: (a: number) => [number, number, number];
 export const p6rou1: (a: number) => [number, number, number];
