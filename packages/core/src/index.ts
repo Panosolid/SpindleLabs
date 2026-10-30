@@ -49,3 +49,5 @@ export type { Chord, KeyPress, ShortcutClash, ShortcutEntry, ShortcutScope, Shor
 export { BROWSER_RESERVED, CLIPBOARD_CHORDS, chordLabel, chordOf, parseChord, SHELL_SHORTCUTS, ShortcutTable } from "./model/shortcuts.ts";
 export type { AIView, FileEntries, FileEntry, ToolbarItem, ViewportOverlay, MountedWorkspace, WorkspaceContext, WorkspacePlugin } from "./model/workspace.ts";
 export { WORKSPACE_API_VERSION } from "./model/workspace.ts";
+export type { Playback, PlaybackLayer, PlaybackMoment, PrintKind } from "./print/playback.ts";
+export { ARC_STEP, kindOf, layerDone, momentAt, playback, PRINT_KINDS } from "./print/playback.ts";

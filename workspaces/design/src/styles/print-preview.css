@@ -1,0 +1,35 @@
+/* The print preview (print-preview.ts): a dialog filling the window, the
+   3D view in the middle, the legend over its top left and the time-lapse
+   bar along the bottom. ":not(#none)" lifts a rule over the base layout's
+   "#workspace button". */
+.print-preview { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #1b1e23; color: #e6e9ee; display: none; }
+.print-preview[open] { display: flex; flex-direction: column; }
+.print-preview::backdrop { background: rgba(0, 0, 0, 0.6); }
+.print-preview .print-preview-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #161d2a; border-bottom: 1px solid var(--look-edge, #2a3240); }
+.print-preview h2 { margin: 0; font-size: 1.05em; white-space: nowrap; }
+.print-preview #print-preview-words { margin: 0; flex: 1; min-width: 0; color: #c4cbd5; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.print-preview #print-preview-close { margin-left: auto; }
+.print-preview #print-preview-view { position: relative; flex: 1; min-height: 0; touch-action: none; }
+.print-preview .print-view-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.print-preview #print-preview-view.print-preview-bad { padding: 24px; color: #f0a35e; }
+.print-preview #print-preview-legend { position: absolute; top: 56px; left: 12px; margin: 0; padding: 8px 10px; list-style: none; background: rgba(22, 29, 42, 0.82); border-radius: 8px; font-size: 0.85em; pointer-events: none; }
+.print-preview .print-preview-kind { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
+.print-preview .print-preview-kind::before { content: ""; width: 12px; height: 12px; border-radius: 3px; background: var(--kind); }
+.print-preview .print-preview-outer-wall { --kind: #ff8a3d; }
+.print-preview .print-preview-inner-wall { --kind: #ffc857; }
+.print-preview .print-preview-solid-infill { --kind: #d94f70; }
+.print-preview .print-preview-sparse-infill { --kind: #9b6bd6; }
+.print-preview .print-preview-support { --kind: #3fbf7f; }
+.print-preview .print-preview-prime { --kind: #7fa7c9; }
+.print-preview .print-preview-other { --kind: #b0b0b0; }
+.print-preview .print-preview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; background: #161d2a; border-top: 1px solid var(--look-edge, #2a3240); }
+.print-preview #print-preview-play:not(#none) { min-width: 72px; font-weight: 600; }
+.print-preview #print-preview-scrub { flex: 1 1 200px; min-width: 120px; }
+.print-preview .print-preview-layer { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; }
+.print-preview #print-preview-layers { flex: 1; min-width: 100px; }
+.print-preview #print-preview-layer-words { white-space: nowrap; font-size: 0.9em; color: #c4cbd5; min-width: 13ch; }
+@media (max-width: 640px) {
+  .print-preview button:not(#none), .print-preview select { min-height: 44px; }
+  .print-preview #print-preview-words { display: none; }
+  .print-preview #print-preview-legend { top: 60px; font-size: 0.8em; }
+}
