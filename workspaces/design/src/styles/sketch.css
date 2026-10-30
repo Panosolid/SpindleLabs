@@ -3,8 +3,9 @@
    it reads as the mode you are in; buttons and the grid box are 44 px
    tall at phone width, so they can be tapped. */
 .sketch { border-left: 3px solid #6cc4ff; padding: 4px 0 8px 10px; margin-bottom: 12px; }
-.sketch h2 { margin-top: 0; }
-.sketch p { margin: 6px 0; }
+/* A word with no place to break (a refused grid size quoted in full: 1e308 is 309 digits) wraps anywhere, so the panel never scrolls sideways (monkey seed 202610290). */
+.sketch h2 { margin-top: 0; overflow-wrap: anywhere; }
+.sketch p { margin: 6px 0; overflow-wrap: anywhere; }
 .sketch .sketch-planes { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .sketch button:disabled { opacity: 0.45; cursor: default; }
 .sketch .sketch-grid input { width: 6em; }
