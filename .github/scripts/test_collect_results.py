@@ -115,7 +115,7 @@ class CollectChecks(unittest.TestCase):
 
     def test_an_unexplained_ts_mutant_files_an_issue(self):
         stdout, _ = self.collect(CLEAN, None, {"ts-mutants-core/core.txt": "UNEXPLAINED survivor at src/a.ts:3: BooleanLiteral\n"})
-        self.assertIn("create  check TypeScript mutants: UNEXPLAINED survivor at src/a.ts:#: BooleanLiteral", stdout)
+        self.assertIn("create  check TypeScript mutants: survivors no test kills in src/a.ts", stdout)
 
     def test_a_red_job_without_a_folder_files_an_issue(self):
         stdout, _ = self.collect(CLEAN, None, jobs='{"golden": {"result": "failure"}, "monkey": {"result": "success"}}')

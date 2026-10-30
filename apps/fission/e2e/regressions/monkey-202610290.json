@@ -1,0 +1,20 @@
+{
+  "seed": 202610290,
+  "what": "A grid size of 1e308 typed in a sketch: the refusal quoted the size as 309 digits with no place to break, and the sketch panel pushed the page 1,000+ px wider than the window (nightly 2026-10-29, seed 202610290 at action 882; its 798-action shrunk list cut by hand to the steps that matter, which fail the same way)",
+  "actions": [
+    {
+      "do": "click",
+      "sel": "#create-sketch"
+    },
+    {
+      "do": "click",
+      "sel": "#sketch-plane-XY"
+    },
+    {
+      "do": "type",
+      "sel": "#sketch-grid",
+      "text": "1e308",
+      "finish": "Enter"
+    }
+  ]
+}

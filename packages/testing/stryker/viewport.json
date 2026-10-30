@@ -1,8 +1,8 @@
 {
-  "$comment": "Mutation testing of the viewport's maths: picking, navigation, standard views, the sketch view, highlights, panes and the image sheet (framing.ts and viewer.ts are left to the e2e checks: viewer.ts is three.js drawing). Run through run.sh, from packages/viewport.",
+  "$comment": "Mutation testing of the viewport's maths: picking, navigation, standard views, the sketch view, highlights, panes and the image sheet (framing.ts and viewer.ts are left to the e2e checks: viewer.ts is three.js drawing). Run through run.sh, from packages/viewport. Every test file runs, in one process, stopping at the first failure (tests.mjs): the mutated files' own tests first, the rest after, the two slowest last.",
   "testRunner": "command",
   "commandRunner": {
-    "command": "node --experimental-strip-types --no-warnings --test test/*.test.ts"
+    "command": "node --experimental-strip-types --no-warnings -e \"import(require('path').join(require.resolve('@fission/testing'), '../../stryker/tests.mjs')).then((m) => m.default(process.argv.slice(1)))\" test/picking.test.ts test/navigation.test.ts test/views.test.ts test/sketch-view.test.ts test/highlight.test.ts test/pane.test.ts test/image-sheet.test.ts test/framing.test.ts 'test/*.test.ts' test/move-handles.test.ts test/extrude-pick.test.ts"
   },
   "mutate": [
     "src/picking.ts",
