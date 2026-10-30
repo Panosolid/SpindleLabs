@@ -1,0 +1,2 @@
+Monkey, seeds 202610290-202610291: 2 session(s) of 2000 actions in Chromium; 1 FAILED
+failure: no sideways scrolling: the page is 1564 px wider than the window | seed 202610290 at action 882; replay: cd apps/fission && npm run build && FISSION_SEED=202610290 MONKEY_STEPS=2000 node e2e/monkey.mjs
