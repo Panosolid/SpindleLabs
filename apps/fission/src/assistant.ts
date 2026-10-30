@@ -241,16 +241,16 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
     <div id="ai-features"></div>
     <section class="ai-settings">
       <h3>Settings</h3>
-      <label>Provider <select id="ai-provider">
+      <label>Provider <select id="ai-provider" class="dark-select">
         <option value="">Off</option>
         ${PROVIDERS.map((p) => `<option value="${p.kind}">${escape(p.title)}</option>`).join("")}
       </select></label>
       <p id="ai-found" class="ai-note"></p>
       <button id="ai-detect" type="button">Look for Ollama</button>
-      <label data-for="api-key">Whose API <select id="ai-vendor"><option value="anthropic">Anthropic</option><option value="openai">OpenAI</option><option value="other">Another (OpenAI-compatible)</option></select></label>
+      <label data-for="api-key">Whose API <select id="ai-vendor" class="dark-select"><option value="anthropic">Anthropic</option><option value="openai">OpenAI</option><option value="other">Another (OpenAI-compatible)</option></select></label>
       <label data-for="ollama other">Address <input id="ai-endpoint" type="url" spellcheck="false"></label>
       <div data-for="in-browser ollama api-key" class="ai-model">
-        <label id="ai-model-list">Model <select id="ai-model-pick"></select></label>
+        <label id="ai-model-list">Model <select id="ai-model-pick" class="dark-select"></select></label>
         <label id="ai-model-typed">Model name <input id="ai-model" type="text" spellcheck="false"></label>
         <p id="ai-model-note" class="ai-note"></p>
       </div>

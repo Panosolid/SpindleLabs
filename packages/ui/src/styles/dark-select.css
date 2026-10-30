@@ -1,0 +1,9 @@
+/* Every drop-down list in the app (class="dark-select" on each select).
+   The open list is drawn by the browser, not the page, and the page never
+   said it was dark, so Windows Chrome painted the list white under the
+   select's light words (the print preview's speeds could not be read).
+   color-scheme asks the browser for its dark list; the options' own solid
+   background and words make it dark where a browser ignores that.
+   Checked by apps/fission/e2e/select-lists.mjs. */
+.dark-select { color-scheme: dark; }
+.dark-select option, .dark-select optgroup { background-color: #161d2a; color: #e6e9ee; }
