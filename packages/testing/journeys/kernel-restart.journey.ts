@@ -1,11 +1,12 @@
 // Ben's phone project (2026-10-28): reopened, every item that needs the
 // kernel was red at once, Extrude 1 too, while the file itself builds. The
 // cause, on the real kernel: a call that runs out of WebAssembly memory
-// traps, and that kernel then fails every later call, even a 10 mm box. So
-// the app replaces a kernel that trapped (kernel-client.ts) and builds the
-// design again on the fresh one (workspace.ts); here, that the trap is
-// recognised, and that the project, on a fresh kernel, builds every item
-// where it was drawn. The browser check of the whole recovery is
+// traps, and that kernel then failed every later call, even a 10 mm box.
+// Since kernel 0.33.4 a call cut short no longer jams the later ones, but
+// the memory it took is never given back, so the app still replaces a
+// kernel that trapped (kernel-client.ts) and builds the design again on the
+// fresh one (workspace.ts); here, that the trap is recognised, and that the
+// project, on a fresh kernel, builds every item where it was drawn. The browser check of the whole recovery is
 // apps/fission/e2e/kernel-restart.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,11 +19,15 @@ import { nodeKernel } from "../src/node-kernel.ts";
 const FILE = new URL("../../../apps/fission/e2e/regressions/phone-project-all-red.spindle", import.meta.url);
 const LINEAR = 1e-5;
 
-test("a kernel that runs out of memory traps, and fails every call after it: the trap is recognised", () => {
+test("a kernel that runs out of memory traps, the trap is recognised, and a box still builds after it", () => {
   // 400 pages of 64 KiB = 25 MiB: room to start and build a box, not for spheres kept without end.
   const out = execFileSync(process.execPath, ["--wasm-max-mem-pages=400", "--experimental-strip-types", "--no-warnings", new URL("./kernel-trap-child.ts", import.meta.url).pathname], { encoding: "utf8" });
   const got = JSON.parse(out.trim().split("\n").pop()!);
-  assert.deepEqual(got, { before: 1, ranOut: true, trap: true, after: "failed, trap true" });
+  const { after, ...rest } = got;
+  assert.deepEqual(rest, { before: 1, ranOut: true, trap: true });
+  // Kernel 0.33.4 on: the box after the trap builds, with a handle past the box and every sphere kept before it (so more than 2).
+  const m = /^built (\d+)$/.exec(after);
+  assert.ok(m !== null && Number(m[1]) > 2, `after the trap: ${after}`);
 });
 
 test("Ben's phone project builds every item on a fresh kernel, where it was drawn", async () => {
