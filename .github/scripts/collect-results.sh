@@ -133,7 +133,7 @@ add_run() {
     mkdir -p ts-mutants
     {
       echo "tested commit $short on $BRANCH, $today UTC ($RUN_URL)"
-      for t in core design storage model svg viewport ai; do
+      for t in core design storage model svg viewport ai naming; do
         if [ -s "$IN/ts-mutants-$t/$t.txt" ]; then cat "$IN/ts-mutants-$t/$t.txt"; else echo "$t: no report (the job stopped before the check)"; fi
       done
     } >ts-mutants/latest.txt

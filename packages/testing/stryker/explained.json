@@ -922,5 +922,845 @@
     "original": "typeof id !== \"string\"",
     "replacement": "false",
     "why": "A hidden entry that is not a string is refused anyway, with the same message: byId's keys are the timeline's ids, all strings, and Map.get never matches a string key with a number, object or null, so !at is true for it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "sorted.length - 1",
+    "replacement": "sorted.length + 1",
+    "why": "Makes the far side of the empty layer all round NaN: only that layer's cells, always empty, have it as a side, and no cell's size or corner is read unless it is filled."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "The catch then returns undefined, which every caller (every, if) reads as false."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < a.length",
+    "replacement": "i <= a.length",
+    "why": "One step past the end compares undefined with undefined, which are equal, so lexLess still returns false."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "a[i] < b[i]",
+    "replacement": "a[i] <= b[i]",
+    "why": "Reached only when a[i] !== b[i], where < and <= agree."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "1 - y",
+    "replacement": "1 + y",
+    "why": "x & (1 + y) is x & 2 = 0 for y = 1 and x & 1 = x for y = 0, as x & (1 - y) is (cells hold 0 or 1)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "e >> 1 === d >> 1",
+    "replacement": "false",
+    "why": "Along the face's own axis the neighbour is either the empty cell the patch faces (skipped as empty) or the cell behind, whose cell beyond is c itself, filled (skipped too)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < (place.get(n) ?? Infinity)",
+    "replacement": "i <= (place.get(n) ?? Infinity)",
+    "why": "On equal places it sets the same value again."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "r.slice(1)",
+    "replacement": "r",
+    "why": "Puts the body rank in twice; it is compared only once the first copies are equal, so the second copy ties too."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The extra entry is no cell: no listed block or result cell is filled there, and around is only read as a set (some, filter)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "mask === 0",
+    "replacement": "false",
+    "why": "For mask 0 the loop starts with reached = 0, finds nothing new and returns 0 === 0: true anyway."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "b < 8",
+    "replacement": "b <= 8",
+    "why": "Bit 8 is never in reached, which stays within the 8-bit mask."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 0, 0]",
+    "replacement": "[]",
+    "why": "lowOf gets no cells only for an empty solid, and the empty ones are refused before anything is described."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "UnaryOperator",
+    "original": "-1",
+    "replacement": "+1",
+    "why": "split always passes holder (the target's piece for a join, else −1), so the default is never used."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "new Array<number>(pieces.count)",
+    "replacement": "new Array()",
+    "why": "share[p] is set wherever first[p] is; a piece no face reaches has first Infinity, and Infinity − Infinity is NaN, so its rank falls to volume whether share is 0 or undefined."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "p < pieces.count",
+    "replacement": "p <= pieces.count",
+    "why": "An extra volume and low for a piece that does not exist; only real pieces are ranked."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "pieces.of[Math.floor(k / 6)] === p",
+    "replacement": "true",
+    "why": "The piece's names then hold the other pieces' patches too; names are only read at a solid's own filled cells (combine, facesOf), and the one read of the first entry is the planted wall-target-name fault's, still caught."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0]",
+    "replacement": "[]",
+    "why": "KEEP_ORDER reads faces already settled, ranked by place alone: [] ties every name on rank just as [0] does."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "Regex",
+    "original": "/^body:([^/]*)(?:\\/piece:(\\d+))?$/",
+    "replacement": "/body:([^/]*)(?:\\/piece:(\\d+))?$/",
+    "why": "Body ids are all made by bodyName, which starts with body: and escapes the feature id (no : or / inside), so ^ changes nothing."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "Regex",
+    "original": "/^body:([^/]*)(?:\\/piece:(\\d+))?$/",
+    "replacement": "/^body:([^/]*)(?:\\/piece:(\\d+))?/",
+    "why": "Body ids are bodyName's: body:<escaped id>, then /piece:<number> or nothing, which the pattern matches whole with or without $."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "order.slice(1)",
+    "replacement": "order",
+    "why": "Starts the join with order[0] joined to itself: the same cells, every patch's names listed twice and made unique by the Set."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "holds.length - 1",
+    "replacement": "holds.length + 1",
+    "why": "Only with the planted join-latest fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "f.operation === \"join\"",
+    "replacement": "true",
+    "why": "Only with the planted tool-keeps-id fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "Keep tools: gone then holds text, which is no body, so no body is removed either way."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!(e instanceof Failed)",
+    "replacement": "false",
+    "why": "Every error rebuildBooleans raises on purpose is a Failed; no input of its declared types throws anything else (thousands of seeded session features), so the rethrow is never reached. It is there so a bug throws instead of hiding as a failed feature."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "axis < 3",
+    "replacement": "axis <= 3",
+    "why": "Axis 3 has no cells: n[3] is undefined, so its loops never run."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[f]",
+    "replacement": "[]",
+    "why": "tagFor and tags only ask about names some face carries; for one none carries, tagAmong of no pieces and of the face alone both give all its neighbours."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "OptionalChaining",
+    "original": "carrying.get(x.face.names[0])?.length",
+    "replacement": "carrying.get(x.face.names[0]).length",
+    "why": "Asked only for a face's own shown name, which carrying always has."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "\"guess-shared\"",
+    "replacement": "\"\"",
+    "why": "Only with the planted guess-shared fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "\"split-silent\"",
+    "replacement": "\"\"",
+    "why": "Only with the planted split-silent fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "sorted.length === 0",
+    "replacement": "false",
+    "why": "axisOf gets no coordinates only when no block is valid; then no body is ever made, so the grid is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 1]",
+    "replacement": "[]",
+    "why": "axisOf gets no coordinates only when no block is valid; then no body is ever made, so the grid is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The text sorts as equal to every number, so it stays first and adds one more empty layer below the low side; no block's cell is ever in it (comparing text with numbers is false), and the cells' order along the axis is kept."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The text sorts as equal to every number, so it stays first and adds one more empty layer below the low side; no block's cell is ever in it (comparing text with numbers is false), and the cells' order along the axis is kept."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The text sorts as equal to every number, so it stays first and adds one more empty layer below the low side; no block's cell is ever in it (comparing text with numbers is false), and the cells' order along the axis is kept."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "g.xs.length - 1",
+    "replacement": "g.xs.length + 1",
+    "why": "One more cell along the axis past the far side: its size is NaN, so no block fills it; it is empty, like the layer before it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "g.ys.length - 1",
+    "replacement": "g.ys.length + 1",
+    "why": "One more cell along the axis past the far side: its size is NaN, so no block fills it; it is empty, like the layer before it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "g.zs.length - 1",
+    "replacement": "g.zs.length + 1",
+    "why": "One more cell along the axis past the far side: its size is NaN, so no block fills it; it is empty, like the layer before it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[g.nx, g.ny, g.nz]",
+    "replacement": "[]",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "p[axis] < 0 || p[axis] >= n",
+    "replacement": "false",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "LogicalOperator",
+    "original": "p[axis] < 0 || p[axis] >= n",
+    "replacement": "p[axis] < 0 && p[axis] >= n",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "p[axis] < 0",
+    "replacement": "false",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "p[axis] < 0",
+    "replacement": "p[axis] <= 0",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "p[axis] >= n",
+    "replacement": "false",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "p[axis] >= n",
+    "replacement": "p[axis] > n",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "UnaryOperator",
+    "original": "-1",
+    "replacement": "+1",
+    "why": "across is only asked about filled cells (eachPatch, facesOf, piecesOf, combine), and the empty layer all round keeps every filled cell's neighbours on the grid, so the off-grid answer is never needed; at index 0 (the <= 0 mutant) the cell is in the empty layer, and every caller treats off the grid and empty alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "c < cells.length",
+    "replacement": "c <= cells.length",
+    "why": "One step past the last cell: cells[length] is undefined (empty), and writing past the end of a Uint8Array is ignored; blockSolid's test fails there too (its z side is undefined)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "c < cells.length",
+    "replacement": "c <= cells.length",
+    "why": "One step past the last cell: cells[length] is undefined (empty), and writing past the end of a Uint8Array is ignored; blockSolid's test fails there too (its z side is undefined)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "c < cells.length",
+    "replacement": "c <= cells.length",
+    "why": "One step past the last cell: cells[length] is undefined (empty), and writing past the end of a Uint8Array is ignored; blockSolid's test fails there too (its z side is undefined)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "c0 < cells.length",
+    "replacement": "c0 <= cells.length",
+    "why": "One step past the last cell: cells[length] is undefined (empty), and writing past the end of a Uint8Array is ignored; blockSolid's test fails there too (its z side is undefined)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "c < cells.length",
+    "replacement": "c <= cells.length",
+    "why": "One step past the last cell: cells[length] is undefined (empty), and writing past the end of a Uint8Array is ignored; blockSolid's test fails there too (its z side is undefined)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "c < cells.length",
+    "replacement": "c <= cells.length",
+    "why": "One step past the last cell: cells[length] is undefined (empty), and writing past the end of a Uint8Array is ignored; blockSolid's test fails there too (its z side is undefined)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "d < 6",
+    "replacement": "d <= 6",
+    "why": "Direction 6 has axis 3, which no cell has: across returns the cell itself, filled, so it is no patch (eachPatch), already seen (facesOf) or already numbered (piecesOf)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "e < 6",
+    "replacement": "e <= 6",
+    "why": "Direction 6 has axis 3, which no cell has: across returns the cell itself, filled, so it is no patch (eachPatch), already seen (facesOf) or already numbered (piecesOf)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "d < 6",
+    "replacement": "d <= 6",
+    "why": "Direction 6 has axis 3, which no cell has: across returns the cell itself, filled, so it is no patch (eachPatch), already seen (facesOf) or already numbered (piecesOf)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n < 0",
+    "replacement": "false",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "n < 0",
+    "replacement": "n <= 0",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n < 0",
+    "replacement": "false",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "n < 0",
+    "replacement": "n <= 0",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "beyond >= 0",
+    "replacement": "true",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "beyond >= 0",
+    "replacement": "beyond > 0",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n >= 0",
+    "replacement": "true",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "n >= 0",
+    "replacement": "n > 0",
+    "why": "A filled cell's neighbour is never off the grid (the empty layer all round), and cell 0 is that layer's corner, empty: off the grid and empty are treated alike here."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "x >= 0",
+    "replacement": "x > 0",
+    "why": "x is a neighbour of a filled cell, so never −1 off the grid; cell 0 is in the empty layer, never filled in a or b."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x >= 0",
+    "replacement": "true",
+    "why": "x is a neighbour of a filled cell, so never −1 off the grid; cell 0 is in the empty layer, never filled in a or b."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x >= 0",
+    "replacement": "true",
+    "why": "x is a neighbour of a filled cell, so never −1 off the grid; cell 0 is in the empty layer, never filled in a or b."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "x >= 0",
+    "replacement": "x > 0",
+    "why": "x is a neighbour of a filled cell, so never −1 off the grid; cell 0 is in the empty layer, never filled in a or b."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "k < g.nz",
+    "replacement": "k <= g.nz",
+    "why": "The far grid line's eight cells are the empty layer's, or past it (wrapping into the empty layer of the next row, or past the array): all empty, so no pinch."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "j < g.ny",
+    "replacement": "j <= g.ny",
+    "why": "The far grid line's eight cells are the empty layer's, or past it (wrapping into the empty layer of the next row, or past the array): all empty, so no pinch."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < g.nx",
+    "replacement": "i <= g.nx",
+    "why": "The far grid line's eight cells are the empty layer's, or past it (wrapping into the empty layer of the next row, or past the array): all empty, so no pinch."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "i - 1 + (b & 1)",
+    "replacement": "i - 1 - (b & 1)",
+    "why": "Mirrors each grid point's 2 × 2 × 2 block (connected8 does not see a mirror) and moves it one layer lower: the first point then looks at the empty layer only, and the last grid plane is no longer looked at. Its far side is the empty layer, so no touch shows only there: one reaching it runs along that axis from a grid point inside, which is still looked at."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "j - 1 + ((b >> 1) & 1)",
+    "replacement": "j - 1 - (b >> 1 & 1)",
+    "why": "Mirrors each grid point's 2 × 2 × 2 block (connected8 does not see a mirror) and moves it one layer lower: the first point then looks at the empty layer only, and the last grid plane is no longer looked at. Its far side is the empty layer, so no touch shows only there: one reaching it runs along that axis from a grid point inside, which is still looked at."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "k - 1 + (b >> 2)",
+    "replacement": "k - 1 - (b >> 2)",
+    "why": "Mirrors each grid point's 2 × 2 × 2 block (connected8 does not see a mirror) and moves it one layer lower: the first point then looks at the empty layer only, and the last grid plane is no longer looked at. Its far side is the empty layer, so no touch shows only there: one reaching it runs along that axis from a grid point inside, which is still looked at."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "reach.size > 0",
+    "replacement": "true",
+    "why": "Only with the planted keep-first-reached fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "reach.size > 0",
+    "replacement": "reach.size >= 0",
+    "why": "Only with the planted keep-first-reached fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "volume[q] - volume[p] || lexCompare(low[p], low[q])",
+    "replacement": "true",
+    "why": "Only with the planted number-by-volume fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "LogicalOperator",
+    "original": "volume[q] - volume[p] || lexCompare(low[p], low[q])",
+    "replacement": "volume[q] - volume[p] && lexCompare(low[p], low[q])",
+    "why": "Only with the planted number-by-volume fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "volume[q] - volume[p] || lexCompare(low[p], low[q])",
+    "replacement": "false",
+    "why": "Only with the planted number-by-volume fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "volume[q] - volume[p]",
+    "replacement": "volume[q] + volume[p]",
+    "why": "Only with the planted number-by-volume fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[...order]",
+    "replacement": "[]",
+    "why": "Only with the planted keep-largest fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "p - q",
+    "replacement": "p + q",
+    "why": "Only with the planted keep-largest fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The default faults set then holds text that is no fault: every faults.has(...) is still false."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The default faults set then holds text that is no fault: every faults.has(...) is still false."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x === 1 && pieces.of[c] === p",
+    "replacement": "true",
+    "why": "Only with the planted tool-keeps-id fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "LogicalOperator",
+    "original": "x === 1 && pieces.of[c] === p",
+    "replacement": "x === 1 || pieces.of[c] === p",
+    "why": "Only with the planted tool-keeps-id fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x === 1",
+    "replacement": "true",
+    "why": "Only with the planted tool-keeps-id fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "pieces.of[c] === p",
+    "replacement": "true",
+    "why": "Only with the planted tool-keeps-id fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "iu < n[u]",
+    "replacement": "iu <= n[u]",
+    "why": "The far grid line's cells are the empty layer's, or past it (wrapping into the empty layer or past the array): all empty, so no segment there."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "iv < n[v]",
+    "replacement": "iv <= n[v]",
+    "why": "The far grid line's cells are the empty layer's, or past it (wrapping into the empty layer or past the array): all empty, so no segment there."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "ia < n[axis]",
+    "replacement": "ia <= n[axis]",
+    "why": "The far grid line's cells are the empty layer's, or past it (wrapping into the empty layer or past the array): all empty, so no segment there."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 0, 0]",
+    "replacement": "[]",
+    "why": "Every element of p is set before it is read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 0, 0]",
+    "replacement": "[]",
+    "why": "Every element of p is set before it is read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "fa < fb",
+    "replacement": "true",
+    "why": "The pair's order only has to be the same along a run, and it is: the u-facing patch is always pu. Every other use adds both ways (neighbours) or sorts the names (raw)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "fa < fb",
+    "replacement": "false",
+    "why": "The pair's order only has to be the same along a run, and it is: the u-facing patch is always pu. Every other use adds both ways (neighbours) or sorts the names (raw)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "fa < fb",
+    "replacement": "fa <= fb",
+    "why": "The pair's order only has to be the same along a run, and it is: the u-facing patch is always pu. Every other use adds both ways (neighbours) or sorts the names (raw)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "fa < fb",
+    "replacement": "fa >= fb",
+    "why": "The pair's order only has to be the same along a run, and it is: the u-facing patch is always pu. Every other use adds both ways (neighbours) or sorts the names (raw)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[g.nx, g.ny, g.nz]",
+    "replacement": "[]",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "q.some((x, i) => x < 0 || x >= n[i])",
+    "replacement": "q.every((x, i) => x < 0 || x >= n[i])",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "q.some((x, i) => x < 0 || x >= n[i])",
+    "replacement": "false",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrowFunction",
+    "original": "(x, i) => x < 0 || x >= n[i]",
+    "replacement": "() => undefined",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x < 0 || x >= n[i]",
+    "replacement": "false",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "LogicalOperator",
+    "original": "x < 0 || x >= n[i]",
+    "replacement": "x < 0 && x >= n[i]",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x < 0",
+    "replacement": "false",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "x < 0",
+    "replacement": "x <= 0",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "x >= n[i]",
+    "replacement": "false",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "x >= n[i]",
+    "replacement": "x > n[i]",
+    "why": "A run's end points are grid points inside the grid (edges are between filled cells, never in the empty layer all round), so the eight cells round one are always on the grid and the check never skips one; at index 0 (the <= 0 mutant) the cell is in the empty layer and has no face."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrowFunction",
+    "original": "(e) => `edge:${e.faces.join(\"+\")}`",
+    "replacement": "() => undefined",
+    "why": "Only with the planted edge-no-ends fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "`edge:${e.faces.join(\"+\")}`",
+    "replacement": "``",
+    "why": "Only with the planted edge-no-ends fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "\"+\"",
+    "replacement": "\"\"",
+    "why": "Only with the planted edge-no-ends fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "tags[f] !== null",
+    "replacement": "true",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "tags[f] !== null",
+    "replacement": "tags[f] === null",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "`${x.face.names[0]}#${[...neighbours[f]].sort().join(\",\")}`",
+    "replacement": "``",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "[...neighbours[f]].sort()",
+    "replacement": "[...neighbours[f]]",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[...neighbours[f]]",
+    "replacement": "[]",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "\",\"",
+    "replacement": "\"\"",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "faults.has(\"tag-all-neighbours\") && tags[f] !== null",
+    "replacement": "false",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "StringLiteral",
+    "original": "\"tag-all-neighbours\"",
+    "replacement": "\"\"",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "tags[f] !== null",
+    "replacement": "true",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "tags[f] !== null",
+    "replacement": "tags[f] === null",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "[...neighbours[f]].sort()",
+    "replacement": "[...neighbours[f]]",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[...neighbours[f]]",
+    "replacement": "[]",
+    "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
   }
 ]
