@@ -1,0 +1,27 @@
+{
+  "$comment": "Mutation testing of the exact naming model of joins, cuts and Combine (step 34a5): its hand-worked tests, the seeded sessions against the unit-cell count, and the old names' reader, which runs on it. Run through run.sh, from packages/testing.",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node --experimental-strip-types --no-warnings --test test/boolean-naming-model.test.ts test/boolean-naming-split.test.ts test/boolean-naming-session.test.ts test/old-names.test.ts"
+  },
+  "mutate": [
+    "src/boolean-naming-model.ts"
+  ],
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "../../node_modules/.cache/stryker/naming.json"
+  },
+  "clearTextReporter": {
+    "allowColor": false,
+    "logTests": false,
+    "reportMutants": false
+  },
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [
+    "node_modules"
+  ],
+  "timeoutMS": 60000
+}
