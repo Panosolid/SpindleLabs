@@ -8,9 +8,13 @@
 // supports choices are off. The layer slider at layer 1 shows far less plastic than
 // at 100; Play lays the print down from the first move, the scrubber moving
 // on; a drag orbits the view. Escape closes it. At a desktop width with
-// clicks and a phone's with taps, everything on screen.
+// clicks and a phone's with taps, everything on screen. Then a plate on a
+// column (plate-on-column.spindle) sliced with Supports ticked: the
+// supports drawn green under it, No supports takes them away and Only
+// supports leaves them alone.
 // Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { chooseFile, startWithBox } from "./start.mjs";
@@ -197,6 +201,67 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.waitForFunction(() => !document.getElementById("print-preview"));
     } finally {
       await page.context().close();
+    }
+  });
+}
+
+/** A 30 × 30 × 2 mm plate moved up onto a 10 × 10 × 10 mm column: its rim hangs in the air, so it needs supports. */
+const plateOnColumn = readFileSync(new URL("./plate-on-column.spindle", import.meta.url));
+const PLATE_ITEMS = ["feature-1", "feature-2", "feature-3"];
+
+for (const [width, tap] of [[1280, false], [375, true]]) {
+  const at = `${width} px${tap ? ", taps" : ""}`;
+  await check(`${at}: a plate on a column sliced with supports shows them in green, and No supports and Only supports work`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: tap ? 667 : 800 }, hasTouch: tap, isMobile: tap });
+    const page = await context.newPage();
+    await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
+    });
+    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    try {
+      await page.goto(url);
+      await page.setInputFiles("#open-file", { name: "plate.spindle", mimeType: "application/octet-stream", buffer: plateOnColumn });
+      await page.waitForFunction((all) => [...document.querySelectorAll("#timeline li[data-item]")].map((li) => li.dataset.item).join() === all.join(), PLATE_ITEMS, { timeout: 15000 });
+      await page.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false", null, { timeout: 15000 });
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      assert.equal(await page.$eval("#slice-print-supports", (c) => c.checked), false, "supports start off");
+      await press("#slice-print-supports");
+      assert.equal(await page.$eval("#slice-print-supports", (c) => c.checked), true);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports-ticked.png` });
+      await press("#slice-print-preview");
+      await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
+      // 12 mm / 0.2 mm = 60 layers.
+      assert.equal(await page.getAttribute("#print-preview-layers", "max"), "60");
+      const legend = await page.$$eval("#print-preview-legend li", (ls) => ls.map((l) => l.textContent));
+      assert.ok(legend.includes("Support"), `legend has Support: ${legend}`);
+      assert.equal(await page.$eval("#print-preview-show-support", (b) => b.disabled), false);
+      assert.equal(await page.$("#print-preview-no-supports"), null, "no 'no supports' note");
+      await page.waitForTimeout(200);
+      // Supports are drawn green (0x3fbf7f: hue (2 + (127 − 63) / 128) × 60 = 150°); the plate over them hides some, so count from the side it's seen from.
+      const green = await hued(page, 140, 160);
+      assert.ok(green > 500, `supports drawn: ${green} green pixels`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports.png` });
+      // No supports: the green goes, the part stays.
+      await press("#print-preview-preset-no-supports");
+      await page.waitForTimeout(200);
+      const greenGone = await hued(page, 140, 160);
+      const part = await coloured(page);
+      assert.ok(greenGone < green * 0.05 && part > 2000, `no supports: ${greenGone} green of ${green}, ${part} coloured`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-no-supports.png` });
+      // Only supports: the green alone (nothing but it and the nozzle).
+      await press("#print-preview-preset-only-supports");
+      await page.waitForTimeout(200);
+      const only = await coloured(page);
+      const onlyGreen = await hued(page, 140, 160);
+      assert.ok(onlyGreen >= green && onlyGreen > only * 0.8, `only supports: ${onlyGreen} green of ${only} coloured (was ${green} under the plate)`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-only-supports.png` });
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.getElementById("print-preview"));
+    } finally {
+      await context.close();
     }
   });
 }

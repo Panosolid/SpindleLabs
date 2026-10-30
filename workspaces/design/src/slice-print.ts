@@ -1,7 +1,7 @@
 // Slice for printing (H2a, the slicer's first step into the app): every
 // body shown, sliced by the slicing engine with the owner's printer's
-// defaults (Bambu Lab P1S, 0.4 mm nozzle, PLA) and the beginner's three
-// choices, downloaded as a G-code file. The workspace offers it as File ▾
+// defaults (Bambu Lab P1S, 0.4 mm nozzle, PLA) and the beginner's four
+// choices (quality, walls, infill, supports), downloaded as a G-code file. The workspace offers it as File ▾
 // > Slice for printing; its dialog holds the choices, says what the slice
 // came to (layers, filament) and warns about any part too thin to print.
 // Nothing is saved into the project: choices, never results (decision 6,
@@ -11,15 +11,16 @@ import type { Feature, KernelCalls, SlicedPrint, StlFile } from "@fission/core";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 
-/** The beginner's choices: layer height (mm), walls, infill (%). */
+/** The beginner's choices: layer height (mm), walls, infill (%), and supports under overhangs. */
 export interface PrintChoices {
   layerHeight: number;
   walls: number;
   infill: number;
+  supports: boolean;
 }
 
-/** The P1S's defaults for a 0.4 mm nozzle and PLA, as the engine's own (0.2 mm layers, 2 walls, 15 % infill). */
-export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15 };
+/** The P1S's defaults for a 0.4 mm nozzle and PLA, as the engine's own (0.2 mm layers, 2 walls, 15 % infill, no supports). */
+export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: false };
 
 /** Each choice's options, as the dialog lists them. */
 export const QUALITY_OPTIONS: readonly { label: string; value: number }[] = [
@@ -51,12 +52,12 @@ export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, feat
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
-  return kernel.call("slice_stl", stackStl(files.map((f) => f.bytes)), choices.layerHeight, choices.walls, choices.infill);
+  return kernel.call("slice_stl", stackStl(files.map((f) => f.bytes)), choices.layerHeight, choices.walls, choices.infill, choices.supports);
 }
 
-/** The file's name: the layer height and the walls and infill in it, so two slices of one part never share a name. */
+/** The file's name: the layer height, the walls and infill and whether it has supports, so two slices of one part never share a name. */
 export function gcodeName(choices: PrintChoices): string {
-  return `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc.gcode`;
+  return `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${choices.supports ? "-supports" : ""}.gcode`;
 }
 
 const grams = (g: number) => (g < 10 ? g.toFixed(1) : Math.round(g).toString());
@@ -153,6 +154,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const quality = choice("slice-print-quality", "Quality", QUALITY_OPTIONS, PRINT_DEFAULTS.layerHeight);
   const walls = choice("slice-print-walls", "Walls", WALL_OPTIONS.map((n) => ({ label: `${n} ${n === 1 ? "wall" : "walls"}`, value: n })), PRINT_DEFAULTS.walls);
   const infill = choice("slice-print-infill", "Infill", INFILL_OPTIONS.map((n) => ({ label: `${n} %`, value: n })), PRINT_DEFAULTS.infill);
+  // Supports: off by default, as most parts made to print need none; on, the engine props up every overhang steeper than 45° from upright.
+  const supportsWrap = document.createElement("label");
+  supportsWrap.className = "slice-print-choice";
+  const supports = el("input", "slice-print-supports");
+  supports.type = "checkbox";
+  supports.checked = PRINT_DEFAULTS.supports;
+  supportsWrap.title = "Prints break-away supports under parts that hang out too far (more than 45° from upright) to print on thin air.";
+  supportsWrap.append("Supports under overhangs", supports);
   const status = el("p", "slice-print-status");
   status.setAttribute("role", "status");
   const actions = el("div", "slice-print-actions");
@@ -165,14 +174,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const go = el("button", "slice-print-go", "Slice and download");
   go.type = "button";
   actions.append(close, preview, go);
-  dialog.append(heading, printer, untested, quality.wrap, walls.wrap, infill.wrap, status, actions);
+  dialog.append(heading, printer, untested, quality.wrap, walls.wrap, infill.wrap, supportsWrap, status, actions);
   slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
     status.textContent = text;
     status.classList.toggle("slice-print-bad", bad);
   };
-  const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value) });
+  const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supports.checked });
   let busy = false;
   go.addEventListener("click", async () => {
     if (busy) return;

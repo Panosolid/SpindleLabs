@@ -56,7 +56,7 @@ const ops = {
   body_step: (body: BodyHandle) => kernel.body_step(body),
   body_free: (body: BodyHandle) => kernel.body_free(body),
   body_count: () => kernel.body_count(),
-  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent),
+  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: boolean) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 

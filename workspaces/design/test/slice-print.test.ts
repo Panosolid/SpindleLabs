@@ -1,13 +1,14 @@
 // Slice for printing (slice-print.ts): the files handed to the engine, the
 // words a slice is described in (worked by hand), the dialog in a real DOM
-// (happy-dom) with a stand-in slicer, and a real slice of a 20 mm cube on
-// the shipped kernel build. The Chromium check is apps/fission/e2e/slice-print.mjs.
+// (happy-dom) with a stand-in slicer, and real slices on the shipped kernel build (a 20 mm cube; supports under a plate on a column).
+// The Chromium checks are apps/fission/e2e/slice-print.mjs and print-preview.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { SlicedPrint } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { insertPreset, partDocument } from "../src/document.ts";
+import { insertMove, NO_MOVE } from "../src/move.ts";
 import { gcodeName, PRINT_DEFAULTS, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type PrintChoices } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
@@ -25,9 +26,11 @@ test("a slice in words, worked by hand", () => {
   assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220, printTimeS: 3900 })), "1 layer, 13 g of PLA (4.22 m of filament), about 1 h 5 min of printing (plus heating and levelling).");
   // An engine fault (not a number) shows no time rather than a wrong one.
   assert.equal(printWords(print({ printTimeS: Number.NaN })), "100 layers, 5.2 g of PLA (1.73 m of filament).");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20 }), "spindlelabs-0.16mm-3w-20pc.gcode");
-  // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %.
-  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15 });
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: false }), "spindlelabs-0.16mm-3w-20pc.gcode");
+  // Supports on gets its own name, so the same part with and without never overwrite each other.
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: true }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
+  // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %, no supports.
+  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: false });
 });
 
 test("print time in words rounds to the nearest minute, worked by hand", () => {
@@ -79,14 +82,21 @@ test("the dialog slices with the choices picked, then says what the slice came t
   assert.equal(t.$<HTMLSelectElement>("slice-print-quality").value, "0.2");
   assert.equal(t.$<HTMLSelectElement>("slice-print-walls").value, "2");
   assert.equal(t.$<HTMLSelectElement>("slice-print-infill").value, "15");
+  assert.equal(t.$<HTMLInputElement>("slice-print-supports").checked, false);
   t.$<HTMLSelectElement>("slice-print-quality").value = "0.16";
   t.$<HTMLSelectElement>("slice-print-walls").value = "3";
   t.$<HTMLSelectElement>("slice-print-infill").value = "40";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40 }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: false }]);
   assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.16mm-3w-40pc.gcode: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
+  // Supports ticked: the next slice asks for them, and the file's name says so.
+  t.$<HTMLInputElement>("slice-print-supports").click();
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: true });
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-supports\.gcode: /);
   t.$("slice-print-close").click();
   assert.equal(t.d.open, false);
   await t.window.happyDOM.close();
@@ -134,7 +144,7 @@ test("Preview slices with the choices picked and closes the dialog; a refusal ke
   t.$<HTMLSelectElement>("slice-print-infill").value = "25";
   t.$("slice-print-preview").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25 }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: false }]);
   assert.equal(t.d.open, false);
   const bad = dialog(async () => ({ print: print(), saved: true }), async () => {
     throw new Error("There is no body to slice: make or show one first.");
@@ -181,4 +191,30 @@ test("two bodies print together, each its own mesh; none is refused before slici
   const one = await sliceBodies(kernel, doc, two.slice(0, 1), PRINT_DEFAULTS);
   assert.equal(one.layers, 100);
   await assert.rejects(sliceBodies(kernel, doc, [], PRINT_DEFAULTS), /no body to slice/);
+});
+
+test("supports on the shipped build: a plate on a column gets them, a cube needs none, and off means none", async () => {
+  const kernel = nodeKernel();
+  // A 30 × 30 × 2 mm plate moved up onto a 10 × 10 × 10 mm column (both centred), made as the app makes them.
+  const plate = insertPreset(partDocument("box", 10, 10, 10), "box", 30, 30, 2);
+  const doc = insertMove(plate.doc, [plate.id], { ...NO_MOVE, z: 10 }).doc;
+  const bodies = bodyFeatures(doc);
+  const supportLayers = (p: SlicedPrint) => p.preview.filter((l) => l.paths.some((x) => x.role === "support")).length;
+  const on = await sliceBodies(kernel, doc, bodies, { ...PRINT_DEFAULTS, supports: true });
+  const off = await sliceBodies(kernel, doc, bodies, PRINT_DEFAULTS);
+  // 12 mm / 0.2 mm = 60 layers either way.
+  assert.equal(on.layers, 60);
+  assert.equal(off.layers, 60);
+  // By hand: the plate's first layer is layer 50 (10.0 to 10.2 mm), its rim past the column hanging in the air.
+  // One layer is left empty under it (the gap that lets the support break away), so supports fill layers 0 to 48 from the bed: 49 layers.
+  assert.equal(supportLayers(on), 49);
+  assert.equal(supportLayers(off), 0);
+  // The G-code marks them as the kind "Support", which the preview's switches read.
+  assert.match(on.gcode, /^;TYPE:Support$/m);
+  assert.doesNotMatch(off.gcode, /;TYPE:Support/);
+  // Supports cost plastic and time.
+  assert.ok(on.filamentMm > off.filamentMm && on.printTimeS > off.printTimeS, `${on.filamentMm} vs ${off.filamentMm}`);
+  // A 20 mm cube has nothing hanging out: supports on still adds none.
+  const cube = partDocument("box", 20, 20, 20);
+  assert.equal(supportLayers(await sliceBodies(kernel, cube, bodyFeatures(cube), { ...PRINT_DEFAULTS, supports: true })), 0);
 });

@@ -117,10 +117,10 @@ export function u3qr1f(p0, p1, p2) {
     return takeFromExternrefTable0(ret[0]);
 }
 
-export function uq4cun(p0, p1, p2, p3) {
+export function uq4cun(p0, p1, p2, p3, p4) {
     const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3);
+    const ret = wasm.uq4cun(ptr0, len0, p1, p2, p3, isLikeNone(p4) ? 0xFFFFFF : p4 ? 1 : 0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

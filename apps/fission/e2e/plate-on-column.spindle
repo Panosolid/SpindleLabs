@@ -1,0 +1,102 @@
+{
+  "formatVersion": 2,
+  "links": [],
+  "materials": [],
+  "name": "Untitled",
+  "units": {
+    "length": "mm"
+  },
+  "workspaces": {
+    "design": {
+      "nextId": 4,
+      "profiles": [],
+      "sketches": [],
+      "timeline": {
+        "features": [
+          {
+            "dependsOn": [],
+            "id": "feature-1",
+            "intent": {
+              "parameters": {
+                "depth": 10,
+                "height": 10,
+                "width": 10
+              },
+              "summary": "Box: 10 × 10 × 10 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-1",
+                "label": "Box 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [],
+            "id": "feature-2",
+            "intent": {
+              "parameters": {
+                "depth": 30,
+                "height": 2,
+                "width": 30
+              },
+              "summary": "Box: 30 × 30 × 2 mm",
+              "type": "box"
+            },
+            "provenance": {
+              "from": [],
+              "self": {
+                "id": "feature-2",
+                "label": "Box 2",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          },
+          {
+            "dependsOn": [
+              "feature-2"
+            ],
+            "id": "feature-3",
+            "intent": {
+              "parameters": {
+                "pivotX": 0,
+                "pivotY": 0,
+                "pivotZ": 0,
+                "turnX": 0,
+                "turnY": 0,
+                "turnZ": 0,
+                "x": 0,
+                "y": 0,
+                "z": 10
+              },
+              "summary": "Move Box 2 by (0, 0, 10) mm",
+              "type": "move"
+            },
+            "provenance": {
+              "from": [
+                {
+                  "id": "feature-2",
+                  "label": "Box 2",
+                  "workspace": "design"
+                }
+              ],
+              "self": {
+                "id": "feature-3",
+                "label": "Move 1",
+                "workspace": "design"
+              }
+            },
+            "suppressed": false
+          }
+        ]
+      },
+      "version": 4
+    }
+  }
+}
+

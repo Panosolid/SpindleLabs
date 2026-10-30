@@ -1,5 +1,5 @@
 /* Slice for printing (slice-print.ts): the dialog with the beginner's
-   three choices and what the slice came to. Its look follows Start
+   four choices and what the slice came to. Its look follows Start
    fresh's dialog; the go button is the app's accent rather than a
    warning, since slicing changes nothing in the design. ":not(#none)"
    lifts a rule over the base layout's "#workspace button". */
@@ -10,10 +10,12 @@
 .slice-print #slice-print-untested { color: #f0a35e; }
 .slice-print .slice-print-choice { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 10px; }
 .slice-print select { width: min(240px, 60vw); }
+.slice-print #slice-print-supports { width: 20px; height: 20px; margin: 0; accent-color: var(--look-accent); }
 .slice-print #slice-print-status:empty { display: none; }
 .slice-print #slice-print-status.slice-print-bad { color: #f0a35e; }
 .slice-print .slice-print-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .slice-print #slice-print-go:not(#none) { font-weight: 600; }
 @media (max-width: 640px) {
   .slice-print button:not(#none), .slice-print select { min-height: 44px; }
+  .slice-print .slice-print-choice:has(#slice-print-supports) { min-height: 44px; }
 }

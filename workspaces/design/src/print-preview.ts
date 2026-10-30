@@ -78,7 +78,7 @@ export function presetKinds(preset: ShowPreset, present: readonly PrintKind[]): 
 }
 
 /** The words when the slice has no supports to show. */
-export const NO_SUPPORTS = "No supports in this slice: the slicer doesn't make them yet.";
+export const NO_SUPPORTS = "No supports in this slice: they were off, or nothing hangs out far enough to need them.";
 
 /** The layer readout: "Layer 12 of 100 · 2.40 mm". */
 export function layerWords(p: Playback, layer: number): string {
