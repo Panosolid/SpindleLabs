@@ -22,8 +22,8 @@ export interface KernelOps {
   body_free: { args: [body: BodyHandle]; result: void };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
-  /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%). */
-  slice_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number]; result: SlicedPrint };
+  /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%), and supports under overhangs (on or off). */
+  slice_stl: { args: [stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: boolean]; result: SlicedPrint };
   /** The size of the kernel's WebAssembly memory in bytes (it only ever grows): the soak test checks it levels off. */
   wasm_bytes: { args: []; result: number };
 }
