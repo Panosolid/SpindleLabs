@@ -5,13 +5,19 @@
 // move with the nozzle, at 1× to 1,000× the clock, and the bar under it
 // scrubs. All three share one clock, the G-code played through the
 // replayer (core's print/playback.ts), so what plays is what the printer
-// gets. Nothing is saved into the project. Styles: src/styles/print-preview.css.
+// gets. The Show card turns each kind of line on and off (walls, infill,
+// supports, the prime line, and the travel moves between them), with
+// "Everything", "No supports" and "Only supports" one tap away; hiding a
+// kind never changes the clock. Nothing is saved into the project. Styles:
+// src/styles/print-preview.css.
 
 import { layerDone, momentAt, PRINT_KINDS, type Playback, type PrintKind } from "@fission/core";
 
 /** The 3D view the preview draws into (the viewport's printView; tests pass a stand-in). */
 export interface PreviewView {
   setTime(t: number): void;
+  /** Draws only the plastic of `kinds`, and the travel moves when `travel`. */
+  setShown(kinds: ReadonlySet<PrintKind>, travel: boolean): void;
   frame(): void;
   resize(): void;
   dispose(): void;
@@ -46,6 +52,27 @@ export function kindsIn(p: Playback): PrintKind[] {
   return PRINT_KINDS.filter((k) => has.has(k));
 }
 
+/** The Show card's chips: the print's own kinds, and Support always, so supports have their switch the day the slicer makes them. */
+export function chipKinds(p: Playback): PrintKind[] {
+  const has = new Set<PrintKind>([...kindsIn(p), "support"]);
+  return PRINT_KINDS.filter((k) => has.has(k));
+}
+
+/** The Show card's one-tap choices. */
+export type ShowPreset = "all" | "no-supports" | "only-supports";
+
+export const PRESET_NAMES: Record<ShowPreset, string> = { all: "Everything", "no-supports": "No supports", "only-supports": "Only supports" };
+
+/** The kinds a choice shows, of those the print has (`present`). */
+export function presetKinds(preset: ShowPreset, present: readonly PrintKind[]): Set<PrintKind> {
+  if (preset === "only-supports") return new Set(present.filter((k) => k === "support"));
+  if (preset === "no-supports") return new Set(present.filter((k) => k !== "support"));
+  return new Set(present);
+}
+
+/** The words when the slice has no supports to show. */
+export const NO_SUPPORTS = "No supports in this slice: the slicer doesn't make them yet.";
+
 /** The layer readout: "Layer 12 of 100 · 2.40 mm". */
 export function layerWords(p: Playback, layer: number): string {
   if (p.layers.length === 0) return "No layers";
@@ -59,6 +86,9 @@ export interface PrintPreview {
   /** The clock's second shown. */
   readonly time: number;
   readonly playing: boolean;
+  /** The kinds whose plastic is drawn, and whether travel moves are. */
+  readonly shown: ReadonlySet<PrintKind>;
+  readonly travel: boolean;
   /** Moves the clock on by `ms` of real time at the chosen speed (what each animation frame does while playing). */
   advance(ms: number): void;
   close(): void;
@@ -88,16 +118,57 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   head.className = "print-preview-head";
   const heading = el("h2", "print-preview-heading", "Print preview");
   const summary = el("p", "print-preview-words", words);
-  const close = el("button", "print-preview-close", "Close");
+  const close = el("button", "print-preview-close", "✕");
   close.type = "button";
+  close.setAttribute("aria-label", "Close the preview");
+  close.title = "Close (Esc)";
   head.append(heading, summary, close);
   const host = el("div", "print-preview-view");
+  const present = kindsIn(p);
+  const hasSupports = present.includes("support");
+  const shown = new Set<PrintKind>(present);
+  let travel = false;
+  const card = el("section", "print-preview-show");
+  card.setAttribute("aria-label", "Show");
+  const presets = el("div", "print-preview-presets");
+  const presetButtons = new Map<ShowPreset, HTMLButtonElement>();
+  for (const preset of Object.keys(PRESET_NAMES) as ShowPreset[]) {
+    const b = el("button", `print-preview-preset-${preset}`, PRESET_NAMES[preset]);
+    b.type = "button";
+    b.className = "print-preview-preset";
+    // Without supports, both supports choices would show the same as Everything or nothing at all.
+    if (preset !== "all" && !hasSupports) {
+      b.disabled = true;
+      b.title = NO_SUPPORTS;
+    }
+    presets.append(b);
+    presetButtons.set(preset, b);
+  }
   const legend = el("ul", "print-preview-legend");
-  legend.setAttribute("aria-label", "Colours");
-  for (const k of kindsIn(p)) {
-    const item = el("li", "", KIND_NAMES[k]);
-    item.className = `print-preview-kind print-preview-${k}`;
+  legend.setAttribute("aria-label", "Lines shown");
+  const chips = new Map<PrintKind | "travel", HTMLButtonElement>();
+  const chip = (key: PrintKind | "travel", name: string) => {
+    const item = el("li", "");
+    const b = el("button", `print-preview-show-${key}`, name);
+    b.type = "button";
+    b.className = `print-preview-kind print-preview-${key}`;
+    item.append(b);
     legend.append(item);
+    chips.set(key, b);
+    return b;
+  };
+  for (const k of chipKinds(p)) {
+    const b = chip(k, present.includes(k) ? KIND_NAMES[k] : `${KIND_NAMES[k]} (none yet)`);
+    if (!present.includes(k)) {
+      b.disabled = true;
+      b.title = NO_SUPPORTS;
+    }
+  }
+  chip("travel", "Travel");
+  card.append(presets, legend);
+  if (!hasSupports) {
+    const note = el("p", "print-preview-no-supports", NO_SUPPORTS);
+    card.append(note);
   }
   const bar = el("div", "", "");
   bar.className = "print-preview-bar";
@@ -130,7 +201,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
   layerText.setAttribute("aria-live", "polite");
   layerLabel.append(layerSlider, layerText);
   bar.append(play, speed, scrub, layerLabel);
-  dialog.append(head, host, legend, bar);
+  dialog.append(host, head, card, bar);
   slot.append(dialog);
   dialog.showModal();
 
@@ -178,6 +249,27 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     frame = window.requestAnimationFrame(tick);
   };
   const onResize = () => view?.resize();
+  const showKinds = () => {
+    for (const [key, b] of chips) b.setAttribute("aria-pressed", String(key === "travel" ? travel : shown.has(key)));
+    for (const [preset, b] of presetButtons) {
+      const want = presetKinds(preset, present);
+      b.setAttribute("aria-pressed", String(!b.disabled && want.size === shown.size && [...want].every((k) => shown.has(k))));
+    }
+    view?.setShown(shown, travel);
+  };
+  for (const [key, b] of chips)
+    b.addEventListener("click", () => {
+      if (key === "travel") travel = !travel;
+      else if (shown.has(key)) shown.delete(key);
+      else shown.add(key);
+      showKinds();
+    });
+  for (const [preset, b] of presetButtons)
+    b.addEventListener("click", () => {
+      shown.clear();
+      for (const k of presetKinds(preset, present)) shown.add(k);
+      showKinds();
+    });
 
   play.addEventListener("click", () => (playing ? stop() : start()));
   scrub.addEventListener("input", () => {
@@ -206,6 +298,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     dialog.remove();
   });
   window.addEventListener("resize", onResize);
+  showKinds();
   show();
 
   const api: PrintPreview = {
@@ -217,6 +310,12 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     },
     get playing() {
       return playing;
+    },
+    get shown() {
+      return shown;
+    },
+    get travel() {
+      return travel;
     },
     advance(ms) {
       if (!(ms > 0)) return;

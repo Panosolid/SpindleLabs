@@ -10,7 +10,7 @@ import { checkLayers, checkPrinter, checkProblems } from "../../../packages/test
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { partDocument } from "../src/document.ts";
-import { defaultSpeed, kindsIn, layerWords, openPrintPreview, type PreviewView } from "../src/print-preview.ts";
+import { chipKinds, defaultSpeed, kindsIn, layerWords, NO_SUPPORTS, openPrintPreview, presetKinds, type PreviewView } from "../src/print-preview.ts";
 import { PRINT_DEFAULTS, sliceBodies } from "../src/slice-print.ts";
 
 const A = Math.PI * 0.875 * 0.875;
@@ -35,6 +35,17 @@ test("the layer words and the legend's kinds", () => {
   assert.deepEqual(kindsIn(p), ["outer-wall", "sparse-infill"]);
 });
 
+test("hand-worked: the Show card's choices, of the kinds a print has", () => {
+  const withSupports = ["outer-wall", "sparse-infill", "support", "prime"] as const;
+  // Everything is every kind the print has; No supports takes support away; Only supports keeps it alone.
+  assert.deepEqual([...presetKinds("all", withSupports)], ["outer-wall", "sparse-infill", "support", "prime"]);
+  assert.deepEqual([...presetKinds("no-supports", withSupports)], ["outer-wall", "sparse-infill", "prime"]);
+  assert.deepEqual([...presetKinds("only-supports", withSupports)], ["support"]);
+  // A print without supports: Only supports shows nothing (so its button is off), and Support still gets a chip.
+  assert.deepEqual([...presetKinds("only-supports", ["outer-wall"])], []);
+  assert.deepEqual(chipKinds(playback(TWO_LAYERS)), ["outer-wall", "sparse-infill", "support"]);
+});
+
 const { Window } = await import("happy-dom");
 
 function panel(gcode: string, broken = false) {
@@ -43,15 +54,16 @@ function panel(gcode: string, broken = false) {
   const slot = doc.createElement("div");
   doc.body.append(slot);
   const times: number[] = [];
+  const shown: { kinds: string[]; travel: boolean }[] = [];
   let disposed = 0;
   const p = playback(gcode);
   const make = (_host: HTMLElement, _p: Playback): PreviewView => {
     if (broken) throw new Error("no WebGL");
-    return { setTime: (t) => times.push(t), frame() {}, resize() {}, dispose: () => void disposed++ };
+    return { setTime: (t) => times.push(t), setShown: (k, travel) => shown.push({ kinds: [...k].sort(), travel }), frame() {}, resize() {}, dispose: () => void disposed++ };
   };
   const preview = openPrintPreview(slot, p, "2 layers, 0.0 g of PLA (0.00 m of filament).", make);
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
-  return { preview, times, disposed: () => disposed, $, window, p };
+  return { preview, times, shown, disposed: () => disposed, $, window, p };
 }
 
 test("the preview opens on the finished print; the layer slider shows the print up to a layer", async () => {
@@ -62,7 +74,7 @@ test("the preview opens on the finished print; the layer slider shows the print 
   assert.equal(t.$<HTMLInputElement>("print-preview-scrub").value, "1000");
   assert.equal(t.$("print-preview-layer-words").textContent, "Layer 2 of 2 · 0.40 mm");
   assert.equal(t.$<HTMLInputElement>("print-preview-layers").max, "2");
-  assert.deepEqual([...t.$("print-preview-legend").children].map((c) => c.textContent), ["Outer wall", "Sparse infill"]);
+  assert.deepEqual([...t.$("print-preview-legend").children].map((c) => c.textContent), ["Outer wall", "Sparse infill", "Support (none yet)", "Travel"]);
   // The slider at layer 1: the clock at the end of layer 1, 1.52 s.
   const slider = t.$<HTMLInputElement>("print-preview-layers");
   slider.value = "1";
@@ -103,6 +115,59 @@ test("Play starts from the first move at the end, moves at the chosen speed and 
   t.preview.advance(Number.NaN);
   t.preview.advance(-5);
   assert.equal(t.preview.time, 2.04);
+  t.preview.close();
+  await t.window.happyDOM.close();
+});
+
+// TWO_LAYERS with its infill line marked as support, as the slicer will write supports.
+const WITH_SUPPORT = TWO_LAYERS.replace(";TYPE:Sparse infill", ";TYPE:Support");
+
+test("each kind's switch, Travel and the one-tap choices tell the view what to draw, the clock untouched", async () => {
+  const t = panel(WITH_SUPPORT);
+  const pressed = (id: string) => t.$(id).getAttribute("aria-pressed");
+  // Opens with every kind on and travel off.
+  assert.deepEqual(t.shown.at(-1), { kinds: ["outer-wall", "support"], travel: false });
+  assert.equal(pressed("print-preview-preset-all"), "true");
+  assert.equal(t.$<HTMLButtonElement>("print-preview-preset-only-supports").disabled, false);
+  assert.equal(t.$("print-preview-no-supports"), null);
+  // Only supports: the walls go, the support stays, and only that choice is lit.
+  t.$("print-preview-preset-only-supports").click();
+  assert.deepEqual(t.shown.at(-1), { kinds: ["support"], travel: false });
+  assert.equal(pressed("print-preview-show-outer-wall"), "false");
+  assert.equal(pressed("print-preview-show-support"), "true");
+  assert.equal(pressed("print-preview-preset-only-supports"), "true");
+  assert.equal(pressed("print-preview-preset-all"), "false");
+  // No supports, then the walls switched off by hand too: nothing is drawn, no choice lit.
+  t.$("print-preview-preset-no-supports").click();
+  assert.deepEqual(t.shown.at(-1), { kinds: ["outer-wall"], travel: false });
+  t.$("print-preview-show-outer-wall").click();
+  assert.deepEqual(t.shown.at(-1), { kinds: [], travel: false });
+  for (const c of ["all", "no-supports", "only-supports"]) assert.equal(pressed(`print-preview-preset-${c}`), "false");
+  // Travel on and off by its own switch, whatever the kinds.
+  t.$("print-preview-show-travel").click();
+  assert.deepEqual(t.shown.at(-1), { kinds: [], travel: true });
+  assert.equal(pressed("print-preview-show-travel"), "true");
+  // Back to Everything; travel stays as it was set. The clock never moved.
+  t.$("print-preview-preset-all").click();
+  assert.deepEqual(t.shown.at(-1), { kinds: ["outer-wall", "support"], travel: true });
+  assert.equal(t.preview.time, 2.04);
+  assert.deepEqual([...t.preview.shown].sort(), ["outer-wall", "support"]);
+  t.preview.close();
+  await t.window.happyDOM.close();
+});
+
+test("a slice without supports says so: their switch and both supports choices are off", async () => {
+  const t = panel(TWO_LAYERS);
+  const support = t.$<HTMLButtonElement>("print-preview-show-support");
+  assert.equal(support.disabled, true);
+  assert.equal(support.textContent, "Support (none yet)");
+  assert.equal(t.$<HTMLButtonElement>("print-preview-preset-only-supports").disabled, true);
+  assert.equal(t.$<HTMLButtonElement>("print-preview-preset-no-supports").disabled, true);
+  assert.equal(t.$("print-preview-no-supports").textContent, NO_SUPPORTS);
+  // A click on the disabled switch does nothing.
+  const before = t.shown.length;
+  support.click();
+  assert.equal(t.shown.length, before);
   t.preview.close();
   await t.window.happyDOM.close();
 });

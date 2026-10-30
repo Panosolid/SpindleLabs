@@ -1,20 +1,80 @@
-/* The print preview (print-preview.ts): a dialog filling the window, the
-   3D view in the middle, the legend over its top left and the time-lapse
-   bar along the bottom. ":not(#none)" lifts a rule over the base layout's
-   "#workspace button". */
-.print-preview { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #1b1e23; color: #e6e9ee; display: none; }
-.print-preview[open] { display: flex; flex-direction: column; }
+/* The print preview (print-preview.ts): a dialog filling the window with the
+   3D view behind everything, and floating glass cards over it: the heading
+   and Close along the top, the Show card (one-tap choices and a switch for
+   each kind of line) on the left, and the time-lapse dock along the bottom.
+   On a phone the Show card is one sideways-scrolling row under the heading,
+   so it never covers more than a strip of the view. ":not(#none)" lifts a
+   rule over the base layout's "#workspace button". */
+.print-preview {
+  --pp-glass: rgba(18, 23, 32, 0.72);
+  --pp-glass-edge: rgba(255, 255, 255, 0.09);
+  --pp-text: #eef1f6;
+  --pp-dim: #a9b2c0;
+  --pp-accent: var(--look-accent, #4aa8ff);
+  --pp-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.4);
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: #14171c; color: var(--pp-text); display: none; overflow: hidden;
+  font-feature-settings: "tnum" 1;
+}
+.print-preview[open] { display: block; }
 .print-preview::backdrop { background: rgba(0, 0, 0, 0.6); }
-.print-preview .print-preview-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #161d2a; border-bottom: 1px solid var(--look-edge, #2a3240); }
-.print-preview h2 { margin: 0; font-size: 1.05em; white-space: nowrap; }
-.print-preview #print-preview-words { margin: 0; flex: 1; min-width: 0; color: #c4cbd5; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.print-preview #print-preview-close { margin-left: auto; }
-.print-preview #print-preview-view { position: relative; flex: 1; min-height: 0; touch-action: none; }
+
+/* The view fills the dialog; the cards float over it. */
+.print-preview #print-preview-view { position: absolute; inset: 0; touch-action: none; }
 .print-preview .print-view-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.print-preview #print-preview-view.print-preview-bad { padding: 24px; color: #f0a35e; }
-.print-preview #print-preview-legend { position: absolute; top: 56px; left: 12px; margin: 0; padding: 8px 10px; list-style: none; background: rgba(22, 29, 42, 0.82); border-radius: 8px; font-size: 0.85em; pointer-events: none; }
-.print-preview .print-preview-kind { display: flex; align-items: center; gap: 6px; line-height: 1.6; }
-.print-preview .print-preview-kind::before { content: ""; width: 12px; height: 12px; border-radius: 3px; background: var(--kind); }
+.print-preview #print-preview-view.print-preview-bad { padding: 96px 24px; color: #f0a35e; }
+
+.print-preview .print-preview-head,
+.print-preview #print-preview-show,
+.print-preview .print-preview-bar {
+  position: absolute; z-index: 1;
+  background: var(--pp-glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--pp-glass-edge); border-radius: 16px; box-shadow: var(--pp-shadow);
+}
+
+/* The heading. */
+.print-preview .print-preview-head { top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 16px; min-height: 44px; box-sizing: border-box; }
+.print-preview h2 { margin: 0; font-size: 1em; font-weight: 650; letter-spacing: 0.01em; white-space: nowrap; }
+.print-preview #print-preview-words { margin: 0; flex: 1; min-width: 0; color: var(--pp-dim); font-size: 0.88em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.print-preview #print-preview-close:not(#none) {
+  margin-left: auto; width: 36px; height: 36px; min-width: 36px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--pp-glass-edge); background: rgba(255, 255, 255, 0.06); color: var(--pp-text); font-size: 15px; line-height: 1; cursor: pointer;
+}
+.print-preview #print-preview-close:not(#none):hover { background: rgba(255, 255, 255, 0.14); }
+
+/* The Show card. */
+.print-preview #print-preview-show { top: 68px; left: 12px; width: 248px; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; }
+.print-preview #print-preview-presets { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: rgba(0, 0, 0, 0.28); }
+.print-preview .print-preview-preset:not(#none) {
+  flex: 1; min-width: 0; padding: 6px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--pp-dim);
+  font-size: 0.74em; font-weight: 600; white-space: nowrap; cursor: pointer; box-shadow: none;
+}
+.print-preview .print-preview-preset:not(#none)[aria-pressed="true"] { background: rgba(255, 255, 255, 0.13); color: var(--pp-text); }
+.print-preview .print-preview-preset:not(#none):disabled { opacity: 0.38; cursor: not-allowed; }
+.print-preview #print-preview-legend { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.print-preview .print-preview-kind:not(#none) {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--pp-text); font-size: 0.86em; text-align: left; cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.print-preview .print-preview-kind:not(#none):hover { background: rgba(255, 255, 255, 0.07); }
+.print-preview .print-preview-kind::before {
+  content: ""; flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--kind);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 0 10px color-mix(in srgb, var(--kind) 55%, transparent);
+}
+/* A switch at the row's end: on, its knob right on the accent; off, the row dims. */
+.print-preview .print-preview-kind::after {
+  content: ""; flex: none; margin-left: auto; width: 26px; height: 16px; border-radius: 8px;
+  background: radial-gradient(circle 6px at 8px 50%, #fff 98%, transparent) rgba(255, 255, 255, 0.18);
+  transition: background 140ms ease;
+}
+.print-preview .print-preview-kind[aria-pressed="true"]::after { background: radial-gradient(circle 6px at 18px 50%, #fff 98%, transparent) var(--pp-accent); }
+.print-preview .print-preview-kind[aria-pressed="false"] { opacity: 0.55; }
+.print-preview .print-preview-kind[aria-pressed="false"]::before { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35); filter: saturate(0.3); }
+.print-preview .print-preview-kind:not(#none):disabled { opacity: 0.32; cursor: not-allowed; }
+.print-preview .print-preview-kind:disabled::after { visibility: hidden; }
+.print-preview #print-preview-no-supports { margin: 0; padding: 0 4px; color: var(--pp-dim); font-size: 0.74em; line-height: 1.35; }
 .print-preview .print-preview-outer-wall { --kind: #ff8a3d; }
 .print-preview .print-preview-inner-wall { --kind: #ffc857; }
 .print-preview .print-preview-solid-infill { --kind: #d94f70; }
@@ -22,14 +82,69 @@
 .print-preview .print-preview-support { --kind: #3fbf7f; }
 .print-preview .print-preview-prime { --kind: #7fa7c9; }
 .print-preview .print-preview-other { --kind: #b0b0b0; }
-.print-preview .print-preview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; background: #161d2a; border-top: 1px solid var(--look-edge, #2a3240); }
-.print-preview #print-preview-play:not(#none) { min-width: 72px; font-weight: 600; }
-.print-preview #print-preview-scrub { flex: 1 1 200px; min-width: 120px; }
-.print-preview .print-preview-layer { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; }
+.print-preview .print-preview-travel { --kind: #5ec8ff; }
+
+/* The time-lapse dock. */
+.print-preview .print-preview-bar {
+  left: 50%; bottom: 16px; transform: translateX(-50%); width: min(880px, calc(100% - 24px)); box-sizing: border-box;
+  display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "play speed scrub" "layer layer layer";
+  align-items: center; gap: 8px 12px; padding: 10px 14px;
+}
+.print-preview #print-preview-play:not(#none) {
+  grid-area: play; width: 48px; height: 48px; min-width: 48px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--pp-accent); color: transparent; font-size: 0; cursor: pointer; position: relative;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--pp-accent) 45%, transparent);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+.print-preview #print-preview-play:not(#none):hover { filter: brightness(1.1); }
+.print-preview #print-preview-play:not(#none):active { transform: scale(0.94); }
+/* The play triangle, or the pause bars while playing. */
+.print-preview #print-preview-play::before {
+  content: ""; position: absolute; left: 19px; top: 15px; width: 0; height: 0;
+  border-style: solid; border-width: 9px 0 9px 15px; border-color: transparent transparent transparent #07111c;
+}
+.print-preview #print-preview-play[aria-pressed="true"]::before {
+  left: 17px; top: 16px; width: 5px; height: 16px; border: 0; background: #07111c; box-shadow: 9px 0 0 #07111c;
+}
+.print-preview #print-preview-speed {
+  grid-area: speed; height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--pp-glass-edge);
+  background: rgba(255, 255, 255, 0.07); color: var(--pp-text); font-weight: 600; font-size: 0.85em;
+}
+.print-preview #print-preview-scrub { grid-area: scrub; }
+.print-preview .print-preview-layer { grid-area: layer; display: flex; align-items: center; gap: 12px; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .print-preview #print-preview-layers { flex: 1; min-width: 100px; }
-.print-preview #print-preview-layer-words { white-space: nowrap; font-size: 0.9em; color: #c4cbd5; min-width: 13ch; }
+.print-preview #print-preview-layer-words { white-space: nowrap; font-size: 0.82em; color: var(--pp-dim); min-width: 15ch; text-align: right; }
+
+/* Both sliders as slim rounded tracks with a white knob. */
+.print-preview input[type="range"]:not(#none) { -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; height: 24px; margin: 0; padding: 0; border: 0; box-shadow: none; background: transparent; cursor: pointer; }
+.print-preview input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); }
+.print-preview input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); }
+.print-preview input[type="range"]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--pp-accent); }
+.print-preview input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; background: #fff; border: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 0 0 4px color-mix(in srgb, var(--pp-accent) 35%, transparent);
+}
+.print-preview input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
+
 @media (max-width: 640px) {
-  .print-preview button:not(#none), .print-preview select { min-height: 44px; }
+  .print-preview .print-preview-head { top: 8px; left: 8px; right: 8px; padding-left: 14px; }
   .print-preview #print-preview-words { display: none; }
-  .print-preview #print-preview-legend { top: 60px; font-size: 0.8em; }
+  .print-preview #print-preview-close:not(#none) { width: 44px; height: 44px; min-width: 44px; }
+  /* The Show card as one row of pills that scrolls sideways. */
+  .print-preview #print-preview-show {
+    top: 66px; left: 8px; right: 8px; width: auto; height: 54px; padding: 4px; flex-direction: row; align-items: center; gap: 4px; border-radius: 999px;
+    overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  }
+  .print-preview #print-preview-show::-webkit-scrollbar { display: none; }
+  .print-preview #print-preview-presets { flex: none; border-radius: 999px; }
+  .print-preview .print-preview-preset:not(#none) { flex: none; min-height: 36px; padding: 0 10px; border-radius: 999px; font-size: 0.78em; }
+  .print-preview #print-preview-legend { flex-direction: row; gap: 4px; }
+  .print-preview .print-preview-kind:not(#none) { width: auto; min-height: 44px; padding: 0 12px; border-radius: 999px; white-space: nowrap; gap: 8px; }
+  .print-preview .print-preview-kind::after { display: none; }
+  .print-preview .print-preview-kind:not(#none)[aria-pressed="true"] { background: rgba(255, 255, 255, 0.1); }
+  /* The strip is short of room: the supports choices show once there are supports to choose. */
+  .print-preview .print-preview-preset:not(#none):disabled, .print-preview #print-preview-no-supports { display: none; }
+  .print-preview .print-preview-bar { bottom: max(8px, env(safe-area-inset-bottom)); width: calc(100% - 16px); padding: 8px 12px; gap: 6px 10px; }
+  .print-preview #print-preview-speed { height: 44px; }
+  .print-preview #print-preview-layer-words { min-width: 0; }
 }
