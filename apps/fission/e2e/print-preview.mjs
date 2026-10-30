@@ -170,7 +170,9 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.selectOption("#print-preview-speed", "10");
       await press("#print-preview-play");
       assert.equal(await page.textContent("#print-preview-play"), "Pause");
-      await page.waitForTimeout(800);
+      // Waits for the clock to move rather than a fixed time: a browser drawing without a graphics card (as here) takes
+      // up to a second a frame, and the clock moves on from the second frame.
+      await page.waitForFunction((b) => Number(document.getElementById("print-preview-scrub").value) > b, before, { timeout: 15000 }).catch(() => {});
       const after = Number(await page.inputValue("#print-preview-scrub"));
       assert.ok(after > before, `the time-lapse moved on: ${before} -> ${after}`);
       await press("#print-preview-play");

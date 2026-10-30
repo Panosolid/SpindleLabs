@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { playback } from "@fission/core";
-import { travelPieces } from "../src/print-view.ts";
+import { beadGeometry, travelPieces } from "../src/print-view.ts";
 
 const A = Math.PI * 0.875 * 0.875;
 const line = 0.8 / A;
@@ -28,4 +28,43 @@ test("a file with no moves has no travel", () => {
   const t = travelPieces(playback(""));
   assert.equal(t.count, 0);
   assert.deepEqual([...t.before], [0]);
+});
+
+test("hand-worked: a strand is exactly as wide and tall as its line, its top at the line's height, and closed", () => {
+  // The unit strand is scaled by (length + width, width, height): so it must span x and y from −½ to ½ and z from −1
+  // to 0, no less (a strand drawn 4 % thin would undo the width check of H2c2) and no more.
+  for (const n of [8, 12]) {
+    const g = beadGeometry(n);
+    g.computeBoundingBox();
+    const b = g.boundingBox!;
+    const near = (a: number, e: number) => assert.ok(Math.abs(a - e) < 1e-6, `${a} vs ${e} (n ${n})`);
+    near(b.min.x, -0.5);
+    near(b.max.x, 0.5);
+    near(b.min.y, -0.5);
+    near(b.max.y, 0.5);
+    near(b.min.z, -1);
+    near(b.max.z, 0);
+    // The top is flat, not a point: two corners at z 0, as wide as half-way round the squircle from the side, so it lies
+    // on a layer above without a gap. With 8 points, the top two sit at 67.5° and 112.5°.
+    const pos = g.getAttribute("position");
+    const top = new Set<string>();
+    for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getZ(i)) < 1e-9) top.add(pos.getY(i).toFixed(6));
+    assert.equal(top.size, 2);
+    // Closed: every edge of every triangle is shared by exactly two triangles (welding equal positions).
+    const key = (i: number) => [pos.getX(i), pos.getY(i), pos.getZ(i)].map((v) => v.toFixed(6)).join();
+    const edges = new Map<string, number>();
+    const idx = g.getIndex()!;
+    for (let t = 0; t < idx.count; t += 3)
+      for (let e = 0; e < 3; e++) {
+        const [a, c] = [key(idx.getX(t + e)), key(idx.getX(t + ((e + 1) % 3)))].sort();
+        edges.set(`${a}|${c}`, (edges.get(`${a}|${c}`) ?? 0) + 1);
+      }
+    for (const [e, k] of edges) assert.equal(k, 2, `edge ${e} used ${k} times (n ${n})`);
+    // Every normal is a unit vector pointing out of the strand (away from its centre line at z −½).
+    const nor = g.getAttribute("normal");
+    for (let i = 0; i < pos.count; i++) {
+      near(Math.hypot(nor.getX(i), nor.getY(i), nor.getZ(i)), 1);
+      assert.ok(nor.getX(i) * pos.getX(i) + nor.getY(i) * pos.getY(i) + nor.getZ(i) * (pos.getZ(i) + 0.5) > 0);
+    }
+  }
 });
