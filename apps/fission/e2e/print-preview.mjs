@@ -2,7 +2,10 @@
 // the 40 × 30 × 20 mm box built, Slice for printing > Preview opens the
 // print in 3D over the page: 100 layers of 0.2 mm, the legend naming the
 // walls and infill, the finished part drawn (the middle of the view is not
-// the background). The layer slider at layer 1 shows far less plastic than
+// the background). The Show card's switches hide kinds of line (the walls
+// alone draw less than the whole box, every kind off draws next to
+// nothing, Travel adds lines), and with no supports in the slice both
+// supports choices are off. The layer slider at layer 1 shows far less plastic than
 // at 100; Play lays the print down from the first move, the scrubber moving
 // on; a drag orbits the view. Escape closes it. At a desktop width with
 // clicks and a phone's with taps, everything on screen.
@@ -60,6 +63,30 @@ async function coloured(page) {
   }, png.toString("base64"));
 }
 
+/** How many of the view's saturated pixels have a hue (degrees) from `lo` to `hi`: solid infill's pink-red is about 345. */
+async function hued(page, lo, hi) {
+  const png = await page.locator("#print-preview-view canvas").screenshot();
+  return page.evaluate(async ([b64, lo, hi]) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = new OffscreenCanvas(img.width, img.height);
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, img.width, img.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const [r, gg, b] = [d[i], d[i + 1], d[i + 2]];
+      const max = Math.max(r, gg, b), min = Math.min(r, gg, b);
+      if (max - min <= 40) continue;
+      let h = max === r ? ((gg - b) / (max - min)) * 60 : max === gg ? (2 + (b - r) / (max - min)) * 60 : (4 + (r - gg) / (max - min)) * 60;
+      if (h < 0) h += 360;
+      if (h >= lo && h <= hi) n++;
+    }
+    return n;
+  }, [png.toString("base64"), lo, hi]);
+}
+
 const setRange = (page, sel, value) => page.$eval(sel, (el, v) => {
   el.value = String(v);
   el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -89,6 +116,38 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       const whole = await coloured(page);
       assert.ok(whole > 2000, `the finished box is drawn: ${whole} coloured pixels`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-done.png` });
+
+      // The Show card: no supports in this slice, so both supports choices are off and say why.
+      assert.equal(await page.$eval("#print-preview-preset-only-supports", (b) => b.disabled), true);
+      assert.equal(await page.$eval("#print-preview-show-support", (b) => b.disabled), true);
+      // Infill off: the top's pink solid infill goes (the walls stay, so plenty is still drawn).
+      const pink = await hued(page, 330, 359);
+      assert.ok(pink > 2000, `the top's solid infill is in view: ${pink}`);
+      for (const k of ["solid-infill", "sparse-infill"]) await press(`#print-preview-show-${k}`);
+      await page.waitForTimeout(200);
+      const walls = await coloured(page);
+      const pinkLeft = await hued(page, 330, 359);
+      assert.ok(pinkLeft < pink * 0.05 && walls > 2000, `walls alone: ${pinkLeft} pink of ${pink}, ${walls} coloured`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-walls.png` });
+      // Every kind off: next to nothing left (the nozzle).
+      for (const id of await page.$$eval("#print-preview-legend button[aria-pressed='true']", (bs) => bs.map((b) => b.id))) await press(`#${id}`);
+      await page.waitForTimeout(200);
+      const none = await coloured(page);
+      assert.ok(none < whole * 0.1, `everything off: ${none} vs ${whole}`);
+      // Travel on: its lines appear.
+      await press("#print-preview-show-travel");
+      await page.waitForTimeout(200);
+      const travel = await coloured(page);
+      assert.ok(travel > none, `travel lines drawn: ${travel} vs ${none}`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-travel.png` });
+      await press("#print-preview-show-travel");
+      await press("#print-preview-preset-all");
+      await page.waitForTimeout(200);
+      const back = await coloured(page);
+      assert.ok(Math.abs(back - whole) < whole * 0.02, `Everything brings it all back: ${back} vs ${whole}`);
+      // The Show card on a phone is one strip, never most of the view.
+      const card = await page.$eval("#print-preview-show", (e) => e.getBoundingClientRect().toJSON());
+      if (tap) assert.ok(card.height <= 60, `the Show strip is one row: ${card.height}px`);
 
       // Layer 1 alone: far less plastic in view than the whole box.
       await setRange(page, "#print-preview-layers", 1);

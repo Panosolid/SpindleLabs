@@ -10,7 +10,10 @@
 // showing the print up to a moment is only how many instances are drawn,
 // plus the line being laid, drawn on its own and cut where the nozzle is.
 // What to draw comes from `Playback` (core's print/playback.ts), the
-// G-code played through the replayer: never a separate drawing.
+// G-code played through the replayer: never a separate drawing. Hiding a
+// kind squashes its instances to nothing (the order, and so the clock's
+// prefix, stays the same); travel moves are thin lines drawn the same way,
+// as many as the clock has passed.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -34,6 +37,8 @@ export interface PrintView {
   readonly element: HTMLCanvasElement;
   /** Shows the print as it is at second `t` of the playback's clock. */
   setTime(t: number): void;
+  /** Draws only the plastic of `kinds`, and the travel moves when `travel`. */
+  setShown(kinds: ReadonlySet<PrintKind>, travel: boolean): void;
   /** Frames the part from the front, a little above. */
   frame(): void;
   /** Call when the host changes size. */
@@ -63,6 +68,31 @@ function plasticMesh(p: Playback): { mesh: THREE.InstancedMesh; index: Int32Arra
   }
   mesh.count = 0;
   return { mesh, index };
+}
+
+/**
+ * The travel moves as line pieces, in order: every nozzle move laying no plastic that goes somewhere
+ * (a retraction or a pause, which goes nowhere, is left out), as `positions` (six numbers a piece) and
+ * `before[i]`, how many of them come before piece i, so the clock's moment shows the first `before[i]`.
+ */
+export function travelPieces(p: Playback): { positions: Float32Array; before: Uint32Array; count: number } {
+  const before = new Uint32Array(p.count + 1);
+  const keep: number[] = [];
+  for (let i = 0; i < p.count; i++) {
+    before[i] = keep.length;
+    if (p.plastic[i]) continue;
+    const d = Math.hypot(p.to[3 * i] - p.from[3 * i], p.to[3 * i + 1] - p.from[3 * i + 1], p.to[3 * i + 2] - p.from[3 * i + 2]);
+    if (d > 0) keep.push(i);
+  }
+  before[p.count] = keep.length;
+  const positions = new Float32Array(6 * keep.length);
+  keep.forEach((i, k) => {
+    for (let j = 0; j < 3; j++) {
+      positions[6 * k + j] = p.from[3 * i + j];
+      positions[6 * k + 3 + j] = p.to[3 * i + j];
+    }
+  });
+  return { positions, before, count: keep.length };
 }
 
 const scratch = { a: new THREE.Vector3(), b: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(), x: new THREE.Vector3(1, 0, 0) };
@@ -129,7 +159,14 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   const { mesh, index } = plasticMesh(p);
   const partial = new THREE.Mesh(mesh.geometry, new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }));
   const nozzle = nozzleMesh();
-  scene.add(mesh, partial, nozzle);
+  const travels = travelPieces(p);
+  const travelGeometry = new THREE.BufferGeometry();
+  travelGeometry.setAttribute("position", new THREE.BufferAttribute(travels.positions, 3));
+  const travelLines = new THREE.LineSegments(travelGeometry, new THREE.LineBasicMaterial({ color: 0x5ec8ff, transparent: true, opacity: 0.55 }));
+  travelLines.frustumCulled = false;
+  travelLines.visible = false;
+  scene.add(mesh, partial, nozzle, travelLines);
+  let shownKinds: ReadonlySet<PrintKind> = new Set(p.kind);
 
   // The part's box, for framing: every plastic line's ends but the prime line's, which runs along the plate's edge.
   const bounds = new THREE.Box3();
@@ -154,13 +191,16 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   controls.addEventListener("change", redraw);
 
   const m = new THREE.Matrix4();
+  let time = p.seconds;
   const view: PrintView = {
     element: canvas,
     setTime(t) {
+      time = t;
       const at = momentAt(p, t);
       mesh.count = at ? at.laid : 0;
+      travelGeometry.setDrawRange(0, 2 * (at ? travels.before[at.piece] + (at.along >= 1 ? travels.before[at.piece + 1] - travels.before[at.piece] : 0) : 0));
       partial.visible = false;
-      if (at && p.plastic[at.piece] && at.along > 0 && at.along < 1) {
+      if (at && p.plastic[at.piece] && shownKinds.has(p.kind[at.piece]) && at.along > 0 && at.along < 1) {
         lineMatrix(p, at.piece, at.along, m);
         m.decompose(partial.position, partial.quaternion, partial.scale);
         (partial.material as THREE.MeshStandardMaterial).color.setHex(KIND_COLOURS[p.kind[at.piece]]);
@@ -169,6 +209,19 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
       nozzle.visible = at !== null;
       if (at) nozzle.position.set(at.nozzle[0], at.nozzle[1], at.nozzle[2]);
       redraw();
+    },
+    setShown(kinds, travel) {
+      shownKinds = new Set(kinds);
+      const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+      for (let k = 0; k < index.length; k++) {
+        const i = index[k];
+        if (shownKinds.has(p.kind[i])) lineMatrix(p, i, 1, m);
+        else m.copy(zero);
+        mesh.setMatrixAt(k, m);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      travelLines.visible = travel;
+      view.setTime(time);
     },
     frame() {
       const centre = bounds.getCenter(new THREE.Vector3());
@@ -197,6 +250,8 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
       (mesh.material as THREE.Material).dispose();
       (partial.material as THREE.Material).dispose();
       mesh.dispose();
+      travelGeometry.dispose();
+      (travelLines.material as THREE.Material).dispose();
       scene.traverse((o) => {
         if (o instanceof THREE.Mesh && o !== mesh && o !== partial) {
           o.geometry.dispose();
