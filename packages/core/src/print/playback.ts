@@ -61,7 +61,11 @@ export interface Playback {
   /** 1 for plastic, 0 for a travel, retraction or prime. */
   plastic: Uint8Array;
   kind: PrintKind[];
-  /** The plastic's line width (mm) worked out from its volume: volume ÷ (length × layer height); 0 for a move laying none. */
+  /**
+   * The plastic's line width (mm) worked out from its volume, as a printed bead: a rectangle as tall as the
+   * layer with half-round sides, area (w − h) × h + π(h/2)², so w = volume ÷ (length × h) + h(1 − π/4);
+   * 0 for a move laying none. (Taken as a plain rectangle, a 0.42 mm line read as 0.38 mm.)
+   */
   width: Float64Array;
   /** Which layer a piece belongs to: the layer it is drawn in, or for a nozzle move the last layer started (−1 before the first). */
   layer: Int32Array;
@@ -72,6 +76,9 @@ export interface Playback {
   seconds: number;
   problems: GcodeProblem[];
 }
+
+/** A bead's half-round sides add h(1 − π/4) to the width a plain rectangle of the same area would have. */
+const BEAD_SIDES = 1 - Math.PI / 4;
 
 /** The most an arc turns in one piece: 5°. */
 export const ARC_STEP = Math.PI / 36;
@@ -150,7 +157,7 @@ export function playback(gcode: string, options: ReplayOptions = {}): Playback {
       }
       layer.finish = clock;
       const length = Math.hypot(piece.to[0] - piece.from[0], piece.to[1] - piece.from[1], piece.to[2] - piece.from[2]);
-      out.width[i] = length > STILL && layer.height > STILL ? volume / (length * layer.height) : 0;
+      out.width[i] = length > STILL && layer.height > STILL ? volume / (length * layer.height) + layer.height * BEAD_SIDES : 0;
       out.plastic[i] = 1;
       drawn++;
     }

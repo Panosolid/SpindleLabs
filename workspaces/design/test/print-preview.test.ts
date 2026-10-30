@@ -4,7 +4,9 @@
 // replayer, checked against the engine's own preview layers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { playback, type Playback } from "@fission/core";
+import { momentAt, playback, type Playback } from "@fission/core";
+import { replay } from "@fission/core/gcode";
+import { checkLayers, checkPrinter, checkProblems } from "../../../packages/testing/src/gcode-checks.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { partDocument } from "../src/document.ts";
@@ -133,4 +135,58 @@ test("a 20 mm cube from the shipped build plays as the engine sliced it: 100 lay
   }
   // Every line laid is about one 0.4 mm line wide (0.3 to 0.6: walls and infill differ a little).
   for (let i = 0; i < p.count; i++) if (p.plastic[i] && p.kind[i] !== "prime") assert.ok(p.width[i] > 0.3 && p.width[i] < 0.6, `width ${p.width[i]} of ${p.kind[i]}`);
+});
+
+test("hand-worked: a 20 mm cube's first layer, and every line as wide as the G-code says", async () => {
+  const kernel = nodeKernel();
+  const doc = partDocument("box", 20, 20, 20);
+  const print = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
+  const r = replay(print.gcode);
+  const p = playback(print.gcode);
+  // The slice has no arcs, so the playback's pieces are the replayer's moves one for one.
+  assert.equal(p.count, r.moves.length);
+  // Each line's width as the file states it: the last `;WIDTH:` comment before the move.
+  const lines = print.gcode.split("\n");
+  const stated: number[] = [];
+  let w = Number.NaN;
+  for (const l of lines) {
+    const m = /^;WIDTH:([\d.]+)/.exec(l);
+    stated.push(m ? (w = Number(m[1])) : w);
+  }
+  let checked = 0;
+  for (let i = 0; i < p.count; i++) {
+    if (!p.plastic[i] || p.kind[i] === "prime") continue;
+    const want = stated[r.moves[i].line - 1];
+    if (!Number.isFinite(want)) continue;
+    // E has five decimals (about 1e-5 of a 0.6 mm push), so the width read back is good to well under 1e-3 mm.
+    assert.ok(Math.abs(p.width[i] - want) < 1e-3, `line ${r.moves[i].line}: ${p.width[i]} drawn, ${want} stated`);
+    checked++;
+  }
+  assert.ok(checked > 1000, `${checked} lines checked`);
+
+  // The outer wall of the first layer, by hand: the cube's faces are 20 mm apart and the outer line is
+  // 0.42 mm wide, laid flush with them, so its centre runs 0.21 mm in: a square of side 20 − 0.42 = 19.58 mm,
+  // 4 × 19.58 = 78.32 mm round. The file prints it at F3000, 50 mm/s: 78.32 ÷ 50 = 1.5664 s.
+  const outer = [...Array(p.count).keys()].filter((i) => p.plastic[i] && p.layer[i] === 0 && p.kind[i] === "outer-wall");
+  assert.equal(outer.length, 4);
+  const length = (i: number) => Math.hypot(p.to[3 * i] - p.from[3 * i], p.to[3 * i + 1] - p.from[3 * i + 1]);
+  for (const i of outer) assert.ok(Math.abs(length(i) - 19.58) < 1e-9, `side ${length(i)}`);
+  const time = outer.reduce((t, i) => t + p.finish[i] - p.start[i], 0);
+  assert.ok(Math.abs(time - 1.5664) < 1e-9, `outer wall ${time} s`);
+  // Halfway through the first side's time the nozzle is halfway along it, 0.2 mm above the bed.
+  const [a] = outer;
+  const at = momentAt(p, (p.start[a] + p.finish[a]) / 2)!;
+  assert.equal(at.piece, a);
+  for (const k of [0, 1]) assert.ok(Math.abs(at.nozzle[k] - (p.from[3 * a + k] + p.to[3 * a + k]) / 2) < 1e-9);
+  assert.ok(Math.abs(at.nozzle[2] - 0.2) < 1e-9);
+  // And the square is the cube's footprint shrunk by 0.21 mm all round: 19.58 across in x and in y.
+  const xs = outer.flatMap((i) => [p.from[3 * i], p.to[3 * i]]);
+  const ys = outer.flatMap((i) => [p.from[3 * i + 1], p.to[3 * i + 1]]);
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 19.58) < 1e-9 && Math.abs(Math.max(...ys) - Math.min(...ys) - 19.58) < 1e-9);
+
+  // The replayer's own checks pass on everything the preview shows: the file followed faithfully, on the P1S's
+  // 256 × 256 mm plate and 250 mm height, layers going up within the limits and every wall closed.
+  assert.deepEqual(checkProblems(r), []);
+  assert.deepEqual(checkLayers(r, 1e-3), []);
+  assert.deepEqual(checkPrinter(r, { bed: { x: 256, y: 256 }, height: 250, maxFeed: 30000, maxNozzle: 300, maxBed: 110 }), []);
 });

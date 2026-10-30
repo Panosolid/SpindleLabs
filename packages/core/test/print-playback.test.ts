@@ -41,8 +41,10 @@ test("hand-worked: two layers on the clock", () => {
   assert.deepEqual([one.first, one.end, two.first, two.end], [0, 3, 3, 4]);
   assert.ok(close(one.z, 0.2) && close(one.height, 0.2) && close(two.z, 0.4) && close(two.height, 0.2, 1e-12));
   assert.ok(close(one.start, 0.02) && close(one.finish, 1.52) && close(two.start, 1.54) && close(two.finish, 2.04));
-  // Width from the volume: 0.8 mm³ ÷ (10 mm × 0.2 mm) = 0.4 mm.
-  for (const i of [1, 2, 3, 5]) assert.ok(close(p.width[i], 0.4, 1e-9), `width ${p.width[i]}`);
+  // Width from the volume, as a printed bead: a 0.2 mm tall rectangle with half-round sides, so area
+  // (w − h) × h + π(h/2)². The area is 0.8 mm³ ÷ 10 mm = 0.08 mm², so w − 0.2 = (0.08 − 0.0314159…) ÷ 0.2
+  // = 0.242920…, w = 0.442920… mm (the same as 0.08 ÷ 0.2 + 0.2 × (1 − π/4) = 0.4 + 0.042920…).
+  for (const i of [1, 2, 3, 5]) assert.ok(close(p.width[i], 0.4 + 0.2 * (1 - Math.PI / 4), 1e-9), `width ${p.width[i]}`);
   assert.equal(p.width[0], 0);
 });
 
