@@ -484,3 +484,12 @@ Community (free sharing only; starts after CAD step 25, needs a server first, se
 - [ ] C3. Search and browse; download into a new local project; open it in any workspace
 - [ ] C4. Remix: a downloaded copy links back to the original and credits its author
 - [ ] C5. Moderation and reporting
+
+Money (owner's decisions, 2026-10-29 and 2026-10-30; nothing built yet, planned for launch). The core CAD stays free for everyone, with no limits on projects or exports, and nothing is ever paid inside community sharing. Money comes only from the extras below, priced fairly and never pushed with pop-ups. AI stays free with the user's own key or a local model; paid AI credits are an optional convenience, priced above what the provider charges us. A payment account needs an adult to hold it, so a parent holds it at first.
+- [ ] MO1. "Plus" plan: one bundle of cloud sync (step 88), a monthly set of AI credits and a supporter badge, about 6 AUD a month or about 50 AUD a year (the yearly price shown first). Starts once cloud saving works.
+- [ ] MO2. Team tier for small businesses, print shops and makerspaces: very affordable but worth it, about 10 AUD per person a month (about 8 paid yearly), with shared projects, team storage, roles (owner, editor, viewer) and a shared printer and print queue. Builds on MO1 and step 88.
+- [ ] MO3. School licence: free for every student; a school pays about 300 to 1,000 AUD a year for a teacher dashboard (assign work, see each student's projects, shared class storage, no student ads or tracking). Australian school budgets are set around the start of the year, so the target is the dashboard ready by January.
+- [ ] MO4. Filament and printer affiliate links where they help: the slicer knows which filament a print uses and how much, so the print summary and the filament settings offer a plain "buy this spool" link; always marked as an affiliate link, never ranked by commission.
+- [ ] MO5. Upgrade offers only at natural moments (opening a project on a second device, AI credits running out, a team invite), never as pop-ups or nags; a "no thanks" is remembered.
+- [ ] MO6. One or two separate add-on apps sold once (no subscription), for big extras outside the core CAD.
+- [ ] MO7. Payments: a payment provider set up with an adult account holder, receipts, refunds and Australian tax (GST once required), all before MO1 goes live.
