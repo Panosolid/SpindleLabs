@@ -134,27 +134,6 @@
   },
   {
     "file": "packages/storage/src/autosave.ts",
-    "mutator": "ConditionalExpression",
-    "original": "journal?.getItem(key) != null",
-    "replacement": "true",
-    "why": "Autosave's start-up read only ever matters as 'an entry is there, remove it once something is stored': counting an absent entry as present only removes a key that isn't there, and leaving() compares journalVersion with a version that is at least 1 by then."
-  },
-  {
-    "file": "packages/storage/src/autosave.ts",
-    "mutator": "BlockStatement",
-    "original": "{ return journal?.getItem(key) != null ? 0 : null; }",
-    "replacement": "{}",
-    "why": "Autosave's start-up read only ever matters as 'an entry is there, remove it once something is stored': undefined behaves exactly like 0 in `journalVersion === null || journalVersion > v` (removes on the first store) and never equals a version in leaving()."
-  },
-  {
-    "file": "packages/storage/src/autosave.ts",
-    "mutator": "BlockStatement",
-    "original": "{ try { return journal?.getItem(key) != null ? 0 : null; } catch { return null; } }",
-    "replacement": "{}",
-    "why": "Autosave's start-up read only ever matters as 'an entry is there, remove it once something is stored': undefined behaves exactly like 0 (see the mutant above); the entry is removed on the first store either way."
-  },
-  {
-    "file": "packages/storage/src/autosave.ts",
     "mutator": "OptionalChaining",
     "original": "journal?.getItem",
     "replacement": "journal.getItem",
@@ -166,13 +145,6 @@
     "original": "{ return null; }",
     "replacement": "{}",
     "why": "The catch's undefined acts as 0: an unreadable entry is then removed on the first store, which is what is wanted anyway (removeItem is in its own try)."
-  },
-  {
-    "file": "packages/storage/src/autosave.ts",
-    "mutator": "ConditionalExpression",
-    "original": "journalVersion === null",
-    "replacement": "false",
-    "why": "With no entry, `null > v` is false too, so the only change is a removeItem of a key that isn't there."
   },
   {
     "file": "packages/storage/src/autosave.ts",
@@ -957,5 +929,124 @@
     "original": "typeof id !== \"string\"",
     "replacement": "false",
     "why": "A hidden entry that is not a string is refused anyway, with the same message: byId's keys are the timeline's ids, all strings, and Map.get never matches a string key with a number, object or null, so !at is true for it."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "keptFromLastVisit only reads the journal inside a try whose catch answers false: with no journal the missing `?.` throws, is caught and gives the same false that an entry-less read gives."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "stored() reads inside a try whose catch leaves the entry in place: with no journal there is no entry to remove, so a throw (caught) and an absent entry (return) both end with nothing removed."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry != null",
+    "replacement": "true",
+    "why": "readJournalEntry of null or undefined reads as an entry with no 'kept' mark (the pattern is run on the text 'null' or 'undefined'), and a throw is caught; either way keptFromLastVisit answers false."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BlockStatement",
+    "original": "{ return false; }",
+    "replacement": "{}",
+    "why": "The catch block of keptFromLastVisit then returns undefined instead of false; every caller only tests it for truth, so no one can tell."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "finish() stops the autosave right after its save; `owner` is only read by leaving() and keptFromLastVisit(), neither of which does anything for a stopped autosave, so the value after the store takes the state is never seen."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "at === null",
+    "replacement": "false",
+    "why": "at is null only when the text written is the one already stored; the read then finds a time and `at!.getTime()` throws, which the surrounding catch turns into 'leave the entry', the same as the null result that skips the removal."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry == null",
+    "replacement": "false",
+    "why": "A missing entry read as an entry is an entry with no time (written null), which returns just as the null does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "ConditionalExpression",
+    "original": "written === null",
+    "replacement": "false",
+    "why": "With no time to compare, `written.getTime()` throws on null and the surrounding catch leaves the entry in place, which is what the early return does."
+  },
+  {
+    "file": "packages/storage/src/autosave.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.removeItem",
+    "replacement": "journal.removeItem",
+    "why": "journalVersion equals the version being stored only when a journal.setItem succeeded, so a journal is there; and a throw would be caught by the try around it."
+  },
+  {
+    "file": "packages/storage/src/reopen.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "`away` starts false, but it is only read in back() together with `mine !== null`, and mine is only set by opening(), which sets away to false first: the starting value is never read."
+  },
+  {
+    "file": "packages/storage/src/reopen.ts",
+    "mutator": "OptionalChaining",
+    "original": "channel?.postMessage",
+    "replacement": "channel.postMessage",
+    "why": "send() is only called when a channel exists (onmessage is set, or check() has one), and its try/catch swallows any throw anyway."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof v === \"number\"",
+    "replacement": "true",
+    "why": "Number.isSafeInteger does not convert its argument: for anything but a number it answers false, so the typeof test adds nothing."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "EqualityOperator",
+    "original": "v > 0",
+    "replacement": "v >= 0",
+    "why": "The only difference is v = 0, which the check answers with 0 either way."
+  },
+  {
+    "file": "packages/storage/src/store.ts",
+    "mutator": "ConditionalExpression",
+    "original": "last === undefined",
+    "replacement": "false",
+    "why": "Number(undefined) is NaN, and count() turns NaN into 0, the same as the undefined it replaces."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!s.problem",
+    "replacement": "true",
+    "why": "A summary with a problem lists as saved at time 0, and no entry is written before time 0 (the pattern takes digits only), so the 'older than the store holds' test never fires on it."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "OptionalChaining",
+    "original": "journal?.getItem",
+    "replacement": "journal.getItem",
+    "why": "keptEntry reads inside a try whose catch returns null, the same as the no-journal answer."
+  },
+  {
+    "file": "packages/storage/src/unsaved.ts",
+    "mutator": "ConditionalExpression",
+    "original": "entry == null",
+    "replacement": "false",
+    "why": "readJournalEntry of null or undefined gives an entry that is not kept, so keptEntry answers null as it does for no entry."
   }
 ]
