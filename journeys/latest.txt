@@ -1,6 +1,6 @@
-tested commit 35e9832 on main, 2026-10-30 00:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40945885544)
-FLAG Design: shape to STL: slowest 1.66 s = 38.53× the fixed workload, baseline 1.16 s (44% over, flag above 15%, fail above 100%)
-OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.53 s = 61.15× the fixed workload (baseline 9.70 s)
+tested commit e55f588 on main, 2026-10-30 21:38 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41118705351)
+OK Design: shape to STL: 4 clicks (baseline 4), slowest 0.98 s = 35.24× the fixed workload (baseline 1.16 s)
+OK Design: sketch to STL: 8 clicks (baseline 8), slowest 1.96 s = 72.10× the fixed workload (baseline 9.70 s)
 PENDING Box to laser panels: waits for Laser (L1–L3), X13
 PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
 PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)

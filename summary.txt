@@ -1,4 +1,4 @@
-SpindleLabs random testing, all runs so far (updated 2026-10-30 00:01 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-10-30 21:38 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -16,9 +16,9 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit 35e9832 on main, 2026-10-30 00:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40945885544)
-  FLAG Design: shape to STL: slowest 1.66 s = 38.53× the fixed workload, baseline 1.16 s (44% over, flag above 15%, fail above 100%)
-  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.53 s = 61.15× the fixed workload (baseline 9.70 s)
+  tested commit e55f588 on main, 2026-10-30 21:38 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41118705351)
+  OK Design: shape to STL: 4 clicks (baseline 4), slowest 0.98 s = 35.24× the fixed workload (baseline 1.16 s)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 1.96 s = 72.10× the fixed workload (baseline 9.70 s)
   PENDING Box to laser panels: waits for Laser (L1–L3), X13
   PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
   PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
@@ -27,177 +27,90 @@ Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, 
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit 35e9832 on main, 2026-10-30 00:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40945885544)
-  seed 1793304346, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793304346 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  bracket-two-holes: 50 rebuilds, fastest 1.6 ms, slowest 4.1 ms, OK
-  enclosure: 50 rebuilds, fastest 0.9 ms, slowest 2.6 ms, OK
-  gear: 50 rebuilds, fastest 9.3 ms, slowest 22.8 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.3 ms, slowest 11.3 ms, OK
-  stepped-boss: 50 rebuilds, fastest 1.5 ms, slowest 2.7 ms, OK
-  thirty-features: 50 rebuilds, fastest 5.6 ms, slowest 16.6 ms, OK
+  tested commit e55f588 on main, 2026-10-30 21:38 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41118705351)
+  seed 1793389940, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793389940 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  bracket-two-holes: 50 rebuilds, fastest 2.4 ms, slowest 5.1 ms, OK
+  enclosure: 50 rebuilds, fastest 1.3 ms, slowest 5.7 ms, OK
+  gear: 50 rebuilds, fastest 13.1 ms, slowest 34.9 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 0.9 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.2 ms, slowest 4.1 ms, OK
+  thirty-features: 50 rebuilds, fastest 8.4 ms, slowest 46.4 ms, OK
   | metric | baseline | now | change | |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0363 | -11.2% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0443 | +8.3% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0184 | -35.2% | better: lower the baseline? |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0233 | -18.0% | better: lower the baseline? |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.2274 | -5.7% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2442 | +1.2% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0043 | -33.8% | better: lower the baseline? |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.0053 | -18.5% | better: lower the baseline? |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0332 | -14.9% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0397 | +1.8% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1355 | -17.0% | better: lower the baseline? |
-  0 metric(s) failed, 0 flagged, 3 better.
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.156 | -4.4% |  |
+  0 metric(s) failed, 0 flagged, 2 better.
   Golden STEP files: 27 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit 35e9832 on main, 2026-10-30 00:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40945885544)
-  Monkey, seeds 202610290-202610291: 2 session(s) of 2000 actions in Chromium; 1 FAILED
-  seed 202610290: FAIL: no sideways scrolling: the page is 1564 px wider than the window
-  seed 202610291: pass (2000 actions)
+  tested commit e55f588 on main, 2026-10-30 21:38 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41118705351)
+  Monkey, seeds 202610300-202610301: 2 session(s) of 2000 actions in Chromium; 1 FAILED
+  seed 202610300: FAIL: selection agrees: clicking Body 3 (Cylinder: ⌀15 × 30 mm) selected "body:feature-2 body:feature-7"; with Body 3 (Cylinder: ⌀15 × 30 mm) selected 5 faces light up, but the Body panel says it has 3; clicking Body 4 (Box: 18 × 20 × 5 mm) selected "body:feature-2 body:feature-7 body:feature-8"; with Body 4 (Box: 18 × 20 × 5 mm) selected 0 faces light up, but the Body panel says it has 6; Body 3 lights faces 0..4, but its faces should start at 2, after the bodies before it
+  seed 202610301: pass (2000 actions)
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):
-  tested commit 35e9832 on main, 2026-10-30 00:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/40945885544)
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:125: packages/core/src/model/history.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:201: packages/core/src/model/history.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:244: packages/core/src/model/history.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/core/src/model/history.ts:154: packages/core/src/model/history.ts | ArithmeticOperator | t - top.at => t + top.at
-  core: 12 survivors, all explained: false
-  4 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-  design: no report (the job stopped before the check)
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:112: packages/storage/src/autosave.ts | StringLiteral | "browser storage isn't answering, so your latest changes aren't stored yet (use Save to keep your work as a file)" => ""
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:162: packages/storage/src/autosave.ts | BlockStatement | { return null; } => {}
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:178: packages/storage/src/autosave.ts | OptionalChaining | journal?.getItem => journal.getItem
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:199: packages/storage/src/autosave.ts | OptionalChaining | journal?.getItem => journal.getItem
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:179: packages/storage/src/autosave.ts | ConditionalExpression | entry != null => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:180: packages/storage/src/autosave.ts | BlockStatement | { return false; } => {}
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:254: packages/storage/src/autosave.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:264: packages/storage/src/autosave.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:352: packages/storage/src/autosave.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:196: packages/storage/src/autosave.ts | ConditionalExpression | journalVersion !== null => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:198: packages/storage/src/autosave.ts | BlockStatement | { const entry = at === null ? null : journal?.getItem(key); const written = entry == null ? null : readJournalEntry(entry).written; if (written === null || written.getTime() >= at!.getTime()) return; } => {}
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:199: packages/storage/src/autosave.ts | ConditionalExpression | at === null => false
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:200: packages/storage/src/autosave.ts | ConditionalExpression | entry == null => false
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:201: packages/storage/src/autosave.ts | ConditionalExpression | written === null || written.getTime() >= at!.getTime() => false
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:201: packages/storage/src/autosave.ts | ConditionalExpression | written === null => false
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:201: packages/storage/src/autosave.ts | LogicalOperator | written === null || written.getTime() >= at!.getTime() => written === null && written.getTime() >= at!.getTime()
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:201: packages/storage/src/autosave.ts | ConditionalExpression | written.getTime() >= at!.getTime() => false
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:201: packages/storage/src/autosave.ts | EqualityOperator | written.getTime() >= at!.getTime() => written.getTime() > at!.getTime()
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:359: packages/storage/src/autosave.ts | OptionalChaining | journal?.removeItem => journal.removeItem
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:291: packages/storage/src/autosave.ts | ConditionalExpression | timer !== null => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:314: packages/storage/src/autosave.ts | ConditionalExpression | timer !== null => true
-  UNEXPLAINED survivor at packages/storage/src/autosave.ts:357: packages/storage/src/autosave.ts | ConditionalExpression | journalVersion === v => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:96: packages/storage/src/reopen.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:139: packages/storage/src/reopen.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:168: packages/storage/src/reopen.ts | BooleanLiteral | false => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:102: packages/storage/src/reopen.ts | LogicalOperator | typeof message?.asking === "string" && message.asking === mine => typeof message?.asking === "string" || message.asking === mine
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:102: packages/storage/src/reopen.ts | ConditionalExpression | typeof message?.asking === "string" => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:102: packages/storage/src/reopen.ts | OptionalChaining | message?.asking => message.asking
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:102: packages/storage/src/reopen.ts | ConditionalExpression | message.asking === mine => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:103: packages/storage/src/reopen.ts | OptionalChaining | message?.opening => message.opening
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:103: packages/storage/src/reopen.ts | ConditionalExpression | message.opening === waiting?.id => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:103: packages/storage/src/reopen.ts | OptionalChaining | waiting?.id => waiting.id
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:107: packages/storage/src/reopen.ts | OptionalChaining | channel?.postMessage => channel.postMessage
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:143: packages/storage/src/reopen.ts | ConditionalExpression | pending !== null => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:151: packages/storage/src/reopen.ts | ConditionalExpression | pending !== null => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:146: packages/storage/src/reopen.ts | ConditionalExpression | mine === id => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:153: packages/storage/src/reopen.ts | LogicalOperator | mine !== null && read() === mine => mine !== null || read() === mine
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:153: packages/storage/src/reopen.ts | ConditionalExpression | mine !== null => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:167: packages/storage/src/reopen.ts | ConditionalExpression | mine !== null => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:153: packages/storage/src/reopen.ts | ConditionalExpression | read() === mine => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:158: packages/storage/src/reopen.ts | ConditionalExpression | read() === mine => true
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:157: packages/storage/src/reopen.ts | ConditionalExpression | mine === null => false
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:159: packages/storage/src/reopen.ts | ConditionalExpression | pending !== null => false
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:159: packages/storage/src/reopen.ts | BlockStatement | { // shown already: as good as settled timers.clearTimeout(pending); pending = null; mine = null; } => {}
-  UNEXPLAINED survivor at packages/storage/src/reopen.ts:167: packages/storage/src/reopen.ts | LogicalOperator | mine !== null && away => mine !== null || away
-  UNEXPLAINED survivor at packages/storage/src/store.ts:48: packages/storage/src/store.ts | StringLiteral | "ProjectChangedError" => ""
-  UNEXPLAINED survivor at packages/storage/src/store.ts:57: packages/storage/src/store.ts | ConditionalExpression | typeof v === "number" => true
-  UNEXPLAINED survivor at packages/storage/src/store.ts:57: packages/storage/src/store.ts | EqualityOperator | v > 0 => v >= 0
-  UNEXPLAINED survivor at packages/storage/src/store.ts:119: packages/storage/src/store.ts | ConditionalExpression | holds.problem !== undefined => false
-  UNEXPLAINED survivor at packages/storage/src/store.ts:121: packages/storage/src/store.ts | ConditionalExpression | last === undefined => false
-  UNEXPLAINED survivor at packages/storage/src/store.ts:144: packages/storage/src/store.ts | LogicalOperator | summary.problem !== undefined || summary.name !== project.name => summary.problem !== undefined && summary.name !== project.name
-  UNEXPLAINED survivor at packages/storage/src/store.ts:144: packages/storage/src/store.ts | ConditionalExpression | summary.problem !== undefined => false
-  UNEXPLAINED survivor at packages/storage/src/store.ts:144: packages/storage/src/store.ts | ConditionalExpression | summary.name !== project.name => false
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:44: packages/storage/src/unsaved.ts | Regex | /^@(\d{1,15})(!?)\n/ => /@(\d{1,15})(!?)\n/
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:73: packages/storage/src/unsaved.ts | ConditionalExpression | keys.length === 0 => false
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:76: packages/storage/src/unsaved.ts | ConditionalExpression | !s.problem => true
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:107: packages/storage/src/unsaved.ts | LogicalOperator | entry.written ?? undefined => entry.written && undefined
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:111: packages/storage/src/unsaved.ts | LogicalOperator | entry.written ?? new Date(0) => entry.written && new Date(0)
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:129: packages/storage/src/unsaved.ts | OptionalChaining | journal?.getItem => journal.getItem
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:130: packages/storage/src/unsaved.ts | ConditionalExpression | entry == null => false
-  UNEXPLAINED survivor at packages/storage/src/unsaved.ts:133: packages/storage/src/unsaved.ts | BlockStatement | { return null; } => {}
-  explained.json lists a mutant that no longer survives (remove it): packages/storage/src/autosave.ts | ConditionalExpression | journalVersion === null => false
-  storage: 86 survivors, all explained: false
-  62 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
-  UNEXPLAINED survivor at packages/core/src/model/files.ts:96: packages/core/src/model/files.ts | EqualityOperator | end < 0 => end <= 0
-  UNEXPLAINED survivor at packages/core/src/model/files.ts:100: packages/core/src/model/files.ts | EqualityOperator | end < 0 => end <= 0
-  UNEXPLAINED survivor at packages/core/src/model/graph.ts:153: packages/core/src/model/graph.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  model: 40 survivors, all explained: false
-  3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  tested commit e55f588 on main, 2026-10-30 21:38 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41118705351)
+  core: 10 survivors, all explained: true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:518: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:682: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:697: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:761: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:764: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1012: workspaces/design/src/document.ts | ConditionalExpression | n !== null => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | n !== null => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:659: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:688: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:878: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:722: workspaces/design/src/document.ts | ConditionalExpression | typeof p.workspace === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:722: workspaces/design/src/document.ts | ConditionalExpression | typeof p.id === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:725: workspaces/design/src/document.ts | ConditionalExpression | typeof provenance.self.workspace !== "string" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:800: workspaces/design/src/document.ts | OptionalChaining | f.provenance?.self?.label => f.provenance?.self.label
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:800: workspaces/design/src/document.ts | OptionalChaining | f.provenance?.self => f.provenance.self
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:804: workspaces/design/src/document.ts | ConditionalExpression | chars.length > NAME_LIMIT => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:804: workspaces/design/src/document.ts | EqualityOperator | chars.length > NAME_LIMIT => chars.length >= NAME_LIMIT
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | MethodExpression | cleaned.filter((n) => n !== "") => cleaned
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | ArrowFunction | (n) => n !== "" => () => undefined
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | ConditionalExpression | n !== "" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | ConditionalExpression | n !== "" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | EqualityOperator | n !== "" => n === ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | StringLiteral | "" => "Stryker was here!"
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:820: workspaces/design/src/document.ts | MethodExpression | [...name].slice(0, NAME_LIMIT - suffix.length).join("").trimEnd() => [...name].slice(0, NAME_LIMIT - suffix.length).join("").trimStart()
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:821: workspaces/design/src/document.ts | LogicalOperator | used.has(nameKey(tried)) || kept.has(nameKey(tried)) => used.has(nameKey(tried)) && kept.has(nameKey(tried))
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:831: workspaces/design/src/document.ts | ConditionalExpression | isMoveItem(f) => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:831: workspaces/design/src/document.ts | StringLiteral | "Move" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:834: workspaces/design/src/document.ts | ConditionalExpression | kind === null => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:834: workspaces/design/src/document.ts | StringLiteral | "Item" => ""
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:848: workspaces/design/src/document.ts | ConditionalExpression | names[i] !== f.provenance.self.label => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:849: workspaces/design/src/document.ts | ConditionalExpression | changed.size === 0 => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:850: workspaces/design/src/document.ts | ConditionalExpression | o.workspace === "design" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:877: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:984: workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:995: workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
+  UNEXPLAINED survivor at workspaces/design/src/document.ts:984: workspaces/design/src/document.ts | ConditionalExpression | makesBody(at.item) || isSketchItem(at.item) => true
+  design: 48 survivors, all explained: false
+  36 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  storage: 39 survivors, all explained: true
+  model: 40 survivors, all explained: true
   svg: 4 survivors, all explained: true
-  viewport: no report (the job stopped before the check)
-  UNEXPLAINED survivor at packages/ai/src/commands.ts:23: packages/ai/src/commands.ts | Regex | /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn['’]t available)\b/i => /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn[^'’]t supported|not available|isn['’]t available)\b/i
-  UNEXPLAINED survivor at packages/ai/src/commands.ts:23: packages/ai/src/commands.ts | Regex | /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn['’]t available)\b/i => /\b(can['’]?t|cannot|can not|unable|not able|not possible|isn['’]t possible|no command|not supported|isn['’]t supported|not available|isn[^'’]t available)\b/i
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:143: packages/ai/src/hosted.ts | ConditionalExpression | !line.startsWith("data:") => false
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:143: packages/ai/src/hosted.ts | StringLiteral | "data:" => ""
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:145: packages/ai/src/hosted.ts | ConditionalExpression | data === "" => false
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:145: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:220: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:148: packages/ai/src/hosted.ts | BlockStatement | { throw new Error(`the stream has a line that isn't JSON: ${data.slice(0, 80)}`); } => {}
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:149: packages/ai/src/hosted.ts | StringLiteral | `the stream has a line that isn't JSON: ${data.slice(0, 80)}` => ``
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:149: packages/ai/src/hosted.ts | MethodExpression | data.slice(0, 80) => data
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:155: packages/ai/src/hosted.ts | ConditionalExpression | typeof error.message === "string" => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:155: packages/ai/src/hosted.ts | StringLiteral | "the stream reported an error" => ""
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:172: packages/ai/src/hosted.ts | ConditionalExpression | !line.startsWith("event:") => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:172: packages/ai/src/hosted.ts | MethodExpression | line.startsWith("event:") => line.endsWith("event:")
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:175: packages/ai/src/hosted.ts | UpdateOperator | events++ => events--
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:215: packages/ai/src/hosted.ts | UpdateOperator | events++ => events--
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:177: packages/ai/src/hosted.ts | ConditionalExpression | !e => false
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:179: packages/ai/src/hosted.ts | ConditionalExpression | e.type === "content_block_delta" => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:180: packages/ai/src/hosted.ts | ConditionalExpression | typeof delta.partial_json === "string" => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:181: packages/ai/src/hosted.ts | ConditionalExpression | typeof delta.text === "string" => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:189: packages/ai/src/hosted.ts | StringLiteral | "\n" => ""
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:225: packages/ai/src/hosted.ts | StringLiteral | "\n" => ""
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:190: packages/ai/src/hosted.ts | BlockStatement | { throw new Error("the reply is neither a stream nor JSON"); } => {}
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:191: packages/ai/src/hosted.ts | StringLiteral | "the reply is neither a stream nor JSON" => ""
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:197: packages/ai/src/hosted.ts | ConditionalExpression | text === "" => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta?.content => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)?.[0]?.delta.content
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0]?.delta => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)?.[0].delta
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:219: packages/ai/src/hosted.ts | OptionalChaining | (e.choices as { delta?: { content?: unknown } }[] | undefined)?.[0] => (e.choices as { delta?: { content?: unknown; }; }[] | undefined)[0]
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:220: packages/ai/src/hosted.ts | ConditionalExpression | more !== "" => true
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | ConditionalExpression | text === "" => false
-  UNEXPLAINED survivor at packages/ai/src/hosted.ts:232: packages/ai/src/hosted.ts | StringLiteral | "the reply has no answer in it" => ""
-  UNEXPLAINED survivor at packages/ai/src/http.ts:99: packages/ai/src/http.ts | Regex | /\r$/ => /\r/
-  UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | Regex | /\r$/ => /\r/
-  UNEXPLAINED survivor at packages/ai/src/http.ts:101: packages/ai/src/http.ts | ConditionalExpression | !response.body => false
-  UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | ConditionalExpression | rest !== "" => true
-  UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/http.ts:112: packages/ai/src/http.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/local.ts:145: packages/ai/src/local.ts | LogicalOperator | onText && Symbol.asyncIterator in reply => onText || Symbol.asyncIterator in reply
-  UNEXPLAINED survivor at packages/ai/src/local.ts:148: packages/ai/src/local.ts | OptionalChaining | chunk.choices[0]?.delta?.content => chunk.choices[0]?.delta.content
-  UNEXPLAINED survivor at packages/ai/src/local.ts:149: packages/ai/src/local.ts | ConditionalExpression | more !== "" => true
-  UNEXPLAINED survivor at packages/ai/src/local.ts:204: packages/ai/src/local.ts | ConditionalExpression | more !== "" => true
-  UNEXPLAINED survivor at packages/ai/src/local.ts:149: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/local.ts:151: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/local.ts:204: packages/ai/src/local.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/local.ts:151: packages/ai/src/local.ts | ConditionalExpression | text === "" => false
-  UNEXPLAINED survivor at packages/ai/src/local.ts:151: packages/ai/src/local.ts | StringLiteral | "the in-browser model gave no answer" => ""
-  UNEXPLAINED survivor at packages/ai/src/local.ts:154: packages/ai/src/local.ts | ConditionalExpression | Symbol.asyncIterator in reply => false
-  UNEXPLAINED survivor at packages/ai/src/local.ts:154: packages/ai/src/local.ts | StringLiteral | "the in-browser model streamed an answer nobody asked to stream" => ""
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:37: packages/ai/src/ollama.ts | MethodExpression | endpoint.trim() => endpoint
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | ConditionalExpression | line.trim() === "" => false
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | MethodExpression | line.trim() => line
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:97: packages/ai/src/ollama.ts | StringLiteral | "" => "Stryker was here!"
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:102: packages/ai/src/ollama.ts | MethodExpression | line.slice(0, 80) => line
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:105: packages/ai/src/ollama.ts | OptionalChaining | piece.message?.content => piece.message.content
-  UNEXPLAINED survivor at packages/ai/src/ollama.ts:106: packages/ai/src/ollama.ts | ConditionalExpression | typeof more === "string" => true
-  ai: 68 survivors, all explained: false
-  56 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  UNEXPLAINED survivor at packages/viewport/src/pane.ts:52: packages/viewport/src/pane.ts | ArrowFunction | () => scene.editedScreenPoints() => () => undefined
+  UNEXPLAINED survivor at packages/viewport/src/pane.ts:53: packages/viewport/src/pane.ts | ArrowFunction | (at: SketchXY) => scene.sketchScreenPoint(at) => () => undefined
+  UNEXPLAINED survivor at packages/viewport/src/pane.ts:61: packages/viewport/src/pane.ts | ArrowFunction | (shown: OriginShown) => scene.showOrigin(shown) => () => undefined
+  viewport: 36 survivors, all explained: false
+  3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  ai: 17 survivors, all explained: true
+  naming: 120 survivors, all explained: true
 
 Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-10-30 03:30 UTC)
   hours of fuzzing: 30.3
