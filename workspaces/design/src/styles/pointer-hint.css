@@ -9,8 +9,10 @@
 }
 /* Why the last click did nothing (a refused click's note, beginner play-test
    2026-10-28): it wraps, and sits wholly above the pointer so it never
-   covers the spot clicked. */
-.pointer-hint.pointer-hint-note { white-space: normal; width: max-content; max-width: min(300px, calc(100% - 16px)); transform: translate(18px, calc(-100% - 14px)); color: #8a1c12; background: rgba(255, 244, 242, 0.97); border-color: #c4554a; }
+   covers the spot clicked. A word with no place to break (a refused grid
+   size quoted in full: 1e308 is 309 digits) breaks anywhere, so it stays in
+   the box and never makes the page scroll sideways (monkey seed 202610290). */
+.pointer-hint.pointer-hint-note { white-space: normal; overflow-wrap: anywhere;width: max-content; max-width: min(300px, calc(100% - 16px)); transform: translate(18px, calc(-100% - 14px)); color: #8a1c12; background: rgba(255, 244, 242, 0.97); border-color: #c4554a; }
 @media (max-width: 640px) {
   .pointer-hint.pointer-hint-note { transform: translate(-50%, calc(-100% - 32px)); }
 }
