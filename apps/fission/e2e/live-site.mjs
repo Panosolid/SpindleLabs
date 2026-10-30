@@ -6,7 +6,9 @@
 // cuts the connection on the next `n` requests for the kernel's .wasm (a
 // phone's network failing; Infinity, until `dropKernel(0)`). `capMib` caps
 // the kernel's memory (kernel-cap.mjs). Files are read from disk on every
-// request, so a deploy shows at once. Used by app-updated.mjs.
+// request, so a deploy shows at once. `browserCache()` is what a browser
+// kept of the build served now (a phone opening the app from before a
+// deploy). Used by app-updated.mjs.
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -27,7 +29,7 @@ const TYPES = {
 };
 const TEXT = new Set([".html", ".js", ".css"]);
 
-/** Serves a copy of dist/ on `port`: { url, deploy, dropKernel, kernelRequests, close }. */
+/** Serves a copy of dist/ on `port`: { url, deploy, browserCache, dropKernel, kernelRequests, close }. */
 export async function liveSite(port, { capMib } = {}) {
   const dist = process.env.E2E_DIST || fileURLToPath(new URL("../dist/", import.meta.url));
   const root = mkdtempSync(join(tmpdir(), "live-site-"));
@@ -80,9 +82,24 @@ export async function liveSite(port, { capMib } = {}) {
     }
   }
 
+  /**
+   * The build served now as a browser keeps it: url path -> { contentType,
+   * body }, the page at "/" and every assets/ file; the kernel's .wasm
+   * only with `wasm` (a browser need not keep a file that big).
+   */
+  function browserCache({ wasm = false } = {}) {
+    const kept = new Map([["/", { contentType: TYPES[".html"], body: readFileSync(join(root, "index.html")) }]]);
+    for (const f of readdirSync(assets)) {
+      if (f.endsWith(".wasm") && !wasm) continue;
+      kept.set(`/assets/${f}`, { contentType: TYPES[extname(f)] ?? "application/octet-stream", body: readFileSync(join(assets, f)) });
+    }
+    return kept;
+  }
+
   return {
     url: `http://127.0.0.1:${port}/`,
     deploy,
+    browserCache,
     dropKernel: (n) => void (drops = n),
     kernelRequests: () => kernelRequests,
     close: () => new Promise((resolve) => server.close(resolve)),

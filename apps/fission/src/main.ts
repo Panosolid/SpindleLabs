@@ -23,7 +23,7 @@ import { communityPage } from "@fission/community";
 import { keepStorage, keptEntry, localStore, OPENING_KEY, recoverUnsaved, reopenGuard, startAutosave, STORAGE_ANSWER_MS, storedCopy, type Autosave, type AutosaveStatus, type OpeningChannel } from "@fission/storage";
 import { createAssistant } from "./assistant.ts";
 import { startOffline } from "./offline.ts";
-import { watchKernel } from "./kernel-lost.ts";
+import { openLatest, watchKernel } from "./kernel-lost.ts";
 import { startPhoneFloat } from "./phone-float.ts";
 import { sheetDrag } from "./sheet-drag.ts";
 import { appLoaded } from "./loading.ts";
@@ -56,6 +56,8 @@ const hooks = new URLSearchParams(location.search);
 const kernel = new KernelClient({ answerWithinMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
 // The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
 watchKernel(kernel);
+// Opened on a build a deploy has replaced (kept by the browser): open the new one before the user starts (kernel-lost.ts).
+if (import.meta.env.PROD) openLatest();
 // The one conversion layer: every workspace says what it can hand over.
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
