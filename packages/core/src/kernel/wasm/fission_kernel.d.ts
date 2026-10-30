@@ -25,7 +25,7 @@ export function qmdw4c(): string;
 
 export function u3qr1f(p0: number, p1: number, p2: number): any;
 
-export function uq4cun(p0: Uint8Array, p1: number, p2: number, p3: number): any;
+export function uq4cun(p0: Uint8Array, p1: number, p2: number, p3: number, p4: boolean | null): any;
 
 export function urxw0w(): number;
 
@@ -52,7 +52,7 @@ export interface InitOutput {
     readonly pprlx7: (a: number) => [number, number, number];
     readonly qmdw4c: () => [number, number];
     readonly u3qr1f: (a: number, b: number, c: number) => [number, number, number];
-    readonly uq4cun: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly uq4cun: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly urxw0w: () => number;
     readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
     readonly vicdld: (a: number) => [number, number];
