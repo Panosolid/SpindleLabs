@@ -45,12 +45,19 @@ async function fresh(width, tap) {
   return page;
 }
 
+/**
+ * The 3D view's own picture, read from its canvas: not a screenshot of the screen there, which would also
+ * catch the Show card and the dock floating over it (their look changes as switches are pressed or the
+ * phone's strip scrolls, which once moved the count by 2 %).
+ */
+const canvasPicture = (page) => page.$eval("#print-preview-view canvas", (c) => c.toDataURL("image/png"));
+
 /** How many of the view's pixels are not its background (#1b1e23) or the plate's greys: the plastic and the nozzle. */
 async function coloured(page) {
-  const png = await page.locator("#print-preview-view canvas").screenshot();
-  return page.evaluate(async (b64) => {
+  const png = await canvasPicture(page);
+  return page.evaluate(async (url) => {
     const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
+    img.src = url;
     await img.decode();
     const c = new OffscreenCanvas(img.width, img.height);
     const g = c.getContext("2d");
@@ -60,15 +67,15 @@ async function coloured(page) {
     // Saturated pixels only: the background and plate are greys (r, g, b within 40 of each other).
     for (let i = 0; i < d.length; i += 4) if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 40) n++;
     return n;
-  }, png.toString("base64"));
+  }, png);
 }
 
 /** How many of the view's saturated pixels have a hue (degrees) from `lo` to `hi`: solid infill's pink-red is about 345. */
 async function hued(page, lo, hi) {
-  const png = await page.locator("#print-preview-view canvas").screenshot();
-  return page.evaluate(async ([b64, lo, hi]) => {
+  const png = await canvasPicture(page);
+  return page.evaluate(async ([url, lo, hi]) => {
     const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
+    img.src = url;
     await img.decode();
     const c = new OffscreenCanvas(img.width, img.height);
     const g = c.getContext("2d");
@@ -84,7 +91,7 @@ async function hued(page, lo, hi) {
       if (h >= lo && h <= hi) n++;
     }
     return n;
-  }, [png.toString("base64"), lo, hi]);
+  }, [png, lo, hi]);
 }
 
 const setRange = (page, sel, value) => page.$eval(sel, (el, v) => {
