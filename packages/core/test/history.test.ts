@@ -509,3 +509,55 @@ test("a clock set back between two edits keeps them two steps (real-use hunt D3)
   h.undo();
   assert.equal(doc.w, 40);
 });
+
+test("hand-worked: a clock set back by less than the merge time, far from 0, still keeps two edits apart", () => {
+  // A real clock reads ms since 1970, never near 0. Width 50 at t = 100,000; the clock is
+  // corrected back half a second, so width 60 reads t = 99,500. The gap is 99,500 − 100,000 =
+  // −500 ms: under MERGE_MS (1,000) only because it is negative, so 60 is a step of its own and
+  // undo gives 50, then 40. (The D3 test above sets the clock back past 0; this one stays far
+  // above it, where adding the two times, 199,500, would wrongly look like a gap of 0 or more.)
+  const a = rig();
+  a.tick(100_000);
+  a.edit(50, "Width", "width");
+  a.tick(-500);
+  a.edit(60, "Width", "width");
+  a.h.undo();
+  assert.equal(a.doc.w, 50);
+  a.h.undo();
+  assert.equal(a.doc.w, 40);
+  // The same clock run forward 400 ms instead: a gap of 100,400 − 100,000 = 400 ms, one step.
+  const b = rig();
+  b.tick(100_000);
+  b.edit(50, "Width", "width");
+  b.tick(400);
+  b.edit(60, "Width", "width");
+  b.h.undo();
+  assert.equal(b.doc.w, 40);
+  assert.equal(b.h.canUndo(), false);
+});
+
+test("hand-worked: a step amended back to the one before it ends the merge, so the next edit of that box is a step of its own", () => {
+  // Width 50 (key "width"), then height 20 (key "height"), then a change nobody made puts the
+  // height back (amend): the Height step is left the same as the state before it, so it is
+  // removed and the present is Width 50 again. Width 60 comes 0.1 × MERGE_MS after Width 50
+  // with the same key, but the amend came between them, so it must not fold into Width 50:
+  // undo gives 50, then 40 (two steps), not 40 at once.
+  const doc = { w: 40, h: 10 };
+  let t = 0;
+  const h = createHistory({ capture: () => JSON.stringify(doc), restore: (s) => void Object.assign(doc, JSON.parse(s)), now: () => t });
+  doc.w = 50;
+  h.record("Width", "width");
+  doc.h = 20;
+  h.record("Height", "height");
+  doc.h = 10;
+  assert.equal(h.amend(), true);
+  assert.equal(h.undoLabel(), "Width"); // the Height step is gone
+  t += 0.1 * MERGE_MS;
+  doc.w = 60;
+  h.record("Width", "width");
+  assert.equal(h.undo(), "Width");
+  assert.deepEqual(doc, { w: 50, h: 10 });
+  assert.equal(h.undo(), "Width");
+  assert.deepEqual(doc, { w: 40, h: 10 });
+  assert.equal(h.canUndo(), false);
+});

@@ -22,6 +22,20 @@
   },
   {
     "file": "packages/core/src/model/history.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "In start() (a new history, or reset) the present is entries[0] at index 0, with an undefined merge key: a record merges only with index > 0 and an equal, defined key, so the first record from there pushes a step of its own and sets lastWasRecord itself; amend and undo at index 0 move nothing, and redo resets the flag in go(). It is never read while it could matter."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
+    "mutator": "BooleanLiteral",
+    "original": "false",
+    "replacement": "true",
+    "why": "The flag's first value, in `let lastWasRecord = false`: start() runs straight after and sets it false before anything reads it."
+  },
+  {
+    "file": "packages/core/src/model/history.ts",
     "mutator": "ConditionalExpression",
     "original": "index > 0",
     "replacement": "true",
@@ -358,6 +372,20 @@
   },
   {
     "file": "packages/core/src/model/files.ts",
+    "mutator": "EqualityOperator",
+    "original": "end < 0",
+    "replacement": "end <= 0",
+    "why": "The '<!--' part (one entry for each of the three parts): indexOf(\"-->\", i + 4) finds an end at i + 4 or later, at least 4, never 0."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
+    "mutator": "EqualityOperator",
+    "original": "end < 0",
+    "replacement": "end <= 0",
+    "why": "The '<!DOCTYPE' part: t[i] is the '<' that opens it, so indexOf(\">\", i) finds the '>' at i + 9 or later, never 0."
+  },
+  {
+    "file": "packages/core/src/model/files.ts",
     "mutator": "ConditionalExpression",
     "original": "file.size < 84",
     "replacement": "false",
@@ -411,6 +439,13 @@
     "original": "[]",
     "replacement": "[\"Stryker was here\"]",
     "why": "unlink only takes id out of its inputs' reader sets; for an id with no inputs the made-up input has no readers entry, so nothing changes."
+  },
+  {
+    "file": "packages/core/src/model/graph.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "In path(), the made-up input is only met at an id with no inputs entry (a removed id, or a `to` not in the graph); it is never `to`, is skipped once seen and has no inputs of its own, so the answer changes only when `from` is literally the text \"Stryker was here\": a test could tell only by naming the mutant's own text."
   },
   {
     "file": "packages/core/src/model/graph.ts",
