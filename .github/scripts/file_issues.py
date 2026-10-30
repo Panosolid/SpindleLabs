@@ -21,6 +21,8 @@ marker in its body (the kind's hash), so issues never pile up:
   branch may not have the fix yet, so there it only gets a comment);
 - an issue closed as not planned (a known OpenCascade weakness, say) is
   left alone;
+- one run opens at most MAX_NEW issues; the rest wait in one issue
+  listing them (`cap`);
 - every issue it files or updates is locked, so strangers can't comment on
   it (Claude sessions read these issues; see `lock`).
 
@@ -32,7 +34,7 @@ specific (a fuzzer that crashed or ran out of time, a golden run that
 stopped). Before 2026-10-28 only failure folders filed anything, so these
 went red on the Actions tab and nowhere else.
 
-`kinds_of`, `check_kinds` and `plan` are pure (tested in test_file_issues.py); `run` does
+`kinds_of`, `check_kinds`, `plan` and `cap` are pure (tested in test_file_issues.py); `run` does
 the `gh` calls.
 
 Usage: file_issues.py <incoming dir> [--dry-run]; needs RUN_URL, COMMIT,
@@ -258,9 +260,18 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
                     detail = [l for l in lines[i + 1:i + 4] if l.startswith("  ")]
                     found.append((f"check journeys: {numbers_out(line[len('FAIL '):]).strip()[:150]}", "\n".join([line, *detail])))
         elif top.startswith("ts-mutants-"):
+            # One kind per mutated file, with every survivor in it listed in the example: a night that first mutates
+            # new code finds dozens at once, and one issue per survivor buried everything else (100 issues on
+            # 2026-10-30). A stale explained.json entry is a kind too (it turns the job red on its own).
+            per_file = {}
             for line in text.splitlines():
-                if line.startswith("UNEXPLAINED"):
-                    found.append((f"check TypeScript mutants: {numbers_out(line).strip()[:150]}", line))
+                m = re.match(r"UNEXPLAINED survivor at (.+?):\d+: ", line)
+                if m:
+                    per_file.setdefault(f"survivors no test kills in {m.group(1)}", []).append(line)
+                elif line.startswith("explained.json lists"):
+                    path = line.partition("): ")[2].partition(" | ")[0] or "?"
+                    per_file.setdefault(f"explained.json lists mutants that no longer survive in {path}", []).append(line)
+            found += [(f"check TypeScript mutants: {what}", "\n".join(lines)) for what, lines in per_file.items()]
         elif path == "journeys/soak.json":
             # The long-session soak runs in the journeys job: each problem it judged is a kind, so a soak failure on a
             # night with a journey FAIL is filed too (it was hidden by it, weak-spot hunt 10-29).
@@ -350,6 +361,28 @@ def plan(found, issues, branch):
         else:
             actions.append(("comment", kind, issue["number"]))
     return actions
+
+
+MAX_NEW = 10  # issues one run may open; the rest wait in one issue (OVERFLOW) and are filed on later nights
+OVERFLOW = "check more new kinds of problem than one night files"
+
+
+def cap(actions, found, issues, branch):
+    """Keep a run from flooding the issue list: past MAX_NEW new kinds, the
+    first MAX_NEW - 1 (problems in the app before TypeScript mutants, which
+    only say a test is missing) are filed and the rest are listed in one
+    OVERFLOW issue; they get their own issues on a later night if they are
+    still there. Returns (actions, found) with OVERFLOW added when needed."""
+    creates = sorted((kind for action, kind, _ in actions if action == "create"),
+                     key=lambda kind: (kind.startswith("check TypeScript mutants"), kind))
+    if len(creates) <= MAX_NEW:
+        return actions, found
+    waiting = creates[MAX_NEW - 1:]
+    found = {**found, OVERFLOW: [("run", f"{len(creates)} new kinds of problem in this run; the first {MAX_NEW - 1} "
+                                         f"have issues, these {len(waiting)} wait for a later night:\n"
+                                         + "\n".join(f"- {kind}" for kind in waiting))]}
+    kept = [a for a in actions if not (a[0] == "create" and a[1] in waiting)]
+    return kept + plan({OVERFLOW: found[OVERFLOW]}, issues, branch), found
 
 
 def seed_list(seeds, where="failures"):
@@ -586,7 +619,7 @@ def run(incoming, dry_run=False, log=print):
             log(f"Could not create the {LABEL} label (it may exist already): {e.stderr.strip()}")
         issues = json.loads(gh("issue", "list", "--label", LABEL, "--state", "all", "--limit", "1000",
                                "--json", "number,state,stateReason,body"))
-    actions = plan(found, issues, branch)
+    actions, found = cap(plan(found, issues, branch), found, issues, branch)
     failed = []
     for action, kind, number in actions:
         title, body = texts(action, kind, found[kind], run_url, commit, branch)

@@ -16,7 +16,7 @@ export async function insertPreset(page, kind = "box", tap = false) {
  * (its hint showing says it is empty) and built.
  */
 export async function startWithBox(page, tap = false) {
-  await page.waitForSelector("#start-hint", { state: "visible" });
+  await page.locator("#start-hint").waitFor();
   await insertPreset(page, "box", tap);
   await page.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³");
 }
@@ -37,7 +37,7 @@ export async function chooseShape(page, kind) {
 export async function reloadEmpty(page) {
   await page.waitForFunction(() => document.querySelector("#save-status")?.dataset.state === "saved");
   await page.reload();
-  await page.waitForSelector("#start-hint", { state: "visible" });
+  await page.locator("#start-hint").waitFor();
 }
 
 /**
@@ -182,7 +182,7 @@ export async function gridSnapOn(page) {
  */
 export async function pickPlane(page, id = "XY", tap) {
   tap ??= await page.evaluate(() => navigator.maxTouchPoints > 0);
-  await page.waitForSelector(`#float-plane-${id}:visible, #sketch-plane-${id}:visible`);
+  await page.locator(`#float-plane-${id}:visible, #sketch-plane-${id}:visible`).first().waitFor();
   const sel = (await page.isVisible(`#float-plane-${id}`)) ? `#float-plane-${id}` : `#sketch-plane-${id}`;
   await (tap ? page.tap(sel) : page.click(sel));
 }

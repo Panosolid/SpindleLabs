@@ -114,28 +114,43 @@ function seeded(seed: number) {
   };
 }
 
-/** The simple model: the loop drawn as a polygon with each arc in 4,000 straight pieces by angle (not by bulge segments), and the plain crossing count. */
-function modelInside(corners: SketchXY[], bulges: number[], p: SketchXY): { inside: boolean; gap: number } {
-  const poly: SketchXY[] = [];
+/** The simple model's drawing of a loop: a polygon (x, y, x, y, …) with each arc in 4,000 straight pieces by angle (not by bulge segments). */
+function modelPolygon(corners: SketchXY[], bulges: number[]): number[] {
+  const poly: number[] = [];
   for (let i = 0; i < corners.length; i++) {
     const a = corners[i], b = corners[(i + 1) % corners.length];
-    poly.push(a);
+    poly.push(a[0], a[1]);
     if (bulges[i] === 0) continue;
     const { centre, radius } = arcCircle(a, b, bulges[i]);
     const sweep = 4 * Math.atan(bulges[i]);
     const start = Math.atan2(a[1] - centre[1], a[0] - centre[0]);
-    for (let k = 1; k < 4000; k++) poly.push([centre[0] + radius * Math.cos(start + (sweep * k) / 4000), centre[1] + radius * Math.sin(start + (sweep * k) / 4000)]);
+    for (let k = 1; k < 4000; k++) poly.push(centre[0] + radius * Math.cos(start + (sweep * k) / 4000), centre[1] + radius * Math.sin(start + (sweep * k) / 4000));
   }
+  return poly;
+}
+
+/**
+ * The simple model's answer at p: the plain crossing count over the drawn
+ * polygon, and p's distance to it. The polygon is drawn once per loop, not
+ * per point, and the distance compared squared (its root taken once), so
+ * the 50,000 points take seconds, not minutes; the answers are the same.
+ */
+function modelInside(poly: number[], p: SketchXY): { inside: boolean; gap: number } {
   let inside = false;
-  let gap = Infinity;
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    if (a[1] > p[1] !== b[1] > p[1] && p[0] < a[0] + ((p[1] - a[1]) * (b[0] - a[0])) / (b[1] - a[1])) inside = !inside;
-    const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
-    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
-    gap = Math.min(gap, Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]));
+  let gap2 = Infinity;
+  // Each piece from the point before (the last point, for the first piece: the closing one).
+  let ax = poly[poly.length - 2], ay = poly[poly.length - 1];
+  for (let i = 0; i < poly.length; i += 2) {
+    const bx = poly[i], by = poly[i + 1];
+    if (ay > p[1] !== by > p[1] && p[0] < ax + ((p[1] - ay) * (bx - ax)) / (by - ay)) inside = !inside;
+    const dx = bx - ax, dy = by - ay;
+    const t = Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
+    const ex = ax + t * dx - p[0], ey = ay + t * dy - p[1];
+    gap2 = Math.min(gap2, ex * ex + ey * ey);
+    ax = bx;
+    ay = by;
   }
-  return { inside, gap };
+  return { inside, gap: Math.sqrt(gap2) };
 }
 
 test("seeded: 2,000 loops of lines and arcs (crossing themselves too) agree with the finely drawn polygon at 25 points each", () => {
@@ -147,9 +162,10 @@ test("seeded: 2,000 loops of lines and arcs (crossing themselves too) agree with
     // About half the pieces arcs, bulges up to ±2.5 (turns up to about 270°).
     const bulges = corners.map(() => (rand() < 0.5 ? 0 : (rand() * 2 - 1) * 2.5));
     const loop = path(corners.flat(), bulges);
+    const poly = modelPolygon(corners, bulges);
     for (let k = 0; k < 25; k++) {
       const p: SketchXY = [rand() * 80 - 40, rand() * 80 - 40];
-      const model = modelInside(corners, bulges, p);
+      const model = modelInside(poly, p);
       // The drawn polygon is within r(1 − cos(sweep/8000)) of the arcs (micrometres); points that near the curve could go either way.
       if (model.gap < 1e-3) continue;
       assert.equal(insideLoop(loop, p), model.inside, `loop ${n} (${JSON.stringify(loop)}) at ${p}`);
