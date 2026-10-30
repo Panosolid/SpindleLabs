@@ -214,6 +214,8 @@ export interface SlicedPrint {
   retractions: number;
   /** mm³ of the part too thin for one wall, so not printed; the app warns when it is not 0. */
   unprintedVolume: number;
+  /** The moves' time on a P1S (s), from the engine's estimate: heating, homing and levelling not included. */
+  printTimeS: number;
   preview: PrintLayer[];
 }
 

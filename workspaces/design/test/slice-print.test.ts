@@ -8,9 +8,9 @@ import type { SlicedPrint } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { insertPreset, partDocument } from "../src/document.ts";
-import { gcodeName, PRINT_DEFAULTS, printWords, sliceBodies, slicePrint, stackStl, unprintedWords, type PrintChoices } from "../src/slice-print.ts";
+import { gcodeName, PRINT_DEFAULTS, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type PrintChoices } from "../src/slice-print.ts";
 
-const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, preview: [], ...over });
+const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
 test("the bodies' files go to the engine back to back, each whole", () => {
   // [1, 2] then [3] then nothing then [4, 5]: 1, 2, 3, 4, 5 in that order.
@@ -19,13 +19,30 @@ test("the bodies' files go to the engine back to back, each whole", () => {
 });
 
 test("a slice in words, worked by hand", () => {
-  // 1730 mm is 1.73 m; 5.16 g is under 10, so to one decimal: 5.2 g.
-  assert.equal(printWords(print()), "100 layers, 5.2 g of PLA (1.73 m of filament).");
-  // 12.6 g is 10 or more, so a whole number: 13 g. One layer is "layer".
-  assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220 })), "1 layer, 13 g of PLA (4.22 m of filament).");
+  // 1730 mm is 1.73 m; 5.16 g is under 10, so to one decimal: 5.2 g; 257 s is 4.28 min, so 4 min.
+  assert.equal(printWords(print()), "100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
+  // 12.6 g is 10 or more, so a whole number: 13 g. One layer is "layer". 3900 s is 65 min: 1 h 5 min.
+  assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220, printTimeS: 3900 })), "1 layer, 13 g of PLA (4.22 m of filament), about 1 h 5 min of printing (plus heating and levelling).");
+  // An engine fault (not a number) shows no time rather than a wrong one.
+  assert.equal(printWords(print({ printTimeS: Number.NaN })), "100 layers, 5.2 g of PLA (1.73 m of filament).");
   assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20 }), "spindlelabs-0.16mm-3w-20pc.gcode");
   // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %.
   assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15 });
+});
+
+test("print time in words rounds to the nearest minute, worked by hand", () => {
+  // Half a minute is where rounding turns over: 29 s is 0.48 min (0), 30 s is 0.5 min (1).
+  assert.equal(timeWords(0), "under a minute");
+  assert.equal(timeWords(29), "under a minute");
+  assert.equal(timeWords(30), "1 min");
+  // 3569 s is 59.48 min (59); 3570 s is 59.5 min, which rounds to 60: a whole hour, no "0 min".
+  assert.equal(timeWords(3569), "59 min");
+  assert.equal(timeWords(3570), "1 h");
+  // 7 h 23 min = 26580 s; 2 s either side still rounds to it.
+  assert.equal(timeWords(26580 + 2), "7 h 23 min");
+  assert.equal(timeWords(26580 - 2), "7 h 23 min");
+  // Faults give no figure: not a number, below 0, endless.
+  for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) assert.equal(timeWords(bad), null, String(bad));
 });
 
 test("plastic left out is warned about from half a hundredth of a mm³ (it rounds to 0.01): 0.9× stays quiet, 1.1× warns", () => {
@@ -68,7 +85,7 @@ test("the dialog slices with the choices picked, then says what the slice came t
   t.$("slice-print-go").click();
   await t.settle();
   assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40 }]);
-  assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.16mm-3w-40pc.gcode: 100 layers, 5.2 g of PLA (1.73 m of filament).");
+  assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.16mm-3w-40pc.gcode: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
   t.$("slice-print-close").click();
   assert.equal(t.d.open, false);
@@ -88,7 +105,7 @@ test("the dialog says a refusal in the engine's words, warns about plastic left 
   answer = async () => ({ print: print({ unprintedVolume: 2 }), saved: false });
   t.$("slice-print-go").click();
   await t.settle();
-  assert.equal(t.$("slice-print-status").textContent, "Sliced, but not saved: 100 layers, 5.2 g of PLA (1.73 m of filament). Some of the part is thinner than one printed line, so about 2.00 mm³ of it won't print.");
+  assert.equal(t.$("slice-print-status").textContent, "Sliced, but not saved: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling). Some of the part is thinner than one printed line, so about 2.00 mm³ of it won't print.");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), true);
   // A key pressed in the dialog never reaches the app's shortcuts.
   t.$("slice-print-go").dispatchEvent(new t.window.KeyboardEvent("keydown", { key: "e", bubbles: true }) as unknown as Event);
@@ -142,6 +159,8 @@ test("a 20 mm cube, sliced on the shipped build: 100 layers of 0.2 mm, G-code a 
   assert.ok(Math.abs(p.preview[99].zTop - 20) < 1e-9, `top ${p.preview[99].zTop}`);
   assert.match(p.gcode, /^G1 /m);
   assert.equal(p.unprintedVolume, 0);
+  // The engine's moves-only time for this cube at the defaults is 257 s (the engine's own tests check it against its moves); here, that it reaches the app.
+  assert.equal(timeWords(p.printTimeS), "4 min", `time ${p.printTimeS}`);
   // Weight from length: 1.75 mm filament, π × 0.875² mm² × length × 1.24 g/cm³ (self-consistency, not a hand-worked figure).
   assert.ok(Math.abs(p.filamentG - (Math.PI * 0.875 ** 2 * p.filamentMm * 1.24) / 1000) < 1e-6 * p.filamentG);
   // Two walls: layer 50 starts with one outer and one inner wall.
