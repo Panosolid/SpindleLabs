@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { booleanUnits, sliceUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
+import { booleanUnits, calibrate, CALIBRATION_TARGET, CALIBRATION_TOOL, sliceUnits, buildFaces, buildUnits, callUnits, facesSize, HEADROOM, LIMIT_FLOOR_MS, limitMs, MOST_PAIRS, sketchUnits, UNITS_PER_CORNER, UNITS_PER_PAIR } from "../src/kernel/time-limit.ts";
 
 /** An L in plan, 6 corners, with a round hole: 2 caps + 6 sides + 1 round side = 9 faces. */
 const lWithHole = {
@@ -105,4 +105,51 @@ test("a slice's units by hand: its triangles times its layers, over every file g
   offset.set(a, 4);
   assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 12) < 1e-9);
   assert.equal(callUnits("slice_stl", [a as Uint8Array<ArrayBuffer>, 0.2, 3, 15, "off"], () => undefined), sliceUnits(a, 0.2));
+});
+
+/** Fake kernel calls for the calibration: each boolean takes `ms` on a fake clock; it counts what is kept. */
+function fakeCalls(ms: number, failAt = Infinity) {
+  let clock = 0;
+  let next = 1;
+  const kept = new Set<number>();
+  const specs: unknown[] = [];
+  let booleans = 0;
+  return {
+    kept,
+    specs,
+    booleans: () => booleans,
+    calls: {
+      build: (spec: BodySpec) => (specs.push(spec), kept.add(next), next++),
+      boolean: (target: number, tools: number[], op: string) => {
+        assert.deepEqual([target, tools, op], [1, [2], "union"]);
+        if (++booleans >= failAt) throw new Error("planted");
+        clock += ms;
+        kept.add(next);
+        return { bodies: [next++], history: [] };
+      },
+      free: (body: number) => void assert.ok(kept.delete(body), `body ${body} freed once`),
+      now: () => clock,
+    },
+  };
+}
+
+test("the calibration times the cubes' boolean for 50 ms and 3 runs at least, and keeps nothing", () => {
+  // 7 ms a run: 7 runs make 49 ms, the 8th 56 ms ≥ 50: 56 / 8 = 7 ms a unit.
+  const quick = fakeCalls(7);
+  assert.equal(calibrate(quick.calls), 7);
+  assert.equal(quick.booleans(), 8);
+  assert.deepEqual([...quick.kept], []);
+  assert.deepEqual(quick.specs, [CALIBRATION_TARGET, CALIBRATION_TOOL]);
+  // 100 ms a run (a slow phone): still 3 runs, 300 / 3 = 100.
+  const slow = fakeCalls(100);
+  assert.equal(calibrate(slow.calls), 100);
+  assert.equal(slow.booleans(), 3);
+  // A clock that never moves: 1,000 runs, then 0 (the client takes its default for 0).
+  const stopped = fakeCalls(0);
+  assert.equal(calibrate(stopped.calls), 0);
+  assert.equal(stopped.booleans(), 1000);
+  // A boolean that throws: the cubes are still freed, and the error goes on.
+  const failing = fakeCalls(7, 2);
+  assert.throws(() => calibrate(failing.calls), /planted/);
+  assert.deepEqual([...failing.kept], [], "the first run's result and both cubes freed");
 });

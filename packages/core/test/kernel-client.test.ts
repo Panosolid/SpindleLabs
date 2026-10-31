@@ -545,3 +545,71 @@ test("a body's view, STL and STEP are timed by the body it is: a sphere's mesh i
     assert.equal(keptAfter(t, worker, 17_600 * 1.1), false, "the box's view at 1.1 ×");
     await assert.rejects(last, (e: KernelError) => e.kind === "timed-out");
   }));
+
+test("body_boolean with the app's handles: the kernel's numbers sent, the results given handles of their own, the history named by the app's handles", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    // Two bodies built: the kernel numbers them 11 and 12, the app 1 and 2.
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    const b = client.call("body_build", CUBE_MOVED);
+    worker.answer(2, 12);
+    assert.deepEqual([await a, await b], [1, 2]);
+    const joined = client.call("body_boolean", 1, [2], "union");
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_boolean", args: [11, [12], "union"] });
+    worker.answer(3, {
+      bodies: [13],
+      history: [{ faces: [{ body: 11, face: 0, whole: false, turned: false }, { body: 12, face: 4, whole: true, turned: false }], edges: [{ along: [{ body: 12, edge: 1, whole: true }], crossing: [[{ body: 11, face: 0 }, { body: 12, face: 3 }]] }] }],
+    });
+    assert.deepEqual(await joined, {
+      bodies: [3],
+      history: [{ faces: [{ body: 1, face: 0, whole: false, turned: false }, { body: 2, face: 4, whole: true, turned: false }], edges: [{ along: [{ body: 2, edge: 1, whole: true }], crossing: [[{ body: 1, face: 0 }, { body: 2, face: 3 }]] }] }],
+    });
+    // The result is held by its own handle: hiding it sends the kernel's number.
+    const hidden = client.call("body_hide", 3);
+    assert.deepEqual(worker.posted.at(-1), { id: 4, op: "body_hide", args: [13] });
+    worker.answer(4, undefined);
+    await hidden;
+    // An unknown input is refused before anything is sent.
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_boolean", 1, [9], "subtract"), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
+    assert.equal(worker.posted.length, sent);
+  }));
+
+const CUBE_MOVED: BodySpec = { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [5, 5, 5] }] } };
+
+test("a boolean's limit grows with its inputs' faces; its result's view with the result's faces", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(1);
+    // Two 1,000-corner plates: 1,002 faces each, 1,004,004 pairs, capped at 202,500: × 0.17 = 34,425
+    // units, × 1 ms × 4 = 137,700 ms.
+    const a = client.call("body_build", ngon(1000));
+    worker.answer(1, 1);
+    const b = client.call("body_build", ngon(1000));
+    worker.answer(2, 2);
+    await Promise.all([a, b]);
+    const cut = client.call("body_boolean", 1, [2], "subtract");
+    assert.equal(keptAfter(t, worker, 137_700 * 0.9), true, "the boolean at 0.9 ×");
+    worker.answer(3, { bodies: [3], history: [{ faces: Array(120).fill({ body: 1, face: 0, whole: false, turned: false }), edges: [] }] });
+    const [piece] = (await cut).bodies;
+    // The piece's 120 faces, shapes unknown: 120 × 30 = 3,600 units, × 1 ms × 4 = 14,400 ms.
+    const view = client.call("body_view", piece);
+    assert.equal(keptAfter(t, worker, 14_400 * 0.9), true);
+    assert.equal(keptAfter(t, worker, 14_400 * 0.2), false);
+    await assert.rejects(view, (e: KernelError) => e.kind === "timed-out");
+  }));
+
+test("a boolean's limit at 1.1 × lets it go: it alone took too long", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(1);
+    client.call("body_build", ngon(1000));
+    worker.answer(1, 1);
+    client.call("body_build", ngon(1000));
+    worker.answer(2, 2);
+    await Promise.resolve();
+    const cut = client.call("body_boolean", 1, [2], "subtract");
+    assert.equal(keptAfter(t, worker, 137_700 * 1.1), false);
+    await assert.rejects(cut, (e: KernelError) => e.kind === "timed-out" && e.message === KERNEL_TOOK_TOO_LONG);
+  }));

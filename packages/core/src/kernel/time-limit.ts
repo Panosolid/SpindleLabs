@@ -17,7 +17,47 @@
 // size. So the limit of any legal call is at least HEADROOM times what it
 // needs, on any device whose calibration is as slow as its other calls.
 import type { KernelOps } from "./kernel-client.ts";
-import type { BodyHandle, BodySpec, Loop, Outline, ShapeSpec } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, Loop, Outline, ShapeSpec } from "./kernel-types.ts";
+
+/** The calibration boolean's bodies: two 10 mm cubes, the second moved 5 mm along each axis, so they overlap in a 5 mm cube (36 face pairs). */
+export const CALIBRATION_TARGET: BodySpec = { box: { width: 10, depth: 10, height: 10 } };
+export const CALIBRATION_TOOL: BodySpec = { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [5, 5, 5] }] } };
+
+/** How long the calibration runs: its boolean again and again for at least 50 ms and 3 runs (at most 1,000), so a coarse clock or one slow first run hardly counts. */
+export const CALIBRATION_MS = 50;
+export const CALIBRATION_LEAST_RUNS = 3;
+export const CALIBRATION_MOST_RUNS = 1000;
+
+/** The kernel calls the calibration makes, as the worker (or a test) has them. */
+export interface CalibrationCalls {
+  build(spec: BodySpec): BodyHandle;
+  boolean(target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult;
+  free(body: BodyHandle): void;
+  now(): number;
+}
+
+/**
+ * Times the calibration boolean (the cubes joined) on this device: the ms
+ * one unit takes. Leaves no body behind. Throws what the kernel throws.
+ */
+export function calibrate(calls: CalibrationCalls): number {
+  const target = calls.build(CALIBRATION_TARGET);
+  const tool = calls.build(CALIBRATION_TOOL);
+  try {
+    const start = calls.now();
+    let runs = 0;
+    let took = 0;
+    while (runs < CALIBRATION_MOST_RUNS && (runs < CALIBRATION_LEAST_RUNS || took < CALIBRATION_MS)) {
+      calls.boolean(target, [tool], "union").bodies.forEach((body) => calls.free(body));
+      runs++;
+      took = calls.now() - start;
+    }
+    return took / runs;
+  } finally {
+    calls.free(target);
+    calls.free(tool);
+  }
+}
 
 /** No call's limit is shorter: several seconds, so a call never fails for a hiccup of a busy device. */
 export const LIMIT_FLOOR_MS = 10_000;
@@ -156,7 +196,13 @@ export function builtSize(spec: BodySpec): BodySize {
   return { faces: buildFaces(spec), mesh: buildUnits(spec) };
 }
 
-/** The size of a body with `faces` faces whose shapes aren't known (a boolean's result). */
+/**
+ * The size of a body with `faces` faces whose shapes aren't known (a
+ * boolean's result), each counted as costly to mesh as a sphere's face. Far
+ * more than a planar face needs (the 40-slot gratings' union shown again:
+ * 172 ms of 138,002), but booleans of curved faces (steps 37 onward) keep
+ * it true without a change here.
+ */
 export function facesSize(faces: number): BodySize {
   return { faces, mesh: faces * UNITS_PER_FACE };
 }
@@ -207,6 +253,12 @@ export function callUnits<K extends keyof KernelOps>(op: K, args: KernelOps[K]["
     case "body_stl":
     case "body_step":
       return sizeOf(a[0] as BodyHandle)?.mesh ?? 0;
+    case "body_boolean": {
+      // An unknown handle is refused at once: the floor.
+      const target = sizeOf(a[0] as BodyHandle);
+      const tools = (a[1] as BodyHandle[]).map(sizeOf);
+      return target && tools.every((t) => t) ? booleanUnits(target, tools as BodySize[]) : 0;
+    }
     case "sketch_outline":
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "slice_stl":

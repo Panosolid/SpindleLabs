@@ -1,7 +1,7 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, StlFile, SupportStyle } from "./kernel-types.ts";
-import { builtSize, callUnits, DEFAULT_UNIT_MS, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, StlFile, SupportStyle } from "./kernel-types.ts";
+import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
 export interface KernelOps {
@@ -21,6 +21,14 @@ export interface KernelOps {
   /** The body as a STEP AP214 file, placed where it is shown (step 29b3: the oracle reads the app's bodies with OpenCascade). */
   body_step: { args: [body: BodyHandle]; result: string };
   body_free: { args: [body: BodyHandle]; result: void };
+  /** Hides a kept body: the kernel lets its display mesh go until body_view shows it again (step 35d2: bodies off screen, a timeline's earlier features, a boolean's inputs). */
+  body_hide: { args: [body: BodyHandle]; result: void };
+  /**
+   * `op` on the kept body `target` with each of `tools` in turn (step 35d1):
+   * every result kept (shown), the inputs left as they were, and where each
+   * result face and edge came from, by input handle. A refusal keeps nothing.
+   */
+  body_boolean: { args: [target: BodyHandle, tools: BodyHandle[], op: BooleanOp]; result: BooleanResult };
   /** How many bodies the kernel keeps: tests check what they build they free. */
   body_count: { args: []; result: number };
   /** Slices one or more binary STL files (back to back, a body each) with the beginner's choices: layer height (mm), wall count, infill (%), and supports under overhangs (off, normal or tree). */
@@ -317,7 +325,8 @@ export class KernelClient implements KernelCalls {
         return handle as KernelOps[K]["result"];
       });
     }
-    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free") {
+    if (op === "body_boolean") return this.boolean(...(args as KernelOps["body_boolean"]["args"]), units) as Promise<KernelOps[K]["result"]>;
+    if (op === "body_view" || op === "body_stl" || op === "body_step" || op === "body_free" || op === "body_hide") {
       const handle = args[0] as BodyHandle;
       const held = this.bodies.get(handle);
       if (!held) {
@@ -339,6 +348,39 @@ export class KernelClient implements KernelCalls {
       return sent as Promise<KernelOps[K]["result"]>;
     }
     return this.send(op, args, units) as Promise<KernelOps[K]["result"]>;
+  }
+
+  /**
+   * body_boolean with the app's handles: the inputs' kernel numbers sent,
+   * the results given handles of their own (sized by their faces), and the
+   * history's input bodies named by the app's handles again.
+   */
+  private boolean(target: BodyHandle, tools: BodyHandle[], op: BooleanOp, units: number): Promise<BooleanResult> {
+    const inputs = [target, ...tools];
+    const held = inputs.map((handle) => this.bodies.get(handle));
+    const unknown = inputs.find((_, k) => !held[k]);
+    if (unknown !== undefined) return Promise.reject(new KernelError({ kind: "unknown-body", inputs: [], message: `body ${unknown} is not in the kernel (it was freed, or never made)` }));
+    const worker = this.worker;
+    const app = new Map(held.map((h, k) => [h!.body, inputs[k]]));
+    return this.send("body_boolean", [held[0]!.body, held.slice(1).map((h) => h!.body), op], units).then((reply) => {
+      const { bodies, history } = reply as BooleanResult;
+      const handles = bodies.map((body, k) => {
+        const handle = this.nextBody++;
+        if (worker === this.worker) {
+          this.bodies.set(handle, { worker, body });
+          this.sizes.set(handle, facesSize(history[k].faces.length));
+        } else this.retired.add(handle);
+        return handle;
+      });
+      const named = (body: BodyHandle) => app.get(body) ?? body;
+      return {
+        bodies: handles,
+        history: history.map(({ faces, edges }) => ({
+          faces: faces.map((f) => ({ ...f, body: named(f.body) })),
+          edges: edges.map((e) => ({ along: e.along.map((a) => ({ ...a, body: named(a.body) })), crossing: e.crossing.map(([p, q]) => [{ ...p, body: named(p.body) }, { ...q, body: named(q.body) }] as [typeof p, typeof q]) })),
+        })),
+      };
+    });
   }
 
   private send<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], units: number): Promise<unknown> {
