@@ -143,7 +143,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 4;
+  version: 5;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -151,6 +151,16 @@ export interface DesignDocument {
   timeline: { features: Feature[]; marker?: Marker };
   /** Each extrude's kept shape while its sketch is lost (24d2), by the extrude's id; left out when there is none. */
   kept?: Record<string, KeptShape>;
+  /**
+   * Every body's id and number (35e, `numberBodies`), in the order they
+   * were given. A document read from a file always has them all, and an
+   * edit that makes a body numbers it; left out (with `nextBody`) only in
+   * data written by hand or by a test, numbered as version 4 data is when
+   * read.
+   */
+  bodies?: BodyRecord[];
+  /** The number the next new body gets ("Body 4"): above every number given, even a deleted body's. */
+  nextBody?: number;
   /**
    * What the browser's eyes hide (U0f3; Ben 2026-10-29, an eye on
    * everything): solid features' bodies and sketches by their items' ids
@@ -304,7 +314,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return { version: 4, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } };
+  return numberBodies({ version: 5, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -331,7 +341,7 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
   let nextId = doc.nextId;
   const id = `feature-${nextId++}`;
   const { feature, profile } = presetFeature(id, presetName(doc, kind), isPrimitive(kind) ? undefined : `profile-${nextId++}`, kind, w, d, h);
-  return { id, doc: { ...doc, nextId, profiles: profile ? [...doc.profiles, profile] : doc.profiles, timeline: insertItem(doc, feature) } };
+  return { id, doc: numberBodies({ ...doc, nextId, profiles: profile ? [...doc.profiles, profile] : doc.profiles, timeline: insertItem(doc, feature) }) };
 }
 
 /**
@@ -392,6 +402,52 @@ export const isMoveItem = (f: Feature) => f.intent.type === "move";
 
 /** Whether an item makes a body of its own: anything but a sketch or a Move. */
 export const makesBody = (f: Feature) => !isSketchItem(f) && !isMoveItem(f);
+
+/**
+ * A body's own id and the number people read in "Body 3" (step 35e;
+ * docs/document-model.md, section 8, rule 1). The id is the body's, not
+ * a feature's: `body:<the item that first made it>` (a Combine at 35f can
+ * leave pieces with ids of their own). The number is given once, when the
+ * body first appears, and stored, so a reorder, a suppress or a body
+ * before it failing never renumbers it.
+ */
+export interface BodyRecord {
+  id: string;
+  number: number;
+}
+
+/** The id of the body item `featureId` makes (rule 1): "body:feature-3". */
+export const bodyIdOf = (featureId: string) => `body:${featureId}`;
+
+/**
+ * The document with every body numbered (`bodies`, `nextBody`): a body
+ * with no number yet gets the next one, ones that build first, each in
+ * timeline order (so a version 4 file's bodies keep the numbers it showed,
+ * "Body n" by place among the bodies that build, and then the suppressed
+ * and rolled-back ones follow); a body whose item is deleted loses its
+ * number, which is never given again (the counter only goes up). The same
+ * document back when every body is numbered and none is gone, so each
+ * edit that makes or deletes a body numbers it once, in its own undo step.
+ */
+export function numberBodies(doc: DesignDocument): DesignDocument {
+  const made = doc.timeline.features.filter(makesBody);
+  const live = new Set(made.map((f) => bodyIdOf(f.id)));
+  const old = doc.bodies ?? [];
+  const kept = old.filter((b) => live.has(b.id));
+  const have = new Set(kept.map((b) => b.id));
+  const missing = made.filter((f) => !have.has(bodyIdOf(f.id)));
+  // Which build is asked only when a body needs a number (the browser asks for the numbers on every draw of a 5,000-item timeline).
+  const building = missing.length === 0 ? null : buildingItems(doc);
+  const fresh = building === null ? [] : [...missing.filter((f) => building.has(f)), ...missing.filter((f) => !building.has(f))].map((f) => bodyIdOf(f.id));
+  if (fresh.length === 0 && kept.length === old.length && doc.bodies !== undefined && doc.nextBody !== undefined) return doc;
+  let next = Math.max(doc.nextBody ?? 1, ...kept.map((b) => b.number + 1));
+  return { ...doc, bodies: [...kept, ...fresh.map((id) => ({ id, number: next++ }))], nextBody: next };
+}
+
+/** Each body's number by its id, numbered as `numberBodies` would. */
+export function bodyNumbers(doc: DesignDocument): ReadonlyMap<string, number> {
+  return new Map(numberBodies(doc).bodies!.map((b) => [b.id, b.number]));
+}
 
 /** A Move's numbers, all in every Move: the shift (mm), the turns about X, Y and Z (degrees, in that order) and the point they turn about (mm). */
 export const MOVE_PARAMS = ["x", "y", "z", "turnX", "turnY", "turnZ", "pivotX", "pivotY", "pivotZ"] as const;
@@ -881,6 +937,36 @@ function checkMove(f: Feature, byId: ReadonlyMap<string, { item: Feature; at: nu
   }
 }
 
+/**
+ * A version 5 file's bodies (35e): each listed once, as "body:" and an
+ * item's id, never a sketch's or a Move's, no number given twice, and the
+ * counter above all of them, so no new body could take one. A body whose
+ * item is gone, or an item with no number, is what a file edited by hand
+ * (or by another program) can hold: the reader settles both as an edit
+ * would (`numberBodies`: the number dropped, the next number given), so
+ * every number the file gives stays as it is.
+ */
+function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>) {
+  const { bodies, nextBody } = d;
+  if (!Array.isArray(bodies)) throw new Error("Design data has no bodies list (each body's id and number)");
+  notTooMany(bodies.length, DESIGN_LIMITS.items, "Design data has", "bodies");
+  if (!Number.isSafeInteger(nextBody) || nextBody! < 1) throw new Error(`Design data's nextBody ${shown(nextBody)} is not a counting number`);
+  const ids = new Set<string>();
+  const numbers = new Set<number>();
+  for (const [i, b] of bodies.entries()) {
+    if (!isRecord(b) || typeof b.id !== "string") throw new Error(`Design body ${i + 1} has no id`);
+    const m = /^body:([^:/]+)$/.exec(b.id);
+    const item = m ? byId.get(m[1])?.item : undefined;
+    if (!m || (item && !makesBody(item))) throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body`);
+    if (ids.has(b.id)) throw new Error(`Design body ${b.id} is listed twice`);
+    ids.add(b.id);
+    if (!Number.isSafeInteger(b.number) || b.number < 1) throw new Error(`Design body ${b.id}'s number ${typeof b.number === "string" ? JSON.stringify(b.number) : shown(b.number)} is not a counting number`);
+    if (numbers.has(b.number)) throw new Error(`Design body number ${b.number} is given twice`);
+    numbers.add(b.number);
+    if (b.number >= nextBody!) throw new Error(`Design data's nextBody ${nextBody} is not above body ${b.id}'s number ${b.number}, so a new body could repeat it`);
+  }
+}
+
 export function readDesignDocument(data: unknown): DesignDocument {
   if (!isRecord(data)) throw new Error("Design data is missing");
   // Counted before migrating, which spreads every id of a version 1 file.
@@ -890,9 +976,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const v3 = v2.version === 2 ? migrateDesignV2(v2) : v2;
   // Version 4 has version 3's fields; only data saved before it can hold the old preset names, renamed once checked (below).
   const old = v3.version === 3;
-  const d = (old ? { ...v3, version: 4 } : v3) as Partial<DesignDocument>;
-  // Text quoted, so "4" (text) never reads as the 4 it is not (app sweep, finding 25).
-  if (d.version !== 4) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3 or 4)`);
+  // Version 5 adds the bodies' numbers (35e); version 4 and older data gets the ones it showed, once checked (below), and so
+  // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
+  const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
+  if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
+  const unnumbered = old || v3.version === 4 || (v3.version === 5 && !numbered);
+  const d = (old || v3.version === 4 ? { ...v3, version: 5 } : v3) as Partial<DesignDocument>;
+  // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
+  if (d.version !== 5) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4 or 5)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1029,8 +1120,11 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // Each dependency an id (after the Move's own check, which says what a move's should be).
   for (const f of d.timeline.features)
     for (const id of f.dependsOn as unknown[]) if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);
+  if (!unnumbered) checkBodies(d, byId);
   const read = withRuledNames(d as DesignDocument);
-  return old ? withShortNames(read) : read;
+  const named = old ? withShortNames(read) : read;
+  // Numbered as version 4 data showed, or (version 5) any body the file gives no number gets the next one.
+  return numberBodies(named);
 }
 
 /**

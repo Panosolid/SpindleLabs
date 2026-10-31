@@ -61,7 +61,7 @@ type Point = readonly [number, number, number];
 
 /** What the design says each Body row is, worked out apart from Design's code. */
 interface Expected {
-  /** n in "Body n": its place among the solid features that build. */
+  /** n in "Body n": the body's own number, given when it was made (35e): its place among the solid features made. */
   place: number;
   feature: string;
   /** null when the feature fails to build (no body). */
@@ -306,11 +306,11 @@ function randomDesign(random: SeededRandom): { doc: DesignDocument; expected: Ex
       doc = e.doc;
       expected.push({ feature: e.id, volume: Math.PI * radius ** 2 * dist, faces: 3, inside: inCylinder(cx, cy, radius, dist) });
     }
-    // Suppressed: no row at all, so the bodies after it move up a number.
+    // Suppressed: no row at all; the bodies after it keep their numbers (35e: given once, when each was made).
     if (!lastOne && random.next() < 0.2) suppressed.push(expected[expected.length - 1].feature);
   }
   for (const id of suppressed) doc = suppressItem(doc, id, true);
-  const rows = expected.filter((e) => !suppressed.includes(e.feature)).map((e, i) => ({ ...e, place: i + 1 }));
+  const rows = expected.map((e, i) => ({ ...e, place: i + 1 })).filter((e) => !suppressed.includes(e.feature));
   return { doc, expected: rows };
 }
 

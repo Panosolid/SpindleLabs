@@ -67,7 +67,7 @@ export const MONKEY_PLANTS = {
   "failed-body-rows": {
     what: "a feature the kernel refused still gets a Body row (bug hunt 2026-10-19, finding 5)",
     expect: "Bodies group matches the file",
-    edits: [{ file: "workspaces/design/src/browser.ts", find: "(failed.has(f.id) ? [] :", replace: "(false ? [] :" }],
+    edits: [{ file: "workspaces/design/src/browser.ts", find: "return failed.has(f.id) ? [] :", replace: "return false ? [] :" }],
   },
   "top-bar-spills-on-phone": {
     what: "at phone width the top bar is wider than the window",
