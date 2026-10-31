@@ -53,7 +53,7 @@ const workspaces: WorkspacePlugin[] = [
 
 // The browser test of a kernel lost mid-call (e2e/kernel-lost.mjs) shortens its deadline with ?test-hooks&kernel-deadline=<ms>.
 const hooks = new URLSearchParams(location.search);
-const kernel = new KernelClient({ answerWithinMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
+const kernel = new KernelClient({ floorMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
 // The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
 watchKernel(kernel);
 // Opened on a build a deploy has replaced (kept by the browser): open the new one before the user starts (kernel-lost.ts).

@@ -251,7 +251,9 @@ export type KernelErrorKind =
   /** The kernel already holds its most bodies (MAX_LIVE_BODIES); free some. */
   | "too-many-bodies"
   /** Any other kernel failure (including a crash): a kernel bug. */
-  | "internal";
+  | "internal"
+  /** Never the kernel's own: the call ran past its time limit (kernel-client.ts, time-limit.ts), so the kernel was started again. */
+  | "timed-out";
 
 /**
  * Which input a failure is about, so the app
