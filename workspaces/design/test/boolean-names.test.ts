@@ -7,42 +7,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type BooleanFeature } from "../../../packages/testing/src/boolean-naming-model.ts";
-import { rebuildBooleans } from "../../../packages/testing/src/boolean-naming-model.ts";
 import { combineNames, cornerCompare, fullNames, sizeCompare, SAME_CORNER, TIE } from "../src/boolean-names.ts";
-import { block, designRebuild, onKernel, randomSession, SEEDS, type Run } from "./boolean-combine.ts";
-
-/** Each body as both sides can say it: its id, volume, and its faces' names (shown first) with the full name. */
-interface Said {
-  id: string;
-  volume: number;
-  faces: string[];
-}
+import { block, designRebuild, designSaid, difference, modelSays, onKernel, randomSession, SEEDS, type Run, type Said } from "./boolean-combine.ts";
 
 async function designSays(features: readonly BooleanFeature[], run?: Run): Promise<{ bodies: Said[]; failed: string[] }> {
   const { bodies, failed } = await designRebuild(features, run);
-  const full = fullNames(bodies);
-  const said = bodies.map((b, bi) => ({ id: b.id, volume: b.view.volume, faces: b.faces.map((f, fi) => `${full[bi][fi]} = ${f.names.join(" | ")}`).sort() }));
-  return { bodies: said.sort((a, b) => (a.id < b.id ? -1 : 1)), failed: [...failed].sort() };
-}
-
-function modelSays(features: readonly BooleanFeature[]): { bodies: Said[]; failed: string[] } {
-  const r = rebuildBooleans(features);
-  const said = r.bodies.map((b) => ({ id: b.id, volume: b.volume, faces: b.faces.map((f) => `${f.full} = ${f.names.join(" | ")}`).sort() }));
-  return { bodies: said.sort((a, b) => (a.id < b.id ? -1 : 1)), failed: [...r.failed.keys()].sort() };
-}
-
-/** Where Design and the model part, in words; null when they agree (volumes within a billionth). */
-function difference(d: { bodies: Said[]; failed: string[] }, m: { bodies: Said[]; failed: string[] }): string | null {
-  if (d.failed.join() !== m.failed.join()) return `failed: Design ${d.failed.join() || "none"}, model ${m.failed.join() || "none"}`;
-  if (d.bodies.map((b) => b.id).join() !== m.bodies.map((b) => b.id).join()) return `bodies: Design ${d.bodies.map((b) => b.id).join()}, model ${m.bodies.map((b) => b.id).join()}`;
-  for (const [i, b] of d.bodies.entries()) {
-    const n = m.bodies[i];
-    if (Math.abs(b.volume - n.volume) > 1e-9 * Math.max(b.volume, n.volume)) return `${b.id} volume: Design ${b.volume}, model ${n.volume}`;
-    const extra = b.faces.filter((f) => !n.faces.includes(f));
-    const missing = n.faces.filter((f) => !b.faces.includes(f));
-    if (extra.length + missing.length > 0) return `${b.id} faces: only Design ${extra.join("; ") || "none"}; only model ${missing.join("; ") || "none"}`;
-  }
-  return null;
+  return designSaid(bodies, failed);
 }
 
 // The F1 bar (Ben's Fusion check): 100 × 20 × 10, cut by a slot at x 30–40
