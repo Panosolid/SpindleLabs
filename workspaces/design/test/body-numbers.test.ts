@@ -109,7 +109,7 @@ test("hand-worked: a version 4 file gets the numbers it showed: the bodies that 
   ]);
   assert.equal(read.nextBody, 5);
   assert.deepEqual(labels(read), ["Body 1", "Body 2"]);
-  assert.equal(read.version, 5);
+  assert.equal(read.version, 6);
   // Unsuppressed and rolled forward, A and D come back as Body 3 and Body 4.
   assert.deepEqual(labels(moveMarker(suppressItem(read, "feature-1", false), null)), ["Body 3", "Body 1", "Body 2", "Body 4"]);
 });

@@ -644,7 +644,7 @@ test("Design's eye hides Body 1 and shows it again, one undo step each, and a hi
   assert.deepEqual(ctx.selection.items.map((i) => i.id), ["body:feature-1"]);
   eye().click();
   await settle();
-  assert.deepEqual(hidden(), ["feature-1"]);
+  assert.deepEqual(hidden(), ["body:feature-1"]);
   assert.deepEqual(ctx.selection.items, []);
   assert.deepEqual([eye().getAttribute("aria-label"), eye().getAttribute("aria-pressed"), eye().querySelector("svg")!.dataset.icon], ["Show Body 1", "false", "eye-off"]);
   assert.ok(eye().parentElement!.classList.contains("browser-row-hidden"));
@@ -749,7 +749,7 @@ test("Design says the project changed when it writes the part; placeholders neve
     } else {
       // Mounting on an empty project writes the empty design a new project starts with (U0c): one change, no body.
       assert.equal(changes.get(ctx), 1);
-      assert.deepEqual(ctx.project.workspaces.design, { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
+      assert.deepEqual(ctx.project.workspaces.design, { version: 6, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
       const before = ctx.project.workspaces.design;
       const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";

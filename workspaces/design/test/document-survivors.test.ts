@@ -94,15 +94,16 @@ test("a renamed item's name is followed in from lists only where they name a Des
 });
 
 test("a Move's body that is a list, not an id, is refused by the Move's own check (catches the deleted body's typeof check made always true)", () => {
-  // ["feature-9"] reads as "feature-9" when turned to text, the shape of a deleted body's id; it must still be refused.
+  // ["body:feature-1"] reads as "body:feature-1" when turned to text, the shape of a body's id; it must still be refused.
+  // (Version 6 lists a Move's bodies in its `bodies`, 35ec.)
   const d = clone(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
-  d.timeline.features[1].dependsOn = [["feature-1"]];
+  d.timeline.features[1].intent.parameters.bodies = [["body:feature-1"]];
   refused(d, "Design move feature-2 moves a list, which is not a body made before it in the timeline");
 });
 
 test("a body's id must start with body: (catches the ^ dropped) and its number's message names a list as a list (catches the text check made always true)", () => {
   const d = clone(partDocument("box", 40, 30, 20)) as Record<string, any>;
-  assert.equal(d.version, 5);
+  assert.equal(d.version, 6);
   const bodies = (b: unknown) => ({ ...clone(d), bodies: [b] });
   refused(bodies({ id: "xbody:feature-1", number: 1 }), 'Design body xbody:feature-1 is not "body:" and the id of an item that makes a body');
   refused(bodies({ id: "body:feature-1", number: [1] }), "Design body body:feature-1's number a list is not a counting number");
@@ -117,10 +118,13 @@ test("a version 5 file's bodies are checked, not settled: a number given twice i
 
 test("the eyes can't hide a Move (catches the solid-or-sketch check made always true)", () => {
   const d = clone(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
+  // Version 6 lists a body by its body id (35ec): a Move's "body" is refused either way, the box's body reads.
+  d.hidden = ["body:feature-2"];
+  refused(d, "Design data hides body:feature-2, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
   d.hidden = ["feature-2"];
-  refused(d, "Design data hides feature-2, which is not a solid feature or sketch in the timeline, an origin axis or a folder");
-  d.hidden = ["feature-1"];
-  assert.deepEqual(reread(d).hidden, ["feature-1"]);
+  refused(d, "Design data hides feature-2, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  d.hidden = ["body:feature-1"];
+  assert.deepEqual(reread(d).hidden, ["body:feature-1"]);
 });
 
 test("two edges seen end on make two projected points, and the file reads (catches a point projection's curve points made non-empty)", () => {

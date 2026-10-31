@@ -184,7 +184,7 @@ test("drawing a line changes the sketch in the graph, not the part", () => {
 
 const REAL_V1 = readFileSync(new URL("./files/v1-bracket.fission.json", import.meta.url), "utf8");
 
-test("a real version 1 file (saved by the SpindleLabs before 21b) opens as version 5, and saves and reopens unchanged", () => {
+test("a real version 1 file (saved by the SpindleLabs before 21b) opens as version 6, and saves and reopens unchanged", () => {
   // v1-bracket.fission.json was saved by main before this step: an
   // L-bracket 40 × 30 extruded 20. Its ids are profile-1 and feature-1, so
   // the counter starts at 2; there are no sketches; its one solid feature
@@ -198,11 +198,11 @@ test("a real version 1 file (saved by the SpindleLabs before 21b) opens as versi
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
   v1.timeline.features[0].provenance.self.label = "L-bracket 1";
-  assert.deepEqual(doc, { ...v1, version: 5, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
+  assert.deepEqual(doc, { ...v1, version: 6, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
-  // Saved, it is version 5; opened and saved again, byte-identical.
+  // Saved, it is version 6; opened and saved again, byte-identical.
   const saved = projectToJson(p);
-  assert.equal(JSON.parse(saved).workspaces.design.version, 5);
+  assert.equal(JSON.parse(saved).workspaces.design.version, 6);
   assert.equal(projectToJson(projectFromJson(saved, DESIGN)), saved);
 });
 

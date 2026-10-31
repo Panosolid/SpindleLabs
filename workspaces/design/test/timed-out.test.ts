@@ -253,7 +253,7 @@ test("after a rebuild only the bodies drawn keep a mesh: a moved box's body befo
   StandInWorker.hangs = () => false;
   // Box 1 moved by Move 1, Box 2 hidden by its eye: drawn are Box 1 (moved) and nothing else.
   const moved = insertPreset(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc, "box", 10, 10, 10).doc;
-  const doc: DesignDocument = { ...moved, hidden: ["feature-3"] };
+  const doc: DesignDocument = { ...moved, hidden: ["body:feature-3"] };
   const { d, build } = design(doc);
   await build();
   const b = d.last!;

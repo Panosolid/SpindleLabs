@@ -68,10 +68,10 @@ test("what a file should show, worked by hand", () => {
   // A body the file has no number for gets the next: the extrude's dropped, the counter at 7, so Body 7.
   assert.deepEqual(expectedView({ ...numbered, bodies: [numbered.bodies[0]], nextBody: 7 }).rows, [{ row: "body-7", place: 7, id: "feature-3" }]);
   // Opened, a file is shown with its bodies settled: a solid added by hand gets the next number, a gone one's goes.
-  const added = { workspaces: { design: { ...numbered, version: 5, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
+  const added = { workspaces: { design: { ...numbered, version: 6, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
-  const fresh = { workspaces: { design: { ...design(), version: 5, bodies: [], nextBody: 1 } } };
+  const fresh = { workspaces: { design: { ...design(), version: 6, bodies: [], nextBody: 1 } } };
   assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
   assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
