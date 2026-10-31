@@ -749,7 +749,7 @@ test("Design says the project changed when it writes the part; placeholders neve
     } else {
       // Mounting on an empty project writes the empty design a new project starts with (U0c): one change, no body.
       assert.equal(changes.get(ctx), 1);
-      assert.deepEqual(ctx.project.workspaces.design, { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } });
+      assert.deepEqual(ctx.project.workspaces.design, { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
       const before = ctx.project.workspaces.design;
       const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";
@@ -758,6 +758,8 @@ test("Design says the project changed when it writes the part; placeholders neve
       // A size typed with no body adds one (24f4): a 50 × 30 × 20 box, feature-1.
       assert.deepEqual((ctx.project.workspaces.design as { timeline: { features: { id: string; intent: { summary: string } }[] } }).timeline.features.map((f) => [f.id, f.intent.summary]), [["feature-1", "Box: 50 × 30 × 20 mm"]]);
       assert.equal(changes.get(ctx), 2, "and said so once");
+      // Its body numbered by the same edit (35e): Body 1, the next body Body 2.
+      assert.deepEqual((ctx.project.workspaces.design as { bodies?: unknown }).bodies, [{ id: "body:feature-1", number: 1 }]);
     }
     view.unmount();
   }

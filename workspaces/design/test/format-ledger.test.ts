@@ -23,10 +23,10 @@ export function propertyNames(source: string, name: string): string[] {
   return [...body.matchAll(/^ {2}([A-Za-z_]\w*)\??:/gm)].map((m) => m[1]);
 }
 
-// Design data version 4. Changing any list: see the top of this file.
-const LEDGER_VERSION = 4;
+// Design data version 5. Changing any list: see the top of this file.
+const LEDGER_VERSION = 5;
 const LEDGER: { file: string; type: string; names: string[] }[] = [
-  { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "hidden", "shownPlanes"] },
+  { file: "workspaces/design/src/document.ts", type: "DesignDocument", names: ["version", "nextId", "profiles", "sketches", "timeline", "kept", "bodies", "nextBody", "hidden", "shownPlanes"] },
   { file: "workspaces/design/src/document.ts", type: "Sketch", names: ["id", "points", "curves", "constraints", "face", "pins", "projected"] },
   { file: "workspaces/design/src/document.ts", type: "KeptShape", names: ["points", "curves", "placement"] },
   { file: "workspaces/design/src/face-sketch.ts", type: "SketchFace", names: ["frame", "side", "held", "body"] },

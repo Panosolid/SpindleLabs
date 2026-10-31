@@ -7,7 +7,7 @@
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
 import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, partFeature, shapeOf, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
@@ -108,7 +108,8 @@ export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> =
  * play-test 2026-10-28). Empty when none is hidden.
  */
 export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string {
-  const hidden = bodyFeatures(doc).flatMap((f, i) => (!failed.has(f.id) && bodyHidden(doc, f.id) ? [i + 1] : []));
+  const numbers = bodyNumbers(doc);
+  const hidden = bodyFeatures(doc).flatMap((f) => (!failed.has(f.id) && bodyHidden(doc, f.id) ? [numbers.get(bodyIdOf(f.id))!] : [])).sort((a, b) => a - b);
   if (hidden.length === 0) return "";
   if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the STL: show it with its eye in the browser to include it.`;
   const list = `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;
@@ -207,8 +208,9 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         if (warned.length > 0)
           ctx.viewport.setOverlay({ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: files.flatMap((f) => (f.warning ? [f.warning] : [])).join("\n"), marks: warnedMarks(warned.map((f) => f.id), ctx.scene) });
         else ctx.viewport.clearOverlay(STL_OVERLAY);
-        // Which body, when there are several: its browser row's number.
-        const place = (f: Feature) => `Body ${order.indexOf(f) + 1}`;
+        // Which body, when there are several: its browser row's number (35e: the body's own).
+        const numbers = bodyNumbers(doc);
+        const place = (f: Feature) => `Body ${numbers.get(bodyIdOf(f.id))}`;
         const warnings = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : []));
         const message = [`Exported ${file}.`, ...warnings].join(" "); // the person sees that it happened, and what the file is called
         return { message, bad: warned.length > 0 };

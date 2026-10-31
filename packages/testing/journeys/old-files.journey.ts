@@ -320,11 +320,15 @@ test("every old file is as its SpindleLabs saved it: the outer format 2 and Desi
   }
 });
 
-test("every old file opens through today's reader, upgraded to version 4 with its items, flags, marker and counter as worked out", () => {
+test("every old file opens through today's reader, upgraded to version 5 with its items, flags, marker and counter as worked out", () => {
   for (const file of files()) {
     const want = CORPUS[file];
     const doc = open(text(file)).workspaces.design as DesignDocument;
-    assert.equal(doc.version, 4, file);
+    assert.equal(doc.version, 5, file);
+    // Each solid item's body numbered once, 1 to n, the next n + 1 (35e; which body gets which: workspaces/design/test/body-numbers.test.ts).
+    const solids = want.items.filter(([, type]) => type !== "sketch" && type !== "move").length;
+    assert.deepEqual(doc.bodies!.map((b) => b.number).sort((x, y) => x - y), Array.from({ length: solids }, (_, i) => i + 1), file);
+    assert.equal(doc.nextBody, solids + 1, file);
     assert.deepEqual(doc.timeline.features.map((f) => [f.id, f.intent.type, f.suppressed]), want.items, file);
     assert.equal(doc.nextId, want.nextId, file);
     assert.equal(doc.timeline.marker, want.marker, file);

@@ -33,13 +33,13 @@ A SpindleLabs project is one JSON document. The format is open: anyone may read 
 
 Today a part is feature #1 of a one-step timeline. Step 24 adds features to the same list, so no migration is needed.
 
-### Design's data version 4 (current, from 2026-10-29; version 3 from step 24d1 had the same fields; version 2 from step 21b had them without the marker)
+### Design's data version 5 (current, from step 35e; version 4 from 2026-10-28 and version 3 from step 24d1 had the same fields without `bodies` and `nextBody`; version 2 from step 21b had them without the marker)
 
 Sketches are timeline items of their own; the rules behind this shape are in docs/document-model.md. The extrude of a sketch in this example arrives at step 21d; from version 3 each solid feature is its own body, and until step 24d3 draws them all the app shows the last solid feature that builds.
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "nextId": 6,
   "profiles": [],
   "sketches": [
@@ -55,11 +55,15 @@ Sketches are timeline items of their own; the rules behind this shape are in doc
       { "id": "sketch-1", "intent": { "type": "sketch", "parameters": { "plane": "XY" }, "summary": "Sketch 1 on the XY plane" }, "dependsOn": [], "suppressed": false, "provenance": { "…": "…" } },
       { "id": "feature-5", "intent": { "type": "extrude", "parameters": { "sketch": "sketch-1", "distance": 10 }, "summary": "Extrude: Sketch 1 by 10 mm" }, "dependsOn": ["sketch-1"], "suppressed": false, "provenance": { "…": "…" } }
     ]
-  }
+  },
+  "bodies": [{ "id": "body:feature-5", "number": 1 }],
+  "nextBody": 2
 }
 ```
 
 - `nextId`: the next number for a new id. Ids are never reused, even after a delete.
+- `bodies` and `nextBody` (from version 5, step 35e; docs/document-model.md, section 8, rule 1): each body's own id, `body:<the item that first made it>`, and the number people read in "Body 3", given once, when the body first appears (an edit that makes it), and never worked out again, so a reorder, a suppress, a rollback or a body before it failing leaves it; `nextBody` is the next body's number, above every number given, even a deleted body's, so none is given twice. A deleted item's body loses its number. Opening refuses a list that is not one, an id that is not `body:` and an item's id or that names a sketch or a Move, an id or a number listed twice, a number that is not a counting number (text quoted), and a `nextBody` that is not one or not above every number. A file edited elsewhere is settled as an edit would settle it, every number it gives kept: a body whose item is gone loses its number, and a body with none gets the next one (those that build first, then the rest, in timeline order). Version 5 data leaving out both is numbered as version 4 data is.
+- Migration from version 4: the bodies that build get the numbers the browser showed, by place in the timeline (Body 1, Body 2, …), then the suppressed and rolled-back ones, in timeline order. Version 4 (or older) data holding `bodies` or `nextBody` is refused.
 - `sketches`: each sketch's points (mm, in the sketch plane's own 2D frame), curves naming point ids, and constraints (empty until step 47). The sketch's place in the build order is its timeline item with the same id.
 - Curve kinds: a line `{ "id", "kind": "line", "start", "end" }` between two point ids; a circle `{ "id", "kind": "circle", "centre", "radius" }` round a point id, its radius in mm (step 22b). A circle's centre may be a point lines also use. An arc `{ "id", "kind": "arc", "start", "end", "centre" }` (step 23a) runs counter-clockwise round its centre from its start to its end, all three point ids, any of them shared with other curves; its centre must be within LINEAR (10 nm) of the line midway between its ends, so it is the same distance from both, its radius (the mean of those distances) within MIN_FEATURE to MAX_SIZE, and its ends at least MIN_FEATURE apart (the kernel checks these when it finds the outline).
 - A sketch item's `plane` is a reference (`"XY"`, `"XZ"`, `"YZ"`, or from step 26c a face's stable name, `"face:feature-2/top"`, `"face:feature-7/end"`, `"face:feature-7/side:line-4"`), never coordinates. XZ's frame is x along world x and its normal −y (so sketch y is world z); YZ's is x along world y and its normal +x.
@@ -72,7 +76,7 @@ Sketches are timeline items of their own; the rules behind this shape are in doc
 - `hidden` (optional, from U0f3; left out when everything shows): what the browser's eyes hide, by id: solid features' bodies and (from 2026-10-29) sketches by their items' ids, in timeline order, then the origin's axes (`origin-x`, `origin-y`, `origin-z`) and the folders whose eyes are shut (`folder-sketches`, `folder-bodies`, `folder-origin`), `["sketch-2", "feature-11", "origin-z"]`; any order opens. A hidden body is still built (what is built on it still is) and keeps its "Body n" number, but is not drawn, selected from its rows, offered a verb or put in the whole design's STL; a hidden sketch is built from as ever but not drawn (save while it is edited). Extruding a sketch in Design hides it, as Fusion does. A shut folder hides everything in it, whatever their own eyes say. Deleting an item takes its id out. Opening refuses an empty list or anything but a list, an id that is none of these (a Move, a profile, a plane, a missing id, a non-string), and an id listed twice.
 - `shownPlanes` (optional, from 2026-10-29; left out when none shows): the origin's planes shown by their eyes (`origin-xy`, `origin-xz`, `origin-yz`, in that order), hidden until then as in Fusion. Opening refuses an empty list or anything but a list, anything but those three, and one listed twice.
 - Every solid feature is its own body from version 3 (in version 2 only the last solid feature was the part); presets are ordinary features with ids from `nextId` (a profile preset takes a second id for its profile).
-- Nothing the kernel computes (bodies, outlines, profiles) is stored.
+- Nothing the kernel computes (bodies' shapes, outlines, profiles) is stored.
 - Migration from version 1: `nextId` is one more than the largest number in any id, `sketches` is empty, the rest is unchanged. Version 1 data that already holds `nextId` or `sketches` is refused, never half-migrated.
 - Migration from version 3: each preset named exactly as presets were before U0e, "Feature N (type)" from its id's number, gets its short name ("Box 1"), and the copies of that name in other items' provenance and descriptions follow. Only version 3 (and older) data is renamed: from version 4 a name of that form is one the user typed, and it is kept.
 - Migration from version 2: every solid feature but the last becomes suppressed (version 2 showed only the last, so the design opens looking the same and nothing is lost); ids, sizes and the counter are unchanged. Version 2 data holding a timeline marker is refused.

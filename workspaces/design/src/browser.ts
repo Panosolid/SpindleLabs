@@ -5,7 +5,7 @@
 
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { bodyHidden, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -54,7 +54,7 @@ export function itemIcons(doc: Pick<DesignDocument, "profiles">): (f: Feature) =
 /**
  * The solid features that build (`builds`: not suppressed, not after the
  * rollback marker, their sketch there), in build order: each makes a body
- * (24d1), "Body 1", "Body 2"…, all drawn (24d3b).
+ * (24d1), each with its own number (35e), all drawn (24d3b).
  */
 export function bodyFeatures(document: DesignDocument): Feature[] {
   const building = buildingItems(document);
@@ -67,12 +67,16 @@ const NONE_FAILED: ReadonlySet<string> = new Set();
 /**
  * The Bodies group's rows: one for each feature in `bodyFeatures` that the
  * last rebuild did not fail (`failed`, its ids), "body-n" and "Body n", n
- * its place among `bodyFeatures`, so a body keeps its number when one
- * before it fails. A feature that failed has no body, so no row (bug hunt
+ * the body's own number (35e, `bodyNumbers`), so a body keeps it when one
+ * before it fails, is suppressed or is reordered. A feature that failed has no body, so no row (bug hunt
  * 2026-10-19, finding 5: its row selected a body that did not exist).
  */
 export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): { id: string; label: string; feature: Feature }[] {
-  return bodyFeatures(document).flatMap((f, i) => (failed.has(f.id) ? [] : [{ id: `body-${i + 1}`, label: `Body ${i + 1}`, feature: f }]));
+  const numbers = bodyNumbers(document);
+  return bodyFeatures(document).flatMap((f) => {
+    const n = numbers.get(bodyIdOf(f.id))!;
+    return failed.has(f.id) ? [] : [{ id: `body-${n}`, label: `Body ${n}`, feature: f }];
+  });
 }
 
 /**

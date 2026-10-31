@@ -16,7 +16,7 @@ import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 function design(boxId: string, sketchId = "sketch-1"): DesignDocument {
   const item = (id: string, type: string, parameters: Record<string, unknown>) => ({ id, intent: { type, parameters, summary: type }, provenance: { self: { workspace: "design" as const, id, label: type }, from: [] }, dependsOn: [], suppressed: false });
   return {
-    version: 4,
+    version: 5,
     nextId: 10,
     profiles: [],
     sketches: [{ id: sketchId, points: [], curves: [], constraints: [] }],

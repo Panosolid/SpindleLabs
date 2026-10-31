@@ -67,7 +67,7 @@ async function session(seed: number): Promise<string | null> {
   const r = rng(seed);
   const cache = new BodyCache(kernel);
   // A design with nothing in it (as a file with no features reads).
-  let doc: DesignDocument = { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } } as unknown as DesignDocument;
+  let doc: DesignDocument = { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } } as unknown as DesignDocument;
   const log: string[] = [];
   try {
     const base = addSketch(doc);
