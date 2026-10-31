@@ -15,7 +15,7 @@ export function jg9yot(p0: any, p1: any, p2: any): any;
 
 export function jgu9kn(p0: number, p1: string): any;
 
-export function k7vbqz(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: string): any;
+export function k7vbqz(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: string, p6: any): any;
 
 export function ld2gsx(p0: any, p1: number): any;
 
@@ -53,7 +53,7 @@ export interface InitOutput {
     readonly irk2fy: (a: number, b: number, c: number) => [number, number, number];
     readonly jg9yot: (a: any, b: any, c: any) => [number, number, number];
     readonly jgu9kn: (a: number, b: number, c: number) => [number, number, number];
-    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number) => [number, number, number];
+    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number, i: any) => [number, number, number];
     readonly ld2gsx: (a: any, b: number) => [number, number, number];
     readonly nwekzr: (a: number) => [number, number, number];
     readonly p6rou1: (a: number) => [number, number, number];
