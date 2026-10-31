@@ -24,6 +24,8 @@ function fakeScene() {
     showExtrude: (show) => void calls.push(`showExtrude ${show ? show.profiles.map((p) => p.id).join(",") : "none"}`),
     showOrigin: (shown) => void calls.push(`showOrigin ${shown.axes.join(",")} ${shown.planes.length}`),
     showMoveHandles: (show) => void calls.push(`showMoveHandles ${show ? show.centre.join(",") : "none"}`),
+    editedScreenPoints: () => (calls.push("editedScreenPoints"), [{ x: 7, y: 8 }]),
+    sketchScreenPoint: (at) => (calls.push(`sketchScreenPoint ${at.join(",")}`), { x: at[0] * 2, y: at[1] * 2 }),
     onPick: null,
     onSketchPointer: null,
     onExtrudePointer: null,
@@ -147,6 +149,18 @@ test("sketches and planes reach the one viewer; the sketch pointer follows the s
   assert.equal(scene.onPick, null, "the pick handler is separate");
   a.onSketchPointer = null;
   assert.equal(scene.onSketchPointer, null);
+});
+
+test("issue #219: the sketch's screen points and the origin's look reach the one viewer, and its answers come back", () => {
+  const { scene, calls } = fakeScene();
+  const make = paneViewports(scene);
+  const a = make(fakeView("a", calls));
+  const b = make(fakeView("b", calls));
+  // The fake viewer answers (7, 8) for the edited points and doubles a sketch point, so (3, -4) is at (6, -8) on screen.
+  assert.deepEqual(a.editedScreenPoints(), [{ x: 7, y: 8 }]);
+  assert.deepEqual(b.sketchScreenPoint([3, -4]), { x: 6, y: -8 });
+  a.showOrigin({ axes: [true, false, true], planes: [] });
+  assert.deepEqual(calls, ["editedScreenPoints", "sketchScreenPoint 3,-4", "showOrigin true,false,true 0"], "scene calls, never a view's");
 });
 
 test("Extrude's view (UX1b) goes to the scene, and its pointer to the pane that set it most recently and still has one", () => {
