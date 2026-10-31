@@ -342,6 +342,68 @@ test("a call past its limit is let go with its kernel: it alone took too long, e
     { floorMs: DEADLINE },
   ));
 
+/** A fake page (`document`) whose visibility the test sets, for the time-limit tests of a phone that sleeps. */
+function withFakeDocument<T>(fn: (page: { hidden: boolean; fire(type: string): void }) => Promise<T>) {
+  const listeners = new Map<string, Array<() => void>>();
+  const page = {
+    hidden: false,
+    addEventListener(type: string, fn: () => void) {
+      listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+    },
+    fire(type: string) {
+      (listeners.get(type) ?? []).forEach((f) => f());
+    },
+  };
+  const g = globalThis as { document?: unknown };
+  const real = g.document;
+  g.document = page;
+  return fn(page).finally(() => (g.document = real));
+}
+
+test("a phone that sleeps mid-call does not make a healthy kernel 'take too long' (hidden page, frozen page, late timer)", (t) =>
+  withFakeDocument((page) =>
+    withFakeWorker(
+      async (client, old) => {
+        t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+        let heard = 0;
+        client.onRestart(() => heard++);
+        const made = FakeWorker.made;
+        old.ready(1);
+        const call = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+        // Hidden for ten minutes, then the timer fires on resume (both clocks jump).
+        page.hidden = true;
+        page.fire("visibilitychange");
+        t.mock.timers.tick(600_000);
+        page.hidden = false;
+        page.fire("visibilitychange");
+        assert.equal(old.terminated, false, "the kernel is kept");
+        assert.equal(FakeWorker.made, made);
+        assert.equal(heard, 0, "the design is not rebuilt");
+        // The call gets its whole limit again; the worker answers in time.
+        t.mock.timers.tick(DEADLINE * 0.9);
+        old.answer(1, 5);
+        await call; // answered, not failed
+        // A frozen page (no visibility change) that wakes much later is the same.
+        const second = client.call("body_count");
+        t.mock.timers.tick(600_000);
+        assert.equal(old.terminated, false, "a late timer alone is not a slow kernel");
+        old.answer(2, 0);
+        assert.equal(await second, 0);
+        // A device that slept with no events at all: the timer only fires late.
+        const frozen = client.call("body_count");
+        page.fire("freeze");
+        t.mock.timers.tick(DEADLINE * 1.1);
+        assert.equal(old.terminated, false, "frozen: not blamed");
+        // And a kernel really stuck, with the page awake, is still let go (1.1 ×).
+        t.mock.timers.tick(DEADLINE * 1.1);
+        await assert.rejects(frozen, (e: KernelError) => e.kind === "timed-out");
+        assert.equal(old.terminated, true);
+        assert.equal(heard, 1);
+      },
+      { floorMs: DEADLINE },
+    ),
+  ));
+
 test("a kernel answering each call within its limit is kept, however long the calls take together (0.9 × each)", (t) =>
   withFakeWorker(
     async (client, worker) => {
