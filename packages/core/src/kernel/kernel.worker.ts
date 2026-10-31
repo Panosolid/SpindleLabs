@@ -77,7 +77,8 @@ const ops = {
   body_count: () => kernel.body_count(),
   slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
   print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate) =>
-    kernel.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate),
+    // The nozzle (kernel 0.33.9's 7th argument) is left out until the app's Nozzle choice: the Standard nozzle.
+    kernel.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, undefined),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
