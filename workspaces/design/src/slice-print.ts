@@ -244,7 +244,11 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   go.title = "Slices the bodies shown and saves the file chosen above.";
   go.type = "button";
   actions.append(close, preview, go);
-  dialog.append(heading, printer, untested, format.wrap, plate.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, status, actions);
+  // The six choices in one block: two columns where there is room, so the dialog fits a laptop's height (Ben 10-31: Supports was cut off).
+  const choices6 = document.createElement("div");
+  choices6.className = "slice-print-choices";
+  choices6.append(format.wrap, plate.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap);
+  dialog.append(heading, printer, untested, choices6, status, actions);
   slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
