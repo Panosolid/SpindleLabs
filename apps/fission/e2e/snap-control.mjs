@@ -10,7 +10,11 @@
 // start) turns snapping off: nothing shown at the corner and a click lands
 // where the pointer is; pressed again it is back. At 375 px with taps: the
 // Snap button is tapped off and on (44 px tall), and a tap by the corner
-// lands off it while off, on it while on. Points on screen come from the
+// lands off it while off, on it while on. The origin and axes (Ben's ask,
+// 10-31), in an empty design's XY sketch: half a reach from (0, 0) shows
+// "origin 0,0" and a click lands on (0, 0) exactly; half a reach off the x
+// axis shows "on x axis" and a click lands with y exactly 0; the same for
+// the y axis; at 375 px taps do the same. Points on screen come from the
 // app's camera (?test-hooks) through the pinhole sums face-edges.mjs
 // works. Screenshots go to E2E_SHOTS when set. Run with `npm run e2e`
 // (after `npm run build`).
@@ -19,7 +23,7 @@ import { mkdirSync } from "node:fs";
 import { launch } from "./browser.mjs";
 import { preview } from "vite";
 import { pinProperties } from "./properties.mjs";
-import { closePanels, sheetsClearFor, startWithBox } from "./start.mjs";
+import { closePanels, pickPlane, sheetsClearFor, startWithBox } from "./start.mjs";
 
 const server = await preview({ preview: { port: 4197, strictPort: true }, logLevel: "error" });
 const url = "http://localhost:4197/?test-hooks";
@@ -28,7 +32,7 @@ const errors = [];
 const shots = process.env.E2E_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
-async function fresh(width = 1280, touch = false) {
+async function fresh(width = 1280, touch = false, box = true) {
   const context = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
@@ -37,7 +41,8 @@ async function fresh(width = 1280, touch = false) {
     if (m.type() === "error") errors.push(m.text());
   });
   await page.goto(url + "#design");
-  await startWithBox(page);
+  if (box) await startWithBox(page);
+  else await page.locator("#start-hint").waitFor();
   await pinProperties(page);
   return sheetsClearFor(page);
 }
@@ -113,6 +118,16 @@ async function sketchOnTop(page, tap) {
   await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on the top");
   await settle(page);
   await press(page, "#sketch-tool-line", tap);
+}
+
+/** An empty design's sketch on XY, looked at from above, with the Line tool. */
+async function sketchOnXY(page, tap) {
+  await press(page, "#create-sketch", tap);
+  await pickPlane(page, "XY", tap);
+  await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching on XY");
+  await settle(page);
+  await press(page, "#sketch-tool-line", tap);
+  if (tap) await page.evaluate(() => (window.scrollTo(0, 0), (document.getElementById("workspace").scrollTop = 0)));
 }
 
 let failed = 0;
@@ -222,6 +237,54 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.sketchPoints !== "", null, "a point tapped with snapping on");
     [p] = await points(page);
     assert.deepEqual(p, [40, 30], "snapping on: the tap takes the corner exactly");
+    await page.context().close();
+  });
+  await check("1280 px, XY: near (0, 0) the origin, near the x axis on it, near the y axis on it; clicks land there exactly", async () => {
+    const page = await fresh(1280, false, false);
+    await sketchOnXY(page, false);
+    const half = 5 * (await mmPerPixel(page)); // half a snap reach
+    const nearOrigin = [half * 0.6, -half * 0.8, 0];
+    await hover(page, nearOrigin);
+    await shown(page, "sketchSnap", "origin 0,0");
+    await shot(page, "origin-1280");
+    await hover(page, [12, half, 0]);
+    await shown(page, "sketchSnap", "on x axis");
+    await shot(page, "x-axis-1280");
+    await hover(page, [-half, 9, 0]);
+    await shown(page, "sketchSnap", "on y axis");
+    await shot(page, "y-axis-1280");
+    // A line from the origin to the x axis: its start is (0, 0) exactly, its end has y 0 exactly.
+    await at(page, nearOrigin);
+    await until(page, () => document.querySelector("#viewport").dataset.sketchPoints !== "", null, "the start placed");
+    assert.deepEqual((await points(page))[0], [0, 0], "the click by the origin lands on it");
+    await at(page, [12, half, 0]);
+    await until(page, () => (document.querySelector("#viewport").dataset.sketchPoints ?? "").split(" ").filter(Boolean).length === 2, null, "the end placed");
+    const end = (await points(page))[1];
+    assert.equal(end[1], 0, `the click by the x axis landed at ${end}`);
+    assert.ok(Math.abs(end[0] - 12) <= 2 * half, `the click by the x axis landed at ${end}`);
+    // Drawing on, up by the y axis: x exactly 0.
+    await at(page, [half, 9, 0]);
+    await until(page, () => (document.querySelector("#viewport").dataset.sketchPoints ?? "").split(" ").filter(Boolean).length === 3, null, "the third point placed");
+    const up = (await points(page))[2];
+    assert.equal(up[0], 0, `the click by the y axis landed at ${up}`);
+    await shot(page, "axes-drawn-1280");
+    await page.context().close();
+  });
+
+  await check("375 px with taps, XY: a tap by the origin lands on it, a tap by the y axis lands on it", async () => {
+    const page = await fresh(375, true, false);
+    await sketchOnXY(page, true);
+    const half = 5 * (await mmPerPixel(page));
+    await hover(page, [half * 0.6, half * 0.8, 0]);
+    await shot(page, "origin-375");
+    await at(page, [half * 0.6, half * 0.8, 0], true);
+    await until(page, () => document.querySelector("#viewport").dataset.sketchPoints !== "", null, "a point tapped by the origin");
+    assert.deepEqual((await points(page))[0], [0, 0], "the tap by the origin lands on it");
+    await at(page, [-half, 9, 0], true);
+    await until(page, () => (document.querySelector("#viewport").dataset.sketchPoints ?? "").split(" ").filter(Boolean).length === 2, null, "a point tapped by the y axis");
+    const p = (await points(page))[1];
+    assert.equal(p[0], 0, `the tap by the y axis landed at ${p}`);
+    await shot(page, "y-axis-375");
     await page.context().close();
   });
 } finally {

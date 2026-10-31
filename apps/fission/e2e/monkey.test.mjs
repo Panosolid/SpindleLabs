@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { documentRules, editFile, expectedView, kernelVerdict, modelVolume, nextAction, outlineArea, reusedIds, editLeaks, rng, shrink, signature, SKIP_TARGETS, weighted } from "./monkey-core.mjs";
+import { documentRules, editFile, expectedView, settledText, kernelVerdict, modelVolume, nextAction, outlineArea, reusedIds, editLeaks, rng, shrink, signature, SKIP_TARGETS, weighted } from "./monkey-core.mjs";
 import { MONKEY_PLANTS } from "./monkey-plants.mjs";
 
 /** A box, Sketch 2 on XY, and an extrude of Sketch 2: the smallest file with both kinds of body. */
@@ -55,10 +55,25 @@ test("what a file should show, worked by hand", () => {
       { row: "body-1", place: 1, id: "feature-1" },
       { row: "body-2", place: 2, id: "feature-3" },
     ],
+    // No numbers in the file: Body 1 and Body 2 by place, as the app gives them (35e).
+    numbered: { bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }], nextBody: 3 },
   });
   // Finding 5: the box failed (the bar marks it): no row for it, and the extrude keeps its number, Body 2.
   assert.deepEqual(expectedView(design(), new Set(["feature-1"])).rows, [{ row: "body-2", place: 2, id: "feature-3" }]);
   assert.equal(expectedView(design(), new Set(["feature-1"])).bodies, 1);
+  // 35e: the box suppressed, its number given by the file: the extrude keeps Body 2 (by place it would be Body 1).
+  const numbered = { ...design(), bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }], nextBody: 3 };
+  numbered.timeline.features[0].suppressed = true;
+  assert.deepEqual(expectedView(numbered).rows, [{ row: "body-2", place: 2, id: "feature-3" }]);
+  // A body the file has no number for gets the next: the extrude's dropped, the counter at 7, so Body 7.
+  assert.deepEqual(expectedView({ ...numbered, bodies: [numbered.bodies[0]], nextBody: 7 }).rows, [{ row: "body-7", place: 7, id: "feature-3" }]);
+  // Opened, a file is shown with its bodies settled: a solid added by hand gets the next number, a gone one's goes.
+  const added = { workspaces: { design: { ...numbered, version: 5, bodies: [{ id: "body:feature-9", number: 4 }, ...numbered.bodies], nextBody: 5 } } };
+  assert.deepEqual(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
+  assert.equal(JSON.parse(settledText(JSON.stringify(added))).workspaces.design.nextBody, 5);
+  const fresh = { workspaces: { design: { ...design(), version: 5, bodies: [], nextBody: 1 } } };
+  assert.deepEqual(JSON.parse(settledText(JSON.stringify(fresh))).workspaces.design.bodies, [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }]);
+  assert.equal(settledText("not json"), "not json");
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
   assert.equal(expectedView(design(), new Set(["sketch-2"])).bodies, 2);
   // The marker on Sketch 2: the extrude after it is rolled back, leaving the box alone (1 body).

@@ -5,10 +5,10 @@
 // the kernel's index there, and so to its stable name (naming.ts), which
 // already carries the feature that built it.
 
-import type { BodyView, DisplayMesh, GeometryReference, Plane } from "@fission/core";
+import type { BodyView, DisplayMesh, GeometryReference, KernelError, Plane } from "@fission/core";
 import { bodyFrame } from "./face-sketch.ts";
 import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, type DesignDocument } from "./document.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, readDesignReference, resolveReference, sharedBy } from "./references.ts";
@@ -16,7 +16,7 @@ import { designReference, readDesignReference, resolveReference, sharedBy } from
 /** One built body: the feature that built it, the kernel's view of it, and its faces' and edges' names. */
 export interface ShownBody {
   feature: string;
-  /** Its browser row's number, n in "Body n": its place among `bodyFeatures`, counting ones that did not build. */
+  /** Its browser row's number, n in "Body n": the body's own (35e, `bodyNumbers`), given when it first appeared. */
   place: number;
   view: BodyView;
   names: BodyNames;
@@ -38,9 +38,11 @@ export interface Scene {
  * builds (`bodyFeatures`, the browser's Body rows, in build order) and the
  * rebuild built, with its view from `cache` and its names. A feature the
  * kernel refused has no body, so none is shown for it; nor is a body the
- * browser's eye hides (U0f3), which keeps its place number.
+ * browser's eye hides (U0f3), which keeps its place number. A body whose
+ * view took the kernel too long (35d4: meshing it again, hidden before) is
+ * not shown and goes to `slow`, when given; else that error is thrown.
  */
-export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cache: BodyCache): Promise<ShownBody[]> {
+export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cache: BodyCache, slow?: (feature: string) => void): Promise<ShownBody[]> {
   const shown: ShownBody[] = [];
   const features = bodyFeatures(doc);
   // Every view asked at once, before the loop waits on one (security audit S2: one round trip each took minutes on a big file).
@@ -53,14 +55,23 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       // not in the cache: the loop below says so
     }
   }
-  for (const [i, f] of features.entries()) {
+  const numbers = bodyNumbers(doc);
+  for (const f of features) {
     if (bodyHidden(doc, f.id)) continue;
     const r = build.results[f.id];
     if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
     const spec = r.spec;
-    const view = await cache.view(r.body);
+    let view: BodyView;
+    try {
+      view = await cache.view(r.body);
+    } catch (e) {
+      // Its kind, never its words (a KernelError's; read without importing the class, so this file stands alone: refind-planted.test.ts).
+      if (!slow || (e as Partial<KernelError> | null)?.kind !== "timed-out") throw e;
+      slow(f.id);
+      continue;
+    }
     const frame = bodyFrame(spec);
-    shown.push({ feature: f.id, place: i + 1, view, names: featureNames(f.id, { spec, curves: r.curves }, view), ...(frame ? { frame } : {}) });
+    shown.push({ feature: f.id, place: numbers.get(bodyIdOf(f.id))!, view, names: featureNames(f.id, { spec, curves: r.curves }, view), ...(frame ? { frame } : {}) });
   }
   return shown;
 }

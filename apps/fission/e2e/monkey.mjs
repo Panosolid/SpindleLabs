@@ -43,7 +43,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
-import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, shrink, signature } from "./monkey-core.mjs";
+import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrink, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
 const STEPS = Number(process.env.MONKEY_STEPS || 60);
@@ -150,6 +150,9 @@ function shown() {
     dialogs: [...document.querySelectorAll("dialog[open]")].map((d) => d.id || "a dialog"),
     sideways: document.documentElement.scrollWidth - innerWidth,
     extruding: document.getElementById("extrude-panel") !== null && document.getElementById("extrude-panel").getClientRects().length > 0,
+    // Move or Rotate open: a body row's click adds that body to the ones moved, as Fusion's selection box does (35e2b, issue #221).
+    // Its own hidden flag, not whether it is drawn: on a phone an open panel can wait in the shut sheet.
+    moving: document.getElementById("move-panel")?.hidden === false,
   };
 }
 
@@ -367,7 +370,7 @@ async function act(s, a) {
       // Opened, the file's data is shown as it was (a valid edit); refused, the project is as before.
       const valid = (() => {
         try {
-          return canonical(text);
+          return canonical(settledText(text)); // its bodies' numbers settled as the app settles them (35e)
         } catch {
           return null;
         }
@@ -419,7 +422,7 @@ async function act(s, a) {
     case "select-bodies": {
       // Each body in turn, by its Bodies row: the selection, the Feature panel, the Body panel's volume and the highlighted faces must all be that body's.
       const view = await settle(page);
-      if (!view.design || view.sketching || view.dialogs.length || view.extruding || !s.saved) return false;
+      if (!view.design || view.sketching || view.dialogs.length || view.extruding || view.moving || !s.saved) return false;
       const design = JSON.parse(s.saved).workspaces.design;
       const { rows } = expectedView(design, new Set(view.failed));
       if (rows.length !== view.bodies) return false; // the per-step check reports that

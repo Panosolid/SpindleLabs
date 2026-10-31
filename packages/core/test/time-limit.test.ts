@@ -153,3 +153,16 @@ test("the calibration times the cubes' boolean for 50 ms and 3 runs at least, an
   assert.throws(() => calibrate(failing.calls), /planted/);
   assert.deepEqual([...failing.kept], [], "the first run's result and both cubes freed");
 });
+
+test("callUnits gives 0 (the floor) for arguments of the wrong shape, so the kernel can answer bad-request instead of a TypeError", () => {
+  const none = () => undefined;
+  // Cold read 2026-10-31: each of these threw a TypeError before.
+  assert.equal(callUnits("make_extrude", ["nonsense", 1] as never, none), 0);
+  assert.equal(callUnits("make_extrude", [{ outer: [] }, 1] as never, none), 0, "a profile with no holes list");
+  assert.equal(callUnits("body_build", [null] as never, none), 0);
+  assert.equal(callUnits("sketch_outline", [undefined, [], []] as never, none), 0);
+  assert.equal(callUnits("body_boolean", [1, "x", "union"] as never, none), 0);
+  assert.equal(callUnits("slice_stl", [null, "a"] as never, none), 0);
+  // A well-shaped call is unchanged.
+  assert.equal(callUnits("sketch_outline", [[1], [2], [3]] as never, none), sketchUnits(3));
+});

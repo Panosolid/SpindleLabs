@@ -37,6 +37,9 @@ test("two solid items with one id are refused the same way, naming the id", () =
   d.timeline.features[1].id = "feature-7";
   d.timeline.features[1].provenance.self.id = "feature-7";
   d.nextId = 8;
+  // Its body numbered too (35e), as an edit that made it would have.
+  d.bodies!.push({ id: "body:feature-7", number: 2 });
+  d.nextBody = 3;
   assert.equal(refusedWith(d), null);
 });
 

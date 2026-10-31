@@ -127,17 +127,89 @@ export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, feat
   return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle);
 }
 
+/**
+ * The G-code inside a P1S print file (a ZIP the engine writes with every file stored, never compressed): the plate's
+ * Metadata/plate_1.gcode, as the printer would run it. Null when the bytes are not such a ZIP or hold no plate, so
+ * the caller can fall back to the plain slice. The preview draws this, so it shows the file that is downloaded (its
+ * time, its filament, its own start routine), not the plain file's (slicer hunt 2026-10-31, finding 4).
+ */
+export function gcodeOfPackage(bytes: Uint8Array): string | null {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = 0;
+  while (at + 30 <= bytes.length && v.getUint32(at, true) === 0x04034b50) {
+    const stored = v.getUint16(at + 8, true) === 0;
+    const size = v.getUint32(at + 18, true);
+    const nameLen = v.getUint16(at + 26, true);
+    const start = at + 30 + nameLen + v.getUint16(at + 28, true);
+    if (start + size > bytes.length) return null;
+    if (stored && new TextDecoder().decode(bytes.subarray(at + 30, at + 30 + nameLen)) === "Metadata/plate_1.gcode") return new TextDecoder().decode(bytes.subarray(start, start + size));
+    at = start + size;
+  }
+  return null;
+}
+
+/**
+ * The layer moves of a P1S file's G-code, for the preview: from the first ";LAYER_CHANGE" to the end routine, absolute
+ * moves with relative feeds. The file's start routine (purge, wipe, load line) lays plastic at heights of its own, which
+ * the replayer would count as layers (a 20 mm cube read as 99 layers, not 100), and the end routine is not the part.
+ */
+export function printMovesOf(gcode: string): string | null {
+  const first = gcode.search(/^;LAYER_CHANGE$/m);
+  if (first < 0) return null;
+  const end = gcode.indexOf(";===== end", first);
+  // The height the nozzle was lifted to just before the first layer is set by the routine's last Z move: keep it.
+  const zs = [...gcode.slice(0, first).matchAll(/^G[01] [^;\n]*\bZ(-?\d+(?:\.\d+)?)/gm)];
+  const z = zs.length > 0 ? `G1 Z${zs[zs.length - 1][1]}\n` : "";
+  return `G90\nM83\n${z}${gcode.slice(first, end < 0 ? undefined : end)}`;
+}
+
+/** Thrown by an event when the dialog was closed while it worked: the result is dropped, nothing is saved or shown. */
+export class SliceDropped extends Error {
+  constructor() {
+    super("The dialog was closed before the slice finished.");
+  }
+}
+
+/**
+ * The engine's refusal in words for a beginner: "the part ... runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"
+ * becomes how wide the part is and what the plate takes; "layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"
+ * becomes how tall. Any other message is kept, starting with a capital.
+ */
+export function refusalWords(message: string): string {
+  const across = /runs from \((-?[\d.]+), (-?[\d.]+)\) to \((-?[\d.]+), (-?[\d.]+)\), off the (\d+) × (\d+) mm bed/.exec(message);
+  if (across) {
+    const [w, d] = [Number(across[3]) - Number(across[1]), Number(across[4]) - Number(across[2])];
+    const wide = Math.max(w, d);
+    return `The part is ${Math.round(wide * 10) / 10} mm ${w >= d ? "wide" : "deep"}, and the P1S's plate takes ${across[5]} × ${across[6]} mm. Make it smaller or split it into pieces.`;
+  }
+  const tall = /reaches z = ([\d.]+) mm, above the printer's ([\d.]+) mm/.exec(message);
+  if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
+  return message.charAt(0).toUpperCase() + message.slice(1);
+}
+
 /** The plain file's name: the layer height, the walls and infill and its supports, so two slices of one part never share a name. */
-export function gcodeName(choices: PrintChoices): string {
-  return `${baseName(choices)}.gcode`;
+export function gcodeName(choices: PrintChoices, project?: string): string {
+  return `${baseName(choices, project)}.gcode`;
 }
 
-/** The P1S file's name: as the plain file's, plus the plate and, for a High Flow nozzle, "high-flow", so a file for one plate or nozzle is never taken for another's. */
-export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): string {
-  return `${baseName(choices)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}${P1S_KIND.extension}`;
+/**
+ * The P1S file's name: as the plain file's, plus the plate and, for a High Flow nozzle, "high-flow", so a file for one
+ * plate or nozzle is never taken for another's.
+ */
+export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle, project?: string): string {
+  return `${baseName(choices, project)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}${P1S_KIND.extension}`;
 }
 
-const baseName = (choices: PrintChoices) => `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}`;
+/**
+ * The project's name leads a file's name, so files of different projects look different on the printer's list; a project
+ * not named yet (empty, or the "Untitled" it starts with) gives "spindlelabs".
+ */
+export const nameLead = (project?: string): string => {
+  const name = (project ?? "").trim();
+  return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
+};
+
+const baseName = (choices: PrintChoices, project?: string) => `${nameLead(project)}-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}`;
 
 /** Normal supports keep the name they had when supports were on or off. */
 const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-supports", tree: "-tree-supports" };
@@ -185,10 +257,10 @@ export function unprintedWords(print: Pick<PrintFacts, "unprintedVolume">): stri
 }
 
 export interface SlicePrintEvents {
-  /** Slices the bodies shown with these choices and saves the file chosen; saved false when the user closed the save box, with the name it was saved under. */
-  slice(choices: PrintChoices, file: FileChoices): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
-  /** Slices the bodies shown with these choices and opens the print preview (H2b, H2c); nothing is saved. */
-  preview(choices: PrintChoices): Promise<void>;
+  /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
+  slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
+  /** Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b, H2c); nothing is saved. */
+  preview(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<void>;
 }
 
 export interface SlicePrint {
@@ -296,20 +368,30 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value) });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   let busy = false;
+  // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
+  let generation = 0;
+  dialog.addEventListener("close", () => generation++);
+  const alive = () => {
+    const mine = generation;
+    return () => mine === generation && dialog.open;
+  };
+  // A result stays displayed next to choices it no longer matches: any change clears it.
+  for (const c of [quality, walls, infill, supports, format, plate, nozzle]) c.select.addEventListener("change", () => !busy && say("", false));
   go.addEventListener("click", async () => {
     if (busy) return;
     busy = true;
-    go.disabled = true;
+    go.disabled = preview.disabled = true;
     say("Slicing…", false);
     try {
-      const { print, saved, name } = await events.slice(choices(), file());
+      const { print, saved, name } = await events.slice(choices(), file(), alive());
       const warning = unprintedWords(print);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...(warning ? [warning] : [])].join(" "), warning !== null);
     } catch (e) {
-      say(e instanceof Error ? e.message : String(e), true);
+      if (e instanceof SliceDropped) say("", false);
+      else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
     } finally {
       busy = false;
-      go.disabled = false;
+      go.disabled = preview.disabled = false;
     }
   });
   preview.addEventListener("click", async () => {
@@ -318,11 +400,12 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     go.disabled = preview.disabled = true;
     say("Slicing…", false);
     try {
-      await events.preview(choices());
+      await events.preview(choices(), file(), alive());
       say("", false);
       dialog.close();
     } catch (e) {
-      say(e instanceof Error ? e.message : String(e), true);
+      if (e instanceof SliceDropped) say("", false);
+      else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
     } finally {
       busy = false;
       go.disabled = preview.disabled = false;
@@ -334,7 +417,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   return {
     ask() {
       if (dialog.open) return;
-      say("", false);
+      if (!busy) say("", false); // a slice still running keeps saying so
       dialog.showModal();
       go.focus();
     },

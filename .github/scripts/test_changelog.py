@@ -221,6 +221,8 @@ class LeakGuard(unittest.TestCase):
             ("none\n\n- A change in kernel/src somewhere.", "kernel/src"),
             ("none\n\n- The facts table is now exact.", "facts table"),
             ("none\n\n- Fixed in the facts_model.", "facts_model"),
+            ("none\n\n- The facts-table is now exact.", "facts-table"),
+            ("none\n\n- The facts_table is now exact.", "facts_table"),
             ("none\n\n- A bug in spade no longer crashes arcs.", "spade"),
         ]:
             problems = changelog.leaks("changelog.d/x.md", text)

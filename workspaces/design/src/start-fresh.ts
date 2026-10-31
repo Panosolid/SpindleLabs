@@ -13,7 +13,7 @@ export const START_FRESH_STEP = "Start fresh";
 
 /** The design a new project opens with (U0c, the owner's ask): nothing in it, the id counter at 1. */
 export function freshDesign(): DesignDocument {
-  return { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  return { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 };
 }
 
 /**

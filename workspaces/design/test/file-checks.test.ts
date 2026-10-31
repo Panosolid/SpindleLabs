@@ -29,21 +29,24 @@ test("hand-worked: a box the user names 'Feature 1 (box)' keeps that name after 
   assert.equal(label(trip(once)), "Feature 1 (box)");
 });
 
-test("the version tells old from new: the same data says version 3 and is renamed, says version 4 and is not", () => {
+test("the version tells old from new: the same data says version 3 and is renamed, says version 4 or 5 and is not", () => {
   // The break that shows the check reads the version: one word changed in an otherwise identical file.
   const doc = partDocument("box", 40, 30, 20);
-  assert.equal(doc.version, 4);
+  assert.equal(doc.version, 5);
   const r = renameItem(doc, "feature-1", "Feature 1 (box)");
   assert.ok("doc" in r);
   const data = JSON.parse(JSON.stringify(r.doc));
-  assert.equal(label(readDesignDocument({ ...data, version: 3 })), "Box 1");
-  assert.equal(readDesignDocument({ ...data, version: 3 }).version, 4);
+  // Older data has no bodies' numbers (version 5 brought them, 35e): the same data without them.
+  const { bodies: _, nextBody: __, ...older } = data;
+  assert.equal(label(readDesignDocument({ ...older, version: 3 })), "Box 1");
+  assert.equal(readDesignDocument({ ...older, version: 3 }).version, 5);
+  assert.equal(label(readDesignDocument({ ...older, version: 4 })), "Feature 1 (box)");
   assert.equal(label(readDesignDocument(data)), "Feature 1 (box)");
 });
 
-test("data newer than version 4 is refused, naming the versions this SpindleLabs reads", () => {
-  const data = { ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version: 5 };
-  assert.throws(() => readDesignDocument(data), /Design data version 5 is not one this SpindleLabs reads \(1, 2, 3 or 4\)/);
+test("data newer than version 5 is refused, naming the versions this SpindleLabs reads", () => {
+  const data = { ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version: 6 };
+  assert.throws(() => readDesignDocument(data), /Design data version 6 is not one this SpindleLabs reads \(1, 2, 3, 4 or 5\)/);
 });
 
 /** partDocument's box as file data, broken by `mutate`. */

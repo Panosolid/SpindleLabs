@@ -21,7 +21,7 @@ export interface SketchPanelEvents {
 }
 
 /** Where clicks land, under every tool's help (sketch feel SF1). */
-export const SNAP_HELP = "Points go where you click, and snap to nearby ends, midpoints, centres and body edges, or line up with them. Hold Ctrl (Cmd on a Mac) to place a point without snapping, or turn Snap off in the toolbar.";
+export const SNAP_HELP = "Points go where you click, and snap to nearby ends, midpoints, centres and body edges, or line up with them, and to the origin and along the red and green axes. Hold Ctrl (Cmd on a Mac) to place a point without snapping, or turn Snap off in the toolbar.";
 
 /** How to draw with each tool, under the tool buttons. */
 export const TOOL_HELP: Record<ToolKind, string> = {

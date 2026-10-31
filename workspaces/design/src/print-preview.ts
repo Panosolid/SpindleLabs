@@ -165,7 +165,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     return b;
   };
   for (const k of chipKinds(p)) {
-    const b = chip(k, present.includes(k) ? KIND_NAMES[k] : `${KIND_NAMES[k]} (none yet)`);
+    const b = chip(k, present.includes(k) ? KIND_NAMES[k] : `${KIND_NAMES[k]} (none)`);
     if (!present.includes(k)) {
       b.disabled = true;
       b.title = NO_SUPPORTS;
@@ -304,6 +304,8 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     view?.dispose();
     view = null;
     dialog.remove();
+    // The Slice dialog closed when the preview opened, so focus would fall to the page: put it on File ▾, where Slice for printing is (slicer hunt 2026-10-31).
+    slot.ownerDocument.getElementById("file-menu")?.focus();
   });
   window.addEventListener("resize", onResize);
   showKinds();
