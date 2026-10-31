@@ -426,8 +426,9 @@ async function act(s, a) {
       const blocks = [];
       const wrong = []; // every disagreement, so the message shows the whole pattern
       // A body hidden by its eye is not drawn, so its row selects nothing (browser.ts rowReferences) and the bodies in view are the rest (issue #42).
+      // Listed by body id since Design data version 6 (35ec).
       const hidden = new Set(design.hidden ?? []);
-      const inView = rows.filter((r) => !hidden.has(r.id)).length;
+      const inView = rows.filter((r) => !hidden.has(`body:${r.id}`)).length;
       for (const { row, place, id } of rows) {
         await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`).click(), row);
         await settle(page);
@@ -441,7 +442,7 @@ async function act(s, a) {
         }));
         const f = design.timeline.features.find((x) => x.id === id);
         const name = `Body ${place} (${f.intent.summary})`;
-        if (hidden.has(id)) {
+        if (hidden.has(`body:${id}`)) {
           if (got.selection !== "") wrong.push(`clicking hidden ${name} selected "${got.selection}"`);
           blocks.push([]);
           continue;
