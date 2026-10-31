@@ -200,12 +200,8 @@ function holderOf(target: NamedBody, result: BooleanResult, views: readonly Body
   return candidates[0] ?? 0;
 }
 
-/**
- * Rule 3 across every body of the design: each face's full name, its
- * shown name with a tag when another face carries that name too (`name#`
- * then the tag's names joined by ","); null for a face with no name.
- */
-export function fullNames(bodies: readonly NamedBody[]): (string | null)[][] {
+/** Every face of the design in one list, with what rules 3 and 5 read off it: its neighbours' shown names and the faces carrying each name. */
+function faceTable(bodies: readonly NamedBody[]) {
   const all: { body: number; face: number; names: readonly string[] }[] = [];
   const at = bodies.map((b, bi) => b.faces.map((f, fi) => all.push({ body: bi, face: fi, names: f.names }) - 1));
   const shown = (k: number) => all[k].names[0] ?? null;
@@ -224,12 +220,23 @@ export function fullNames(bodies: readonly NamedBody[]): (string | null)[][] {
   all.forEach((x, k) => {
     for (const n of new Set(x.names)) carrying.set(n, [...(carrying.get(n) ?? []), k]);
   });
+  /** Face k's tag among the faces carrying `name`. */
+  const tagOf = (k: number, name: string) => tagAmong(k, carrying.get(name) ?? [k], (p) => neighbours[p]);
+  return { all, at, shown, carrying, tagOf };
+}
+
+/**
+ * Rule 3 across every body of the design: each face's full name, its
+ * shown name with a tag when another face carries that name too (`name#`
+ * then the tag's names joined by ","); null for a face with no name.
+ */
+export function fullNames(bodies: readonly NamedBody[]): (string | null)[][] {
+  const { at, shown, carrying, tagOf } = faceTable(bodies);
   return at.map((faces) =>
     faces.map((k) => {
       const name = shown(k);
       if (name === null) return null;
-      const pieces = carrying.get(name) ?? [k];
-      return pieces.length > 1 ? `${name}#${tagAmong(k, pieces, (p) => neighbours[p]).join(",")}` : name;
+      return (carrying.get(name)?.length ?? 1) > 1 ? `${name}#${tagOf(k, name).join(",")}` : name;
     }),
   );
 }
@@ -239,4 +246,195 @@ export function tagAmong(face: number, pieces: readonly number[], neighbours: (f
   const others = new Set<string>();
   for (const p of pieces) if (p !== face) for (const n of neighbours(p)) others.add(n);
   return [...neighbours(face)].filter((n) => !others.has(n)).sort();
+}
+
+// Edges and references (step 35ec3) ------------------------------------------
+
+/** An edge of a body named by rule 5: its two faces' full names sorted, the other faces at its two ends, and its name. */
+export interface EdgeName {
+  /** Rule 5's name; null when another edge would have it too (shared, never guessed). */
+  name: string | null;
+  faces: readonly [string, string];
+  /** The shown names of the other faces meeting at its two ends, sorted, without repeats. */
+  ends: readonly string[];
+}
+
+/** Rule 3 and 5's names across every body of the design, and the tag reader references need. */
+export interface DesignNames {
+  /** Each face's full name by body and kernel face index (fullNames). */
+  full: (string | null)[][];
+  /** Each edge by body and kernel edge index; null for an edge with a face that has no name. */
+  edges: (EdgeName | null)[][];
+  /** Face `face` of body `body`'s tag among every face carrying `name`. */
+  tagFor: (body: number, face: number, name: string) => string[];
+}
+
+/**
+ * Rule 5 on every body: each edge `edge:<face>+<face>`, its two faces'
+ * full names sorted; when two edges anywhere in the design have the same
+ * two, `;ends:` and the shown names of the other faces meeting at its two
+ * ends (sorted, by the kernel's `edge_vertices`); a name still given twice
+ * is null for both, never guessed.
+ *
+ * Section 8's `;corner:` fallback (two sides of one outline meeting twice
+ * with tied ends) is not here: only curves meet twice, and the kernel
+ * refuses curved faces in a boolean until steps 37 and 38a; two straight
+ * sides cross in one line, so the edges they share on a boolean's result
+ * lie at the same corner and its name would not tell them apart either.
+ */
+export function designNames(bodies: readonly NamedBody[]): DesignNames {
+  const table = faceTable(bodies);
+  const full = fullNames(bodies);
+  const raw = bodies.map((b, bi) => {
+    const view = b.view;
+    const atVertex: number[][] = view.vertex_points.map(() => []);
+    view.edge_vertices.forEach((vs, e) => {
+      for (const v of new Set(vs)) atVertex[v]?.push(e);
+    });
+    return view.edge_faces.map((pair, e) => {
+      if (pair === null) return null;
+      const [fa, fb] = [full[bi][pair[0]] ?? null, full[bi][pair[1]] ?? null];
+      if (fa === null || fb === null) return null;
+      const ends = new Set<string>();
+      for (const v of new Set(view.edge_vertices[e] ?? []))
+        for (const o of atVertex[v] ?? [])
+          for (const f of view.edge_faces[o] ?? []) {
+            const n = b.faces[f]?.names[0];
+            if (f !== pair[0] && f !== pair[1] && n !== undefined) ends.add(n);
+          }
+      return { faces: [fa, fb].sort() as [string, string], ends: [...ends].sort() };
+    });
+  });
+  const pairOf = (e: { faces: readonly [string, string] }) => `edge:${e.faces.join("+")}`;
+  const pairs = new Map<string, number>();
+  for (const body of raw) for (const e of body) if (e !== null) pairs.set(pairOf(e), (pairs.get(pairOf(e)) ?? 0) + 1);
+  const said = raw.map((body) => body.map((e) => (e === null ? null : pairs.get(pairOf(e))! > 1 ? `${pairOf(e)};ends:${e.ends.join(",")}` : pairOf(e))));
+  const count = new Map<string, number>();
+  for (const body of said) for (const n of body) if (n !== null) count.set(n, (count.get(n) ?? 0) + 1);
+  const edges = raw.map((body, bi) => body.map((e, k) => (e === null ? null : { ...e, name: count.get(said[bi][k]!) === 1 ? said[bi][k] : null })));
+  return { full, edges, tagFor: (body, face, name) => table.tagOf(table.at[body][face], name) };
+}
+
+/** A face reference by name (a sketch's plane): the name it holds, the tag it was made with on a piece, and the sketch's origin. */
+export interface FaceNameReference {
+  name: string;
+  tag?: readonly string[];
+  origin?: readonly [number, number, number];
+}
+
+/** What a reference finds on the design's bodies: a face or edge by body and kernel index; two or more, never guessed between; or none. */
+export type NameFound = { body: number; index: number; warning: "split" | null } | { ambiguous: number } | { lost: true };
+
+/**
+ * Whether face `f` of `view` holds point `p`: within SAME_CORNER of one of
+ * its display triangles (flat faces are triangulated exactly, so their
+ * triangles cover the face and nothing else), its edges counting as inside.
+ */
+export function faceHolds(view: BodyView, f: number, p: readonly number[]): boolean {
+  const { positions, indices, triangle_faces } = view.mesh;
+  const pt = (i: number) => [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
+  const sub = (a: number[], b: readonly number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const dot = (a: number[], b: number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  for (let t = 0; t < triangle_faces.length; t++) {
+    if (triangle_faces[t] !== f) continue;
+    const [a, b, c] = [pt(indices[3 * t]), pt(indices[3 * t + 1]), pt(indices[3 * t + 2])];
+    // The closest point of the triangle to p (Ericson, Real-Time Collision Detection 5.1.5), then its distance.
+    const ab = sub(b, a);
+    const ac = sub(c, a);
+    const ap = sub([...p], a);
+    const d1 = dot(ab, ap);
+    const d2 = dot(ac, ap);
+    let q: number[];
+    if (d1 <= 0 && d2 <= 0) q = a;
+    else {
+      const bp = sub([...p], b);
+      const [d3, d4] = [dot(ab, bp), dot(ac, bp)];
+      const cp = sub([...p], c);
+      const [d5, d6] = [dot(ab, cp), dot(ac, cp)];
+      const vc = d1 * d4 - d3 * d2;
+      const vb = d5 * d2 - d1 * d6;
+      const va = d3 * d6 - d5 * d4;
+      if (d3 >= 0 && d4 <= d3) q = b;
+      else if (d6 >= 0 && d5 <= d6) q = c;
+      else if (vc <= 0 && d1 >= 0 && d3 <= 0) q = a.map((x, i) => x + (d1 / (d1 - d3)) * ab[i]);
+      else if (vb <= 0 && d2 >= 0 && d6 <= 0) q = a.map((x, i) => x + (d2 / (d2 - d6)) * ac[i]);
+      else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) q = b.map((x, i) => x + ((d4 - d3) / (d4 - d3 + (d5 - d6))) * (c[i] - b[i]));
+      else {
+        const den = 1 / (va + vb + vc);
+        q = a.map((x, i) => x + ab[i] * vb * den + ac[i] * vc * den);
+      }
+    }
+    const d = sub(q, p);
+    if (dot(d, d) <= SAME_CORNER * SAME_CORNER) return true;
+  }
+  return false;
+}
+
+/**
+ * Rule 3's references on the design's bodies: one face carrying the name
+ * is it (a tagged reference too: the face is whole again); among pieces a
+ * tagged reference takes the one piece with its tag; one made on the whole
+ * face takes the piece holding its origin, else the largest, with a
+ * warning. Two pieces with the same tag, or two largest (within TIE), are
+ * never guessed between.
+ */
+export function resolveFaceName(bodies: readonly NamedBody[], names: DesignNames, ref: FaceNameReference): NameFound {
+  const pieces = bodies.flatMap((b, body) => b.faces.flatMap((f, index) => (f.names.includes(ref.name) ? [{ body, index }] : [])));
+  if (pieces.length === 0) return { lost: true };
+  if (pieces.length === 1) return { ...pieces[0], warning: null };
+  if (ref.tag !== undefined) {
+    const want = ref.tag.join(",");
+    const match = pieces.filter((p) => names.tagFor(p.body, p.index, ref.name).join(",") === want);
+    if (match.length === 0) return { lost: true };
+    if (match.length > 1) return { ambiguous: match.length };
+    return { ...match[0], warning: null };
+  }
+  const origin = ref.origin;
+  const holding = origin === undefined ? [] : pieces.filter((p) => faceHolds(bodies[p.body].view, p.index, origin));
+  if (holding.length === 1) return { ...holding[0], warning: "split" };
+  const area = (p: { body: number; index: number }) => bodies[p.body].view.face_areas[p.index];
+  const largest = Math.max(...pieces.map(area));
+  const big = pieces.filter((p) => sizeCompare(area(p), largest) === 0);
+  if (big.length > 1) return { ambiguous: big.length };
+  return { ...big[0], warning: "split" };
+}
+
+/**
+ * An edge by rule 5's name: found when exactly one edge has it. When two or
+ * more edges fit it (its two faces now meet more than once, so they carry
+ * `;ends:` the name never had, or even their ends tie and they are shared),
+ * ambiguous, never guessed; else lost.
+ */
+export function resolveEdgeName(names: DesignNames, name: string): NameFound {
+  let fits = 0;
+  for (const [body, edges] of names.edges.entries())
+    for (const [index, e] of edges.entries()) {
+      if (e === null) continue;
+      if (e.name === name) return { body, index, warning: null };
+      const pair = `edge:${e.faces.join("+")}`;
+      if (name === pair || name === `${pair};ends:${e.ends.join(",")}`) fits++;
+    }
+  return fits > 1 ? { ambiguous: fits } : { lost: true };
+}
+
+/**
+ * An old edge name (rule 6: "edge:feature-7/side:line-4+start", one
+ * feature's two faces, `a` and `b` its full face names) on the design's
+ * bodies after booleans: the one edge between a face answering to each (a
+ * split face's pieces all do; the tag only tells pieces apart), on any
+ * body; two such edges are never guessed between. The order an old name
+ * between two sides held ("A>B", its corner) adds nothing here: the
+ * boolean's bodies have straight sides only (curved faces are refused
+ * until 37 and 38a), and two straight sides meet in one line.
+ */
+export function resolveOldEdge(bodies: readonly NamedBody[], a: string, b: string): NameFound {
+  const found: { body: number; index: number }[] = [];
+  bodies.forEach((body, bi) =>
+    body.view.edge_faces.forEach((pair, e) => {
+      if (pair === null) return;
+      const [x, y] = [body.faces[pair[0]]?.names ?? [], body.faces[pair[1]]?.names ?? []];
+      if ((x.includes(a) && y.includes(b)) || (x.includes(b) && y.includes(a))) found.push({ body: bi, index: e });
+    }),
+  );
+  return found.length === 1 ? { ...found[0], warning: null } : found.length > 1 ? { ambiguous: found.length } : { lost: true };
 }

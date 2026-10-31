@@ -92,3 +92,17 @@ export function readProfileReference(ref: { kind: string; id: string }): string 
   const m = /^outline:([^:/]+)$/.exec(ref.id);
   return ref.kind === "outline" && m ? m[1] : null;
 }
+
+/**
+ * The two faces an old edge reference names (rule 6, step 35ec3):
+ * "edge:feature-7/side:line-4+start" (or "…/side:line-4>side:arc-6") is
+ * the edge between "face:feature-7/side:line-4" and "face:feature-7/start",
+ * as it is found on a boolean's result (boolean-names.ts `resolveOldEdge`);
+ * null for anything that is not an old edge reference.
+ */
+export function oldEdgeFaces(ref: GeometryReference): [string, string] | null {
+  const r = readDesignReference(ref);
+  if (r === null || r.kind !== "edge") return null;
+  const [a, b] = r.part!.split(/[+>]/);
+  return [`face:${r.featureId}/${a}`, `face:${r.featureId}/${b}`];
+}
