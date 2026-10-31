@@ -12,44 +12,15 @@ import assert from "node:assert/strict";
 import type { BodyView, GeometryReference, StableId } from "@fission/core";
 import { rebuildBooleans, resolveEdge, resolveFace, type BooleanFeature, type BooleanRebuild } from "../../../packages/testing/src/boolean-naming-model.ts";
 import { findOldEdgeAfterBooleans, readOldEdge } from "../../../packages/testing/src/old-names.ts";
-import { designNames, faceHolds, resolveEdgeName, resolveFaceName, resolveOldEdge, SAME_CORNER, type DesignNames, type NamedBody, type NameFound } from "../src/boolean-names.ts";
+import { designNames, faceHolds, resolveEdgeName, resolveFaceName, resolveOldEdge, SAME_CORNER, type DesignNames, type NamedBody } from "../src/boolean-names.ts";
 import { oldEdgeFaces } from "../src/references.ts";
-import { block, designRebuild, randomSession } from "./boolean-combine.ts";
+import { block, designEdges, designRebuild, edgeDifference, modelEdges, randomSession, saidEdge, saidFace } from "./boolean-combine.ts";
 
 // 200 seeds by default (about 2 s): 20 reach a pair of faces meeting twice
 // only twice, too rarely to count on.
 const SEEDS = process.env.FISSION_SEED !== undefined ? [BigInt(process.env.FISSION_SEED)] : [...Array(Number(process.env.BOOLEAN_NAMES_SEEDS ?? 200)).keys()].map((i) => 35_200n + BigInt(i));
 
 const edgeRef = (id: string): GeometryReference => ({ kind: "edge", id: id as StableId });
-
-/** Each body's edge names, sorted (a shared edge as "shared" and its faces and ends), by body id. */
-function designEdges(bodies: readonly NamedBody[], names: DesignNames): Map<string, string[]> {
-  return new Map(bodies.map((b, bi) => [b.id, names.edges[bi].map((e) => (e === null ? "unnamed" : (e.name ?? `shared ${e.faces.join("+")};${e.ends.join(",")}`))).sort()]));
-}
-function modelEdges(r: BooleanRebuild): Map<string, string[]> {
-  return new Map(r.bodies.map((b) => [b.id, b.edges.map((e) => e.name ?? `shared ${e.faces.join("+")};${e.ends.join(",")}`).sort()]));
-}
-
-/** Where the two sides' edge names part, in words; null when they agree. */
-function edgeDifference(d: Map<string, string[]>, m: Map<string, string[]>): string | null {
-  if ([...d.keys()].sort().join() !== [...m.keys()].sort().join()) return `bodies: Design ${[...d.keys()]}, model ${[...m.keys()]}`;
-  for (const [id, names] of d) {
-    const other = m.get(id)!;
-    const extra = names.filter((n) => !other.includes(n));
-    const missing = other.filter((n) => !names.includes(n));
-    if (extra.length + missing.length > 0 || names.length !== other.length) return `${id} edges: only Design ${extra.join("; ") || "none"}; only model ${missing.join("; ") || "none"} (${names.length} against ${other.length})`;
-  }
-  return null;
-}
-
-/** A found face or edge as both sides can say it: its body id and full name (an edge: faces and ends), with the warning. */
-const saidFace = (bodies: readonly NamedBody[], names: DesignNames, f: NameFound): string =>
-  "lost" in f ? "lost" : "ambiguous" in f ? `ambiguous ${f.ambiguous}` : `${bodies[f.body].id} ${names.full[f.body][f.index]} ${f.warning ?? ""}`;
-const saidEdge = (bodies: readonly NamedBody[], names: DesignNames, f: NameFound): string => {
-  if ("lost" in f || "ambiguous" in f) return saidFace(bodies, names, f);
-  const e = names.edges[f.body][f.index]!;
-  return `${bodies[f.body].id} ${e.faces.join("+")};${e.ends.join(",")}`;
-};
 
 // The notch: the bar 100 × 20 × 10 with a block cut out of its bottom front
 // edge at x 30–40 (the tool y −1 to 5, z −1 to 3, poking out below and in
