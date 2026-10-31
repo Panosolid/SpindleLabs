@@ -7,6 +7,8 @@ export function f5l94l(p0: any, p1: string): any;
 
 export function guf4qz(p0: any): number;
 
+export function hb3mzd(p0: number): void;
+
 export function irk2fy(p0: number, p1: number, p2: number): any;
 
 export function jg9yot(p0: any, p1: any, p2: any): any;
@@ -47,6 +49,7 @@ export interface InitOutput {
     readonly eds3ko: () => [number, number];
     readonly f5l94l: (a: any, b: number, c: number) => [number, number, number];
     readonly guf4qz: (a: any) => [number, number, number];
+    readonly hb3mzd: (a: number) => [number, number];
     readonly irk2fy: (a: number, b: number, c: number) => [number, number, number];
     readonly jg9yot: (a: any, b: any, c: any) => [number, number, number];
     readonly jgu9kn: (a: number, b: number, c: number) => [number, number, number];

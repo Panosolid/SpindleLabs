@@ -3,6 +3,7 @@ export const at4a9p: (a: number, b: number) => number;
 export const eds3ko: () => [number, number];
 export const f5l94l: (a: any, b: number, c: number) => [number, number, number];
 export const guf4qz: (a: any) => [number, number, number];
+export const hb3mzd: (a: number) => [number, number];
 export const irk2fy: (a: number, b: number, c: number) => [number, number, number];
 export const jg9yot: (a: any, b: any, c: any) => [number, number, number];
 export const jgu9kn: (a: number, b: number, c: number) => [number, number, number];

@@ -38,6 +38,13 @@ export function guf4qz(p0) {
     return ret[0];
 }
 
+export function hb3mzd(p0) {
+    const ret = wasm.hb3mzd(p0);
+    if (ret[1]) {
+        throw takeFromExternrefTable0(ret[0]);
+    }
+}
+
 export function irk2fy(p0, p1, p2) {
     const ret = wasm.irk2fy(p0, p1, p2);
     if (ret[2]) {
