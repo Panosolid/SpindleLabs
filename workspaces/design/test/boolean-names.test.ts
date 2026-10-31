@@ -109,6 +109,27 @@ test("a join where a tool swallows the target keeps the target's id on that piec
   assert.equal(difference(await designSays(features), modelSays(features)), null);
 });
 
+test("a swallowed target goes to the tool really holding it, not the smallest box round it (review 35ed3)", async () => {
+  // The target [2,8]³ is swallowed by a long bar x 0–1000, y and z 0–10
+  // (100000 mm³). A second tool is a ring: the block [-10,20]³ with a hole
+  // y and z -5–15 right through along x; the bar runs through the hole
+  // touching nothing (its y and z 0–10 lie inside -5–15). The ring's box,
+  // 30³ = 27000 mm³, holds the target's box and is smaller than the bar's
+  // (100000), but the target lies in the bar: the bar's piece keeps
+  // body:feature-1 and the ring, 27000 − 30 × 20 × 20 = 15000 mm³, is piece 1.
+  const features: BooleanFeature[] = [
+    block("feature-1", [2, 2, 8, 8], [2, 8]),
+    block("feature-2", [0, 0, 1000, 10], [0, 10]),
+    block("feature-3", [-10, -10, 20, 20], [-10, 20]),
+    block("feature-4", [-11, -5, 21, 15], [-5, 15]),
+    { kind: "combine", id: "feature-5", target: "body:feature-3", tools: ["body:feature-4"], operation: "cut" },
+    { kind: "combine", id: "feature-6", target: "body:feature-1", tools: ["body:feature-2", "body:feature-3"], operation: "join" },
+  ];
+  const { bodies } = await designRebuild(features);
+  assert.deepEqual(bodies.map((b) => [b.id, b.view.volume]), [["body:feature-1", 100000], ["body:feature-6/piece:1", 15000]]);
+  assert.equal(difference(await designSays(features), modelSays(features)), null);
+});
+
 test("an intersect keeps the target's id on its one piece, faces named after whichever input they lie on", async () => {
   // Blocks [0,10]³ and [5,15] × [2,12] × [3,13]: their common part is
   // x 5–10, y 2–10, z 3–10, 5 × 8 × 7 = 280 mm³; its x = 5, y = 2 and
