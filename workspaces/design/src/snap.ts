@@ -43,6 +43,19 @@
 // under a tall model isn't crossed by guides from every corner above it.
 // Points win over an edge, and an edge over lining up.
 //
+// The origin and the axes (Ben's ask, 10-31): the sketch's own origin
+// (0, 0) is a point to snap to ("origin"), after every other point, so a
+// sketch point or a body corner there wins (and pins); and it is a column
+// and a row to line up with, after every other, so the pointer near the
+// sketch's x axis (y = 0, drawn red) or y axis (x = 0, drawn green) lands
+// on it ("on x axis", "on y axis"), alone or where it crosses another
+// point's column or row. On XY, XZ and YZ these are the world's origin and
+// axes; on a face the frame's origin is where the world's origin meets the
+// face square on and its x the plane's x turned onto the face
+// (face-sketch.ts), so it is the origin and axes drawn there. Being the
+// sketch's own (0, 0), a point placed there stays on it when the face
+// moves, with no pin.
+//
 // Snapping off (Fusion's Ctrl): `snapsNow` says what snaps. Holding Ctrl
 // (Cmd on a Mac) while moving or clicking places the point where the
 // pointer is, with no snaps and no grid; the Snap button on the sketch's
@@ -74,8 +87,11 @@ export const SNAP_PIXELS = 10;
  */
 export const SAME_PLACE = 1e-5;
 
-/** What a snapped-to point is: an end of a line or arc, a line's midpoint, or the centre of a circle or arc (and no line's or arc's end). */
-export type PointKind = "endpoint" | "midpoint" | "centre";
+/** What a snapped-to point is: an end of a line or arc, a line's midpoint, the centre of a circle or arc (and no line's or arc's end), or the sketch's origin. */
+export type PointKind = "endpoint" | "midpoint" | "centre" | "origin";
+
+/** The sketch's origin, its (0, 0): a point to snap to and the column and row of its two axes. */
+export const ORIGIN: SketchXY = [0, 0];
 
 export interface SnapTarget {
   at: SketchXY;
@@ -149,7 +165,9 @@ function ownClicks(sketch: Sketch, tool: SketchTool): SketchXY[] {
  * neither the first corner nor any point on its column (or row) is
  * offered as a column (or row). `body`: the body edges to land on part
  * way along (`curves`), and the bodies' corners lying in the sketch's
- * plane (`corners`), columns and rows too, after the sketch's own.
+ * plane (`corners`), columns and rows too, after the sketch's own. Last
+ * of all, the sketch's origin (0, 0): a point after every other, and a
+ * column and a row (its y and x axes) after every other.
  */
 export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly EdgeTarget[] = [], body: BodySnaps = NO_BODY): SnapTargets {
   const own = ownClicks(sketch, tool);
@@ -164,9 +182,12 @@ export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly Ed
   }
   // The face's edges (26f) after the sketch's own points, so where both are at one spot the click shares the sketch's point.
   for (const e of edges) points.push({ at: e.at, kind: e.kind, pin: e });
+  // The origin last, so a sketch point or a body corner at (0, 0) is the one taken there (SAME_PLACE ties go to the first listed).
+  points.push({ at: ORIGIN, kind: "origin" });
   const refs: SketchXY[] = sketch.points.map((p) => [p.x, p.y]);
   for (const o of own) if (!refs.some((r) => same(r, o))) refs.push(o);
   for (const c of body.corners) if (!refs.some((r) => same(r, c))) refs.push(c);
+  if (!refs.some((r) => same(r, ORIGIN))) refs.push(ORIGIN);
   const corner = tool.kind === "rectangle" ? (own[0] ?? null) : null;
   return {
     points: points.filter((t) => !own.some((o) => same(t.at, o))),
@@ -288,12 +309,12 @@ export function snapOnSketch(doc: DesignDocument, tool: SketchTool, raw: SketchX
 
 const xy = (p: SketchXY) => `${p[0]},${p[1]}`;
 
-/** The snap in words, for the viewport's data (read by the e2e test): "endpoint 10,0", "edge endpoint 40,30" (26f), "vertical from 0,0 and horizontal from 10,20", "" on the grid. */
+/** The snap in words, for the viewport's data (read by the e2e test): "endpoint 10,0", "edge endpoint 40,30" (26f), "origin 0,0", "vertical from 10,0 and horizontal from 10,20", "on y axis and horizontal from 10,20" (a column or row through the origin is an axis), "" on the grid. */
 export function snapLabel(snap: Snap): string {
   if (snap.kind === "grid") return "";
   if (snap.kind === "on") return `on edge ${xy(snap.at)}`;
   if (snap.kind !== "aligned") return `${snap.edge ? "edge " : ""}${snap.kind} ${xy(snap.at)}`;
-  const words = [snap.column && `vertical from ${xy(snap.column)}`, snap.row && `horizontal from ${xy(snap.row)}`];
+  const words = [snap.column && (same(snap.column, ORIGIN) ? "on y axis" : `vertical from ${xy(snap.column)}`), snap.row && (same(snap.row, ORIGIN) ? "on x axis" : `horizontal from ${xy(snap.row)}`)];
   return words.filter(Boolean).join(" and ");
 }
 
@@ -325,7 +346,8 @@ const loop = (c: SketchXY[]): Segment[] => c.map((p, i) => [p, c[(i + 1) % c.len
 /**
  * The snap's marks on the plane, sized in screen pixels (pixel = mm per
  * pixel): a square round an endpoint, a triangle round a midpoint, a
- * circle round a centre (MARK_PIXELS out from the point), a diamond on an
+ * circle round a centre (MARK_PIXELS out from the point), the same circle
+ * with a cross through it, out to the circle, at the origin, a diamond on an
  * edge part way along, and for lining
  * up a dashed guide from each point lined up with, running on PAST_PIXELS
  * past the pointer, and a small cross at the pointer. Nothing on the grid.
@@ -335,7 +357,9 @@ export function snapMarks(snap: Snap, pixel: number): Segment[] {
   const [x, y] = snap.at;
   if (snap.kind === "endpoint") return loop([[x - m, y - m], [x + m, y - m], [x + m, y + m], [x - m, y + m]]);
   if (snap.kind === "midpoint") return loop([[x - m, y - m], [x + m, y - m], [x, y + m]]);
-  if (snap.kind === "centre") return loop(Array.from({ length: 16 }, (_, k): SketchXY => [x + m * Math.cos((Math.PI * k) / 8), y + m * Math.sin((Math.PI * k) / 8)]));
+  const ring = () => loop(Array.from({ length: 16 }, (_, k): SketchXY => [x + m * Math.cos((Math.PI * k) / 8), y + m * Math.sin((Math.PI * k) / 8)]));
+  if (snap.kind === "centre") return ring();
+  if (snap.kind === "origin") return [...ring(), [[x - m, y], [x + m, y]], [[x, y - m], [x, y + m]]];
   if (snap.kind === "on") return loop([[x, y - m], [x + m, y], [x, y + m], [x - m, y]]);
   if (snap.kind !== "aligned") return [];
   const out: Segment[] = [[[x - m, y - m], [x + m, y + m]], [[x - m, y + m], [x + m, y - m]]];

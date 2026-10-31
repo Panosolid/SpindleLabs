@@ -87,7 +87,8 @@ test("hand-worked: a column from one point and a row from another meet, closing 
   // and 1 off y = 21 (the point (33, 21)), so it lands on (0, 21), not the grid's (0, 20).
   const s = snapOnSketch(d, line(sketch), [1.5, 22], [0, 20], 0.5);
   assert.deepEqual(s, { kind: "aligned", at: [0, 21], column: [0, 0], row: [33, 21] });
-  assert.equal(snapLabel(s), "vertical from 0,0 and horizontal from 33,21");
+  // x = 0 is the sketch's y axis (the column of its origin), so it reads as the axis (Ben's ask, 10-31).
+  assert.equal(snapLabel(s), "on y axis and horizontal from 33,21");
 });
 
 test("lined up with one point's column and row both is that point, by its own name", () => {
@@ -124,9 +125,10 @@ test("an unknown or nonsense pixel size snaps to the grid only", () => {
   for (const pixel of [undefined, 0, -1, NaN, Infinity]) assert.deepEqual(snapOnSketch(doc, line(sketch), [33, 0], [30, 0], pixel), { kind: "grid", at: [30, 0] });
 });
 
-test("an empty sketch snaps to the grid, and an unknown sketch is refused", () => {
+test("an empty sketch snaps to the grid away from its origin and axes, and an unknown sketch is refused", () => {
   const { doc, sketch } = blank();
-  assert.deepEqual(snapOnSketch(doc, line(sketch), [0.1, 0.1], [0, 0], 1), { kind: "grid", at: [0, 0] });
+  // Reach 10 mm: (20.1, 30.1) is 20 off the y axis and 30 off the x axis, so the grid's (20, 30). Near (0, 0) it is the origin (origin-snap.test.ts).
+  assert.deepEqual(snapOnSketch(doc, line(sketch), [20.1, 30.1], [20, 30], 1), { kind: "grid", at: [20, 30] });
   assert.throws(() => snapOnSketch(doc, line("sketch-99"), [0, 0], [0, 0], 1), /no sketch sketch-99/);
 });
 
@@ -241,7 +243,10 @@ test("snapLabel names every kind; the grid has no label", () => {
   assert.equal(snapLabel({ kind: "endpoint", at: [10, 0] }), "endpoint 10,0");
   assert.equal(snapLabel({ kind: "midpoint", at: [16.5, 0] }), "midpoint 16.5,0");
   assert.equal(snapLabel({ kind: "centre", at: [0, -3] }), "centre 0,-3");
-  assert.equal(snapLabel({ kind: "aligned", at: [10, 0], column: null, row: [0, 0] }), "horizontal from 0,0");
+  assert.equal(snapLabel({ kind: "origin", at: [0, 0] }), "origin 0,0");
+  assert.equal(snapLabel({ kind: "aligned", at: [10, 0], column: null, row: [0, 0] }), "on x axis");
+  assert.equal(snapLabel({ kind: "aligned", at: [0, 10], column: [0, 0], row: null }), "on y axis");
+  assert.equal(snapLabel({ kind: "aligned", at: [10, 5], column: [10, 0], row: [0, 5] }), "vertical from 10,0 and horizontal from 0,5");
 });
 
 test("withSnap shows the snap only on the sketch being edited, and nothing for the grid", () => {
@@ -275,6 +280,8 @@ function rng(seed: number) {
  * before a midpoint at the same place. Else the nearest column and row
  * within reach (the own clicks included, the rectangle's corner's column
  * and row not), else the grid; lined up onto an own click is the grid.
+ * The sketch's origin (0, 0) is a point after all the others at its place
+ * and a column and row after all the others (Ben's ask, 10-31).
  */
 function model(sketch: Sketch, owns: SketchXY[], rectangle: boolean, raw: SketchXY, grid: SketchXY, reach: number): { kind: string; at: SketchXY } {
   const c = sketchCurves(sketch);
@@ -285,13 +292,13 @@ function model(sketch: Sketch, owns: SketchXY[], rectangle: boolean, raw: Sketch
   const centres = new Map<string, SketchXY>();
   for (const x of [...c.circles.map((k) => k.centre), ...c.arcs.map((a) => a.centre)]) if (!ends.has(key(x))) centres.set(key(x), x);
   const mids = c.lines.map((l): SketchXY => [(l.a[0] + l.b[0]) / 2, (l.a[1] + l.b[1]) / 2]);
-  const rank = { endpoint: 0, centre: 0, midpoint: 1 } as const;
-  const all = [...[...ends.values()].map((at) => ({ at, kind: "endpoint" as const })), ...[...centres.values()].map((at) => ({ at, kind: "centre" as const })), ...mids.map((at) => ({ at, kind: "midpoint" as const }))].filter((t) => !owns.some((o) => key(o) === key(t.at)));
+  const rank = { endpoint: 0, centre: 0, midpoint: 1, origin: 2 } as const;
+  const all = [...[...ends.values()].map((at) => ({ at, kind: "endpoint" as const })), ...[...centres.values()].map((at) => ({ at, kind: "centre" as const })), ...mids.map((at) => ({ at, kind: "midpoint" as const })), { at: [0, 0] as SketchXY, kind: "origin" as const }].filter((t) => !owns.some((o) => key(o) === key(t.at)));
   const d = (p: SketchXY) => Math.sqrt((p[0] - raw[0]) ** 2 + (p[1] - raw[1]) ** 2);
   const within = all.filter((t) => d(t.at) <= reach).sort((a, b) => d(a.at) - d(b.at) || rank[a.kind] - rank[b.kind]);
   if (within.length) return { kind: within[0].kind, at: within[0].at };
   const extra = new Map(owns.filter((o) => !ends.has(key(o)) && !centres.has(key(o))).map((o) => [key(o), o]));
-  const refs = [...ends.values(), ...centres.values(), ...extra.values()];
+  const refs = [...ends.values(), ...centres.values(), ...extra.values(), [0, 0] as SketchXY];
   const own = rectangle ? owns[0] : undefined;
   const pick = (axis: 0 | 1) =>
     refs.filter((r) => !(rectangle && own && r[axis] === own[axis]) && Math.abs(r[axis] - raw[axis]) <= reach).sort((a, b) => Math.abs(a[axis] - raw[axis]) - Math.abs(b[axis] - raw[axis]))[0] ?? null;
@@ -304,7 +311,7 @@ function model(sketch: Sketch, owns: SketchXY[], rectangle: boolean, raw: Sketch
 }
 
 test("seeded random sketches, tools and pointers: the snap matches the model, and a click there shares the point", () => {
-  const kinds = { endpoint: 0, midpoint: 0, centre: 0, aligned: 0, grid: 0 } as Record<string, number>;
+  const kinds = { endpoint: 0, midpoint: 0, centre: 0, origin: 0, aligned: 0, grid: 0 } as Record<string, number>;
   for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
     const random = rng(seed);
     const lattice = () => Math.round((random() * 40 - 20) * 2) / 2 + 0; // half-mm steps, so points and middles coincide often (+ 0: no −0)
@@ -374,7 +381,7 @@ test("startTool's fresh tools have no own click: everything is a target", () => 
   const { doc, sketch } = oneLine();
   for (const kind of ["line", "rectangle", "circle", "arc"] as const) {
     const t = snapTargets(sketchOf(doc, sketch), startTool(kind, sketch));
-    assert.equal(t.points.length, 3, `${kind}: two ends and a midpoint`);
+    assert.equal(t.points.length, 4, `${kind}: two ends, a midpoint and the origin`);
     assert.equal(t.columns.length, 2);
     assert.equal(t.rows.length, 2);
   }
