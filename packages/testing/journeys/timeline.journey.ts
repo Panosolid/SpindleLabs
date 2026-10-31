@@ -17,6 +17,8 @@ import {
   addSketch,
   buildSpec,
   builtBody,
+  type BuiltBody,
+  type FeatureResult,
   deleteCurve,
   deleteItem,
   designReference,
@@ -472,7 +474,8 @@ test("the owner's rule on the real kernel, hand-worked: a lost sketch's extrude 
   const point = (x: number, y: number) => pointAt(doc.sketches.find((k) => k.id === s.id)!, [x, y])!;
   const result = async () => {
     const build = await rebuildTimeline(doc, cache, kernel);
-    return { ...build.results[e], built: builtBody(build, e) };
+    const built = builtBody(build, e);
+    return { ...build.results[e], ...(built ? { built } : {}) } as FeatureResult & { built?: BuiltBody };
   };
   const body = async () => {
     const r = await result();
@@ -488,9 +491,9 @@ test("the owner's rule on the real kernel, hand-worked: a lost sketch's extrude 
   assert.ok(close(b.view.volume, 9000) && warned(b.r) === null, `${b.view.volume}`);
   // The same document again: the same handle, no new body built.
   const before = kernel.builds;
-  const again = await result();
-  assert.ok(again.status === "built" && again.built !== undefined);
-  assert.equal(again.built.handle, b.r.built!.handle);
+  const same = await result();
+  assert.ok(same.status === "built" && same.built !== undefined);
+  assert.equal(same.built.handle, b.r.built!.handle);
   assert.equal(kernel.builds, before, "an unchanged feature was built again");
   // The right side deleted: the trapezium is kept (9000 mm³), warned as an open outline of the sketch; its right side is still
   // named after the deleted line: 15 × 10 = 150 mm² at (40, 7.5, 5).
@@ -537,9 +540,11 @@ test("the owner's rule on the real kernel, hand-worked: a lost sketch's extrude 
   // Saved and opened: still kept, the same shape.
   const opened = projectFromJson(projectToJson({ ...emptyProject("Kept"), workspaces: { design: doc } }), [{ id: "design", readData: readDesignDocument }]).workspaces.design as DesignDocument;
   const fresh = new BodyCache(kernel);
-  const reopened = (await rebuildTimeline(opened, fresh, kernel)).results[e];
-  assert.ok(reopened.status === "built" && reopened.body !== undefined && reopened.warning);
-  assert.ok(close((await fresh.view(reopened.body)).volume, 22000));
+  const reopenedBuild = await rebuildTimeline(opened, fresh, kernel);
+  const reopened = reopenedBuild.results[e];
+  const reopenedBody = builtBody(reopenedBuild, e);
+  assert.ok(reopened.status === "built" && reopenedBody !== undefined && reopened.warning);
+  assert.ok(close((await fresh.view(reopenedBody.handle)).volume, 22000));
   // Every body freed: the kernel keeps what it kept before.
   await fresh.clear();
   await cache.clear();

@@ -272,7 +272,7 @@ test("the Move panel's preview (35e2b) draws the picked bodies where the kernel 
     const angle = () => (pick(3) === 0 ? 0 : pick(2) === 0 ? 90 * (pick(7) - 3) : Math.round((r.next() * 720 - 360) * 10) / 10);
     const values = v({ x: pick(401) - 200, y: pick(401) - 200, z: pick(401) - 200, turnX: angle(), turnY: angle(), turnZ: angle(), pivotX: pick(100) - 50, pivotY: pick(100) - 50, pivotZ: pick(100) - 50 });
     const what = `seed ${seed} case ${n} (${picked.join(" and ")}, ${JSON.stringify(values)}; FISSION_SEED=${seed} to replay)`;
-    const preview = movedMesh(await sceneOf(d), picked, values);
+    const preview = movedMesh(await sceneOf(d), picked.map(bodyIdOf), values);
     const kernel = (await sceneOf(insertMove(d, picked.map(bodyIdOf), values).doc)).mesh;
     // The same triangles in the same order: every point within LINEAR of the kernel's, every normal within 1e-6 of it.
     assert.equal(preview.positions.length, kernel.positions.length, what);

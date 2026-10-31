@@ -53,9 +53,9 @@ test("Ben's phone project builds every item on a fresh kernel, where it was draw
     // Move 1 shifts it 5 mm in y: the same item without the Move spans y 5 less.
     const unmoved = { ...doc, timeline: { features: doc.timeline.features.filter((f) => f.id !== "feature-43") } };
     const plain = await rebuildTimeline(unmoved, cache, kernel);
-    const p = plain.results["feature-35"];
-    assert.ok(p.status === "built" && p.body !== undefined);
-    const e2plain = (await cache.view(p.body)).bounds;
+    const p = builtBody(plain, "feature-35");
+    assert.ok(p !== undefined);
+    const e2plain = (await cache.view(p.handle)).bounds;
     assert.ok(Math.abs(e2[0][1] - e2plain[0][1] - 5) <= LINEAR && Math.abs(e2[1][1] - e2plain[1][1] - 5) <= LINEAR, `moved ${JSON.stringify(e2)} vs ${JSON.stringify(e2plain)}`);
   } finally {
     await cache.close();
