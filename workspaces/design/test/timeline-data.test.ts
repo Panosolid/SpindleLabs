@@ -70,8 +70,8 @@ test("the real version 2 file (saved by main before 24d1) opens as version 6 wit
   assert.equal(fixtureProblem(readDesignDocument), null);
   const doc = projectFromJson(REAL_V2, DESIGN).workspaces.design as DesignDocument;
   assert.deepEqual(partOf(doc), { shape: "sketch-extrude", sizes: { height: 10 } });
-  // Saved, it is version 5 (the current one).
-  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 5);
+  // Saved, it is version 6 (the current one).
+  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 6);
 });
 
 test("the fixture test fails for a migration broken on purpose, each way", () => {
