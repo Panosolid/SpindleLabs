@@ -35,12 +35,12 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { bodyIdOf, buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, bodyItem, buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { bodyFrame, carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import { cornerOrder, edgeNamed, edgeShape, madeKind, profileCurves, placesOf, projectedOpen, projectionWords, type HeldCause, type ProjectionWarning } from "./projection.ts";
-import { moveMotions, movedSpec, moveValues } from "./move.ts";
+import { movedBodies, moveMotions, movedSpec, moveValues } from "./move.ts";
 import { resolveReference, sharedBy } from "./references.ts";
 import { planeOf, plainOutline, sketchCurves } from "./sketch.ts";
 
@@ -868,8 +868,8 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
  * to move (out past model space) leaves every body where it was and fails
  * the Move with the kernel's words. The Move holds the bodies as they
  * were (`holds`), so the next rebuild finds them built. Its bodies are
- * stored by their items' ids (`dependsOn`), each item's body `bodyIdOf`
- * it: the same as a body id until an item makes more than one (35ec).
+ * stored by body id (`movedBodies`, Design data version 6, 35ec), each
+ * made by an item it depends on (`bodyItem`).
  */
 async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   for (const id of f.dependsOn) {
@@ -880,12 +880,13 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodie
   const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
   const motions = moveMotions(moveValues(f));
   const from: [string, BuiltBody][] = [];
-  for (const id of f.dependsOn) {
+  for (const body of movedBodies(f)) {
+    const id = bodyItem(body)!;
     const r = done[id];
-    const b = r?.status === "built" ? bodies[bodyIdOf(id)] : undefined;
+    const b = r?.status === "built" ? bodies[body] : undefined;
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
     if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
-    from.push([bodyIdOf(id), b]);
+    from.push([body, b]);
   }
   // Built only once every body is there, so a Move that fails builds nothing.
   const moved: [string, BuiltBody][] = [];

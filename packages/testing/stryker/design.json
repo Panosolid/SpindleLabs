@@ -2,7 +2,7 @@
   "$comment": "Mutation testing of reading and upgrading Design's data (hunt 3a). Run through run.sh, from workspaces/design. The tests run in one process and stop at the first failure (tests.mjs), the reader's own tests first and the slow ones last (big-files.test.ts takes a quarter of a full run).",
   "testRunner": "command",
   "commandRunner": { "command": "node --experimental-strip-types --no-warnings -e \"import(require('path').join(require.resolve('@fission/testing'), '../../stryker/tests.mjs')).then((m) => m.default(process.argv.slice(1)))\" test/document.test.ts test/timeline-data.test.ts test/reader-every-feature.test.ts test/file-checks.test.ts test/sketch.test.ts test/move.test.ts test/short-names.test.ts test/kept.test.ts test/mutation-survivors.test.ts test/ref-survivors.test.ts test/file-ids.test.ts test/odd-ids.test.ts test/extrude.test.ts test/sketch-tool.test.ts test/hide-body.test.ts test/eyes.test.ts test/face-sketch.test.ts test/face-edges.test.ts test/projection.test.ts test/arc-tool.test.ts test/tangent-tool.test.ts test/centre-arc-tool.test.ts test/timeline-edits.test.ts test/start-fresh.test.ts test/empty-design.test.ts test/feature-edit.test.ts test/move-bodies.test.ts test/body-numbers.test.ts test/big-files.test.ts" },
-  "mutate": ["src/document.ts:535-1143"],
+  "mutate": ["src/document.ts:557-1213"],
   "reporters": ["clear-text", "json"],
   "jsonReporter": { "fileName": "../../node_modules/.cache/stryker/design.json" },
   "clearTextReporter": { "allowColor": false, "logTests": false, "reportMutants": false },

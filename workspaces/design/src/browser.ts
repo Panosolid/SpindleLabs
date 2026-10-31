@@ -127,7 +127,7 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       }),
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
-    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(feature.id, EYE_FOLDERS.bodies) })) },
+    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(bodyIdOf(feature.id), EYE_FOLDERS.bodies) })) },
     { id: "origin", label: "Origin", icon: "origin", ...eye(EYE_FOLDERS.origin), children: ORIGIN.map((n) => ({ ...n, ...eye(n.id, EYE_FOLDERS.origin) })), startsFolded: true },
   ];
 }
@@ -181,13 +181,16 @@ export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> =
 
 /**
  * What a browser row's eye shuts or opens (`hideRow`'s id): a Body row its
- * feature, a sketch's row its item, an origin row itself, the Sketches,
+ * body id (Design data version 6), a sketch's row its item, an origin row itself, the Sketches,
  * Bodies and Origin folders theirs (EYE_FOLDERS); null for a row with no
  * eye (the Timeline's, the Profiles').
  */
 export function eyeId(doc: DesignDocument, node: string, failed: ReadonlySet<string> = NONE_FAILED): string | null {
   if (node.startsWith("sketches/")) return node.slice("sketches/".length);
-  if (node.startsWith("body-")) return bodyRows(doc, failed).find((r) => r.id === node)?.feature.id ?? null;
+  if (node.startsWith("body-")) {
+    const row = bodyRows(doc, failed).find((r) => r.id === node);
+    return row === undefined ? null : bodyIdOf(row.feature.id);
+  }
   if (ORIGIN.some((n) => n.id === node)) return node;
   return Object.hasOwn(EYE_FOLDERS, node) ? EYE_FOLDERS[node as keyof typeof EYE_FOLDERS] : null;
 }

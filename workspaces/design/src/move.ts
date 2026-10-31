@@ -8,11 +8,12 @@
 // so editing, suppressing, deleting or reordering it works like any item.
 // `insertMove` and `changedMove` (its numbers, and since 35e2i its bodies) are the document changes, pure functions;
 // since 35eb both name bodies by body id ("body:feature-1"), as the rebuild
-// holds them; the file still lists each body's item id (`movedBodies`).
+// holds them, and since 35ec (Design data version 6) so does the file: the
+// Move's `bodies` (`movedBodies`), with `dependsOn` the items that made them.
 // `moveMotions` what the kernel is asked to do.
 
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
-import { bodyIdOf, bodyItem, freshName, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyItem, freshName, isPiece, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
 /** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm). */
 export type MoveValues = Record<MoveParam, number>;
@@ -84,8 +85,14 @@ function checked(values: MoveValues): MoveValues {
   return Object.fromEntries(MOVE_PARAMS.map((k) => [k, values[k]])) as MoveValues;
 }
 
-/** The bodies Move `move` moves, by body id (35eb): the file lists each one's item id (`dependsOn`), in its order. */
-export const movedBodies = (move: Feature): string[] => move.dependsOn.map(bodyIdOf);
+/** The bodies Move `move` moves, by body id (35eb), as the file lists them (its `bodies`, version 6), in its order. */
+export const movedBodies = (move: Feature): string[] => [...(move.intent.parameters.bodies as readonly string[])];
+
+/** Whether the design numbers body `id` (a piece, 35ec, is a body once `bodies` lists it). */
+const numbered = (doc: DesignDocument, id: string): boolean => (doc.bodies ?? []).some((b) => b.id === id);
+
+/** The items that made `bodies` (body ids), each once, in order: a Move's `dependsOn`. */
+const makersOf = (bodies: readonly string[]): string[] => [...new Set(bodies.map((b) => bodyItem(b)!))];
 
 /** Each picked body's item id, in order: refused for anything that is no body id (a bare feature id included), and for a body picked twice. */
 function itemsOf(bodies: readonly string[]): string[] {
@@ -104,7 +111,7 @@ function bodiesFor(doc: DesignDocument, bodies: readonly string[]): Feature[] {
   return itemsOf(bodies).map((id, i) => {
     const at = doc.timeline.features.findIndex((f) => f.id === id);
     const f = doc.timeline.features[at];
-    if (f === undefined || !makesBody(f)) throw new Error(`${shown(bodies[i])} is not a body in the design`);
+    if (f === undefined || !(isPiece(bodies[i]) ? numbered(doc, bodies[i]) : makesBody(f))) throw new Error(`${shown(bodies[i])} is not a body in the design`);
     if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a move put in at the marker can't move it`);
     return f;
   });
@@ -122,9 +129,9 @@ export function insertMove(doc: DesignDocument, bodies: readonly string[], value
   const labels = items.map((f) => f.provenance.self.label);
   const feature: Feature = {
     id,
-    intent: { type: "move", parameters: { ...v }, summary: moveSummary(labels, v, verb) },
+    intent: { type: "move", parameters: { ...v, bodies: [...bodies] }, summary: moveSummary(labels, v, verb) },
     provenance: { self: { workspace: "design", id, label }, from: items.map((f) => ({ workspace: "design", id: f.id, label: f.provenance.self.label })) },
-    dependsOn: items.map((f) => f.id),
+    dependsOn: makersOf(bodies),
     suppressed: false,
   };
   return { id, doc: { ...doc, nextId: doc.nextId + 1, timeline: insertItem(doc, feature) } };
@@ -147,8 +154,8 @@ function bodiesBefore(doc: DesignDocument, move: Feature, bodies: readonly strin
     const at = doc.timeline.features.findIndex((f) => f.id === id);
     const f = doc.timeline.features[at];
     const held = move.provenance.from.find((r) => r.id === id);
-    if (f === undefined && move.dependsOn.includes(id) && held) return { id, label: held.label };
-    if (f === undefined || !makesBody(f)) throw new Error(`${shown(bodies[i])} is not a body in the design`);
+    if (f === undefined && movedBodies(move).includes(bodies[i]) && held) return { id, label: held.label };
+    if (f === undefined || !(isPiece(bodies[i]) ? numbered(doc, bodies[i]) : makesBody(f))) throw new Error(`${shown(bodies[i])} is not a body in the design`);
     if (at > end) throw new Error(madeAfter(f.provenance.self.label, move.provenance.self.label).slice(0, -1));
     return { id, label: f.provenance.self.label };
   });
@@ -165,14 +172,15 @@ export function changedMove(doc: DesignDocument, id: string, values: MoveValues,
   if (!old || !isMoveItem(old)) throw new Error(`there is no move ${shown(id)} in the design`);
   const v = checked(values);
   const items = bodies === undefined ? null : bodiesBefore(doc, old, bodies);
-  const sameBodies = items === null || (items.length === old.dependsOn.length && items.every((b) => old.dependsOn.includes(b.id)));
+  const held = movedBodies(old);
+  const sameBodies = items === null || (bodies!.length === held.length && bodies!.every((b) => held.includes(b)));
   if (sameBodies && MOVE_PARAMS.every((k) => old.intent.parameters[k] === v[k])) return doc;
   const kept = sameBodies ? null : items!;
-  const labels = kept ? kept.map((b) => b.label) : old.dependsOn.map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
+  const labels = kept ? kept.map((b) => b.label) : held.map((b) => bodyItem(b)!).map((b) => doc.timeline.features.find((f) => f.id === b)?.provenance.self.label ?? old.provenance.from.find((r) => r.id === b)?.label ?? b);
   const verb = old.intent.summary.startsWith("Rotate ") ? "Rotate" : "Move";
-  const intent = { ...old.intent, parameters: { ...v }, summary: moveSummary(labels, v, verb) };
+  const intent = { ...old.intent, parameters: { ...v, bodies: kept ? [...bodies!] : held }, summary: moveSummary(labels, v, verb) };
   const feature: Feature = kept
-    ? { ...old, intent, dependsOn: kept.map((b) => b.id), provenance: { ...old.provenance, from: kept.map((b) => ({ workspace: "design", id: b.id, label: b.label })) } }
+    ? { ...old, intent, dependsOn: makersOf(bodies!), provenance: { ...old.provenance, from: kept.map((b) => ({ workspace: "design", id: b.id, label: b.label })) } }
     : { ...old, intent };
   return { ...doc, timeline: { ...doc.timeline, features: doc.timeline.features.map((f) => (f === old ? feature : f)) } };
 }

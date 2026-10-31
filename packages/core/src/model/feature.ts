@@ -19,8 +19,8 @@ export type ParameterValue = number | string | boolean;
 export interface Intent {
   /** e.g. "box", "extrude", later "hole", "pocket", "engrave". */
   type: string;
-  /** Lengths in mm, angles in degrees. */
-  parameters: Record<string, ParameterValue>;
+  /** Lengths in mm, angles in degrees; a list of ids where a feature names several things (a Design Move's bodies). */
+  parameters: Record<string, ParameterValue | readonly string[]>;
   /** One line for people, e.g. "Box: 40 × 30 × 20 mm". */
   summary: string;
   /** Optional: why it is there, e.g. "mounting hole for an M3 screw". */

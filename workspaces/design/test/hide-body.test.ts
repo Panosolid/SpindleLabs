@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectFromJson, projectToJson, type KernelCalls } from "@fission/core";
-import { isHidden, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
+import { bodyHidden as bodyHiddenIn, isHidden, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { deleteItem, hideBody, moveMarker, reorderItem, suppressItem, TIMELINE_STEPS } from "../src/timeline-edits.ts";
@@ -38,13 +38,13 @@ test("hand-worked: hiding and showing, the list in timeline order, left out once
   assert.equal(Object.hasOwn(d, "hidden"), false, "a new design hides nothing");
   // Extrude 1 hidden first, then the box: listed in the timeline's order, the box before it.
   const one = hideBody(d, "body:feature-11", true);
-  assert.deepEqual(one.hidden, ["feature-11"]);
+  assert.deepEqual(one.hidden, ["body:feature-11"]);
   const two = hideBody(one, "body:feature-1", true);
-  assert.deepEqual(two.hidden, ["feature-1", "feature-11"]);
-  assert.deepEqual([isHidden(two, "feature-1"), isHidden(two, "feature-11"), isHidden(two, "sketch-2")], [true, true, false]);
+  assert.deepEqual(two.hidden, ["body:feature-1", "body:feature-11"]);
+  assert.deepEqual([isHidden(two, "body:feature-1"), isHidden(two, "body:feature-11"), isHidden(two, "sketch-2")], [true, true, false]);
   // Shown again one by one; the list goes when nothing is hidden, so the saved file is as before.
   const back = hideBody(two, "body:feature-11", false);
-  assert.deepEqual(back.hidden, ["feature-1"]);
+  assert.deepEqual(back.hidden, ["body:feature-1"]);
   const none = hideBody(back, "body:feature-1", false);
   assert.equal(Object.hasOwn(none, "hidden"), false);
   assert.equal(projectToJson({ ...emptyProject("Eyes"), workspaces: { design: none } }), projectToJson({ ...emptyProject("Eyes"), workspaces: { design: d } }));
@@ -70,11 +70,11 @@ test("a sketch has no body to hide, and an id not in the timeline is refused", (
 test("the reader takes a hidden list in any order, and refuses each way of breaking it, saying how", () => {
   const d = part();
   // Out of timeline order (a reorder can leave it so): read as it is.
-  const swapped = { ...d, hidden: ["feature-11", "feature-1"] };
-  assert.deepEqual(readDesignDocument(structuredClone(swapped)).hidden, ["feature-11", "feature-1"]);
+  const swapped = { ...d, hidden: ["body:feature-11", "body:feature-1"] };
+  assert.deepEqual(readDesignDocument(structuredClone(swapped)).hidden, ["body:feature-11", "body:feature-1"]);
   // A suppressed body, or one after the marker, may stay hidden.
-  assert.deepEqual(reopen(hideBody(suppressItem(d, "feature-11", true), "body:feature-11", true)).hidden, ["feature-11"]);
-  assert.deepEqual(reopen(hideBody(moveMarker(d, "feature-1"), "body:feature-11", true)).hidden, ["feature-11"]);
+  assert.deepEqual(reopen(hideBody(suppressItem(d, "feature-11", true), "body:feature-11", true)).hidden, ["body:feature-11"]);
+  assert.deepEqual(reopen(hideBody(moveMarker(d, "feature-1"), "body:feature-11", true)).hidden, ["body:feature-11"]);
   const refused = (hidden: unknown) => () => readDesignDocument({ ...structuredClone(d), hidden });
   const NOT_LIST = { message: "Design data's hidden list is not a list of ids (left out when everything shows)" };
   assert.throws(refused([]), NOT_LIST, "an empty list is left out instead");
@@ -82,28 +82,34 @@ test("the reader takes a hidden list in any order, and refuses each way of break
   assert.throws(refused({ 0: "feature-1" }), NOT_LIST);
   assert.throws(refused(null), NOT_LIST);
   // A sketch may be hidden since Ben's eye on everything (2026-10-29; eyes.test.ts); anything else not a solid feature is refused.
-  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a solid feature or sketch in the timeline, an origin axis or a folder` });
+  const NOT_HIDEABLE = (id: string) => ({ message: `Design data hides ${id}, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder` });
   assert.throws(refused(["feature-99"]), NOT_HIDEABLE("feature-99"));
+  // Version 6 (35ec): a body by its body id, never its item's id (version 5's form), a body whose item is gone, a sketch's
+  // or a Move's "body", or a piece the bodies list doesn't number.
+  assert.throws(refused(["feature-1"]), NOT_HIDEABLE("feature-1"));
+  assert.throws(refused(["body:feature-99"]), NOT_HIDEABLE("body:feature-99"));
+  assert.throws(refused(["body:sketch-2"]), NOT_HIDEABLE("body:sketch-2"));
+  assert.throws(refused(["body:feature-1/piece:1"]), NOT_HIDEABLE("body:feature-1/piece:1"));
   assert.throws(refused([1]), NOT_HIDEABLE("1"));
-  assert.throws(refused(["feature-1", "feature-1"]), { message: "Design data hides feature-1 twice" });
+  assert.throws(refused(["body:feature-1", "body:feature-1"]), { message: "Design data hides body:feature-1 twice" });
 });
 
 test("deleting a hidden item takes it out of the list, and the list goes with its last id", () => {
   const d = hideBody(hideBody(part(), "body:feature-1", true), "body:feature-11", true);
   const noBox = deleteItem(d, "feature-1");
-  assert.deepEqual(noBox.hidden, ["feature-11"]);
+  assert.deepEqual(noBox.hidden, ["body:feature-11"]);
   const noExtrude = deleteItem(noBox, "feature-11");
   assert.equal(Object.hasOwn(noExtrude, "hidden"), false);
   // Deleting the sketch an extrude is built from keeps the extrude (the rebuild keeps its shape, 24d2), hidden still.
   const noSketch = deleteItem(hideBody(part(), "body:feature-11", true), "sketch-2");
   assert.deepEqual(noSketch.timeline.features.map((f) => f.id), ["feature-1", "feature-11"]);
-  assert.deepEqual(noSketch.hidden, ["feature-11"]);
+  assert.deepEqual(noSketch.hidden, ["body:feature-11"]);
   // A reorder keeps the list as it is; any order reads.
   const reordered = reorderItem(hideBody(part(), "body:feature-1", true), "feature-1", 2);
   assert.ok("doc" in reordered, "the box may go last");
   const moved = reordered.doc;
   assert.deepEqual(moved.timeline.features.map((f) => f.id), ["sketch-2", "feature-11", "feature-1"]);
-  assert.deepEqual(moved.hidden, ["feature-1"]);
+  assert.deepEqual(moved.hidden, ["body:feature-1"]);
   for (const doc of [noBox, noExtrude, noSketch, moved]) assert.deepEqual(reopen(doc), doc);
 });
 
@@ -205,4 +211,18 @@ test("a hidden body is still built, but not drawn; the one after it keeps its Bo
   // Shown again: both, Body 1 and Body 2.
   const again = await shownBodies(hideBody(d, "body:feature-1", false), build, cache);
   assert.deepEqual(again.map((b) => [b.feature, b.place]), [["feature-1", 1], ["feature-11", 2]]);
+});
+
+test("hand-worked: a version 5 file's eyes list items' ids; opened, each solid item's becomes its body's id, sketches and folders as they were", () => {
+  // Version 5 listed the box (feature-1) and Extrude 1 (feature-11) by their items' ids, with Sketch 1 and the Bodies
+  // folder; version 6 lists the two bodies as body:feature-1 and body:feature-11, the rest unchanged, in the same order.
+  const v5 = { ...structuredClone(part()), version: 5, hidden: ["feature-1", "sketch-2", "feature-11", "folder-bodies"] };
+  const read = readDesignDocument(v5);
+  assert.equal(read.version, 6);
+  assert.deepEqual(read.hidden, ["body:feature-1", "sketch-2", "body:feature-11", "folder-bodies"]);
+  assert.deepEqual([bodyHiddenIn(read, "body:feature-1"), bodyHiddenIn(read, "body:feature-11")], [true, true]);
+  // A version 5 list holding what version 5 refused is still refused, in version 6's words.
+  assert.throws(() => readDesignDocument({ ...v5, hidden: ["feature-99"] }), { message: "Design data hides feature-99, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder" });
+  // And version 5 never listed body ids.
+  assert.throws(() => readDesignDocument({ ...v5, hidden: ["body:feature-1"] }), { message: "Design data says version 5 but hides body:feature-1 by a body id, which version 6 brought" });
 });

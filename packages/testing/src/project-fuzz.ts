@@ -33,6 +33,7 @@ import {
   drawCircle,
   drawLine,
   madePoints,
+  migrateDesignV5,
   drawRectangle,
   editFeature,
   extrudeSketch,
@@ -577,7 +578,11 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   // Version 4 to 5 numbers the bodies as the file showed them, and version 5 is settled as an edit would settle it:
   // a body with no number gets the next, a gone item's number goes (35e).
   const v4 = upgraded.workspaces.design;
-  if (isObj(v4) && (v4.version === 4 || v4.version === 5)) upgraded.workspaces.design = numberBodies({ ...v4, version: 5 } as unknown as DesignDocument);
+  if (isObj(v4) && (v4.version === 4 || v4.version === 5 || v4.version === 6)) {
+    // Version 5 to 6 lists bodies by body id (35ec): the eyes' and each Move's.
+    const v5 = v4.version === 6 ? v4 : migrateDesignV5({ ...v4, version: 5 });
+    upgraded.workspaces.design = numberBodies(v5 as unknown as DesignDocument);
+  }
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;
 }

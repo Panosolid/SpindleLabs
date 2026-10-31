@@ -141,17 +141,40 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
   assert.throws(() => readDesignDocument(file({}, noTurn)), { message: "Design move feature-3: turnZ undefined is not a number" });
   assert.throws(() => readDesignDocument(file({}, { ...NO_MOVE, scale: 2 })), { message: 'Design move feature-3 has a number "scale" a move doesn\'t have' });
   assert.throws(() => readDesignDocument(file({ dependsOn: [] })), { message: "Design move feature-3 moves no body" });
-  assert.throws(() => readDesignDocument(file({ dependsOn: ["feature-1", "feature-1"] })), { message: "Design move feature-3 moves feature-1 twice" });
+  assert.throws(() => readDesignDocument(file({ dependsOn: ["feature-1", "feature-1"] })), { message: "Design move feature-3 moves body:feature-1 twice" });
   // A body deleted since reads (the rebuild fails the move naming it), but only under the counter, so no new body takes its id.
   assert.deepEqual(readDesignDocument(file({ dependsOn: ["feature-2"] })).timeline.features[1].dependsOn, ["feature-2"]);
   assert.throws(() => readDesignDocument(file({ dependsOn: ["feature-9"] })), { message: "Design data's nextId 4 is not above feature-9, so a new id could repeat it" });
-  assert.throws(() => readDesignDocument(file({ dependsOn: ["__proto__"] })), { message: "Design move feature-3 moves __proto__, which is not a body made before it in the timeline" });
+  assert.throws(() => readDesignDocument(file({ dependsOn: ["__proto__"] })), { message: "Design move feature-3 moves body:__proto__, which is not a body made before it in the timeline" });
   assert.throws(() => readDesignDocument(file({ dependsOn: [7] })), { message: "Design move feature-3 moves 7, which is not a body made before it in the timeline" });
-  assert.throws(() => readDesignDocument(file({ dependsOn: ["feature-3"] })), { message: "Design move feature-3 moves feature-3, which is not a body made before it in the timeline" });
+  assert.throws(() => readDesignDocument(file({ dependsOn: ["feature-3"] })), { message: "Design move feature-3 moves body:feature-3, which is not a body made before it in the timeline" });
   // A body after it: the same refusal.
   const later = file({});
   later.timeline.features.reverse();
-  assert.throws(() => readDesignDocument(later), { message: "Design move feature-3 moves feature-1, which is not a body made before it in the timeline" });
+  assert.throws(() => readDesignDocument(later), { message: "Design move feature-3 moves body:feature-1, which is not a body made before it in the timeline" });
+});
+
+test("hand-worked: version 6 lists a Move's bodies by body id, and the reader checks the list against dependsOn", () => {
+  // The version 3 file above, read: its Move of feature-1 gains bodies ["body:feature-1"] (version 6, 35ec), dependsOn kept.
+  const read = readDesignDocument(file({}));
+  assert.equal(read.version, 6);
+  assert.deepEqual(read.timeline.features[1].intent.parameters.bodies, ["body:feature-1"]);
+  assert.deepEqual(read.timeline.features[1].dependsOn, ["feature-1"]);
+  // Saved and opened again: the same.
+  assert.deepEqual(readDesignDocument(JSON.parse(JSON.stringify(read))), read);
+  const v6 = (params: Record<string, unknown>, move: Partial<Feature> = {}) => ({ ...file(move, { ...NO_MOVE, x: 5, ...params }), version: 6 });
+  assert.deepEqual(readDesignDocument(v6({ bodies: ["body:feature-1"] })).timeline.features[1].intent.parameters.bodies, ["body:feature-1"]);
+  // No list, an empty one, or not a list: no body.
+  for (const bodies of [undefined, [], "body:feature-1", { 0: "body:feature-1" }]) assert.throws(() => readDesignDocument(v6({ bodies })), { message: "Design move feature-3 moves no body" }, JSON.stringify(bodies));
+  // An item's id where a body id goes (version 5's form), a sketch's or a piece no bodies list numbers.
+  assert.throws(() => readDesignDocument(v6({ bodies: ["feature-1"] })), { message: "Design move feature-3 moves feature-1, which is not a body made before it in the timeline" });
+  assert.throws(() => readDesignDocument(v6({ bodies: ["body:feature-1/piece:1"] })), { message: "Design move feature-3 moves body:feature-1/piece:1, which is not a body made before it in the timeline" });
+  // dependsOn must be exactly the items that made the bodies, in order.
+  const MISMATCH = { message: "Design move feature-3 must depend on exactly the items that made the bodies it moves, in their order (feature-1)" };
+  assert.throws(() => readDesignDocument(v6({ bodies: ["body:feature-1"] }, { dependsOn: [] })), MISMATCH);
+  assert.throws(() => readDesignDocument(v6({ bodies: ["body:feature-1"] }, { dependsOn: ["feature-1", "feature-1"] })), MISMATCH);
+  // A version 5 Move never had a bodies list: one there is refused, not overwritten.
+  assert.throws(() => readDesignDocument({ ...file({}, { ...NO_MOVE, bodies: ["body:feature-1"] }), version: 5 }), { message: "Design data says version 5 but move feature-3 has a bodies list, which version 6 brought" });
 });
 
 test("Move and Rotate, two tools making one kind of item: names, words and which tool opens each, by hand", () => {

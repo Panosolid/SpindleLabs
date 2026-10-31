@@ -80,7 +80,8 @@ test("changedMove refuses bodies it can't move, each in words, and changes nothi
   refused(["body:feature-99"], "body:feature-99 is not a body in the design");
   // 35eb: bodies are named by body id; a bare feature id (as files list them) is refused, not read as one.
   refused(["feature-2"], "feature-2 is not a body id");
-  refused(["body:feature-2/piece:1"], "body:feature-2/piece:1 is not a body id");
+  // A piece (35ec) the design does not number is no body of it, though its id reads as one.
+  refused(["body:feature-2/piece:1"], "body:feature-2/piece:1 is not a body in the design");
   // Box 2 is made after Move 1: the kernel would be asked to move a body that isn't made yet.
   refused(["body:feature-1", "body:feature-4"], "Box 2 is made after Move 1 in the timeline, so Move 1 can't move it");
   assert.equal(madeAfter("Box 2", "Move 1"), "Box 2 is made after Move 1 in the timeline, so Move 1 can't move it.");

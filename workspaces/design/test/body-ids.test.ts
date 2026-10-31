@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { BodySpec, KernelCalls } from "@fission/core";
-import { bodyHidden, bodyIdOf, bodyItem, insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, insertPreset, isPiece, partDocument, type DesignDocument } from "../src/document.ts";
 import * as Move from "../src/move.ts";
 import * as Rebuild from "../src/rebuild.ts";
 import * as Edits from "../src/timeline-edits.ts";
@@ -57,8 +57,18 @@ test("hand-worked: a body id names its item and back; anything bodyIdOf never ma
   assert.equal(bodyIdOf("feature-3"), "body:feature-3");
   assert.equal(bodyItem("body:feature-3"), "feature-3");
   for (const id of ["feature-1", "sketch-2", "move-9", "feature-1000"]) assert.equal(bodyItem(bodyIdOf(id)), id, id);
-  // A bare item id (what a file lists), an empty item, a piece's id (35ec, not yet a body), a doubled prefix, another kind's id.
-  for (const bad of ["feature-3", "", "body:", "body:feature-3/piece:1", "body:body:feature-3", "Body:feature-3", " body:feature-3", "face:feature-3/top"]) assert.equal(bodyItem(bad), null, bad);
+  // A piece (35ec, rule 1): "body:<the feature that split it>/piece:<k>", k a counting number, names that feature.
+  assert.equal(bodyItem("body:feature-5/piece:1"), "feature-5");
+  assert.equal(bodyItem("body:feature-5/piece:12"), "feature-5");
+  assert.equal(isPiece("body:feature-5/piece:2"), true);
+  assert.equal(isPiece("body:feature-5"), false);
+  // A bare item id (what a version 5 file listed), an empty item, a doubled prefix, another kind's id; a piece numbered
+  // 0, with a leading zero, a sign, a fraction or past the safe whole numbers, with no number, or a piece of a piece.
+  const pieces = ["body:feature-3/piece:0", "body:feature-3/piece:01", "body:feature-3/piece:-1", "body:feature-3/piece:1.5", "body:feature-3/piece:99999999999999999", "body:feature-3/piece:", "body:feature-3/piece:1/piece:1", "body:feature-3/part:1"];
+  for (const bad of ["feature-3", "", "body:", "body:body:feature-3", "Body:feature-3", " body:feature-3", "face:feature-3/top", ...pieces]) {
+    assert.equal(bodyItem(bad), null, bad);
+    assert.equal(isPiece(bad), false, bad);
+  }
   // The checks that use it refuse in words, rather than looking up nothing.
   const d = threeBoxes();
   assert.throws(() => bodyHidden(d, "feature-1"), { message: '"feature-1" is not a body id' });
@@ -72,7 +82,8 @@ test("hand-worked: a Move's rebuild holds the moved box under the box's own body
   // so nothing is held under "body:feature-4", and it holds handle 1 (Box 1 as made) so the next rebuild finds it built.
   const { doc, id } = Move.insertMove(threeBoxes(), ["body:feature-1"], { ...Move.NO_MOVE, x: 10 });
   assert.equal(id, "feature-4");
-  assert.deepEqual(doc.timeline.features.at(-1)!.dependsOn, ["feature-1"], "the file lists the box's item id, as before 35eb");
+  assert.deepEqual(doc.timeline.features.at(-1)!.dependsOn, ["feature-1"], "it depends on the box's item, as before 35eb");
+  assert.deepEqual(doc.timeline.features.at(-1)!.intent.parameters.bodies, ["body:feature-1"], "the file lists the box's body id (version 6, 35ec)");
   assert.deepEqual(Move.movedBodies(doc.timeline.features.at(-1)!), ["body:feature-1"]);
   const { kernel } = fakeKernel();
   const build = await Rebuild.rebuildTimeline(doc, new Rebuild.BodyCache(kernel), kernel);
@@ -177,10 +188,10 @@ export const BODY_ID_PLANTS: Plant[] = [
   { name: "moved-under-move-id", file: "rebuild", find: "  for (const [id, b] of moved) bodies[id] = b;", replace: "  for (const [, b] of moved) bodies[bodyIdOf(f.id)] = b;", caught: "the bodies held" },
   // A Move moves only the first body it holds.
   { name: "first-body-only", file: "rebuild", find: "  for (const [id, b] of moved) bodies[id] = b;", replace: "  for (const [id, b] of moved.slice(0, 1)) bodies[id] = b;", caught: "differs from the model" },
-  // The new Move stores the picked body ids in the file instead of their items' ids: the rebuild finds nothing to move.
-  { name: "file-holds-body-ids", file: "move", find: "    dependsOn: items.map((f) => f.id),", replace: "    dependsOn: [...bodies],", caught: "differs from the model" },
+  // The new Move stores the picked bodies' item ids in the file as version 5 did, not their body ids: the rebuild finds nothing to move.
+  { name: "file-holds-item-ids", file: "move", find: "parameters: { ...v, bodies: [...bodies] }", replace: "parameters: { ...v, bodies: makersOf(bodies) }", caught: "differs from the model" },
   // The eye shuts the body after the one asked (the next box, by its item's place).
-  { name: "eye-on-next-body", file: "timeline-edits", find: "  const id = bodyItem(bodyId);\n", replace: '  const id = ((b) => b && (b === "feature-3" ? "feature-1" : `feature-${Number(b.slice(8)) + 1}`))(bodyItem(bodyId));\n', caught: "eye differs from the model" },
+  { name: "eye-on-next-body", file: "timeline-edits", find: "new Set([...(doc.hidden ?? []), bodyId])", replace: 'new Set([...(doc.hidden ?? []), ((b) => (b === "body:feature-3" ? "body:feature-1" : `body:feature-${Number(b.slice(13)) + 1}`))(bodyId)])', caught: "eye differs from the model" },
 ];
 
 /** The subject with `plant` made in a copy of its file whose imports point back at src/ and the packages (the copy is outside the repo). */

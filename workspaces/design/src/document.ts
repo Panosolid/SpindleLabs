@@ -143,7 +143,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 5;
+  version: 6;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -163,10 +163,11 @@ export interface DesignDocument {
   nextBody?: number;
   /**
    * What the browser's eyes hide (U0f3; Ben 2026-10-29, an eye on
-   * everything): solid features' bodies and sketches by their items' ids
-   * in timeline order, then the origin's axes ("origin-x"…) and the
-   * folders ("folder-bodies"…) whose eyes are shut, in EYE_ROWS' order;
-   * left out when nothing is hidden.
+   * everything): bodies by their body ids ("body:feature-3", version 6,
+   * step 35ec; version 5 listed their items' ids) and sketches by their
+   * items' ids, in timeline order (`eyeOrder`), then the origin's axes
+   * ("origin-x"…) and the folders ("folder-bodies"…) whose eyes are shut,
+   * in EYE_ROWS' order; left out when nothing is hidden.
    */
   hidden?: string[];
   /** The origin's planes shown by their eyes ("origin-xy"…, in ORIGIN_PLANES' order), hidden at first as in Fusion; left out when none shows. */
@@ -185,11 +186,27 @@ export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches
 /** Every id `hidden` may list that is not a timeline item's, in the order it lists them. */
 export const EYE_ROWS: readonly string[] = [...ORIGIN_AXES, ...Object.values(EYE_FOLDERS)];
 
-/** Whether body `bodyId` ("body:feature-3", 35eb) is hidden: its own eye shut (listed by its item's id), or the Bodies folder's. Bad input throws: an id `bodyIdOf` never makes. */
+/** Whether body `bodyId` ("body:feature-3", 35eb) is hidden: its own eye shut (listed by its body id, version 6), or the Bodies folder's. Bad input throws: an id `bodyIdOf` never makes. */
 export function bodyHidden(doc: Pick<DesignDocument, "hidden">, bodyId: string): boolean {
-  const item = bodyItem(bodyId);
-  if (item === null) throw new Error(`${JSON.stringify(bodyId)} is not a body id`);
-  return isHidden(doc, item) || isHidden(doc, EYE_FOLDERS.bodies);
+  if (bodyItem(bodyId) === null) throw new Error(`${JSON.stringify(bodyId)} is not a body id`);
+  return isHidden(doc, bodyId) || isHidden(doc, EYE_FOLDERS.bodies);
+}
+
+/**
+ * The ids `hidden` lists, in its order (version 6): for each timeline item
+ * in turn its own id (a sketch's eye), then the bodies it made by body id
+ * (its own, "body:feature-3", then its pieces in the order `bodies` numbers
+ * them, 35ec), then the origin's axes and the folders in EYE_ROWS' order.
+ * Ids `shut` holds that none of these is are left out.
+ */
+export function eyeOrder(doc: Pick<DesignDocument, "timeline" | "bodies">, shut: ReadonlySet<string>): string[] {
+  const pieces = new Map<string, string[]>();
+  for (const b of doc.bodies ?? []) {
+    const maker = bodyItem(b.id);
+    if (maker !== null && b.id !== bodyIdOf(maker)) pieces.set(maker, [...(pieces.get(maker) ?? []), b.id]);
+  }
+  const listed = doc.timeline.features.flatMap((f) => [f.id, bodyIdOf(f.id), ...(pieces.get(f.id) ?? [])]);
+  return [...listed, ...EYE_ROWS].filter((id) => shut.has(id));
 }
 /** Whether sketch `id` is hidden: its own eye shut (an extrude of it shuts it, as Fusion does), or the Sketches folder's. */
 export const sketchHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.sketches);
@@ -318,7 +335,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 5, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 6, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -424,15 +441,20 @@ export interface BodyRecord {
 export const bodyIdOf = (featureId: string) => `body:${featureId}`;
 
 /**
- * The item a body id names ("body:feature-3" → "feature-3"), the inverse
- * of `bodyIdOf`; null for anything `bodyIdOf` never makes (35eb). Where a
- * file lists bodies (the eyes, a Move's) it lists their items' ids, the
- * same thing while every item makes at most one body.
+ * The item that made a body ("body:feature-3" → "feature-3"), the inverse
+ * of `bodyIdOf`; for a piece a feature split off a body (rule 1, 35ec:
+ * "body:feature-5/piece:2", k a counting number written without leading
+ * zeros) the feature that split it, "feature-5"; null for anything else
+ * (35eb). Since version 6 a file lists bodies (the eyes, a Move's) by
+ * these ids.
  */
 export function bodyItem(bodyId: string): string | null {
-  const m = /^body:([^:/]+)$/.exec(bodyId);
-  return m === null ? null : m[1];
+  const m = /^body:([^:/]+)(?:\/piece:([1-9][0-9]*))?$/.exec(bodyId);
+  return m === null || (m[2] !== undefined && !Number.isSafeInteger(Number(m[2]))) ? null : m[1];
 }
+
+/** Whether `bodyId` is a piece's id ("body:feature-5/piece:2"), not the body an item made itself. */
+export const isPiece = (bodyId: string): boolean => bodyItem(bodyId) !== null && bodyId.includes("/");
 
 /**
  * The document with every body numbered (`bodies`, `nextBody`): a body
@@ -575,6 +597,33 @@ export function migrateDesignV2(d: Record<string, unknown>): Record<string, unkn
   const last = [...solids].at(-1);
   const features = timeline.features.map((f) => (solids.has(f) && f !== last && isRecord(f) ? { ...f, suppressed: true } : f));
   return { ...d, version: 3, timeline: { ...timeline, features } };
+}
+
+/**
+ * Version 5 listed bodies by their items' ids: the eyes' (`hidden`) and a
+ * Move's (its `dependsOn`). Version 6 (step 35ec) lists them by body id,
+ * since a feature that splits a body leaves pieces that are bodies of
+ * their own ("body:feature-5/piece:1") with no item of their own: each
+ * hidden item that is neither a sketch nor a Move becomes its body's id
+ * (`bodyIdOf`), and each Move gains `bodies`, its items' bodies in its
+ * order, keeping `dependsOn` (the items, which the timeline's graph
+ * follows). Anything else is kept as it was, for the version 6 checks.
+ */
+export function migrateDesignV5(d: Record<string, unknown>): Record<string, unknown> {
+  const timeline = d.timeline as Record<string, unknown> | undefined;
+  if (!isRecord(timeline) || !Array.isArray(timeline.features)) return { ...d, version: 6 };
+  const type = (f: unknown) => (isRecord(f) && isRecord(f.intent) ? f.intent.type : undefined);
+  const solids = new Set(timeline.features.flatMap((f) => (isRecord(f) && typeof f.id === "string" && type(f) !== "sketch" && type(f) !== "move" ? [f.id] : [])));
+  const features = timeline.features.map((f) => {
+    if (type(f) !== "move" || !isRecord(f) || !isRecord(f.intent) || !isRecord(f.intent.parameters) || !Array.isArray(f.dependsOn)) return f;
+    if (Object.hasOwn(f.intent.parameters, "bodies")) throw new Error(`Design data says version 5 but move ${shown(f.id)} has a bodies list, which version 6 brought`);
+    const bodies = f.dependsOn.map((id) => (typeof id === "string" ? bodyIdOf(id) : id));
+    return { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, bodies } } };
+  });
+  for (const id of Array.isArray(d.hidden) ? d.hidden : [])
+    if (typeof id === "string" && bodyItem(id) !== null) throw new Error(`Design data says version 5 but hides ${id} by a body id, which version 6 brought`);
+  const hidden = Array.isArray(d.hidden) ? { hidden: d.hidden.map((id) => (typeof id === "string" && solids.has(id) ? bodyIdOf(id) : id)) } : {};
+  return { ...d, ...hidden, version: 6, timeline: { ...timeline, features } };
 }
 
 /**
@@ -935,21 +984,40 @@ export function withRuledNames(doc: DesignDocument): DesignDocument {
  * item before it that makes a body (a Move moves bodies, never a sketch or
  * another Move).
  */
-function checkMove(f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
+function checkMove(d: Partial<DesignDocument>, f: Feature, byId: ReadonlyMap<string, { item: Feature; at: number }>): void {
   const at = `Design move ${f.id}`;
   const p = f.intent.parameters;
   for (const key of MOVE_PARAMS) if (!isFiniteNumber(p[key])) throw new Error(`${at}: ${key} ${shown(p[key])} is not a number`);
-  for (const key of Object.keys(p)) if (!(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
-  if (!Array.isArray(f.dependsOn) || f.dependsOn.length === 0) throw new Error(`${at} moves no body`);
+  for (const key of Object.keys(p)) if (key !== "bodies" && !(MOVE_PARAMS as readonly string[]).includes(key)) throw new Error(`${at} has a number ${JSON.stringify(key)} a move doesn't have`);
+  // Version 6: the bodies by body id, and `dependsOn` the items that made them, in the same order, each once (35ec).
+  const bodies: unknown = p.bodies;
+  if (!Array.isArray(bodies) || bodies.length === 0) throw new Error(`${at} moves no body`);
   const once = new Set<unknown>();
-  for (const id of f.dependsOn as unknown[]) {
-    const there = byId.get(id as string);
+  for (const id of bodies as unknown[]) {
+    const maker = typeof id === "string" ? bodyItem(id) : null;
+    const there = maker === null ? undefined : byId.get(maker);
     // A body deleted since is allowed, as an extrude's deleted sketch is: the rebuild fails the move naming it (the id's counter check is below).
-    const deleted = typeof id === "string" && there === undefined && ID_SHAPE.test(id);
-    if (!deleted && (typeof id !== "string" || there === undefined || there.at > byId.get(f.id)!.at || !makesBody(there.item))) throw new Error(`${at} moves ${shown(id)}, which is not a body made before it in the timeline`);
+    const deleted = maker !== null && there === undefined && ID_SHAPE.test(maker) && !isPiece(id as string);
+    if (!deleted && (there === undefined || there.at > byId.get(f.id)!.at || !isBodyOf(d, byId, id as string))) throw new Error(`${at} moves ${shown(id)}, which is not a body made before it in the timeline`);
     if (once.has(id)) throw new Error(`${at} moves ${id} twice`);
     once.add(id);
   }
+  const makers = [...new Set((bodies as string[]).map((b) => bodyItem(b)!))];
+  if (!Array.isArray(f.dependsOn) || f.dependsOn.length !== makers.length || makers.some((m, i) => f.dependsOn[i] !== m))
+    throw new Error(`${at} must depend on exactly the items that made the bodies it moves, in their order (${makers.join(", ")})`);
+}
+
+/**
+ * Whether `id` is a body of the design by its body id (version 6): an
+ * item's own ("body:feature-3", the item making a body), or a piece
+ * ("body:feature-5/piece:1") the data's bodies list numbers (35ec).
+ */
+function isBodyOf(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>, id: string): boolean {
+  const maker = bodyItem(id);
+  if (maker === null) return false;
+  const at = byId.get(maker);
+  if (!isPiece(id)) return at !== undefined && makesBody(at.item);
+  return at !== undefined && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id);
 }
 
 /**
@@ -995,10 +1063,12 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || (v3.version === 5 && !numbered);
-  const d = (old || v3.version === 4 ? { ...v3, version: 5 } : v3) as Partial<DesignDocument>;
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6) && !numbered);
+  const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
+  // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
+  const d = (v5.version === 5 ? migrateDesignV5(v5) : v5) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  if (d.version !== 5) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4 or 5)`);
+  if (d.version !== 6) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5 or 6)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1080,14 +1150,14 @@ export function readDesignDocument(data: unknown): DesignDocument {
       notTooMany(content, DESIGN_LIMITS.content, "Design data's sketches and kept shapes have at least", "points and curves together");
     }
   }
-  // What the eyes hide (U0f3): each a solid feature or a sketch in the timeline, an origin axis or a folder, once.
+  // What the eyes hide (U0f3): each a body of the design by its body id (version 6), a sketch in the timeline, an origin axis or a folder, once.
   if (Object.hasOwn(d, "hidden")) {
     const hidden: unknown = (d as { hidden?: unknown }).hidden;
     if (!Array.isArray(hidden) || hidden.length === 0) throw new Error("Design data's hidden list is not a list of ids (left out when everything shows)");
     const once = new Set<string>();
     for (const id of hidden) {
       const at = byId.get(id as string);
-      if (typeof id !== "string" || !((at && (makesBody(at.item) || isSketchItem(at.item))) || EYE_ROWS.includes(id))) throw new Error(`Design data hides ${shown(id)}, which is not a solid feature or sketch in the timeline, an origin axis or a folder`);
+      if (typeof id !== "string" || !((at && isSketchItem(at.item)) || EYE_ROWS.includes(id) || isBodyOf(d, byId, id))) throw new Error(`Design data hides ${shown(id)}, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder`);
       if (once.has(id)) throw new Error(`Design data hides ${id} twice`);
       once.add(id);
     }
@@ -1131,7 +1201,7 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const p of d.profiles) if (!profiles.has(p.id)) profiles.set(p.id, p);
   for (const f of d.timeline.features) if (makesBody(f)) shapeWith(f, (id) => profiles.get(id));
   // A Move's numbers and bodies (step 35e2).
-  for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(f, byId);
+  for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
   for (const f of d.timeline.features)
     for (const id of f.dependsOn as unknown[]) if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);

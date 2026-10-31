@@ -35,7 +35,7 @@ function content(n: number, take: () => number): { points: Sketch["points"]; cur
 function bigDesign({ pairs, content: per = 6, lone = 0, loneContent = 6, kept = [] }: Shape): DesignDocument {
   let next = 1;
   const take = () => next++;
-  const doc: DesignDocument = { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const doc: DesignDocument = { version: 6, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const extrudes: string[] = [];
   const sketch = (n: number) => {
     const id = `sketch-${take()}`;
