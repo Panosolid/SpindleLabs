@@ -130,16 +130,35 @@ export function sketchUnits(curves: number): number {
 export const UNITS_PER_TRIANGLE_LAYER = 0.12;
 
 /**
- * The units of slicing `stl` (binary STL files back to back, as slice_stl
- * takes them) at `layerHeight`: its triangles times its layers (its height
- * over the layer height). A file that doesn't read as STL is refused by the
- * kernel at once, so the part read so far is all that counts.
+ * Units of slicing per mm² of the part's footprint (its box seen from above)
+ * per layer, per "fill share" (0.25 + infill / 100: the walls, top and bottom
+ * skins and sparse lines all grow with the area to fill). A box is 12
+ * triangles however big, so the triangle count alone calls a 246 × 246 ×
+ * 245 mm box at 100 % infill cheap: it took 24.4 s against a 24.1 s limit
+ * and was stopped, 4.05 times the units' promise on one calibration and 8.7
+ * on a faster one (slicer hunt 2026-10-31, M8). Measured again on the
+ * shipped build at 2 walls, 0.2 mm layers and 100 % infill (calibration
+ * 1.69 ms a unit), in units per mm²-layer before the share: 100 × 100 × 100
+ * mm 6.1e-4 (5.2 s), 150 mm cube 3.7e-4 (10.6 s), 200 × 100 × 100 mm
+ * 6.7e-4 (11.4 s); the hunt's box needed 2.1e-4. At 15 % they were 6e-5 to
+ * 1e-4. 6e-4 times the full share 1.25 is 7.5e-4: above every one.
  */
-export function sliceUnits(stl: Uint8Array, layerHeight: number): number {
+export const UNITS_PER_AREA_LAYER = 6e-4;
+
+/**
+ * The units of slicing `stl` (binary STL files back to back, as slice_stl
+ * takes them) at `layerHeight` and `infill` per cent: the larger of its
+ * triangles times its layers (its height over the layer height) and its
+ * footprint times its layers (UNITS_PER_AREA_LAYER). A file that doesn't read
+ * as STL is refused by the kernel at once, so the part read so far is all
+ * that counts.
+ */
+export function sliceUnits(stl: Uint8Array, layerHeight: number, infill = 15): number {
   const data = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
   let triangles = 0;
   let low = Infinity;
   let high = -Infinity;
+  let [xLow, xHigh, yLow, yHigh] = [Infinity, -Infinity, Infinity, -Infinity];
   for (let at = 0; at + 84 <= stl.byteLength; ) {
     const count = data.getUint32(at + 80, true);
     if (at + 84 + 50 * count > stl.byteLength) break;
@@ -149,13 +168,23 @@ export function sliceUnits(stl: Uint8Array, layerHeight: number): number {
         const z = data.getFloat32(corners + 12 * c + 8, true);
         if (z < low) low = z;
         if (z > high) high = z;
+        const x = data.getFloat32(corners + 12 * c, true);
+        const y = data.getFloat32(corners + 12 * c + 4, true);
+        if (x < xLow) xLow = x;
+        if (x > xHigh) xHigh = x;
+        if (y < yLow) yLow = y;
+        if (y > yHigh) yHigh = y;
       }
     }
     triangles += count;
     at += 84 + 50 * count;
   }
   const layers = Math.ceil((high - low) / layerHeight);
-  return Number.isFinite(layers) && layers > 0 ? UNITS_PER_TRIANGLE_LAYER * triangles * layers : 0;
+  if (!(Number.isFinite(layers) && layers > 0)) return 0;
+  const share = 0.25 + (Number.isFinite(infill) ? Math.min(Math.max(infill, 0), 100) : 15) / 100;
+  const area = (xHigh - xLow) * (yHigh - yLow);
+  const fill = Number.isFinite(area) ? UNITS_PER_AREA_LAYER * area * layers * share : 0;
+  return Math.max(UNITS_PER_TRIANGLE_LAYER * triangles * layers, fill);
 }
 
 /** A built body's size, as the limits read it: its faces (for booleans) and the units of meshing it again (for its view, STL and STEP). */
@@ -274,7 +303,7 @@ function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], s
       return sketchUnits((a[0] as unknown[]).length + (a[1] as unknown[]).length + (a[2] as unknown[]).length);
     case "slice_stl":
     case "print_file_stl":
-      return sliceUnits(a[0] as Uint8Array, a[1] as number);
+      return sliceUnits(a[0] as Uint8Array, a[1] as number, a[3] as number);
     default:
       return 0;
   }

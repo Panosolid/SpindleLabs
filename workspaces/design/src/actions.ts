@@ -116,6 +116,15 @@ export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> =
   return `Bodies ${list} are hidden, so they are not in the STL: show them with their eyes in the browser to include them.`;
 }
 
+/**
+ * What the whole design's STL says when it holds more than one body: they are separate shells in one file, and two that
+ * touch or overlap make a file that some slicers (our own too) refuse (slicer hunt 2026-10-31, L12). Empty for one body.
+ */
+export function manyBodiesStlNote(count: number): string {
+  if (count < 2) return "";
+  return `The ${count} bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.`;
+}
+
 const STL_HEADER = 80;
 const STL_TRIANGLE = 50;
 
@@ -212,7 +221,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const numbers = bodyNumbers(doc);
         const place = (f: Feature) => `Body ${numbers.get(bodyIdOf(f.id))}`;
         const warnings = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : []));
-        const message = [`Exported ${file}.`, ...warnings].join(" "); // the person sees that it happened, and what the file is called
+        const message = [`Exported ${file}.`, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
         return { message, bad: warned.length > 0 };
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };

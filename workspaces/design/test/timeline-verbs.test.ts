@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ActionRegistry, emptyProject, RepresentationRegistry, type AnalysisOverlay, type KernelCalls, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
-import { COPY_SVG, DOWNLOAD_STL, joinStl, registerDesignActions, representationsOf, shownBodyRefs, STL_OVERLAY, targetsOf, warnedMarks, type DesignRun } from "../src/actions.ts";
+import { COPY_SVG, DOWNLOAD_STL, joinStl, manyBodiesStlNote, registerDesignActions, representationsOf, shownBodyRefs, STL_OVERLAY, targetsOf, warnedMarks, type DesignRun } from "../src/actions.ts";
 import { rowReference } from "../src/browser.ts";
 import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
@@ -185,7 +185,7 @@ test("hand-worked: an earlier body downloads alone, as its own shape (Body 1 is 
 test("hand-worked: two bodies picked slot first come out in build order, joined into one file", async () => {
   // The box answers 1 triangle of 30s, the slot's extrude 2 of 40, 41.
   const d = downloading((name) => ({ bytes: name === "box" ? stl(name, 1, 30) : stl(name, 2, 40), rounding: 0, warning: null }));
-  assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "Exported spindlelabs-2-bodies.stl.", bad: false });
+  assert.deepEqual(await d.run([body("feature-17"), body("feature-1")]), { message: "Exported spindlelabs-2-bodies.stl. The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.", bad: false });
   assert.deepEqual(d.calls.map((c) => c[2]), ["box", "slot"]);
   assert.equal(d.saved.length, 1);
   assert.equal(d.saved[0].name, "spindlelabs-2-bodies.stl");
@@ -211,7 +211,7 @@ test("a warning on one of two bodies names it by its row, marks it alone, and th
   const warning = "single-precision numbers: this part's corners move by up to 1.250e-2 mm";
   const d = downloading((name) => ({ bytes: stl(name, 1, 1), rounding: name === "extrude" ? 0.0125 : 0, warning: name === "extrude" ? warning : null }), twoShown);
   // Picked Extrude 1 first; the file is still in build order, and the message names its row.
-  assert.deepEqual(await d.run([body("feature-11"), body("feature-1")]), { message: `Exported spindlelabs-2-bodies.stl. Body 2: ${warning}`, bad: true });
+  assert.deepEqual(await d.run([body("feature-11"), body("feature-1")]), { message: `Exported spindlelabs-2-bodies.stl. Body 2: ${warning} The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.`, bad: true });
   assert.equal(d.saved.length, 1, "the file is still saved: the warning says how far it is off");
   assert.deepEqual(d.saved[0].bytes, [...joinStl([stl("box", 1, 1), stl("extrude", 1, 1)], "2 bodies")]);
   // Only Extrude 1's six faces, 6 to 11, are marked.
@@ -270,4 +270,10 @@ test("Copy as SVG of a sketch goes through the registry to the kernel; an open o
   assert.equal(done.message, "Copied as SVG: Sketch 1, 40 × 30 mm.");
   assert.match(copied[0], /width="40mm" height="30mm" viewBox="0 -30 40 30"/);
   assert.match(copied[0], /<title>Sketch 1<\/title>/);
+});
+
+test("the STL of several bodies says they are separate shells that may be refused where they touch; one body says nothing", () => {
+  assert.equal(manyBodiesStlNote(1), "");
+  assert.equal(manyBodiesStlNote(0), "");
+  assert.equal(manyBodiesStlNote(3), "The 3 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.");
 });
