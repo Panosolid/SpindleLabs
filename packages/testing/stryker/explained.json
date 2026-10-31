@@ -966,6 +966,139 @@
     "why": "A hidden entry that is not a string is refused anyway, with the same message: byId's keys are the timeline's ids, all strings, and Map.get never matches a string key with a number, object or null, so !at is true for it."
   },
   {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "migrateDesignV1 (issue #220): a version 1 file with no profiles or features list gets a text item in its place, which has no id, so idNumber gives null for it and the counter is unchanged."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "checkProjections (issue #220): a sketch with no pins gets a text item in its list, whose .point is undefined; every point id checked against the pinned set is text, so has() is still false."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "withShortNames (issue #220): a from that is not a list never gets here, readDesignDocument refuses it first (checkProvenance), so the stand-in list is never used."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "withShortNames (issue #220): an entry renaming nothing gives a text item instead of nothing; split(r.old) with r.old undefined splits nowhere, so the summary is unchanged, and the copies of from are made the same way either way: the item read back is equal."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n !== null",
+    "replacement": "true",
+    "why": "The counter checks after migrating (issue #220, kept ids and every id): null >= nextId is 0 >= nextId, false for every nextId already checked to be 1 or more."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n !== null",
+    "replacement": "true",
+    "why": "The counter checks after migrating (issue #220, kept ids and every id): null >= nextId is 0 >= nextId, false for every nextId already checked to be 1 or more."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > byId.get(f.id)!.at",
+    "replacement": "there.at >= byId.get(f.id)!.at",
+    "why": "checkPins (issue #220): a pin naming the sketch's own id is at the same place; the sketch is not a solid, so !makesBody refuses it with the same message."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > byId.get(f.id)!.at",
+    "replacement": "there.at >= byId.get(f.id)!.at",
+    "why": "checkProjections (issue #220): a projection naming the sketch's own id is at the same place; the sketch is not a solid, so !makesBody refuses it with the same message."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "there.at > byId.get(f.id)!.at",
+    "replacement": "there.at >= byId.get(f.id)!.at",
+    "why": "checkMove (issue #220): a Move naming its own id is at the same place; a Move is not a body, so !makesBody refuses it with the same message."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "chars.length > NAME_LIMIT",
+    "replacement": "true",
+    "why": "withRuledNames (issue #220): a name of NAME_LIMIT characters or fewer cut to its first NAME_LIMIT is the whole name, already trimmed, so the same name either way."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "EqualityOperator",
+    "original": "chars.length > NAME_LIMIT",
+    "replacement": "chars.length >= NAME_LIMIT",
+    "why": "withRuledNames (issue #220): a name of exactly NAME_LIMIT characters cut to its first NAME_LIMIT is the whole name, already trimmed, so the same name."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "MethodExpression",
+    "original": "cleaned.filter((n) => n !== \"\")",
+    "replacement": "cleaned",
+    "why": "withRuledNames (issue #220): an empty name's key in the used set changes nothing: every name tried against it has a \" (n)\" suffix, and empty names get theirs from freshName against kept, not used."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n !== \"\"",
+    "replacement": "true",
+    "why": "withRuledNames (issue #220): the same as keeping the filter out: an empty key in the used set is never looked up (every name tried has a suffix)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "StringLiteral",
+    "original": "\"\"",
+    "replacement": "\"Stryker was here!\"",
+    "why": "withRuledNames (issue #220): the filter then keeps every name, empty ones too; an empty key in the used set is never looked up (every name tried has a suffix)."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "kind === null",
+    "replacement": "false",
+    "why": "withRuledNames (issue #220): every item read has a kind or is a sketch, Move or extrude of a sketch: a preset's type or profile was checked (shapeWith) before names, so the \"Item\" branch is never reached from readDesignDocument, its only caller."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "StringLiteral",
+    "original": "\"Item\"",
+    "replacement": "\"\"",
+    "why": "withRuledNames (issue #220): the \"Item\" branch is never reached from readDesignDocument, its only caller, since every item read has a kind or is a sketch, Move or extrude of a sketch."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof id !== \"string\"",
+    "replacement": "false",
+    "why": "The hidden list (issue #220): an entry that is not text is in no Map or list of ids (byId and EYE_ROWS hold text), so it is refused with the same message."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "typeof id !== \"string\"",
+    "replacement": "false",
+    "why": "The shown planes (issue #220): an entry that is not text is not in ORIGIN_PLANES (all text), so it is refused with the same message."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v3.version === 5",
+    "replacement": "true",
+    "why": "readDesignDocument (issue #220): unnumbered then also holds for data of another version leaving the numbers out, but that data is refused on the next line (d.version !== 5) before unnumbered is read."
+  },
+  {
     "file": "packages/storage/src/autosave.ts",
     "mutator": "OptionalChaining",
     "original": "journal?.getItem",

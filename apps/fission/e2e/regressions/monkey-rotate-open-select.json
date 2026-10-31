@@ -1,0 +1,41 @@
+{
+  "seed": 202610300,
+  "note": "Issue #221: with Move or Rotate open, a body row's click adds that body to the ones moved (35e2b), so the select-bodies check must not run then. The second half is the nightly's case: at phone width the open panel waits in the shut sheet.",
+  "actions": [
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 0
+    },
+    {
+      "do": "open",
+      "edit": "add-solid",
+      "at": 1
+    },
+    {
+      "do": "click",
+      "sel": "#rotate"
+    },
+    {
+      "do": "select-bodies"
+    },
+    {
+      "do": "key",
+      "key": "Escape"
+    },
+    {
+      "do": "resize",
+      "size": [
+        375,
+        740
+      ]
+    },
+    {
+      "do": "click",
+      "sel": "#rotate"
+    },
+    {
+      "do": "select-bodies"
+    }
+  ]
+}
