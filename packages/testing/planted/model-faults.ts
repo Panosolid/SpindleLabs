@@ -257,8 +257,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
       },
     ],
     run: ["timeline"],
-    caught: "the rebuild differs from a rebuild from scratch",
-    why: "the reused body is wrong, which the comparison with a rebuild from scratch sees before the build count is checked",
+    caught: "rebuilding twice differs",
+    why: "the reused body is wrong; since 35eb the plant also puts the old item's bodies back under their body ids, so the second rebuild of the same document differs from the first before the comparison with a rebuild from scratch is reached",
   },
   // 26e: the timeline's rules on a face sketch, and the greying unified.
   "suppress-fails-dependents": {
