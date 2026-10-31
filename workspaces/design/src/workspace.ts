@@ -409,8 +409,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
       };
       if (file.format === "p1s") {
-        const print = await printFileOf(kernel, doc!, features, choices, file.plate);
-        return save(print, printFileName(choices, file.plate), P1S_KIND, print.package);
+        const print = await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle);
+        return save(print, printFileName(choices, file.plate, file.nozzle), P1S_KIND, print.package);
       }
       const print = await sliceBodies(kernel, doc!, features, choices);
       return save(print, gcodeName(choices), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
