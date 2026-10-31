@@ -7,10 +7,12 @@
 // in the timeline on, each body it moves is where it put it (rebuild.ts),
 // so editing, suppressing, deleting or reordering it works like any item.
 // `insertMove` and `changedMove` (its numbers, and since 35e2i its bodies) are the document changes, pure functions;
+// since 35eb both name bodies by body id ("body:feature-1"), as the rebuild
+// holds them; the file still lists each body's item id (`movedBodies`).
 // `moveMotions` what the kernel is asked to do.
 
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
-import { freshName, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyIdOf, bodyItem, freshName, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
 /** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm). */
 export type MoveValues = Record<MoveParam, number>;
@@ -82,21 +84,33 @@ function checked(values: MoveValues): MoveValues {
   return Object.fromEntries(MOVE_PARAMS.map((k) => [k, values[k]])) as MoveValues;
 }
 
+/** The bodies Move `move` moves, by body id (35eb): the file lists each one's item id (`dependsOn`), in its order. */
+export const movedBodies = (move: Feature): string[] => move.dependsOn.map(bodyIdOf);
+
+/** Each picked body's item id, in order: refused for anything that is no body id (a bare feature id included), and for a body picked twice. */
+function itemsOf(bodies: readonly string[]): string[] {
+  return bodies.map((b, i) => {
+    const item = bodyItem(b);
+    if (item === null) throw new Error(`${shown(b)} is not a body id`);
+    if (bodies.indexOf(b) !== i) throw new Error(`${shown(b)} is picked twice`);
+    return item;
+  });
+}
+
 /** Each body's item for a Move: refused unless every one makes a body and is in range before the marker, each once. */
 function bodiesFor(doc: DesignDocument, bodies: readonly string[]): Feature[] {
   if (bodies.length === 0) throw new Error("pick at least one body to move");
   const end = insertAt(doc);
-  return bodies.map((id, i) => {
-    if (bodies.indexOf(id) !== i) throw new Error(`${shown(id)} is picked twice`);
+  return itemsOf(bodies).map((id, i) => {
     const at = doc.timeline.features.findIndex((f) => f.id === id);
     const f = doc.timeline.features[at];
-    if (f === undefined || !makesBody(f)) throw new Error(`${shown(id)} is not a body in the design`);
+    if (f === undefined || !makesBody(f)) throw new Error(`${shown(bodies[i])} is not a body in the design`);
     if (at >= end) throw new Error(`${f.provenance.self.label} comes after the rollback marker, so a move put in at the marker can't move it`);
     return f;
   });
 }
 
-/** The design with a new Move of `bodies` by `values` put in at the marker ("Move 1", or "Rotate 1" made by Rotate, its id from the counter), and its id. */
+/** The design with a new Move of `bodies` (body ids, 35eb) by `values` put in at the marker ("Move 1", or "Rotate 1" made by Rotate, its id from the counter), and its id. */
 export function insertMove(doc: DesignDocument, bodies: readonly string[], values: MoveValues, kind: MoveKind = "move"): { doc: DesignDocument; id: string } {
   const items = bodiesFor(doc, bodies);
   const v = checked(values);
@@ -129,13 +143,12 @@ export const madeAfter = (body: string, move: string): string => `${body} is mad
 function bodiesBefore(doc: DesignDocument, move: Feature, bodies: readonly string[]): { id: string; label: string }[] {
   if (bodies.length === 0) throw new Error(`pick at least one body for ${move.provenance.self.label} to move`);
   const end = doc.timeline.features.indexOf(move);
-  return bodies.map((id, i) => {
-    if (bodies.indexOf(id) !== i) throw new Error(`${shown(id)} is picked twice`);
+  return itemsOf(bodies).map((id, i) => {
     const at = doc.timeline.features.findIndex((f) => f.id === id);
     const f = doc.timeline.features[at];
     const held = move.provenance.from.find((r) => r.id === id);
     if (f === undefined && move.dependsOn.includes(id) && held) return { id, label: held.label };
-    if (f === undefined || !makesBody(f)) throw new Error(`${shown(id)} is not a body in the design`);
+    if (f === undefined || !makesBody(f)) throw new Error(`${shown(bodies[i])} is not a body in the design`);
     if (at > end) throw new Error(madeAfter(f.provenance.self.label, move.provenance.self.label).slice(0, -1));
     return { id, label: f.provenance.self.label };
   });
@@ -143,7 +156,7 @@ function bodiesBefore(doc: DesignDocument, move: Feature, bodies: readonly strin
 
 /**
  * The design with Move `id` at these numbers instead, and moving `bodies`
- * when given (35e2i; refused as `bodiesBefore` says): the same item, its
+ * (body ids, 35eb) when given (35e2i; refused as `bodiesBefore` says): the same item, its
  * place and flags kept; its bodies kept when not given. The design itself
  * when nothing changes (the same bodies in another order change nothing).
  */

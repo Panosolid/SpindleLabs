@@ -69,7 +69,7 @@ test("hand-worked: a long repeated name cut for its number loses the space the c
 });
 
 test("hand-worked: a Move with an empty name gets the next Move name (catches isMoveItem made false and \"Move\" made empty)", () => {
-  const moved = insertMove(partDocument("box", 40, 30, 20), ["feature-1"], { ...NO_MOVE, x: 10 }).doc;
+  const moved = insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc;
   // The first Move in the file, no other item named "Move 1": counted from 0 before it, so "Move 1".
   assert.deepEqual(names(reread(named(moved, ["Box 1", ""]))), ["Box 1", "Move 1"]);
 });
@@ -95,7 +95,7 @@ test("a renamed item's name is followed in from lists only where they name a Des
 
 test("a Move's body that is a list, not an id, is refused by the Move's own check (catches the deleted body's typeof check made always true)", () => {
   // ["feature-9"] reads as "feature-9" when turned to text, the shape of a deleted body's id; it must still be refused.
-  const d = clone(insertMove(partDocument("box", 40, 30, 20), ["feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
+  const d = clone(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
   d.timeline.features[1].dependsOn = [["feature-1"]];
   refused(d, "Design move feature-2 moves a list, which is not a body made before it in the timeline");
 });
@@ -116,7 +116,7 @@ test("a version 5 file's bodies are checked, not settled: a number given twice i
 });
 
 test("the eyes can't hide a Move (catches the solid-or-sketch check made always true)", () => {
-  const d = clone(insertMove(partDocument("box", 40, 30, 20), ["feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
+  const d = clone(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc) as Record<string, any>;
   d.hidden = ["feature-2"];
   refused(d, "Design data hides feature-2, which is not a solid feature or sketch in the timeline, an origin axis or a folder");
   d.hidden = ["feature-1"];

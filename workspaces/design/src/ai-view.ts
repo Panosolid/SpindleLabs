@@ -10,10 +10,9 @@
 // each plane and face.
 
 import type { AIView, Command, CommandSpec } from "@fission/core";
-import { bodyFeatures } from "./browser.ts";
 import { builtFrom, DESIGN_COMMANDS, DRAW_OPS, EXTRUDE_OP, extrudable, RENAME_OP } from "./commands.ts";
 import { inSketch } from "./face-edges.ts";
-import { bodyHidden, insertAt, isMoveItem, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, insertAt, isMoveItem, isSketchItem, keptOf, partFeature, partOf, SKETCH_PLANES, type DesignDocument } from "./document.ts";
 import { sketchSpot } from "./face-pick.ts";
 import type { Scene } from "./scene.ts";
 import { addSketch } from "./sketch.ts";
@@ -172,7 +171,8 @@ const IN_PLACE = "set_part changes the part in place, unless extrude_sketch come
 function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: PanelSizes, adds: string | null): string[] {
   const { features, marker } = doc.timeline;
   const { items } = timelineBarItems(doc, failed);
-  const bodies = bodyFeatures(doc);
+  // Each body by its browser row's number (35ea), never its place among the bodies: a deleted body's number is not given again (35eb check).
+  const numbers = bodyNumbers(doc);
   const part = partFeature(doc);
   const lines = features.map((f, i) => {
     const item = items[i];
@@ -185,8 +185,8 @@ function timelineNotes(doc: DesignDocument, failed: ReadonlySet<string>, sizes: 
     if (isMoveItem(f)) return `${label} A move: builds no body; ${item.failed ? "failed, so it moves nothing" : "the bodies it moves are where it puts them from here on"}.`;
     if (item.failed) return `${label} Failed: builds no body${failed.has(f.id) ? "" : " (its sketch is gone)"}.`;
     const kept = keptOf(doc, f) ? " Its sketch is lost (deleted, or no longer a closed outline), so it builds from the shape it kept." : "";
-    const hidden = bodyHidden(doc, f.id) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";
-    return `${label} Builds Body ${bodies.indexOf(f) + 1}.${kept}${hidden}${f === part && adds === null ? " This is the part set_part changes." : ""}`;
+    const hidden = bodyHidden(doc, bodyIdOf(f.id)) ? " Hidden by its eye in the browser: not drawn, nor in the whole design's STL." : "";
+    return `${label} Builds Body ${numbers.get(bodyIdOf(f.id))}.${kept}${hidden}${f === part && adds === null ? " This is the part set_part changes." : ""}`;
   });
   const shown = lines.length > AI_TIMELINE_ITEMS ? [`(${lines.length - AI_TIMELINE_ITEMS} earlier item${lines.length - AI_TIMELINE_ITEMS === 1 ? "" : "s"} left out)`, ...lines.slice(-AI_TIMELINE_ITEMS)] : lines;
   const where =

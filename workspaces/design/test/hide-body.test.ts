@@ -37,22 +37,22 @@ test("hand-worked: hiding and showing, the list in timeline order, left out once
   const d = part();
   assert.equal(Object.hasOwn(d, "hidden"), false, "a new design hides nothing");
   // Extrude 1 hidden first, then the box: listed in the timeline's order, the box before it.
-  const one = hideBody(d, "feature-11", true);
+  const one = hideBody(d, "body:feature-11", true);
   assert.deepEqual(one.hidden, ["feature-11"]);
-  const two = hideBody(one, "feature-1", true);
+  const two = hideBody(one, "body:feature-1", true);
   assert.deepEqual(two.hidden, ["feature-1", "feature-11"]);
   assert.deepEqual([isHidden(two, "feature-1"), isHidden(two, "feature-11"), isHidden(two, "sketch-2")], [true, true, false]);
   // Shown again one by one; the list goes when nothing is hidden, so the saved file is as before.
-  const back = hideBody(two, "feature-11", false);
+  const back = hideBody(two, "body:feature-11", false);
   assert.deepEqual(back.hidden, ["feature-1"]);
-  const none = hideBody(back, "feature-1", false);
+  const none = hideBody(back, "body:feature-1", false);
   assert.equal(Object.hasOwn(none, "hidden"), false);
   assert.equal(projectToJson({ ...emptyProject("Eyes"), workspaces: { design: none } }), projectToJson({ ...emptyProject("Eyes"), workspaces: { design: d } }));
   // Nothing else changes: the timeline, sketches and counter are the same objects' values.
   assert.deepEqual({ ...two, hidden: undefined }, { ...d, hidden: undefined });
   // Hiding what is hidden, or showing what shows, gives the same document back (no undo step).
-  assert.equal(hideBody(two, "feature-1", true), two);
-  assert.equal(hideBody(d, "feature-1", false), d);
+  assert.equal(hideBody(two, "body:feature-1", true), two);
+  assert.equal(hideBody(d, "body:feature-1", false), d);
   // Every result reads back as it is.
   for (const doc of [one, two, back, none]) assert.deepEqual(reopen(doc), doc);
   // The undo steps, by the Body row's name.
@@ -62,9 +62,9 @@ test("hand-worked: hiding and showing, the list in timeline order, left out once
 
 test("a sketch has no body to hide, and an id not in the timeline is refused", () => {
   const d = part();
-  assert.throws(() => hideBody(d, "sketch-2", true), { message: "Sketch 1 is a sketch, which has no body to hide" });
-  assert.throws(() => hideBody(d, "sketch-2", false), { message: "Sketch 1 is a sketch, which has no body to hide" });
-  assert.throws(() => hideBody(d, "feature-99", true), { message: 'there is no item feature-99 in the timeline' });
+  assert.throws(() => hideBody(d, "body:sketch-2", true), { message: "Sketch 1 is a sketch, which has no body to hide" });
+  assert.throws(() => hideBody(d, "body:sketch-2", false), { message: "Sketch 1 is a sketch, which has no body to hide" });
+  assert.throws(() => hideBody(d, "body:feature-99", true), { message: 'there is no item feature-99 in the timeline' });
 });
 
 test("the reader takes a hidden list in any order, and refuses each way of breaking it, saying how", () => {
@@ -73,8 +73,8 @@ test("the reader takes a hidden list in any order, and refuses each way of break
   const swapped = { ...d, hidden: ["feature-11", "feature-1"] };
   assert.deepEqual(readDesignDocument(structuredClone(swapped)).hidden, ["feature-11", "feature-1"]);
   // A suppressed body, or one after the marker, may stay hidden.
-  assert.deepEqual(reopen(hideBody(suppressItem(d, "feature-11", true), "feature-11", true)).hidden, ["feature-11"]);
-  assert.deepEqual(reopen(hideBody(moveMarker(d, "feature-1"), "feature-11", true)).hidden, ["feature-11"]);
+  assert.deepEqual(reopen(hideBody(suppressItem(d, "feature-11", true), "body:feature-11", true)).hidden, ["feature-11"]);
+  assert.deepEqual(reopen(hideBody(moveMarker(d, "feature-1"), "body:feature-11", true)).hidden, ["feature-11"]);
   const refused = (hidden: unknown) => () => readDesignDocument({ ...structuredClone(d), hidden });
   const NOT_LIST = { message: "Design data's hidden list is not a list of ids (left out when everything shows)" };
   assert.throws(refused([]), NOT_LIST, "an empty list is left out instead");
@@ -89,17 +89,17 @@ test("the reader takes a hidden list in any order, and refuses each way of break
 });
 
 test("deleting a hidden item takes it out of the list, and the list goes with its last id", () => {
-  const d = hideBody(hideBody(part(), "feature-1", true), "feature-11", true);
+  const d = hideBody(hideBody(part(), "body:feature-1", true), "body:feature-11", true);
   const noBox = deleteItem(d, "feature-1");
   assert.deepEqual(noBox.hidden, ["feature-11"]);
   const noExtrude = deleteItem(noBox, "feature-11");
   assert.equal(Object.hasOwn(noExtrude, "hidden"), false);
   // Deleting the sketch an extrude is built from keeps the extrude (the rebuild keeps its shape, 24d2), hidden still.
-  const noSketch = deleteItem(hideBody(part(), "feature-11", true), "sketch-2");
+  const noSketch = deleteItem(hideBody(part(), "body:feature-11", true), "sketch-2");
   assert.deepEqual(noSketch.timeline.features.map((f) => f.id), ["feature-1", "feature-11"]);
   assert.deepEqual(noSketch.hidden, ["feature-11"]);
   // A reorder keeps the list as it is; any order reads.
-  const reordered = reorderItem(hideBody(part(), "feature-1", true), "feature-1", 2);
+  const reordered = reorderItem(hideBody(part(), "body:feature-1", true), "feature-1", 2);
   assert.ok("doc" in reordered, "the box may go last");
   const moved = reordered.doc;
   assert.deepEqual(moved.timeline.features.map((f) => f.id), ["sketch-2", "feature-11", "feature-1"]);
@@ -111,7 +111,7 @@ test("deleting a hidden item takes it out of the list, and the list goes with it
 const icons = (nodes: BrowserNode[]): unknown[] => nodes.map((n) => (n.children ? [n.label, n.icon, icons(n.children)] : [n.label, n.icon]));
 
 test("hand-listed: every row's icon, and the eye on each Body, sketch and origin row and their folders", () => {
-  const d = hideBody(part(), "feature-11", true);
+  const d = hideBody(part(), "body:feature-11", true);
   const tree = browserTree(d);
   assert.deepEqual(icons(tree), [
     ["Timeline", "folder", [["Box 1", "box"], ["Sketch 1", "sketch"], ["Extrude 1", "extrude"]]],
@@ -147,21 +147,21 @@ test("hand-listed: every row's icon, and the eye on each Body, sketch and origin
 
 test("a hidden body is not selected from its rows, offered a verb, or in the whole design's STL", () => {
   const d = part();
-  const hid = hideBody(d, "feature-11", true);
+  const hid = hideBody(d, "body:feature-11", true);
   // Shown: Body 2's row and Extrude 1's Timeline row select it.
-  assert.deepEqual(rowReference("body-2", d), bodyReference("feature-11"));
-  assert.deepEqual(rowReference("feature-11", d), bodyReference("feature-11"));
+  assert.deepEqual(rowReference("body-2", d), bodyReference("body:feature-11"));
+  assert.deepEqual(rowReference("feature-11", d), bodyReference("body:feature-11"));
   // Hidden: neither does; Body 1's still does.
   assert.equal(rowReference("body-2", hid), null);
   assert.equal(rowReference("feature-11", hid), null);
-  assert.deepEqual(rowReference("body-1", hid), bodyReference("feature-1"));
+  assert.deepEqual(rowReference("body-1", hid), bodyReference("body:feature-1"));
   // Selected all the same (by the AI, another workspace): no verb, as for a body not built.
-  assert.equal(shownBodyFeature(bodyReference("feature-11"), hid), null);
-  assert.equal(shownBodyFeature(bodyReference("feature-1"), hid)!.id, "feature-1");
+  assert.equal(shownBodyFeature(bodyReference("body:feature-11"), hid), null);
+  assert.equal(shownBodyFeature(bodyReference("body:feature-1"), hid)!.id, "feature-1");
   // The whole design's STL: every body shown, in build order.
   assert.deepEqual(shownBodyRefs(d).map((b) => b.id), ["body:feature-1", "body:feature-11"]);
   assert.deepEqual(shownBodyRefs(hid).map((b) => b.id), ["body:feature-1"]);
-  const both = hideBody(hid, "feature-1", true);
+  const both = hideBody(hid, "body:feature-1", true);
   assert.deepEqual(shownBodyRefs(both), []);
   // Why it is empty: every body hidden says so and how to show one; nothing built says that instead.
   assert.equal(noBodyWords(both), ALL_HIDDEN_STL);
@@ -192,7 +192,7 @@ function quickKernel() {
 }
 
 test("a hidden body is still built, but not drawn; the one after it keeps its Body number", async () => {
-  const d = hideBody(part(), "feature-1", true);
+  const d = hideBody(part(), "body:feature-1", true);
   const { kernel, viewed } = quickKernel();
   const cache = new BodyCache(kernel);
   const build = await rebuildTimeline(d, cache, kernel);
@@ -203,6 +203,6 @@ test("a hidden body is still built, but not drawn; the one after it keeps its Bo
   assert.deepEqual(shown.map((b) => [b.feature, b.place]), [["feature-11", 2]]);
   assert.equal(viewed.length, 1);
   // Shown again: both, Body 1 and Body 2.
-  const again = await shownBodies(hideBody(d, "feature-1", false), build, cache);
+  const again = await shownBodies(hideBody(d, "body:feature-1", false), build, cache);
   assert.deepEqual(again.map((b) => [b.feature, b.place]), [["feature-1", 1], ["feature-11", 2]]);
 });

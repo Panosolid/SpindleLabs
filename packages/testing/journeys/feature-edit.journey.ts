@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHistory, type KernelCalls } from "@fission/core";
 import {
+  builtBody,
   addSketch,
   BodyCache,
   deleteCurve,
@@ -56,11 +57,13 @@ function rebuilder() {
   return {
     async rebuild(doc: DesignDocument): Promise<{ volumes: Record<string, number | string>; builds: number }> {
       const from = built;
-      const { order, results } = await rebuildTimeline(doc, cache, counted);
+      const build = await rebuildTimeline(doc, cache, counted);
+      const { order, results } = build;
       const volumes: Record<string, number | string> = {};
       for (const id of order) {
         const r = results[id];
-        volumes[id] = r.status === "built" && r.body !== undefined ? (await cache.view(r.body)).volume : r.status;
+        const b = builtBody(build, id);
+        volumes[id] = r.status === "built" && b !== undefined ? (await cache.view(b.handle)).volume : r.status;
       }
       return { volumes, builds: built - from };
     },

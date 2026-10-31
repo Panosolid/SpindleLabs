@@ -26,7 +26,7 @@ function meshFor(faces: number, edges: number): DisplayMesh {
 
 const shown = (feature: string, view: BodyView, place = 1): ShownBody => {
   const v = { ...view, mesh: meshFor(view.faces, view.edges) };
-  return { feature, place, view: v, names: nameBody(feature, v, () => null) };
+  return { feature, body: `body:${feature}`, place, view: v, names: nameBody(feature, v, () => null) };
 };
 // A box (6 faces, 12 edges) built by feature-1, then a cylinder (3 faces, 2 edges) by feature-4.
 const box = shown("feature-1", BOX_VIEW);
@@ -75,9 +75,9 @@ test("a joined index maps back to its body and the kernel's index there, and to 
 });
 
 test("selecting the second body tints its faces only; both is the whole highlight", () => {
-  const second = bodyReference("feature-4");
+  const second = bodyReference("body:feature-4");
   assert.deepEqual(highlightOf([second], scene), { body: false, faces: [6, 7, 8], edges: [] });
-  assert.deepEqual(highlightOf([second, bodyReference("feature-1")], scene), { body: true, faces: [], edges: [] });
+  assert.deepEqual(highlightOf([second, bodyReference("body:feature-1")], scene), { body: true, faces: [], edges: [] });
   // The cylinder's top and the box's top front edge (kernel edge 4), in joined numbers.
   const top = sceneReference("face", scene, 7)!;
   const edge = designReference("edge", box.names, 4)!;
@@ -85,7 +85,7 @@ test("selecting the second body tints its faces only; both is the whole highligh
   // A face already tinted as part of its body is listed once.
   assert.deepEqual(highlightOf([top, second], scene).faces, [7, 6, 8]);
   // Rows name each body by its place in build order.
-  assert.deepEqual(selectionRows([second, top, bodyReference("feature-2")], scene), [
+  assert.deepEqual(selectionRows([second, top, bodyReference("body:feature-2")], scene), [
     { name: "Body 2", type: "solid", id: "body:feature-4" },
     { name: "Top face", type: "plane", id: "face:feature-4/top" },
     { name: "Body", type: NOT_ON_BODY, id: "body:feature-2" },

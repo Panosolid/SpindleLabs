@@ -185,8 +185,12 @@ export const EYE_FOLDERS = { bodies: "folder-bodies", sketches: "folder-sketches
 /** Every id `hidden` may list that is not a timeline item's, in the order it lists them. */
 export const EYE_ROWS: readonly string[] = [...ORIGIN_AXES, ...Object.values(EYE_FOLDERS)];
 
-/** Whether solid feature `id`'s body is hidden: its own eye shut, or the Bodies folder's. */
-export const bodyHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.bodies);
+/** Whether body `bodyId` ("body:feature-3", 35eb) is hidden: its own eye shut (listed by its item's id), or the Bodies folder's. Bad input throws: an id `bodyIdOf` never makes. */
+export function bodyHidden(doc: Pick<DesignDocument, "hidden">, bodyId: string): boolean {
+  const item = bodyItem(bodyId);
+  if (item === null) throw new Error(`${JSON.stringify(bodyId)} is not a body id`);
+  return isHidden(doc, item) || isHidden(doc, EYE_FOLDERS.bodies);
+}
 /** Whether sketch `id` is hidden: its own eye shut (an extrude of it shuts it, as Fusion does), or the Sketches folder's. */
 export const sketchHidden = (doc: Pick<DesignDocument, "hidden">, id: string): boolean => isHidden(doc, id) || isHidden(doc, EYE_FOLDERS.sketches);
 /** Whether an origin axis or plane is drawn: an axis unless its eye is shut, a plane only once its eye is opened; neither while the Origin folder's is shut. */
@@ -418,6 +422,17 @@ export interface BodyRecord {
 
 /** The id of the body item `featureId` makes (rule 1): "body:feature-3". */
 export const bodyIdOf = (featureId: string) => `body:${featureId}`;
+
+/**
+ * The item a body id names ("body:feature-3" → "feature-3"), the inverse
+ * of `bodyIdOf`; null for anything `bodyIdOf` never makes (35eb). Where a
+ * file lists bodies (the eyes, a Move's) it lists their items' ids, the
+ * same thing while every item makes at most one body.
+ */
+export function bodyItem(bodyId: string): string | null {
+  const m = /^body:([^:/]+)$/.exec(bodyId);
+  return m === null ? null : m[1];
+}
 
 /**
  * The document with every body numbered (`bodies`, `nextBody`): a body

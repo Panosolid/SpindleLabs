@@ -5,12 +5,12 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyIdOf, bodyItem, insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { changedMove, insertMove, MOVE_STEP, moveKindOf, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
+import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
@@ -642,8 +642,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     });
     // The kernel keeps a display mesh only for the bodies on screen (35d2's store): the rest are hidden there.
     await bodies.showOnly(drawn.flatMap((b) => {
-      const r = build.results[b.feature];
-      return r?.status === "built" && r.body !== undefined ? [r.body] : [];
+      const r = build.bodies[b.body];
+      return r !== undefined ? [r.handle] : [];
     }));
     failedNow = new Set(Object.keys(build.results).filter((id) => build.results[id].status === "failed"));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
@@ -653,7 +653,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const result = feature && build.results[feature.id];
     let failure: string | undefined;
     if (result?.status === "failed") failure = result.message;
-    else if (feature && result && (result.status !== "built" || result.body === undefined || result.spec === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
+    else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
     return { scene: joinBodies(drawn), warnings: warningsOf(doc, build), failure, followed: followedDoc(doc, build) };
   }
   /**
@@ -1921,7 +1921,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       previewMove();
     },
   });
-  /** The bodies the Move panel moves (feature ids): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
+  /** The bodies the Move panel moves (body ids, 35eb): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
   /** Whether the Move panel is picking its bodies: a new Move's, or since 35e2i an edited one's (a click adds a body or takes it out). */
   const picksBodies = () => moveBox.shown;
@@ -1946,12 +1946,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     moveHint.hidden = !(shown && moveBox.shown && (snapping !== null || (picksBodies() && moveBodies.length === 0)));
     viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
   }
-  const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === id)!));
+  /** The names of bodies `ids` (body ids, 35eb) as their items are named. */
+  const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === bodyItem(id))!));
   /** An edited Move's bodies' names: a body deleted since keeps the name the Move knew it by. */
   const heldLabels = (ids: readonly string[]) => {
     const doc = designDoc();
     const move = moveBox.editing === null ? undefined : doc.timeline.features.find((f) => f.id === moveBox.editing);
-    return ids.map((id) => {
+    return ids.map((body) => {
+      const id = bodyItem(body) ?? body;
       const f = doc.timeline.features.find((x) => x.id === id);
       return f ? itemName(f) : (move?.provenance.from.find((r) => r.id === id)?.label ?? id);
     });
@@ -2033,11 +2035,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = designDoc();
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
-      moveBodies = [...f.dependsOn];
+      moveBodies = movedBodies(f);
       moveBox.show({ id, kind: moveKindOf(f), name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
       // Its bodies picked as a new Move's are (35e2i), so a click adds one or takes one out; this comes back through pickMoveBodies.
-      const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.feature));
-      ctx.selection.set(f.dependsOn.filter((b) => shownNow.has(b)).map(bodyReference));
+      const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
+      ctx.selection.set(moveBodies.filter((b) => shownNow.has(b)).map(bodyReference));
       return pickMoveBodies();
     }
     moveBodies = pickedBodies(ctx.selection.items, lastScene);
@@ -2151,10 +2153,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const body = lastScene.bodies[hit.body];
     const got = snapPart(body.view, at.kind, hit.index);
     if ("refused" in got) return moveBox.showError(got.refused);
-    const moving = moveBodies.includes(body.feature);
+    const moving = moveBodies.includes(body.body);
     if (snapping.from === null) {
       if (!moving) return moveBox.showError(SNAP_NOT_MOVING);
-      snapping.from = { body: body.feature, part: got.part };
+      snapping.from = { body: body.body, part: got.part };
       moveBox.showError("");
       return showMoveHint();
     }
@@ -2492,7 +2494,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.shown) {
       const c = pickChange({ ...pick, shift: true }, lastScene);
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
-      if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].feature));
+      if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
       return;
     }
     const c = pickChange(pick, lastScene);

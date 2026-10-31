@@ -26,6 +26,7 @@ const scene = {
   bodies: [
     {
       feature: "feature-1",
+      body: "body:feature-1",
       place: 1,
       view: CYLINDER_VIEW,
       names: nameBody("feature-1", CYLINDER_VIEW, () => null),
@@ -173,6 +174,7 @@ test("a link another workspace holds finds its face by name: the solid it is on,
     bodies: [
       {
         feature: "feature-1",
+        body: "body:feature-1",
         place: 1,
         view: BOX_VIEW,
         names: nameBody("feature-1", BOX_VIEW, () => null),

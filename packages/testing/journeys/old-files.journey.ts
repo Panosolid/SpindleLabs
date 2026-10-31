@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { projectFromJson, projectToJson } from "@fission/core";
-import { BodyCache, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
+import { BodyCache, builtBody, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 const DIR = new URL("../old-files/", import.meta.url);
@@ -236,13 +236,15 @@ const open = (t: string) => projectFromJson(t, [designWorkspace]);
 async function built(doc: DesignDocument): Promise<Record<string, Want>> {
   const cache = new BodyCache(kernel);
   try {
-    const { order, results } = await rebuildTimeline(doc, cache, kernel);
+    const build = await rebuildTimeline(doc, cache, kernel);
+    const { order, results } = build;
     const out: Record<string, Want> = {};
     for (const id of order) {
       const r = results[id];
-      if (r.status === "built" && r.body === undefined) out[id] = "sketch";
+      const b = builtBody(build, id);
+      if (r.status === "built" && b === undefined) out[id] = "sketch";
       else if (r.status === "built") {
-        const view = await cache.view(r.body!);
+        const view = await cache.view(b!.handle);
         const cap = (role: string) => view.face_centroids[view.face_roles.findIndex((x) => x !== null && "role" in x && x.role === role)];
         const isExtrude = view.face_roles.some((x) => x !== null && "role" in x && x.role === "end");
         out[id] = { volume: view.volume, ...(isExtrude ? { caps: [cap("start"), cap("end")] as [number[], number[]] } : {}), ...(r.warning ? { warning: r.warning.cause } : {}) };

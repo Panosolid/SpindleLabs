@@ -16,6 +16,7 @@ import {
   addFaceSketch,
   addSketch,
   BodyCache,
+  builtBody,
   changePreset,
   deleteItem,
   drawCircle,
@@ -127,7 +128,7 @@ test("hand-worked: a sketch on a cylinder's flat top is placed there; its round 
     assert.ok(Math.abs(got.bodies[e.id].volume - 20 * Math.PI) <= 1e-6 * 20 * Math.PI && near(got.bodies[e.id].centroid, [3, 4, 12.5]), JSON.stringify(got.bodies));
     // The same extrude asked for outside a rebuild (another workspace's solid, the STL) is the same spec.
     const b = await rebuildTimeline(e.doc, cache, kernel);
-    assert.deepEqual(await featureSpec(kernel, e.doc, e.doc.timeline.features.at(-1)!), (b.results[e.id] as { spec: BodySpec }).spec);
+    assert.deepEqual(await featureSpec(kernel, e.doc, e.doc.timeline.features.at(-1)!), builtBody(b, e.id)!.spec);
     // A file naming the round side: no flat face of that name, so held where it was drawn, plane lost, and its extrude says its source is lost.
     const side = structuredClone(e.doc);
     side.timeline.features[1].intent.parameters.plane = facePlane("feature-1", "side");

@@ -11,7 +11,7 @@ test("references for a body, a face and an edge of feature #1, by name", () => {
   // The box's faces in kernel order are bottom, top, front, back, left,
   // right (the kernel's box); edge 4 is the top front edge (views.ts), where
   // the front and the top meet: "front" sorts before "top".
-  assert.deepEqual(bodyReference("feature-1"), { kind: "body", id: "body:feature-1" });
+  assert.deepEqual(bodyReference("body:feature-1"), { kind: "body", id: "body:feature-1" });
   assert.deepEqual(designReference("face", names, 1), { kind: "face", id: "face:feature-1/top" });
   assert.deepEqual(designReference("edge", names, 4), { kind: "edge", id: "edge:feature-1/front+top" });
 });
@@ -30,14 +30,14 @@ test("a reference resolves to the index its name has on a body, wherever the ker
   assert.equal(resolveReference(designReference("edge", names, 4)!, cylinder), null);
   // Another feature's face, a body, and no body built: nothing.
   assert.equal(resolveReference(top, nameBody("feature-2", BOX_VIEW, () => null)), null);
-  assert.equal(resolveReference(bodyReference("feature-1"), names), null);
+  assert.equal(resolveReference(bodyReference("body:feature-1"), names), null);
   assert.equal(resolveReference(top, null), null);
 });
 
 test("readDesignReference undoes the builders and refuses ids they did not build", () => {
   assert.deepEqual(readDesignReference(designReference("face", names, 1)!), { kind: "face", featureId: "feature-1", part: "top" });
   assert.deepEqual(readDesignReference(designReference("edge", names, 4)!), { kind: "edge", featureId: "feature-1", part: "front+top" });
-  assert.deepEqual(readDesignReference(bodyReference("feature-1")), { kind: "body", featureId: "feature-1" });
+  assert.deepEqual(readDesignReference(bodyReference("body:feature-1")), { kind: "body", featureId: "feature-1" });
   assert.deepEqual(readDesignReference({ kind: "face", id: "face:feature-7/side:line-4" as StableId }), { kind: "face", featureId: "feature-7", part: "side:line-4" });
   assert.deepEqual(readDesignReference({ kind: "edge", id: "edge:feature-7/side:line-4>side:arc-6" as StableId }), { kind: "edge", featureId: "feature-7", part: "side:line-4>side:arc-6" });
   const ref = (kind: GeometryReference["kind"], id: string) => ({ kind, id: id as StableId }) as GeometryReference;
@@ -59,9 +59,13 @@ test("bad input is refused, not turned into an id; an index with no name gives n
   assert.throws(() => designReference("face", names, -1), /needs a kernel index/);
   assert.throws(() => designReference("edge", names, 1.5), /needs a kernel index/);
   assert.throws(() => designReference("edge", names, Number.NaN), /needs a kernel index/);
-  assert.throws(() => bodyReference(""), /invalid feature id/);
-  // A ":" or "/" in the feature id would make "body:a/1" read as something else.
-  assert.throws(() => bodyReference("a/1"), /invalid feature id/);
+  assert.throws(() => bodyReference(""), /invalid body id ""/);
+  // 35eb: a body reference is built from a body id, never a feature id: "feature-1" names the feature, not its body.
+  assert.throws(() => bodyReference("feature-1"), /invalid body id "feature-1"/);
+  assert.throws(() => bodyReference("body:"), /invalid body id "body:"/);
+  // A ":" or "/" in the item id would make "body:a/1" read as something else.
+  assert.throws(() => bodyReference("body:a/1"), /invalid body id/);
+  assert.throws(() => bodyReference("body:body:a"), /invalid body id/);
   // Past the body's faces, or a face the kernel gave no role: no reference, never a placeholder.
   assert.equal(designReference("face", names, 6), null);
   const unnamed = nameBody("feature-1", { ...BOX_VIEW, face_roles: [null, ...BOX_VIEW.face_roles.slice(1)] } as BodyView, () => null);

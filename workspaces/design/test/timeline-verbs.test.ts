@@ -11,7 +11,7 @@ import { COPY_SVG, DOWNLOAD_STL, joinStl, registerDesignActions, representations
 import { rowReference } from "../src/browser.ts";
 import { addSketch, drawLine, drawRectangle } from "../src/sketch.ts";
 import { extrudeSketch } from "../src/extrude.ts";
-import { insertPreset, partDocument, specOf, type DesignDocument } from "../src/document.ts";
+import { bodyIdOf, insertPreset, partDocument, specOf, type DesignDocument } from "../src/document.ts";
 import { designLookup, designObjects, registerDesign } from "../src/representations.ts";
 import { bodyReference, profileReference } from "../src/references.ts";
 import { droppedNote, selectionRows, survivors } from "../src/selection.ts";
@@ -41,7 +41,7 @@ function timeline(): DesignDocument {
   return moveMarker(sphere.doc, slot.id);
 }
 const doc = timeline();
-const body = (id: string): Selected => bodyReference(id);
+const body = (id: string): Selected => bodyReference(bodyIdOf(id));
 const outline = (id: string): Selected => profileReference(id);
 
 test("the timeline is the one the tests describe", () => {

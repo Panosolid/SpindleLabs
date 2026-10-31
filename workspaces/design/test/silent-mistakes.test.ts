@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
-import { partDocument, type DesignDocument } from "../src/document.ts";
+import { bodyIdOf, partDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, askOutline, drawRectangle, plainOutline, sketchCurves, TOUCHING_CURVES } from "../src/sketch.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 import { extrudeSketch } from "../src/extrude.ts";
@@ -83,9 +83,9 @@ test("hand-worked: the whole design's STL names the hidden bodies it leaves out,
   const ids = bodyFeatures(d).map((f) => f.id);
   assert.equal(ids.length, 3);
   assert.equal(hiddenStlNote(d), "", "nothing hidden, nothing to say");
-  const two = hideBody(d, ids[1], true);
+  const two = hideBody(d, bodyIdOf(ids[1]), true);
   assert.equal(hiddenStlNote(two), "Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");
-  const both = hideBody(two, ids[2], true);
+  const both = hideBody(two, bodyIdOf(ids[2]), true);
   assert.equal(hiddenStlNote(both), "Bodies 2 and 3 are hidden, so they are not in the STL: show them with their eyes in the browser to include them.");
   // A hidden body that failed to build is not in the STL either way: it isn't named.
   assert.equal(hiddenStlNote(both, new Set([ids[2]])), "Body 2 is hidden, so it is not in the STL: show it with its eye in the browser to include it.");

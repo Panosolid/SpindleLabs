@@ -17,6 +17,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  builtBody,
   addSketch,
   BodyCache,
   drawArc,
@@ -48,7 +49,7 @@ async function built(doc: DesignDocument) {
   try {
     const build = await rebuildTimeline(doc, cache, kernel);
     const volumes: Record<string, number> = {};
-    for (const [id, r] of Object.entries(build.results)) if (r.status === "built" && r.body !== undefined) volumes[id] = (await cache.view(r.body))!.volume;
+    for (const id of build.order) { const b = builtBody(build, id); if (b !== undefined) volumes[id] = (await cache.view(b.handle))!.volume; }
     return { build, scene: joinBodies(await shownBodies(doc, build, cache)), followed: followedDoc(doc, build), volumes };
   } finally {
     await cache.clear();

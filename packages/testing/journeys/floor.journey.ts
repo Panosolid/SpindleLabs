@@ -7,7 +7,7 @@
 // with `npm run journeys` after the app build.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BodyCache, buildSpec, changePreset, insertPreset, partDocument, readDesignDocument, rebuildTimeline, SHAPES, specOf, type DesignDocument } from "@fission/design";
+import { BodyCache, builtBody, buildSpec, changePreset, insertPreset, partDocument, readDesignDocument, rebuildTimeline, SHAPES, specOf, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
 const LINEAR = 1e-5;
@@ -20,9 +20,10 @@ async function bounds(doc: DesignDocument): Promise<Map<string, [number[], numbe
   try {
     const build = await rebuildTimeline(doc, cache, kernel);
     const out = new Map<string, [number[], number[]]>();
-    for (const [id, r] of Object.entries(build.results)) {
-      if (r.status !== "built" || r.body === undefined) continue;
-      const v = await cache.view(r.body);
+    for (const id of build.order) {
+      const b = builtBody(build, id);
+      if (b === undefined) continue;
+      const v = await cache.view(b.handle);
       assert.ok(v, `${id} has a view`);
       out.set(id, [v.bounds[0], v.bounds[1]]);
     }

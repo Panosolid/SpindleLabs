@@ -183,7 +183,7 @@ test("a body asked ahead that runs too long while an item before it is still bui
   // Box 1, Move 1 (Box 1 10 mm along X), Box 2 (10 × 10 × 10, hangs). Box 1 and Box 2 are asked at once; the Move's moved
   // body is asked after them, so when Box 2's limit passes the loop is waiting on the Move, and reaches Box 2 after the restart.
   StandInWorker.hangs = (s) => "box" in s && (s as { box: { width: number } }).box.width === 10;
-  const moved = insertMove(partDocument("box", 40, 30, 20), ["feature-1"], { ...NO_MOVE, x: 10 }).doc;
+  const moved = insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc;
   const { d, build, settled } = design(insertPreset(moved, "box", 10, 10, 10).doc);
   await build();
   const b = await settled();
@@ -252,20 +252,20 @@ test("showOnly by hand: the kernel is told to hide each kept body not on screen,
 test("after a rebuild only the bodies drawn keep a mesh: a moved box's body before its Move and a body hidden by its eye are hidden in the kernel", async () => {
   StandInWorker.hangs = () => false;
   // Box 1 moved by Move 1, Box 2 hidden by its eye: drawn are Box 1 (moved) and nothing else.
-  const moved = insertPreset(insertMove(partDocument("box", 40, 30, 20), ["feature-1"], { ...NO_MOVE, x: 10 }).doc, "box", 10, 10, 10).doc;
+  const moved = insertPreset(insertMove(partDocument("box", 40, 30, 20), ["body:feature-1"], { ...NO_MOVE, x: 10 }).doc, "box", 10, 10, 10).doc;
   const doc: DesignDocument = { ...moved, hidden: ["feature-3"] };
   const { d, build } = design(doc);
   await build();
   const b = d.last!;
   const drawn = await shownBodies(doc, b, d.cache);
   assert.deepEqual(drawn.map((s) => s.feature), ["feature-1"]);
-  await d.cache.showOnly(drawn.map((s) => (b.results[s.feature] as { body: number }).body));
+  await d.cache.showOnly(drawn.map((s) => b.bodies[s.body].handle));
   // Worked by hand: three bodies kept (Box 1 as made, held by the Move; Box 1 moved; Box 2): one drawn, so two hidden.
   assert.equal(d.cache.size, 3);
   assert.equal(d.cache.meshed, 1);
   const hidden = StandInWorker.all[0].posted.filter((r) => r.op === "body_hide").map((r) => r.args[0]);
   assert.equal(hidden.length, 2);
-  assert.ok(!hidden.includes((b.results["feature-1"] as { body: number }).body), "the moved box, drawn, keeps its mesh");
+  assert.ok(!hidden.includes(b.bodies["body:feature-1"].handle), "the moved box, drawn, keeps its mesh");
 });
 
 test("a body whose view takes too long (meshing it again) is not drawn: it goes to `slow` by its item; with no `slow` the error is thrown", async () => {

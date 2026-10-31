@@ -5,7 +5,7 @@
 
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { bodyHidden, bodyIdOf, bodyNumbers, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -166,14 +166,14 @@ export function rowReference(node: string, doc: DesignDocument, failed: Readonly
  */
 export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): (node: string) => GeometryReference | null {
   // A hidden body (U0f3) is not drawn, so its rows select nothing: a selection of something unseen.
-  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));
-  const solids = new Set(rows.values());
+  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, bodyIdOf(r.feature.id)) ? [] : [[r.id, bodyIdOf(r.feature.id)] as const])));
+  const solids = new Map([...rows.values()].map((b) => [bodyItem(b)!, b]));
   // A profile, and (25c1) a sketch with curves by either of its rows: its outline.
   const outlines = new Set([...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))]);
   return (node) => {
     const body = rows.get(node);
     if (body !== undefined) return bodyReference(body);
-    if (solids.has(node)) return bodyReference(node);
+    if (solids.has(node)) return bodyReference(solids.get(node)!);
     const outline = node.startsWith("sketches/") ? node.slice("sketches/".length) : node;
     return outlines.has(outline) ? profileReference(outline) : null;
   };

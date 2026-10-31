@@ -70,6 +70,7 @@ import {
   type SketchCurve,
   type SketchPlacement,
   type TimelineBuild,
+  bodyIdOf,
 } from "@fission/design";
 import { edgeName, faceKey, type Applied, type ConcreteOp, type FaceName, type FaceRole, type ItemResult, type ModelBody, type Turn, type ModelShape, type Point, type Rebuild } from "./timeline-model.ts";
 import type { EdgeClose, TimelineSubject } from "./timeline-session.ts";
@@ -369,11 +370,11 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         return { state: { doc: moveMarker(doc, fs.has("marker-start-ignored") && op.at === "start" ? null : op.at), meta }, made: [] };
       case "add-move": {
         // 35e2: Design's Move, as the Move panel's OK will put it in.
-        const m = insertMove(doc, op.bodies, moveValues(op));
+        const m = insertMove(doc, op.bodies.map(bodyIdOf), moveValues(op)); // the model names bodies by item, Design by body id (35eb)
         return { state: { doc: m.doc, meta }, made: [m.id] };
       }
       case "set-move":
-        return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies), meta }, made: [] };
+        return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies?.map(bodyIdOf)), meta }, made: [] };
     }
   }
 
@@ -394,15 +395,17 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
       else if (r.status === "greyed") results[id] = { status: "greyed", by: r.by };
       // 26e: a sketch on a face says how high it lies (the sessions' faces all face +Z, so it is XY lifted) and whether it is held.
       else if (isFaceSketchId(id)) results[id] = { status: "built", ...liftOf(id, r.placement), ...(r.plane && { plane: r.plane.cause as "plane-lost" }) };
-      else if (r.body === undefined || !shown.has(id)) results[id] = { status: "built", ...(r.source && { source: r.source.sketch }) };
+      else if (build.bodies[bodyIdOf(id)] === undefined || !shown.has(id)) results[id] = { status: "built", ...(r.source && { source: r.source.sketch }) };
       else {
+        // 35eb: an item's body by its body id.
+        const b = build.bodies[bodyIdOf(id)];
         // Planted bug ("cache-by-feature"): a body read once per feature id, so later edits never reach it.
-        const key = fs.has("cache-by-feature") ? id : `${id}|${r.body}|${JSON.stringify(r.curves ?? null)}`;
+        const key = fs.has("cache-by-feature") ? id : `${id}|${b.handle}|${JSON.stringify(b.curves ?? null)}`;
         let body = keep ? bodies.get(key) : undefined;
         if (body === undefined) {
           // 35e2: a moved body's sides are named by the shape inside the move.
-          const shape = r.spec && shapeSpec(r.spec);
-          body = measure(id, shown.get(id)!, shape && "extrude" in shape ? outlineCurves(shape.extrude.profile, r.curves) : () => null);
+          const shape = shapeSpec(b.spec);
+          body = measure(id, shown.get(id)!, shape && "extrude" in shape ? outlineCurves(shape.extrude.profile, b.curves) : () => null);
           if (keep) bodies.set(key, body);
         }
         results[id] = { status: "built", body, ...(r.warning && { warning: { cause: r.warning.cause, input: r.warning.sketch } }), ...(r.source && { source: r.source.sketch }) };

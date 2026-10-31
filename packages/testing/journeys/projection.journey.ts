@@ -18,6 +18,7 @@ import {
   addFaceSketch,
   addSketch,
   BodyCache,
+  builtBody,
   deleteCurve,
   drawCircle,
   drawnFrame,
@@ -148,7 +149,7 @@ test("hand-worked: the top rim projected onto the box's top (a parallel face) is
   doc = up.doc;
   const after = await built(doc);
   const r = after.build.results[up.id];
-  assert.ok(r?.status === "built" && r.body !== undefined, JSON.stringify(r));
+  assert.ok(r?.status === "built" && builtBody(after.build, up.id) !== undefined, JSON.stringify(r));
 });
 
 test("the cylinder's radius made 8: each projection follows (a circle of radius 8, the line (52, 10) to (68, 10)), and the extrude of the projected circle with it", async () => {
@@ -170,8 +171,8 @@ test("the cylinder's radius made 8: each projection follows (a circle of radius 
   const top = projectedCurve(followed, s.top);
   assert.ok("centre" in top && Math.abs(top.radius - 8) <= 1e-9, JSON.stringify(top));
   // The extrude was built from the followed circle: the spec it was built from has radius 8.
-  const r = build.results[up.id];
-  assert.ok(r?.status === "built" && r.spec !== undefined, JSON.stringify(r));
+  const r = builtBody(build, up.id);
+  assert.ok(r !== undefined && r.spec !== undefined, JSON.stringify(build.results[up.id]));
   assert.match(JSON.stringify(r.spec), /"radius":8\b/);
 });
 
@@ -212,8 +213,9 @@ test("hand-worked: the box's front face picked from XZ projects its four edges, 
   assert.deepEqual(pick.edges.map((e) => ends(e.shape)).sort(), ["0,0 0,20", "0,0 40,0", "0,20 40,20", "40,0 40,20"]);
   const made = projectEdges(s.doc, s.xz, pick.edges).doc;
   const up = extrudeSketch(made, s.xz, 5);
-  const r = (await built(up.doc)).build.results[up.id];
-  assert.ok(r?.status === "built" && r.body !== undefined, JSON.stringify(r));
+  const { build: upBuild } = await built(up.doc);
+  const r = upBuild.results[up.id];
+  assert.ok(r?.status === "built" && builtBody(upBuild, up.id) !== undefined, JSON.stringify(r));
   // From XY the same face is seen edge on: its top and bottom edges both as (0, 0) to (40, 0), its uprights as the points
   // (0, 0) and (40, 0), each the end on the ground (z = 0).
   const flat = projectPick(s.doc, s.xy, scene, frameOf(build, s.xy), { face: scene.faceStart[k] + front });

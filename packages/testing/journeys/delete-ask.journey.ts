@@ -7,7 +7,7 @@
 // plan are each caught. Run with `npm run journeys` after the app build.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addSketch, BodyCache, deleteCurve, deleteItem, deleteWords, drawRectangle, extrudeSketch, partDocument, planDelete, rebuildTimeline, settleKept, type DesignDocument, type DeletePlan } from "@fission/design";
+import { addSketch, BodyCache, builtBody, deleteCurve, deleteItem, deleteWords, drawRectangle, extrudeSketch, partDocument, planDelete, rebuildTimeline, settleKept, type DesignDocument, type DeletePlan } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
 const kernel = nodeKernel();
@@ -29,11 +29,13 @@ function part() {
 async function rebuilt(doc: DesignDocument) {
   const cache = new BodyCache(kernel);
   try {
-    const { order, results } = await rebuildTimeline(doc, cache, kernel);
+    const build = await rebuildTimeline(doc, cache, kernel);
+    const { order, results } = build;
     const out: Record<string, unknown> = {};
     for (const id of order) {
       const r = results[id];
-      if (r.status === "built" && r.body !== undefined) out[id] = { volume: (await cache.view(r.body)).volume, warning: r.warning ? [r.warning.cause, r.warning.sketch] : null };
+      const b = builtBody(build, id);
+      if (r.status === "built" && b !== undefined) out[id] = { volume: (await cache.view(b.handle)).volume, warning: r.warning ? [r.warning.cause, r.warning.sketch] : null };
       else out[id] = r.status === "failed" ? { failed: r.cause, message: r.message } : r.status;
     }
     return out;

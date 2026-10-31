@@ -89,13 +89,13 @@ test("hand-worked: the lists in their order, each eye's undo naming, folders ove
   h = hideRow(h, "sketch-2", true);
   assert.deepEqual(h.hidden, ["sketch-2", "feature-11", "origin-y", "folder-bodies"]);
   // The folder shut hides both bodies, whatever their own eyes say: Body 1's is open, but it is not drawn or picked.
-  assert.deepEqual([bodyHidden(h, "feature-1"), bodyHidden(h, "feature-11")], [true, true]);
+  assert.deepEqual([bodyHidden(h, "body:feature-1"), bodyHidden(h, "body:feature-11")], [true, true]);
   assert.deepEqual(shownBodyRefs(h, new Set()), []);
   assert.equal(rowReference("body-1", h), null);
   assert.deepEqual(eyes(h)["body-1"], [false, true], "Body 1's own eye open, its folder's shut");
   // The folder opened again: Body 1 back, Body 2 still hidden by its own eye.
   const open = hideRow(h, EYE_FOLDERS.bodies, false);
-  assert.deepEqual([bodyHidden(open, "feature-1"), bodyHidden(open, "feature-11")], [false, true]);
+  assert.deepEqual([bodyHidden(open, "body:feature-1"), bodyHidden(open, "body:feature-11")], [false, true]);
   // The origin: the Y axis not drawn, X and Z drawn, no plane; the XZ plane shown; the Origin folder hides all of it.
   const axes = (doc: DesignDocument) => ["origin-x", "origin-y", "origin-z", "origin-xy", "origin-xz", "origin-yz"].map((id) => originDrawn(doc, id));
   assert.deepEqual(axes(h), [true, false, true, false, false, false]);
@@ -144,7 +144,7 @@ test("each row's eye is the id its eye shuts; rows without one have none; a Move
   assert.throws(() => hideRow(d, "feature-99", true), { message: "there is no item feature-99 in the timeline" });
   assert.throws(() => hideRow(d, "origin-w", true), { message: "there is no item origin-w in the timeline" });
   // A body through hideRow is hideBody's.
-  assert.deepEqual(hideRow(d, "feature-1", true), hideBody(d, "feature-1", true));
+  assert.deepEqual(hideRow(d, "feature-1", true), hideBody(d, "body:feature-1", true));
 });
 
 test("deleting a hidden sketch takes it out of the list; the axes and folders stay", () => {
@@ -195,7 +195,7 @@ test("seeded: 300 random eye presses against a model of what each row's own eye 
       const got = eyes(doc);
       for (const r of rows) assert.deepEqual(got[r], [shut.has(r), folderOf[r] !== undefined && shut.has(folderOf[r])], `seed ${seed} press ${n} (${row}): ${r}'s eye`);
       assert.equal(sketchDrawings(doc, null).length, drawn("sketches/sketch-2") ? 1 : 0, `seed ${seed} press ${n}: Sketch 1 drawn`);
-      assert.deepEqual([bodyHidden(doc, "feature-1"), bodyHidden(doc, "feature-11")], [!drawn("body-1"), !drawn("body-2")], `seed ${seed} press ${n}: bodies`);
+      assert.deepEqual([bodyHidden(doc, "body:feature-1"), bodyHidden(doc, "body:feature-11")], [!drawn("body-1"), !drawn("body-2")], `seed ${seed} press ${n}: bodies`);
       for (const r of rows.filter((x) => x.startsWith("origin-"))) assert.equal(originDrawn(doc, r), drawn(r), `seed ${seed} press ${n}: ${r} drawn`);
       if (n % 10 === 0) assert.deepEqual(reopen(doc), doc, `seed ${seed} press ${n}: saved and opened`);
     }

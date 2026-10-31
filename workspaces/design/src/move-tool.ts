@@ -9,9 +9,9 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle } from "@fission/core";
-import { isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyIdOf, bodyItem, isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
-import { madeAfter, moveValues, type MoveValues } from "./move.ts";
+import { madeAfter, movedBodies, moveValues, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
 import { bodyOf, type Scene } from "./scene.ts";
 import { itemName } from "./timeline-edits.ts";
@@ -19,7 +19,7 @@ import { itemName } from "./timeline-edits.ts";
 type Point = [number, number, number];
 type Box3 = readonly [readonly [number, number, number], readonly [number, number, number]];
 
-/** The feature ids of the bodies `items` pick on `scene`, in the scene's order, each once: a body, or the body a face or edge is on. */
+/** The body ids (35eb) of the bodies `items` pick on `scene`, in the scene's order, each once: a body, or the body a face or edge is on. */
 export function pickedBodies(items: readonly GeometryReference[], scene: Scene | null): string[] {
   if (scene === null) return [];
   const picked = new Set<number>();
@@ -27,7 +27,7 @@ export function pickedBodies(items: readonly GeometryReference[], scene: Scene |
     const b = bodyOf(scene, item);
     if (b >= 0) picked.add(b);
   }
-  return [...picked].sort((a, b) => a - b).map((b) => scene.bodies[b].feature);
+  return [...picked].sort((a, b) => a - b).map((b) => scene.bodies[b].body);
 }
 
 /** The centre of the smallest box round every one of `boxes` (mm): where a new Move turns about. The origin when there are none. */
@@ -38,9 +38,9 @@ export function boxCentre(boxes: readonly Box3[]): Point {
   return [0, 1, 2].map((k) => (low[k] + high[k]) / 2) as Point;
 }
 
-/** The pivot a Move of `bodies` starts at on `scene`: the centre of the box round them (each body's exact bounds, BodyView). */
+/** The pivot a Move of `bodies` (body ids) starts at on `scene`: the centre of the box round them (each body's exact bounds, BodyView). */
 export function startPivot(bodies: readonly string[], scene: Scene | null): Point {
-  const boxes = (scene?.bodies ?? []).filter((b) => bodies.includes(b.feature)).map((b) => b.view.bounds);
+  const boxes = (scene?.bodies ?? []).filter((b) => bodies.includes(b.body)).map((b) => b.view.bounds);
   return boxCentre(boxes);
 }
 
@@ -89,11 +89,11 @@ export type PointMap = (p: readonly number[], vector: boolean) => Point;
 
 /**
  * `scene`'s joined mesh with each body `map` gives a PointMap for (by
- * feature id) moved by it (its points and edge lines moved, its normals
+ * body id, 35eb) moved by it (its points and edge lines moved, its normals
  * turned) and every other body as it is. The lists keep their lengths and
  * numbering, so the selection's highlight still lands on the same faces.
  */
-export function mappedMesh(scene: Scene, map: (feature: string) => PointMap | null): DisplayMesh {
+export function mappedMesh(scene: Scene, map: (body: string) => PointMap | null): DisplayMesh {
   const positions = [...scene.mesh.positions];
   const normals = [...scene.mesh.normals];
   const lines = [...scene.mesh.edge_lines];
@@ -109,7 +109,7 @@ export function mappedMesh(scene: Scene, map: (feature: string) => PointMap | nu
   for (const b of scene.bodies) {
     const points = b.view.mesh.positions.length;
     const ends = b.view.mesh.edge_lines.length;
-    const f = map(b.feature);
+    const f = map(b.body);
     if (f) {
       move(f, positions, point, point + points);
       move(f, normals, point, point + points, true);
@@ -125,13 +125,13 @@ export function mappedMesh(scene: Scene, map: (feature: string) => PointMap | nu
 const still = (v: MoveValues) => MOVE_PARAMS.every((k) => k.startsWith("pivot") || v[k] === 0);
 
 /**
- * The preview: `scene`'s joined mesh with the bodies `moving` (feature ids)
+ * The preview: `scene`'s joined mesh with the bodies `moving` (body ids)
  * turned and shifted by `v` and every other body as it is. A Move that
  * neither shifts nor turns gives the mesh itself.
  */
 export function movedMesh(scene: Scene, moving: readonly string[], v: MoveValues): DisplayMesh {
   if (still(v)) return scene.mesh;
-  return mappedMesh(scene, (feature) => (moving.includes(feature) ? (p, vector) => movedPoint(p, v, vector) : null));
+  return mappedMesh(scene, (body) => (moving.includes(body) ? (p, vector) => movedPoint(p, v, vector) : null));
 }
 
 /**
@@ -153,16 +153,17 @@ export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Reado
   const status = results[id]?.status;
   if (edited === undefined || !isMoveItem(edited) || (status !== "built" && status !== "failed")) return scene.mesh;
   const before = moveValues(edited);
-  const now = bodies ?? edited.dependsOn;
-  const sameBodies = now.length === edited.dependsOn.length && now.every((b) => edited.dependsOn.includes(b));
+  const held = movedBodies(edited);
+  const now = bodies ?? held;
+  const sameBodies = now.length === held.length && now.every((b) => held.includes(b));
   if (status === "built" && sameBodies && MOVE_PARAMS.every((k) => before[k] === v[k])) return scene.mesh;
   if (status === "failed" && still(v)) return scene.mesh;
   const later = doc.timeline.features.slice(at + 1).filter((f) => isMoveItem(f) && results[f.id]?.status === "built");
-  return mappedMesh(scene, (feature) => {
-    const was = edited.dependsOn.includes(feature);
-    const is = now.includes(feature);
+  return mappedMesh(scene, (body) => {
+    const was = held.includes(body);
+    const is = now.includes(body);
     if (!was && !is) return null;
-    const after = later.filter((f) => f.dependsOn.includes(feature)).map(moveValues);
+    const after = later.filter((f) => movedBodies(f).includes(body)).map(moveValues);
     return (p, vector) => {
       let q: readonly number[] = p;
       for (const m of [...after].reverse()) q = unmovedPoint(q, m, vector);
@@ -186,8 +187,8 @@ export function editedBodies(doc: DesignDocument, id: string, held: readonly str
   const at = features.findIndex((f) => f.id === id);
   const move = features[at];
   if (move === undefined || !isMoveItem(move)) return { bodies: [...held], refused: null };
-  const shownNow = new Set((scene?.bodies ?? []).map((b) => b.feature));
-  const place = (b: string) => features.findIndex((f) => f.id === b);
+  const shownNow = new Set((scene?.bodies ?? []).map((b) => b.body));
+  const place = (b: string) => features.findIndex((f) => f.id === bodyItem(b));
   const later = picked.filter((b) => place(b) > at);
   const bodies = [...new Set([...held.filter((b) => !shownNow.has(b)), ...picked.filter((b) => !later.includes(b))])];
   bodies.sort((a, b) => place(a) - place(b));
@@ -297,8 +298,10 @@ export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Featu
   if (!doc.timeline.features.some((m) => isMoveItem(m) && m.dependsOn.includes(f.id))) return featureSpec(kernel, doc, f);
   const cache = new BodyCache(kernel);
   try {
-    const r = (await rebuildTimeline(doc, cache, kernel)).results[f.id];
-    if (r?.status === "built" && r.spec !== undefined) return r.spec;
+    const build = await rebuildTimeline(doc, cache, kernel);
+    const r = build.results[f.id];
+    const body = r?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined;
+    if (body !== undefined) return body.spec;
     throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
   } finally {
     await cache.close();
