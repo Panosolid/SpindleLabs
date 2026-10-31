@@ -8,7 +8,7 @@
 // words alone.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { emptyProject, projectFromJson, projectToJson } from "@fission/core";
 import { bodyNumbers, insertPreset, makesBody, numberBodies, partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
@@ -114,8 +114,15 @@ test("hand-worked: a version 4 file gets the numbers it showed: the bodies that 
   assert.deepEqual(labels(moveMarker(suppressItem(read, "feature-1", false), null)), ["Body 3", "Body 1", "Body 2", "Body 4"]);
 });
 
-/** Where saved projects are kept, from the repo's root. */
-const ROOT = new URL("../../../", import.meta.url);
+/**
+ * The repo's root: the nearest folder above this file with a `workspaces/design/` in it. Not a fixed "../../../":
+ * mutation testing runs this file from a copy of workspaces/design two folders deeper (.stryker-tmp/sandbox-…/),
+ * where that path missed the saved projects and the whole Design run stopped before its first mutant.
+ */
+const ROOT = (() => {
+  for (let u = new URL("../", import.meta.url); u.pathname !== "/"; u = new URL("../", u)) if (existsSync(new URL("workspaces/design/", u))) return u;
+  throw new Error(`no repo root above ${import.meta.url}`);
+})();
 const SAVED = ["tests/golden/", "packages/testing/old-files/", "packages/testing/test/regressions/", "workspaces/design/test/files/", "apps/fission/e2e/"];
 
 function* walk(dir: URL): Generator<URL> {
