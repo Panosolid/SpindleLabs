@@ -1,0 +1,13 @@
+/* Step 35d4: Retry on the row of an item that took the geometry kernel too
+   long (red, failed): in the browser's Timeline after the row's words, and
+   in the bottom bar beside the picked item's ⋯. Small, so a row stays one
+   line; 44 px on a phone in the browser, as its ⋯ (the bar's stays the
+   bar's height, as its ⋯ does). ":not(#none)" lifts
+   a rule over the base layout's "#workspace button". Each rule starts with
+   .retry-row, so it styles this feature alone. */
+.retry-row:not(#none) { flex-shrink: 0; padding: 0 8px; background: #3a2226; border: 1px solid #e0656d; border-radius: var(--look-radius-s); color: #ffd9dc; font-size: 0.85em; line-height: 1.4; cursor: pointer; white-space: nowrap; }
+.retry-row:not(#none):hover, .retry-row:not(#none):focus-visible { background: #82292f; color: #fff; }
+.retry-row.retry-row-bar:not(#none) { height: 22px; margin-left: 2px; line-height: 1; }
+@media (max-width: 640px) {
+  .retry-row:not(.retry-row-bar):not(#none) { min-height: 44px; min-width: 44px; }
+}

@@ -489,6 +489,10 @@ const lastClicks = new WeakMap<HTMLElement, { id: string; at: number }>();
 /** What the bar's items do (step 24f3): `failed` are the rebuild's failed items (drawn red); `picked` is the item whose ⋯ shows. */
 export interface BarWiring {
   failed?: ReadonlySet<string>;
+  /** 35d4: the failed items that took the kernel too long: "took too long" in their title, and a Retry beside the picked one's ⋯. */
+  slow?: ReadonlySet<string>;
+  /** Retry pressed on item `id` (35d4). */
+  onRetry?(id: string): void;
   /** 26e: the rebuild's warnings by item (a kept shape, a lost plane, a lost source): the item red, the words in its title. */
   warnings?: ReadonlyMap<string, string>;
   picked?: string | null;
@@ -556,7 +560,7 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
       (item.suppressed ? " (suppressed)" : "") +
       (item.greyed !== null ? ` (greyed: ${item.greyed} is suppressed)` : "") +
       (item.rolledBack ? " (after the marker)" : "") +
-      (item.failed ? " (failed)" : "") +
+      (item.failed ? (wiring.slow?.has(item.id) ? " (failed: took too long)" : " (failed)") : "") +
       (item.warning !== null ? ` (warning: ${item.warning})` : "");
     li.title = words;
     li.tabIndex = 0;
@@ -605,6 +609,17 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
         wiring.onMenu?.(item.id, { x: r.left, y: r.top });
       });
       slotLi.append(more);
+      if (item.failed && wiring.slow?.has(item.id)) {
+        // 35d4: the item took the kernel too long; Retry tries it again.
+        const again = document.createElement("button");
+        again.type = "button";
+        again.className = "retry-row retry-row-bar";
+        again.dataset.retry = item.id; // read by the e2e test
+        again.textContent = "Retry";
+        again.title = `Try ${item.label} again`;
+        again.addEventListener("click", () => wiring.onRetry?.(item.id));
+        slotLi.append(again);
+      }
       list.append(slotLi);
     }
   });
