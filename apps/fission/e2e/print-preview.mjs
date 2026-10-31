@@ -227,10 +227,10 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.waitForFunction(() => document.querySelector("#viewport")?.dataset.rebuilding === "false", null, { timeout: 15000 });
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      assert.equal(await page.$eval("#slice-print-supports", (c) => c.checked), false, "supports start off");
-      await press("#slice-print-supports");
-      assert.equal(await page.$eval("#slice-print-supports", (c) => c.checked), true);
-      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports-ticked.png` });
+      assert.equal(await page.$eval("#slice-print-supports", (c) => c.value), "off", "supports start off");
+      await page.selectOption("#slice-print-supports", "normal");
+      assert.equal(await page.$eval("#slice-print-supports", (c) => c.value), "normal");
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports-normal.png` });
       await press("#slice-print-preview");
       await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
       // 12 mm / 0.2 mm = 60 layers.
@@ -258,6 +258,27 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       const onlyGreen = await hued(page, 140, 160);
       assert.ok(onlyGreen >= green && onlyGreen > only * 0.8, `only supports: ${onlyGreen} green of ${only} coloured (was ${green} under the plate)`);
       if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-only-supports.png` });
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.getElementById("print-preview"));
+      // Tree supports (P5d3): the same plate, branches instead of columns, still green, still 60 layers.
+      if (!(await page.$("#slice-print-dialog[open]"))) await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      await page.selectOption("#slice-print-supports", "tree");
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-supports-tree-picked.png` });
+      await press("#slice-print-preview");
+      await page.waitForSelector("#print-preview[open] #print-preview-view canvas", { timeout: 60000 });
+      assert.equal(await page.getAttribute("#print-preview-layers", "max"), "60");
+      assert.ok((await page.$$eval("#print-preview-legend li", (ls) => ls.map((l) => l.textContent))).includes("Support"), "tree legend has Support");
+      await page.waitForTimeout(200);
+      const treeGreen = await hued(page, 140, 160);
+      assert.ok(treeGreen > 200, `tree supports drawn: ${treeGreen} green pixels`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-tree.png` });
+      await press("#print-preview-preset-only-supports");
+      await page.waitForTimeout(200);
+      const treeOnly = await hued(page, 140, 160);
+      // Branches, not a block: less green seen alone than the columns showed alone.
+      assert.ok(treeOnly > 200 && treeOnly < onlyGreen, `only tree supports: ${treeOnly} green, columns ${onlyGreen}`);
+      if (shots) await page.screenshot({ path: `${shots}/print-preview-${width}-tree-only.png` });
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.getElementById("print-preview"));
     } finally {

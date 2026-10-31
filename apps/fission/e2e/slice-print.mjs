@@ -73,7 +73,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "0.2", "2", "15"], "the P1S's file and defaults");
+      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "0.2", "2", "15", "off"], "the P1S's file and defaults");
       assert.match(await page.textContent("#slice-print-untested"), /haven't been test-printed yet/);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-open.png` });
       // On the screen at phone width too.
