@@ -40,8 +40,8 @@ class CheckerTest(unittest.TestCase):
     def test_hyphen_and_underscore_spellings_are_caught_too(self):
         # Cold read 2026-10-31: "facts-table" got through. By hand: one name per line, three spellings.
         text = "the facts-table runs\nthe facts_table runs\nthe FACTS TABLE runs\n"
-        self.assertEqual([m.rsplit(": ", 1)[0] for m in leaks("docs/x.md", text)], ["docs/x.md:1", "docs/x.md:2", "docs/x.md:3"])
-        self.assertEqual(leaks("docs/x.md", "the facts tablet and factstable are different words\n"), [])
+        self.assertEqual([m.rsplit(": ", 1)[0] for m in leaks("src/x.ts", text)], ["src/x.ts:1", "src/x.ts:2", "src/x.ts:3"])
+        self.assertEqual(leaks("src/x.ts", "the facts tablet and factstable are different words\n"), [])
 
     def test_plain_words_pass(self):
         self.assertEqual(leaks("a.ts", "// the kernel's LINEAR (kernel.json); first.rsvp is not Rust\n"), [])
