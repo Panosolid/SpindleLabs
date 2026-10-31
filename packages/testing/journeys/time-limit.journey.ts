@@ -18,7 +18,7 @@ const calls = { build: (spec: BodySpec) => entry.body_build(spec), boolean: entr
 
 const rect = (x0: number, y0: number, x1: number, y1: number) => ({ path: { corners: [x0, y0, x1, y0, x1, y1, x0, y1], bulges: [] } });
 
-/** A 100 mm square plate 2 mm thick with `n` slots along x (tests/worst_case.rs' grating): 6 + 4n faces. */
+/** A 100 mm square plate 2 mm thick with `n` slots along x (the kernel's costliest legal boolean is two of these crossed, at 111 slots): 6 + 4n faces. */
 function grating(n: number): BodySpec {
   const pitch = 98 / n;
   const holes = Array.from({ length: n }, (_, k) => rect(1, 1 + k * pitch, 99, 1 + k * pitch + pitch / 2));

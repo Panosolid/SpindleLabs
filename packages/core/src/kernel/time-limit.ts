@@ -62,7 +62,7 @@ export function calibrate(calls: CalibrationCalls): number {
 /** No call's limit is shorter: several seconds, so a call never fails for a hiccup of a busy device. */
 export const LIMIT_FLOOR_MS = 10_000;
 
-/** How many times its measured worst cost a call may take (as `tests/worst_case.rs` allows the kernel's own budgets: about four). */
+/** How many times its measured worst cost a call may take (as the kernel's own time budgets allow: about four). */
 export const HEADROOM = 4;
 
 /**
@@ -76,8 +76,7 @@ export const DEFAULT_UNIT_MS = 20;
  * Units per face pair of a boolean (target faces × tool faces). Measured on
  * crossed gratings of n slots (6 + 4n faces each): A − B, the slowest op,
  * took 0.022 units a pair at n = 5, 0.052 at 20, 0.082 at 55 and 0.166 at
- * 111 (33,613 ms for 202,500 pairs), the costliest legal boolean
- * (`tests/worst_case.rs`).
+ * 111 (33,613 ms for 202,500 pairs), the costliest legal boolean.
  */
 export const UNITS_PER_PAIR = 0.17;
 
