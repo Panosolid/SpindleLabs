@@ -254,29 +254,32 @@ test("hand-worked: a 20 mm cube's first layer, and every line as wide as the G-c
   }
   assert.ok(checked > 1000, `${checked} lines checked`);
 
-  // The outer wall of the first layer, by hand: the cube's faces are 20 mm apart and the outer line is
-  // 0.42 mm wide, laid flush with them, so its centre runs 0.21 mm in: a square of side 20 − 0.42 = 19.58 mm,
-  // 4 × 19.58 = 78.32 mm round. The file prints it at F3000, 50 mm/s: 78.32 ÷ 50 = 1.5664 s.
+  // The outer wall of the first layer, by hand: the cube's faces are 20 mm apart and the first layer's
+  // lines are 0.5 mm wide (Bambu Studio's first-layer width), laid flush with them, so the outer line's
+  // centre runs 0.25 mm in: a square of side 20 − 0.5 = 19.5 mm. The loop stops the seam gap, 0.06 mm,
+  // short of its seam, so its last side is 19.5 − 0.06 = 19.44 mm: 3 × 19.5 + 19.44 = 77.94 mm round.
+  // The file prints it at F3000, 50 mm/s: 77.94 ÷ 50 = 1.5588 s.
   const outer = [...Array(p.count).keys()].filter((i) => p.plastic[i] && p.layer[i] === 0 && p.kind[i] === "outer-wall");
   assert.equal(outer.length, 4);
   const length = (i: number) => Math.hypot(p.to[3 * i] - p.from[3 * i], p.to[3 * i + 1] - p.from[3 * i + 1]);
-  for (const i of outer) assert.ok(Math.abs(length(i) - 19.58) < 1e-9, `side ${length(i)}`);
+  outer.forEach((i, k) => assert.ok(Math.abs(length(i) - (k === 3 ? 19.44 : 19.5)) < 1e-9, `side ${k}: ${length(i)}`));
   const time = outer.reduce((t, i) => t + p.finish[i] - p.start[i], 0);
-  assert.ok(Math.abs(time - 1.5664) < 1e-9, `outer wall ${time} s`);
+  assert.ok(Math.abs(time - 1.5588) < 1e-9, `outer wall ${time} s`);
   // Halfway through the first side's time the nozzle is halfway along it, 0.2 mm above the bed.
   const [a] = outer;
   const at = momentAt(p, (p.start[a] + p.finish[a]) / 2)!;
   assert.equal(at.piece, a);
   for (const k of [0, 1]) assert.ok(Math.abs(at.nozzle[k] - (p.from[3 * a + k] + p.to[3 * a + k]) / 2) < 1e-9);
   assert.ok(Math.abs(at.nozzle[2] - 0.2) < 1e-9);
-  // And the square is the cube's footprint shrunk by 0.21 mm all round: 19.58 across in x and in y.
+  // And the square is the cube's footprint shrunk by 0.25 mm all round: 19.5 across in x and in y.
   const xs = outer.flatMap((i) => [p.from[3 * i], p.to[3 * i]]);
   const ys = outer.flatMap((i) => [p.from[3 * i + 1], p.to[3 * i + 1]]);
-  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 19.58) < 1e-9 && Math.abs(Math.max(...ys) - Math.min(...ys) - 19.58) < 1e-9);
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 19.5) < 1e-9 && Math.abs(Math.max(...ys) - Math.min(...ys) - 19.5) < 1e-9);
 
   // The replayer's own checks pass on everything the preview shows: the file followed faithfully, on the P1S's
-  // 256 × 256 mm plate and 250 mm height, layers going up within the limits and every wall closed.
+  // 256 × 256 mm plate and 250 mm height, layers going up within the limits and every wall closed to within
+  // its 0.06 mm seam gap (and the file's 1 µm rounding).
   assert.deepEqual(checkProblems(r), []);
-  assert.deepEqual(checkLayers(r, 1e-3), []);
+  assert.deepEqual(checkLayers(r, 0.06 + 1e-3), []);
   assert.deepEqual(checkPrinter(r, { bed: { x: 256, y: 256 }, height: 250, maxFeed: 30000, maxNozzle: 300, maxBed: 110 }), []);
 });
