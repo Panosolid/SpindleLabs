@@ -219,13 +219,34 @@ export function expectedView(design, failed = new Set()) {
   const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id)).map((b) => [b.id.slice(5), b.number]));
   let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
   for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
+  // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given.
+  const numbered = { bodies: [...given].map(([id, number]) => ({ id: `body:${id}`, number })), nextBody: next };
   const rows = solids.flatMap((f) => (failed.has(f.id) ? [] : [{ row: `body-${given.get(f.id)}`, place: given.get(f.id), id: f.id }]));
   return {
     items: features.map((f, i) => ({ id: f.id, suppressed: f.suppressed === true, rolledBack: i >= stop })),
     solids: solids.map((f) => f.id),
     bodies: rows.length,
     rows,
+    numbered,
   };
+}
+
+/**
+ * A file's text as the app opens it (35e): its Design bodies settled as
+ * an edit would settle them (`expectedView`'s `numbered`), everything else
+ * as written. The text as it is when it is no project with Design data,
+ * or one the model can't read (the app refuses those anyway).
+ */
+export function settledText(text) {
+  try {
+    const file = JSON.parse(text);
+    const design = file?.workspaces?.design;
+    if (!design || design.version !== 5 || !Array.isArray(design.timeline?.features)) return text;
+    Object.assign(design, expectedView(design).numbered);
+    return JSON.stringify(file);
+  } catch {
+    return text;
+  }
 }
 
 /**

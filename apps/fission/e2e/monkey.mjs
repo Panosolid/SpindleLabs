@@ -43,7 +43,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
-import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, shrink, signature } from "./monkey-core.mjs";
+import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrink, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
 const STEPS = Number(process.env.MONKEY_STEPS || 60);
@@ -367,7 +367,7 @@ async function act(s, a) {
       // Opened, the file's data is shown as it was (a valid edit); refused, the project is as before.
       const valid = (() => {
         try {
-          return canonical(text);
+          return canonical(settledText(text)); // its bodies' numbers settled as the app settles them (35e)
         } catch {
           return null;
         }
