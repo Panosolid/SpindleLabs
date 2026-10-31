@@ -9,7 +9,7 @@
 // move.ts.
 
 import type { BodySpec, DisplayMesh, Feature, GeometryReference, KernelCalls, MoveHandle } from "@fission/core";
-import { isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyIdOf, isMoveItem, MOVE_PARAMS, type DesignDocument, type MoveParam } from "./document.ts";
 import { featureSpec } from "./extrude.ts";
 import { madeAfter, moveValues, type MoveValues } from "./move.ts";
 import { BodyCache, rebuildTimeline } from "./rebuild.ts";
@@ -297,8 +297,10 @@ export async function endSpec(kernel: KernelCalls, doc: DesignDocument, f: Featu
   if (!doc.timeline.features.some((m) => isMoveItem(m) && m.dependsOn.includes(f.id))) return featureSpec(kernel, doc, f);
   const cache = new BodyCache(kernel);
   try {
-    const r = (await rebuildTimeline(doc, cache, kernel)).results[f.id];
-    if (r?.status === "built" && r.spec !== undefined) return r.spec;
+    const build = await rebuildTimeline(doc, cache, kernel);
+    const r = build.results[f.id];
+    const body = r?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined;
+    if (body !== undefined) return body.spec;
     throw new Error(r?.status === "failed" ? r.message : `${itemName(f)} is not built`);
   } finally {
     await cache.close();

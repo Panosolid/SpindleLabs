@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { EYE_ROWS, isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_ROWS, isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -89,14 +89,17 @@ function withoutHidden(doc: DesignDocument, id: string): DesignDocument {
 }
 
 /**
- * The browser's eye (U0f3): solid feature `id`'s body hidden (`hide`) or
- * shown again. A hidden body is still built (what is built on it still
- * is), but not drawn, picked or exported as one of the bodies shown. The
- * list is put in timeline order as it grows (a later reorder may leave it
- * in another; any order reads). The same document back when nothing
- * changes; a sketch or an id not in the timeline is refused.
+ * The browser's eye (U0f3): body `bodyId` ("body:feature-3", 35eb) hidden
+ * (`hide`) or shown again. A hidden body is still built (what is built on
+ * it still is), but not drawn, picked or exported as one of the bodies
+ * shown. `hidden` lists it by its item's id (`bodyItem`), put in timeline
+ * order as it grows (a later reorder may leave it in another; any order
+ * reads). The same document back when nothing changes; an id that is no
+ * body id, a sketch's or one not in the timeline is refused.
  */
-export function hideBody(doc: DesignDocument, id: string, hide: boolean): DesignDocument {
+export function hideBody(doc: DesignDocument, bodyId: string, hide: boolean): DesignDocument {
+  const id = bodyItem(bodyId);
+  if (id === null) throw new Error(`${JSON.stringify(bodyId)} is not a body id`);
   const item = itemIn(doc, id);
   if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
   if (!makesBody(item)) throw new Error(`${itemName(item)} is a move, which has no body of its own to hide`);
@@ -128,7 +131,7 @@ export function hideRow(doc: DesignDocument, id: string, hide: boolean): DesignD
   }
   if (!EYE_ROWS.includes(id)) {
     const item = itemIn(doc, id);
-    if (!isSketchItem(item)) return hideBody(doc, id, hide);
+    if (!isSketchItem(item)) return hideBody(doc, bodyIdOf(id), hide);
   }
   if (isHidden(doc, id) === hide) return doc;
   if (!hide) return withoutHidden(doc, id);

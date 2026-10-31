@@ -58,7 +58,7 @@ const NONE_FAILED: ReadonlySet<string> = new Set();
 export function shownBodyFeature(ref: Selected, doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Feature | null {
   if (ref.kind !== "body") return null;
   const r = readDesignReference(ref as GeometryReference);
-  if (r === null || r.kind !== "body" || failed.has(r.featureId) || bodyHidden(doc, r.featureId)) return null;
+  if (r === null || r.kind !== "body" || failed.has(r.featureId) || bodyHidden(doc, ref.id)) return null;
   return bodyFeatures(doc).find((f) => f.id === r.featureId) ?? null;
 }
 
@@ -93,12 +93,12 @@ export const noBodyWords = (doc: DesignDocument, failed: ReadonlySet<string> = N
 /** The reference to the part's body (the last solid feature that builds); null for a design with no body (24f4). */
 export function partBody(doc: DesignDocument): Selected | null {
   const part = partFeature(doc);
-  return part === null ? null : bodyReference(part.id);
+  return part === null ? null : bodyReference(bodyIdOf(part.id));
 }
 
 /** Every body shown, for "the whole design" (the toolbar's STL button, the AI's export_stl; 25c1), in build order; none for a design with no body. */
 export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Selected[] {
-  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) || bodyHidden(doc, f.id) ? [] : [bodyReference(f.id)]));
+  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) || bodyHidden(doc, bodyIdOf(f.id)) ? [] : [bodyReference(bodyIdOf(f.id))]));
 }
 
 /**
@@ -109,7 +109,7 @@ export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> =
  */
 export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string {
   const numbers = bodyNumbers(doc);
-  const hidden = bodyFeatures(doc).flatMap((f) => (!failed.has(f.id) && bodyHidden(doc, f.id) ? [numbers.get(bodyIdOf(f.id))!] : [])).sort((a, b) => a - b);
+  const hidden = bodyFeatures(doc).flatMap((f) => (!failed.has(f.id) && bodyHidden(doc, bodyIdOf(f.id)) ? [numbers.get(bodyIdOf(f.id))!] : [])).sort((a, b) => a - b);
   if (hidden.length === 0) return "";
   if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the STL: show it with its eye in the browser to include it.`;
   const list = `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;

@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyIdOf, insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -637,8 +637,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     });
     // The kernel keeps a display mesh only for the bodies on screen (35d2's store): the rest are hidden there.
     await bodies.showOnly(drawn.flatMap((b) => {
-      const r = build.results[b.feature];
-      return r?.status === "built" && r.body !== undefined ? [r.body] : [];
+      const r = build.bodies[b.body];
+      return r !== undefined ? [r.handle] : [];
     }));
     failedNow = new Set(Object.keys(build.results).filter((id) => build.results[id].status === "failed"));
     slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
@@ -648,7 +648,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const result = feature && build.results[feature.id];
     let failure: string | undefined;
     if (result?.status === "failed") failure = result.message;
-    else if (feature && result && (result.status !== "built" || result.body === undefined || result.spec === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
+    else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
     return { scene: joinBodies(drawn), warnings: warningsOf(doc, build), failure, followed: followedDoc(doc, build) };
   }
   /**
@@ -2487,7 +2487,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.shown) {
       const c = pickChange({ ...pick, shift: true }, lastScene);
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
-      if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].feature));
+      if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
       return;
     }
     const c = pickChange(pick, lastScene);

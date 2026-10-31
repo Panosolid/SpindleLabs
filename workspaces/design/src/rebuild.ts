@@ -35,7 +35,7 @@
 // always runs too long would otherwise stop every fresh kernel in turn.
 
 import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
-import { buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
+import { bodyIdOf, buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { bodyFrame, carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
@@ -66,14 +66,13 @@ export type FeatureResult =
   /**
    * A sketch item with where it lies (`placement`) and, for a sketch on a
    * face held at its last placement, why (`plane`); or a solid feature with
-   * its body (and, for an extrude of a sketch, the curves it was built
-   * from, and `source` when its sketch is held: rule 7).
+   * the ids of the bodies it made (`bodies`; 35eb: each held in the
+   * build's `bodies`, by body id, as the Moves after it leave it) and, for
+   * an extrude of a sketch, `source` when its sketch is held (rule 7).
    */
   | {
       status: "built";
-      body?: BodyHandle;
-      spec?: BodySpec;
-      curves?: CurveIds;
+      bodies?: string[];
       warning?: KeptWarning;
       placement?: SketchPlacement;
       plane?: PlaneWarning;
@@ -145,10 +144,29 @@ export const tookTooLong = (label: string) => `${label} took too long: ${KERNEL_
 /** Whether `e` is a kernel call that ran past its time limit (its kind, never its words). */
 export const timedOut = (e: unknown): boolean => e instanceof KernelError && e.kind === "timed-out";
 
+/**
+ * A body as a rebuild leaves it (35eb): the item that made it, its handle
+ * in the kernel's store, the spec it was built from (moved by the Moves
+ * so far), and for an extrude of a sketch the curves its faces are named
+ * by. Held by body id, so a feature may one day make several (35ec: a
+ * Combine's pieces) and a Move moves bodies, not items.
+ */
+export interface BuiltBody {
+  feature: string;
+  handle: BodyHandle;
+  spec: BodySpec;
+  curves?: CurveIds;
+}
+
+/** Every item's result by item id, in timeline order (`order`), and every body built by body id (`bodies`). */
 export interface TimelineBuild {
   order: string[];
   results: Record<string, FeatureResult>;
+  bodies: Record<string, BuiltBody>;
 }
+
+/** Each body the build holds for timeline items, by body id; none in the build is never undefined but missing. */
+type Bodies = Record<string, BuiltBody>;
 
 /**
  * Bodies kept in the kernel by spec: the same spec gives the same handle
@@ -564,14 +582,16 @@ async function placeOpen(doc: DesignDocument, cache: BodyCache, kernel: KernelCa
 export async function rebuildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls, slow?: SlowItems): Promise<TimelineBuild> {
   return cache.using(async () => {
     const build = await buildTimeline(doc, cache, calls, slow);
-    await cache.keepOnly(handlesOf(build.results));
+    await cache.keepOnly(handlesOf(build));
     return build;
   });
 }
 
-/** The bodies a rebuild's results hold. */
-const handlesOf = (results: Record<string, FeatureResult>): BodyHandle[] =>
-  Object.values(results).flatMap((r) => (r.status === "built" ? [...(r.body !== undefined ? [r.body] : []), ...(r.holds ?? [])] : []));
+/** The bodies a rebuild holds: each body as built, and those the Moves hold as they were before them. */
+const handlesOf = (build: TimelineBuild): BodyHandle[] => [
+  ...Object.values(build.bodies).map((b) => b.handle),
+  ...Object.values(build.results).flatMap((r) => (r.status === "built" ? (r.holds ?? []) : [])),
+];
 
 /** `rebuildTimeline` without freeing anything: every result, its bodies in `cache` with whatever else is there. */
 async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls, slow?: SlowItems): Promise<TimelineBuild> {
@@ -582,6 +602,7 @@ async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: Kerne
   const aheadSlow = bodiesAtOnce(doc, cache, kernel, index, skipped);
   // No prototype: every id is an entry, even one named like an object's own (results["__proto__"], re-check N1).
   const results: Record<string, FeatureResult> = Object.create(null);
+  const bodies: Bodies = Object.create(null);
   const { features, marker } = doc.timeline;
   let rolled = marker === "start";
   for (const f of features) {
@@ -593,13 +614,13 @@ async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: Kerne
       slow?.note(doc, f);
       results[f.id] = { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
     } else {
-      const r = await buildFeature(doc, f, results, cache, kernel, index);
+      const r = await buildFeature(doc, f, results, bodies, cache, kernel, index);
       if (r.status === "failed" && r.cause === "timed-out") slow?.note(doc, f);
       results[f.id] = r;
     }
     if (marker === f.id) rolled = true;
   }
-  return { order: features.map((f) => f.id), results };
+  return { order: features.map((f) => f.id), results, bodies };
 }
 
 const words = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -652,7 +673,7 @@ const XY_PLACEMENT: SketchPlacement = { plane: planeOf("XY"), side: 1 };
  * pinned points and projections followed (`follow`); held, they are not judged (the plane's warning says it
  * all, as the naming model's rule 10).
  */
-async function placeSketch(f: Feature, done: Record<string, FeatureResult>, cache: BodyCache, index: DocIndex): Promise<FeatureResult> {
+async function placeSketch(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, index: DocIndex): Promise<FeatureResult> {
   const content = index.sketches.get(f.id)!;
   const featureId = isFaceSketch(f) ? faceFeature(f.intent.parameters.plane as string)! : null;
   // Q3 and rule 13: the face's feature first, then each a pin names, then each a projection names (27d), in order.
@@ -663,14 +684,14 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, cach
   }
   if (featureId === null) {
     const placement = originPlacement(f) ?? XY_PLACEMENT;
-    return { status: "built", placement, ...(await follow(f, index, done, cache, placement.plane, null)) };
+    return { status: "built", placement, ...(await follow(f, index, done, bodies, cache, placement.plane, null)) };
   }
   const plane = f.intent.parameters.plane as string;
   const p = content.face!;
-  const on = done[featureId];
+  const on = done[featureId]?.status === "built" ? bodies[bodyIdOf(featureId)] : undefined;
   let cause: PlaneWarning["cause"] = "plane-lost";
-  if (on?.status === "built" && on.body !== undefined && on.spec !== undefined) {
-    const view = await cache.view(on.body);
+  if (on !== undefined) {
+    const view = await cache.view(on.handle);
     const names = featureNames(featureId, { spec: on.spec, curves: on.curves }, view);
     const ref = faceReference(plane);
     const face = resolveReference(ref, names);
@@ -679,7 +700,7 @@ async function placeSketch(f: Feature, done: Record<string, FeatureResult>, cach
       // 35e2h: carried first by what the Moves before it did to the body since the sketch was drawn (not known before 35e2h: not carried).
       const carry = p.body === undefined ? null : carried(p.body, bodyFrame(on.spec) ?? undefined);
       const placement = { plane: frameNow(squared(p.frame)!, outward, view.face_centroids[face], carry), side: p.side };
-      return { status: "built", placement, ...(await follow(f, index, done, cache, placement.plane, featureId)) };
+      return { status: "built", placement, ...(await follow(f, index, done, bodies, cache, placement.plane, featureId)) };
     }
     if (sharedBy(ref, names) > 1) cause = "plane-ambiguous";
   }
@@ -740,16 +761,15 @@ export function followedDoc(doc: DesignDocument, build: TimelineBuild): DesignDo
  * none (deleted, failed or not built) loses the point. Nothing for a
  * sketch without pins.
  */
-async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureResult>, cache: BodyCache, plane: Plane, face: string | null): Promise<Partial<Extract<FeatureResult, { status: "built" }>>> {
+async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureResult>, built: Bodies, cache: BodyCache, plane: Plane, face: string | null): Promise<Partial<Extract<FeatureResult, { status: "built" }>>> {
   const content = index.sketches.get(f.id)!;
   if (!follows(content)) return {};
   const bodies = new Map<string, { view: BodyView; names: BodyNames } | null>();
   const bodyOf = async (id: string) => {
     if (!bodies.has(id)) {
-      const r = done[id];
-      const built = r?.status === "built" && r.body !== undefined && r.spec !== undefined ? r : null;
-      const view = built && (await cache.view(built.body!));
-      bodies.set(id, built && view ? { view, names: featureNames(id, { spec: built.spec!, curves: built.curves }, view) } : null);
+      const b = done[id]?.status === "built" ? built[bodyIdOf(id)] : undefined;
+      const view = b && (await cache.view(b.handle));
+      bodies.set(id, b && view ? { view, names: featureNames(id, { spec: b.spec, curves: b.curves }, view) } : null);
     }
     return bodies.get(id)!;
   };
@@ -795,13 +815,19 @@ async function follow(f: Feature, index: DocIndex, done: Record<string, FeatureR
   };
 }
 
-async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, cache: BodyCache, kernel: KernelCalls, index: DocIndex): Promise<FeatureResult> {
+async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache, kernel: KernelCalls, index: DocIndex): Promise<FeatureResult> {
+  // A solid item's one body (35eb: by its body id, `bodyIdOf`), held in `bodies`, and its result naming it.
+  const made = (body: Omit<BuiltBody, "feature">, rest: Partial<Extract<FeatureResult, { status: "built" }>> = {}): FeatureResult => {
+    const id = bodyIdOf(f.id);
+    bodies[id] = { feature: f.id, ...body };
+    return { status: "built", bodies: [id], ...rest };
+  };
   try {
-    if (isSketchItem(f)) return await placeSketch(f, done, cache, index);
-    if (isMoveItem(f)) return await moveBodies(f, done, cache);
+    if (isSketchItem(f)) return await placeSketch(f, done, bodies, cache, index);
+    if (isMoveItem(f)) return await moveBodies(f, done, bodies, cache);
     if (!isSketchExtrude(f)) {
       const spec = specOf(doc, f);
-      return { status: "built", body: await cache.body(spec), spec };
+      return made({ handle: await cache.body(spec), spec });
     }
     const sketchId = f.intent.parameters.sketch as string;
     const item = index.items.get(sketchId);
@@ -812,11 +838,11 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     if (item !== undefined && input?.status !== "built") return { status: "failed", cause: "failed-input", input: sketchId, message: `${item.provenance.self.label} is not built` };
     // A face sketch's placement is the rebuild's; an origin plane's, extrudeSpec's own.
     const placed = item !== undefined && isFaceSketch(item) && input?.status === "built" ? input.placement : undefined;
-    const made = await extrudeSpec(kernel, doc, f, index, placed);
-    if ("status" in made) return made;
+    const spec = await extrudeSpec(kernel, doc, f, index, placed);
+    if ("status" in spec) return spec;
     const lost = input?.status === "built" ? input.plane : undefined;
     const source = lost && { ...lost, sketch: sketchId, message: `${f.provenance.self.label}'s source is lost: ${item!.provenance.self.label}'s plane is ${lost.cause === "plane-lost" ? "lost" : "ambiguous"}, so it stays where it was` };
-    return { status: "built", body: await cache.body(made.spec), ...made, ...(source ? { source } : {}) };
+    return made({ handle: await cache.body(spec.spec), spec: spec.spec, curves: spec.curves }, { ...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) });
   } catch (e) {
     if (timedOut(e)) return { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
     return { status: "failed", cause: "error", message: words(e) };
@@ -824,16 +850,19 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
 }
 
 /**
- * A Move's result (step 35e2): greyed while a body it moves is suppressed
- * or greyed (Q3), failed naming the first that isn't built; else every
- * body it moves is built moved (`movedSpec`), and its result in `done`
- * becomes that moved body, so everything after the Move (a sketch on its
- * face, the view, the STL) finds it where the Move put it. All or none: a
- * body the kernel refuses to move (out past model space) leaves every body
- * where it was and fails the Move with the kernel's words. The Move holds
- * the bodies as they were (`holds`), so the next rebuild finds them built.
+ * A Move's result (step 35e2): greyed while an item whose body it moves
+ * is suppressed or greyed (Q3), failed naming the first that isn't built;
+ * else every body it moves is built moved (`movedSpec`) and held in
+ * `bodies` under its own id (35eb) in place of the body as it was, so
+ * everything after the Move (a sketch on its face, the view, the STL)
+ * finds it where the Move put it. All or none: a body the kernel refuses
+ * to move (out past model space) leaves every body where it was and fails
+ * the Move with the kernel's words. The Move holds the bodies as they
+ * were (`holds`), so the next rebuild finds them built. Its bodies are
+ * stored by their items' ids (`dependsOn`), each item's body `bodyIdOf`
+ * it: the same as a body id until an item makes more than one (35ec).
  */
-async function moveBodies(f: Feature, done: Record<string, FeatureResult>, cache: BodyCache): Promise<FeatureResult> {
+async function moveBodies(f: Feature, done: Record<string, FeatureResult>, bodies: Bodies, cache: BodyCache): Promise<FeatureResult> {
   for (const id of f.dependsOn) {
     const r = done[id];
     if (r?.status === "suppressed") return { status: "greyed", by: id };
@@ -841,24 +870,22 @@ async function moveBodies(f: Feature, done: Record<string, FeatureResult>, cache
   }
   const label = (id: string) => f.provenance.from.find((x) => x.id === id)?.label ?? id;
   const motions = moveMotions(moveValues(f));
-  const from: [string, Extract<FeatureResult, { status: "built" }> & { body: BodyHandle; spec: BodySpec }][] = [];
+  const from: [string, BuiltBody][] = [];
   for (const id of f.dependsOn) {
     const r = done[id];
+    const b = r?.status === "built" ? bodies[bodyIdOf(id)] : undefined;
     if (r === undefined) return { status: "failed", cause: "deleted-input", input: id, message: `${label(id)} was deleted, so ${f.provenance.self.label} has nothing to move` };
-    if (r.status !== "built" || r.body === undefined || r.spec === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
-    from.push([id, { ...r, body: r.body, spec: r.spec }]);
+    if (b === undefined) return { status: "failed", cause: "failed-input", input: id, message: `${label(id)} is not built, so ${f.provenance.self.label} can't move it` };
+    from.push([bodyIdOf(id), b]);
   }
   // Built only once every body is there, so a Move that fails builds nothing.
-  const moved: [string, Extract<FeatureResult, { status: "built" }>][] = [];
-  for (const [id, r] of from) {
-    const spec = movedSpec(r.spec, motions);
-    moved.push([id, { ...r, spec, body: spec === r.spec ? r.body : await cache.body(spec) }]);
+  const moved: [string, BuiltBody][] = [];
+  for (const [id, b] of from) {
+    const spec = movedSpec(b.spec, motions);
+    moved.push([id, { ...b, spec, handle: spec === b.spec ? b.handle : await cache.body(spec) }]);
   }
-  const holds = f.dependsOn.flatMap((id) => {
-    const r = done[id];
-    return r?.status === "built" && r.body !== undefined ? [r.body] : [];
-  });
-  for (const [id, r] of moved) done[id] = r;
+  const holds = from.map(([, b]) => b.handle);
+  for (const [id, b] of moved) bodies[id] = b;
   return { status: "built", holds };
 }
 

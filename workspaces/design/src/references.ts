@@ -9,15 +9,16 @@
 // nothing, never to another face. Nothing else builds ids.
 
 import type { GeometryReference, OutlineReference, StableId } from "@fission/core";
+import { bodyItem } from "./document.ts";
 import { indexOf, type BodyNames } from "./naming.ts";
 
 /** Says what every face and edge id is, for the properties panel. */
 export const NAME_NOTE = "Stable name: the feature, the face's role in it and its sketch curve (an edge: the two faces it joins)";
 
-/** The reference for the body `featureId` built. Bad input throws: an empty feature id, or one with ":" or "/". */
-export function bodyReference(featureId: string): GeometryReference {
-  if (featureId.length === 0 || /[:/]/.test(featureId)) throw new Error(`invalid feature id ${JSON.stringify(featureId)}`);
-  return { kind: "body", id: `body:${featureId}` as StableId };
+/** The reference for body `bodyId` (35eb: "body:feature-3", `bodyIdOf`). Bad input throws: anything `bodyIdOf` never makes (no item, or one with ":" or "/"). */
+export function bodyReference(bodyId: string): GeometryReference {
+  if (bodyItem(bodyId) === null) throw new Error(`invalid body id ${JSON.stringify(bodyId)}`);
+  return { kind: "body", id: bodyId as StableId };
 }
 
 /**
