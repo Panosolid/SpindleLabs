@@ -468,7 +468,7 @@ test("Preview is given the file choices, so it can slice the file that is downlo
   t.d.ask();
   t.$("slice-print-preview").click();
   await t.settle();
-  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured" }]);
+  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured", nozzle: "standard" }]);
   await t.window.happyDOM.close();
 });
 
@@ -505,8 +505,9 @@ test("the preview reads a P1S file's layer moves only: 100 layers for the 20 mm 
 
 test("a file's name starts with the project's name, so files of two projects differ on the printer's list; an unnamed project keeps 'spindlelabs'", () => {
   // By hand: name, then the layer height, walls and infill, then the plate and the ending.
-  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "Bracket"), "Bracket-0.2mm-2w-15pc-textured.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "standard", "Bracket"), "Bracket-0.2mm-2w-15pc-textured.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "high-flow", "Bracket"), "Bracket-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
   assert.equal(gcodeName({ ...PRINT_DEFAULTS, supports: "tree" }, "Bracket"), "Bracket-0.2mm-2w-15pc-tree-supports.gcode");
-  for (const unnamed of [undefined, "", "   ", "Untitled", "untitled"]) assert.equal(printFileName(PRINT_DEFAULTS, "smooth", unnamed), "spindlelabs-0.2mm-2w-15pc-smooth.gcode.3mf", String(unnamed));
-  assert.notEqual(printFileName(PRINT_DEFAULTS, "textured", "A"), printFileName(PRINT_DEFAULTS, "textured", "B"));
+  for (const unnamed of [undefined, "", "   ", "Untitled", "untitled"]) assert.equal(printFileName(PRINT_DEFAULTS, "smooth", "standard", unnamed), "spindlelabs-0.2mm-2w-15pc-smooth.gcode.3mf", String(unnamed));
+  assert.notEqual(printFileName(PRINT_DEFAULTS, "textured", "standard", "A"), printFileName(PRINT_DEFAULTS, "textured", "standard", "B"));
 });
