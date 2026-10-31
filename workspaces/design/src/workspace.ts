@@ -28,7 +28,7 @@ import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.t
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
-import { gcodeName, P1S_KIND, printFileName, printFileOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
+import { gcodeName, gcodeOfPackage, P1S_KIND, printFileName, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
@@ -425,10 +425,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
-    async slice(choices, file) {
+    async slice(choices, file, alive) {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
       const save = async (print: PrintFacts, suggestedName: string, kind: SaveKind, bytes: Uint8Array<ArrayBuffer>) => {
+        if (!alive()) throw new SliceDropped();
         const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind, bytes });
         if (r.status === "failed") throw new Error(r.message);
         return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
@@ -441,10 +442,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       return save(print, gcodeName(choices), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
-    async preview(choices) {
+    async preview(choices, file, alive) {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
-      const print = await sliceBodies(kernel, doc!, features, choices);
+      // The file Slice and download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
+      const p1s = file.format === "p1s" ? await printFileOf(kernel, doc!, features, choices, file.plate) : null;
+      const gcode = p1s ? printMovesOf(gcodeOfPackage(p1s.package) ?? "") : null;
+      const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
+      if (!alive()) throw new SliceDropped();
       openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p));
     },
   });

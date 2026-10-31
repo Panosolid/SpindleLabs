@@ -165,7 +165,7 @@ export function openPrintPreview(slot: HTMLElement, p: Playback, words: string, 
     return b;
   };
   for (const k of chipKinds(p)) {
-    const b = chip(k, present.includes(k) ? KIND_NAMES[k] : `${KIND_NAMES[k]} (none yet)`);
+    const b = chip(k, present.includes(k) ? KIND_NAMES[k] : `${KIND_NAMES[k]} (none)`);
     if (!present.includes(k)) {
       b.disabled = true;
       b.title = NO_SUPPORTS;

@@ -74,7 +74,7 @@ test("the preview opens on the finished print; the layer slider shows the print 
   assert.equal(t.$<HTMLInputElement>("print-preview-scrub").value, "1000");
   assert.equal(t.$("print-preview-layer-words").textContent, "Layer 2 of 2 · 0.40 mm");
   assert.equal(t.$<HTMLInputElement>("print-preview-layers").max, "2");
-  assert.deepEqual([...t.$("print-preview-legend").children].map((c) => c.textContent), ["Outer wall", "Sparse infill", "Support (none yet)", "Travel"]);
+  assert.deepEqual([...t.$("print-preview-legend").children].map((c) => c.textContent), ["Outer wall", "Sparse infill", "Support (none)", "Travel"]);
   // The slider at layer 1: the clock at the end of layer 1, 1.52 s.
   const slider = t.$<HTMLInputElement>("print-preview-layers");
   slider.value = "1";
@@ -185,7 +185,7 @@ test("a slice without supports says so: their switch and both supports choices a
   const t = panel(TWO_LAYERS);
   const support = t.$<HTMLButtonElement>("print-preview-show-support");
   assert.equal(support.disabled, true);
-  assert.equal(support.textContent, "Support (none yet)");
+  assert.equal(support.textContent, "Support (none)");
   assert.equal(t.$<HTMLButtonElement>("print-preview-preset-only-supports").disabled, true);
   assert.equal(t.$<HTMLButtonElement>("print-preview-preset-no-supports").disabled, true);
   assert.equal(t.$("print-preview-no-supports").textContent, NO_SUPPORTS);

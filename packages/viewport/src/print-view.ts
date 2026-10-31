@@ -340,8 +340,10 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
   let shadowsStale = true;
   let shadowLayer = Number.NaN;
   let shadowLaid = 0;
+  let disposed = false;
   const draw = () => {
     frameRequested = false;
+    if (disposed) return; // a frame asked for before dispose must not draw on the lost context
     if (shadowsStale) {
       renderer.shadowMap.needsUpdate = true;
       shadowsStale = false;
@@ -437,6 +439,10 @@ export function printView(host: HTMLElement, p: Playback): PrintView {
         }
       });
       if (sky instanceof THREE.Texture) sky.dispose();
+      disposed = true;
+      // dispose() alone leaves the browser holding the WebGL context until it is collected: after 16 previews Chrome
+      // dropped the oldest, the Design view's (slicer hunt 2026-10-31). Let it go now.
+      renderer.forceContextLoss();
       renderer.dispose();
       canvas.remove();
     },
