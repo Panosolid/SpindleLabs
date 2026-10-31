@@ -7,7 +7,8 @@ import { entry as kernel } from "./entry-points.ts";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
-import type { BodyHandle, BodySpec, BuildPlate, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
+import { calibrate } from "./time-limit.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -37,8 +38,24 @@ const ready = download().then((exports) => {
   return startKernel(kernel.begin, release);
 });
 ready.catch(() => {});
-// Started: from now on the client times each call (kernel-client.ts, `answerWithinMs`), never the download.
-ready.then(() => self.postMessage({ ready: true } satisfies KernelReady), () => {});
+/**
+ * Started: the calibration boolean timed (step 35d3, time-limit.ts), and
+ * from now on the client times each call by it, never the download or the
+ * calibration. A calibration that fails says none (the client takes its
+ * default); a trap in it fails the first call, which replaces this kernel.
+ */
+ready.then(
+  () => {
+    let unitMs: number | undefined;
+    try {
+      unitMs = calibrate({ build: (spec) => kernel.body_build(spec), boolean: (t, tools, op) => kernel.body_boolean(t, tools, op), free: (b) => kernel.body_free(b), now: () => performance.now() });
+    } catch {
+      unitMs = undefined;
+    }
+    self.postMessage({ ready: true, ...(unitMs !== undefined && { unitMs }) } satisfies KernelReady);
+  },
+  () => {},
+);
 
 const ops = {
   kernel_version: () => kernel.kernel_version(),
@@ -55,6 +72,8 @@ const ops = {
   body_stl: (body: BodyHandle, name: string) => kernel.body_stl(body, name),
   body_step: (body: BodyHandle) => kernel.body_step(body),
   body_free: (body: BodyHandle) => kernel.body_free(body),
+  body_hide: (body: BodyHandle) => kernel.body_hide(body),
+  body_boolean: (target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult => kernel.body_boolean(target, tools, op),
   body_count: () => kernel.body_count(),
   slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
   print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate) =>

@@ -9,8 +9,9 @@
 // the browser reopens with it.
 // The faults are planted in the real worker (Playwright's worker handle):
 // its next body build is never answered (stuck), closes the worker (gone),
-// or throws outside any call (crashed). The kernel's deadline is cut from a
-// minute to 3 s (?kernel-deadline, main.ts). A stuck kernel that sticks
+// or throws outside any call (crashed). The floor of each call's time limit
+// is cut from 10 s to 3 s (?kernel-deadline, main.ts; a box's own limit is
+// under it). A stuck kernel that sticks
 // again in every fresh worker (the page drops what it sends) is healed at
 // most three times, then the design says so in words and stays editable.
 // 1280 px; run with `npm run e2e` (after `npm run build`).
@@ -21,7 +22,7 @@ import { pinProperties } from "./properties.mjs";
 import { startWithBox } from "./start.mjs";
 
 const DEADLINE_MS = 3000;
-const NOT_ANSWERING = "The geometry kernel stopped answering, so it was started again."; // packages/core/src/kernel/kernel-client.ts
+const TOOK_TOO_LONG = "This took the geometry kernel too long, so it was stopped and started again."; // packages/core/src/kernel/kernel-client.ts
 const site = await liveSite(4247);
 const browser = await launch();
 let failed = false;
@@ -133,7 +134,7 @@ await check("a kernel that sticks on the same build in every fresh kernel is hea
   await p.waitForTimeout(DEADLINE_MS * 1.5); // no fifth try starts by itself
   assert.equal(await p.evaluate(() => window.stuckWorkers), 4, "healed three times, then left");
   const words = await panel(p);
-  assert.ok(words.includes(NOT_ANSWERING), `the panel says what happened: ${words.slice(-300)}`);
+  assert.ok(words.includes(TOOK_TOO_LONG), `the panel says what happened: ${words.slice(-300)}`);
   // An edit that doesn't stick builds on the fresh kernel: 45 · 30 · 20 = 27,000 mm³.
   await p.fill("#width", "45");
   await until(p, () => document.querySelector("#volume")?.textContent === "27,000 mm³", null, 5000);

@@ -238,6 +238,29 @@ export interface P1sPrintFile {
 /** A body the kernel keeps between calls: a whole number from 1, never reused. Free it with body_free. */
 export type BodyHandle = number;
 
+/** A boolean's operation (Combine's Join, Cut and Intersect). */
+export type BooleanOp = "union" | "subtract" | "intersect";
+
+/** Where one face of a boolean's result came from: face `face` of the input `body`, all of it or a piece (`whole`), turned over or not. */
+export interface FaceFrom {
+  body: BodyHandle;
+  face: number;
+  whole: boolean;
+  turned: boolean;
+}
+
+/** Where one edge of a boolean's result came from: the input edges it lies along, or the two input faces whose crossing made it (the earlier body's face first). */
+export interface EdgeFrom {
+  along: { body: BodyHandle; edge: number; whole: boolean }[];
+  crossing: [{ body: BodyHandle; face: number }, { body: BodyHandle; face: number }][];
+}
+
+/** What body_boolean gives: the result bodies' handles, and for each, where its faces and edges came from (indexed like its faces and edges). */
+export interface BooleanResult {
+  bodies: BodyHandle[];
+  history: { faces: FaceFrom[]; edges: EdgeFrom[] }[];
+}
+
 /** What kind of failure a kernel call had. */
 export type KernelErrorKind =
   /** The kernel refuses an input; the user's to fix. */
@@ -251,7 +274,9 @@ export type KernelErrorKind =
   /** The kernel already holds its most bodies (MAX_LIVE_BODIES); free some. */
   | "too-many-bodies"
   /** Any other kernel failure (including a crash): a kernel bug. */
-  | "internal";
+  | "internal"
+  /** Never the kernel's own: the call ran past its time limit (kernel-client.ts, time-limit.ts), so the kernel was started again. */
+  | "timed-out";
 
 /**
  * Which input a failure is about, so the app
