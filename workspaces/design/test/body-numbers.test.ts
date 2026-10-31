@@ -86,7 +86,7 @@ test("hand-worked: a deleted body's number is never given again", () => {
   // Even when the deleted one was the newest: Body 3 deleted, the next is still Body 4.
   assert.equal(insertPreset(deleteItem(three(), "feature-12"), "box", 5, 5, 5).doc.bodies!.at(-1)!.number, 4);
   // The STL's word on hidden bodies names them by their own numbers, smallest first.
-  const hidden = hideBody(hideBody(reordered(three(), "feature-12", 0), "feature-12", true), "feature-1", true);
+  const hidden = hideBody(hideBody(reordered(three(), "feature-12", 0), "body:feature-12", true), "body:feature-1", true);
   assert.equal(hiddenStlNote(hidden), "Bodies 1 and 3 are hidden, so they are not in the STL: show them with their eyes in the browser to include them.");
 });
 

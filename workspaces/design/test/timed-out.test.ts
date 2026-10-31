@@ -259,13 +259,13 @@ test("after a rebuild only the bodies drawn keep a mesh: a moved box's body befo
   const b = d.last!;
   const drawn = await shownBodies(doc, b, d.cache);
   assert.deepEqual(drawn.map((s) => s.feature), ["feature-1"]);
-  await d.cache.showOnly(drawn.map((s) => (b.results[s.feature] as { body: number }).body));
+  await d.cache.showOnly(drawn.map((s) => b.bodies[s.body].handle));
   // Worked by hand: three bodies kept (Box 1 as made, held by the Move; Box 1 moved; Box 2): one drawn, so two hidden.
   assert.equal(d.cache.size, 3);
   assert.equal(d.cache.meshed, 1);
   const hidden = StandInWorker.all[0].posted.filter((r) => r.op === "body_hide").map((r) => r.args[0]);
   assert.equal(hidden.length, 2);
-  assert.ok(!hidden.includes((b.results["feature-1"] as { body: number }).body), "the moved box, drawn, keeps its mesh");
+  assert.ok(!hidden.includes(b.bodies["body:feature-1"].handle), "the moved box, drawn, keeps its mesh");
 });
 
 test("a body whose view takes too long (meshing it again) is not drawn: it goes to `slow` by its item; with no `slow` the error is thrown", async () => {

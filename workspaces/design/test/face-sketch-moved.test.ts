@@ -91,7 +91,7 @@ test("a face picked gives the new sketch where the Moves had put its body, the w
   const view = { ...boxView(40, 30, 20), mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, face_normals: [[0, 0, -1], [0, 0, 1], [0, -1, 0], [0, 1, 0], [-1, 0, 0], [1, 0, 0]], face_centroids: [[20, 15, 0], [20, 15, 20], [20, 0, 10], [20, 30, 10], [0, 15, 10], [40, 15, 10]] } as BodyView;
   const top = 1;
   const at = plane([7, 3, 0], [1, 0, 0], [0, 0, 1]);
-  const body = (frame?: Plane): ShownBody => ({ feature: "feature-1", place: 1, view, names: nameBody("feature-1", view, () => null), ...(frame ? { frame } : {}) });
+  const body = (frame?: Plane): ShownBody => ({ feature: "feature-1", body: "body:feature-1", place: 1, view, names: nameBody("feature-1", view, () => null), ...(frame ? { frame } : {}) });
   const moved = sketchSpot({ face: top, shift: false }, joinBodies([body(at)]));
   assert.ok(moved?.kind === "face", JSON.stringify(moved));
   assert.deepEqual(moved.drawn.body, at);

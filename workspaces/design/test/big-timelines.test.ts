@@ -186,7 +186,8 @@ test("the rebuild asks for every outline and body at once, each once, and builds
   assert.equal(count("sketch_outline"), 10, "one per different outline");
   assert.equal(count("body_build"), 60, "40 boxes and 20 extrudes, each once");
   assert.ok(k.most() >= 40, `the 40 boxes and 10 outlines were asked before any answer came back (at most ${k.most()} waiting)`);
-  assert.equal(Object.values(build.results).filter((r) => r.status === "built" && r.body !== undefined).length, 60);
+  assert.equal(Object.values(build.results).filter((r) => r.status === "built" && r.bodies?.length === 1).length, 60);
+  assert.equal(Object.keys(build.bodies).length, 60, "each built body held under its own body id");
   assert.equal(cache.size, 60);
   // The views, all asked at once too.
   const before = k.calls.length;

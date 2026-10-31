@@ -25,7 +25,7 @@ const box = {
 } as BodyView;
 // The cylinder round (60, 0) from z 0 to 10: bottom, top, and its round side (no plane, so no normal).
 const cylinder = { ...CYLINDER_VIEW, mesh: empty, face_normals: [[0, 0, -1], [0, 0, 1], null], face_centroids: [[60, 0, 0], [60, 0, 10], [60, 0, 5]] } as BodyView;
-const shown = (feature: string, view: BodyView, place: number) => ({ feature, place, view, names: nameBody(feature, view, () => null) });
+const shown = (feature: string, view: BodyView, place: number) => ({ feature, body: `body:${feature}`, place, view, names: nameBody(feature, view, () => null) });
 // Joined: the box's faces are 0 to 5, the cylinder's 6 (bottom), 7 (top) and 8 (side).
 const scene = joinBodies([shown("feature-1", box, 1), shown("feature-4", cylinder, 2)]);
 const pick = (face: number | null, plane?: string | null) => ({ face, plane, edge: null, shift: false });
@@ -100,7 +100,7 @@ test("a feature id with characters a name escapes still names its own feature", 
 });
 
 test("a body named as another feature's (names out of step with the body) is refused rather than sketched on the wrong one", () => {
-  const s = joinBodies([{ feature: "feature-1", place: 1, view: box, names: nameBody("feature-9", box, () => null) }]);
+  const s = joinBodies([{ feature: "feature-1", body: "body:feature-1", place: 1, view: box, names: nameBody("feature-9", box, () => null) }]);
   assert.deepEqual(sketchSpot(pick(1), s), { kind: "refused", message: UNNAMED_FACE });
 });
 

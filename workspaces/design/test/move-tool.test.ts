@@ -71,13 +71,13 @@ test("a point turned the way a Move turns, by hand: counter-clockwise looking do
 test("the bodies a selection picks: a face or an edge picks its body, each once, in the scene's order", () => {
   const top = designReference("face", cylinder.names, 0)!;
   const edge = designReference("edge", box.names, 3)!;
-  const items: GeometryReference[] = [top, edge, bodyReference("feature-4"), bodyReference("feature-1")];
+  const items: GeometryReference[] = [top, edge, bodyReference("body:feature-4"), bodyReference("body:feature-1")];
   assert.deepEqual(pickedBodies(items, scene), ["feature-1", "feature-4"]);
   assert.deepEqual(pickedBodies([top], scene), ["feature-4"]);
   // A body not on screen (hidden, or not built), an outline and an empty selection pick nothing; nor does anything before a scene.
-  assert.deepEqual(pickedBodies([bodyReference("feature-9"), { kind: "outline", id: "profile:sketch-2" as never }], scene), []);
+  assert.deepEqual(pickedBodies([bodyReference("body:feature-9"), { kind: "outline", id: "profile:sketch-2" as never }], scene), []);
   assert.deepEqual(pickedBodies([], scene), []);
-  assert.deepEqual(pickedBodies([bodyReference("feature-1")], null), []);
+  assert.deepEqual(pickedBodies([bodyReference("body:feature-1")], null), []);
 });
 
 test("a new Move's pivot: the centre of the box round the picked bodies, by hand", () => {

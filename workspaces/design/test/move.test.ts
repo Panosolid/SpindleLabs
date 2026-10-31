@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Feature } from "@fission/core";
-import { builds, buildingItems, greyedBy, insertPreset, partDocument, partFeature, readDesignDocument, type DesignDocument } from "../src/document.ts";
+import { bodyIdOf, builds, buildingItems, greyedBy, insertPreset, partDocument, partFeature, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { changedMove, insertMove, moveKindOf, moveMotions, movedSpec, moveSummary, moveValues, NO_MOVE, type MoveValues } from "../src/move.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { deleteItem, hideBody, moveMarker, reorderItem, suppressItem } from "../src/timeline-edits.ts";
@@ -104,7 +104,7 @@ test("the timeline treats a Move as an item that makes no body", () => {
   // Edit feature is on (35e2b): it opens the Move panel on the Move's numbers, and so does a double-click.
   assert.equal(itemMenu(doc, id).find((e) => e.action === "edit")?.off, null);
   assert.equal(openAction(doc, id), "edit");
-  assert.throws(() => hideBody(doc, id, true), { message: "Move 1 is a move, which has no body of its own to hide" });
+  assert.throws(() => hideBody(doc, bodyIdOf(id), true), { message: "Move 1 is a move, which has no body of its own to hide" });
   // It builds while its body does; greyed by it when it is suppressed (Q3).
   assert.equal(builds(doc, item(doc, id)), true);
   const off = suppressItem(doc, "feature-1", true);
