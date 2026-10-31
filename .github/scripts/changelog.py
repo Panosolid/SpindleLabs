@@ -72,7 +72,7 @@ LEAKS = [
     (re.compile(r"\bprototypes/"), "a private source path"),
     (re.compile(r"\bkernel/(?:src|tests)\b"), "a private kernel source path"),
     (re.compile(r"\bfacts[ _-]?model\b", re.I), "an internal algorithm name"),
-    (re.compile(r"\bfacts table\b", re.I), "an internal data-structure name"),
+    (re.compile(r"\bfacts[ _-]table\b", re.I), "an internal data-structure name"),
     (re.compile(r"\bspade\b", re.I), "a third-party library the kernel is built on"),
 ]
 

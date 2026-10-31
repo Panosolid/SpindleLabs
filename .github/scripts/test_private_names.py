@@ -14,7 +14,7 @@ import subprocess
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-NAMES = re.compile(r"\b[a-z_]+\.rs\b|\bfacts table\b", re.I)
+NAMES = re.compile(r"\b[a-z_]+\.rs\b|\bfacts[ _-]table\b", re.I)
 SKIP = re.compile(r"^(packages/core/src/kernel/wasm/|\.github/scripts/test_[a-z_]+\.py$|\.github/scripts/changelog\.py$)")
 
 
@@ -36,6 +36,12 @@ class CheckerTest(unittest.TestCase):
         text = "// fine\n// see kernel/src/ops/place.rs\n// the Facts Table says\n"
         self.assertEqual(leaks("workspaces/design/src/x.ts", text), [
             "workspaces/design/src/x.ts:2: place.rs", "workspaces/design/src/x.ts:3: Facts Table"])
+
+    def test_hyphen_and_underscore_spellings_are_caught_too(self):
+        # Cold read 2026-10-31: "facts-table" got through. By hand: one name per line, three spellings.
+        text = "the facts-table runs\nthe facts_table runs\nthe FACTS TABLE runs\n"
+        self.assertEqual([m.rsplit(": ", 1)[0] for m in leaks("src/x.ts", text)], ["src/x.ts:1", "src/x.ts:2", "src/x.ts:3"])
+        self.assertEqual(leaks("src/x.ts", "the facts tablet and factstable are different words\n"), [])
 
     def test_plain_words_pass(self):
         self.assertEqual(leaks("a.ts", "// the kernel's LINEAR (kernel.json); first.rsvp is not Rust\n"), [])

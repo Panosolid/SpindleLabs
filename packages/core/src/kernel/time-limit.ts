@@ -235,6 +235,18 @@ export type SizeOf = (body: BodyHandle) => BodySize | undefined;
  * pointer's rounding, freeing, counting) have none: the floor is theirs.
  */
 export function callUnits<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], sizeOf: SizeOf): number {
+  // Arguments of the wrong shape (a nonsense profile, a null spec) are the
+  // kernel's to refuse with its bad-request: reading them here must not throw
+  // first, so anything unreadable has no units (the floor is its limit).
+  try {
+    const units = unitsOf(op, args, sizeOf);
+    return Number.isFinite(units) && units > 0 ? units : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function unitsOf<K extends keyof KernelOps>(op: K, args: KernelOps[K]["args"], sizeOf: SizeOf): number {
   const a = args as unknown[];
   switch (op) {
     case "make_box":

@@ -89,6 +89,9 @@ export const KERNEL_STOPPED_FOR_ANOTHER = "The geometry kernel was started again
  */
 export const KERNEL_NOT_DOWNLOADED = "The geometry kernel didn't start (its file didn't download). Reload the page to try again.";
 
+/** A watch that fires this much later than it was due means the device slept or the page was frozen. */
+const LATE_TIMER_MS = 1000;
+
 const KINDS: readonly KernelErrorKind[] = ["invalid-input", "invalid-result", "bad-request", "unknown-body", "too-many-bodies", "internal"];
 
 /**
@@ -183,10 +186,23 @@ export class KernelClient implements KernelCalls {
   private watch: ReturnType<typeof setTimeout> | null = null;
   /** The id of the call being timed. */
   private timed: number | null = null;
+  /** When the watch is due (Date.now), to see a timer that fired late. */
+  private dueAt = 0;
+  /** The page was hidden or frozen while the call was timed: the worker may have had no CPU time. */
+  private sawHidden = false;
 
   /** `floorMs`: the shortest limit (LIMIT_FLOOR_MS; the browser checks shorten it). */
   constructor(options: { floorMs?: number } = {}) {
     this.floorMs = options.floorMs ?? LIMIT_FLOOR_MS;
+    // A phone that backgrounds the tab, or a laptop that sleeps, stops the
+    // worker as well as the page: that time must not count against a call.
+    const doc = (globalThis as { document?: { hidden?: boolean; addEventListener?(type: string, fn: () => void): void } }).document;
+    if (doc?.addEventListener) {
+      doc.addEventListener("visibilitychange", () => {
+        if (doc.hidden) this.sawHidden = true;
+      });
+      doc.addEventListener("freeze", () => (this.sawHidden = true));
+    }
     this.start();
   }
 
@@ -200,10 +216,30 @@ export class KernelClient implements KernelCalls {
     if (!head) return;
     const [id, call] = head;
     this.timed = id;
+    this.sawHidden = false;
+    this.arm(id, limitMs(call.units, this.unitMs, this.floorMs));
+  }
+
+  /**
+   * Sets the watch for `ms`. When it fires, a page that was hidden or frozen
+   * meanwhile (or a timer more than a second late: the device slept) tells
+   * nothing about the kernel, whose worker got no CPU time either, so the call
+   * is given its whole limit again from now instead of the healthy kernel being
+   * let go. A kernel that is really stuck is still caught: the first time the
+   * limit passes with the page awake and on time.
+   */
+  private arm(id: number, ms: number) {
+    this.dueAt = Date.now() + ms;
     this.watch = setTimeout(() => {
       this.watch = null;
+      const late = Date.now() - this.dueAt;
+      const doc = (globalThis as { document?: { hidden?: boolean } }).document;
+      if (this.sawHidden || doc?.hidden || late > LATE_TIMER_MS) {
+        this.sawHidden = false;
+        return this.arm(id, ms);
+      }
       this.restart(KERNEL_STOPPED_FOR_ANOTHER, id);
-    }, limitMs(call.units, this.unitMs, this.floorMs));
+    }, ms);
   }
 
   private start() {
