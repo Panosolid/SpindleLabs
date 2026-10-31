@@ -155,11 +155,12 @@ test("the preview: the radius line before the start, then both radius lines and 
 test("snapping skips the tool's own centre and start, and a tool switch drops them", () => {
   // A line (0, 0) → (10, 0): with the centre on its start and the arc's
   // start on its end, neither is a target (an end there draws nothing), but
-  // the line's midpoint (5, 0) still is. Before the clicks both ends are.
+  // the line's midpoint (5, 0) still is. Before the clicks both ends are,
+  // and the origin after them (the centre on it leaves it out too).
   const s = addSketch(partDocument("box", 40, 30, 20));
   const doc = drawLine(s.doc, s.id, [0, 0], [10, 0]).doc;
   const targets = (tool: SketchTool) => snapTargets(doc.sketches[0], tool).points.map((t) => `${t.at}`);
-  assert.deepEqual(targets(startTool("centre", s.id)), ["0,0", "10,0", "5,0"]);
+  assert.deepEqual(targets(startTool("centre", s.id)), ["0,0", "10,0", "5,0", "0,0"]);
   const r = run(doc, startTool("centre", s.id), [[0, 0], [10, 0]]);
   assert.deepEqual(targets(r.tool), ["5,0"]);
   assert.deepEqual(snapTargets(doc.sketches[0], r.tool).own, [[0, 0], [10, 0]]);
