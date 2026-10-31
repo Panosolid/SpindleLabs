@@ -1,0 +1,52 @@
+{
+ "seed": "27000",
+ "shape": {
+  "what": "crescent",
+  "corners": [
+   [
+    -4,
+    0
+   ],
+   [
+    4,
+    0
+   ]
+  ],
+  "pieces": [
+   {
+    "kind": "arc",
+    "from": 1,
+    "to": 0,
+    "centre": [
+     0,
+     0
+    ]
+   },
+   {
+    "kind": "arc",
+    "from": 1,
+    "to": 0,
+    "centre": [
+     0,
+     -3
+    ]
+   }
+  ]
+ },
+ "on": {
+  "role": "front",
+  "n": [
+   0,
+   -1,
+   0
+  ],
+  "p": [
+   20,
+   0,
+   10
+  ]
+ },
+ "d": 14,
+ "flip": true,
+ "scale": 1
+}

@@ -53,7 +53,7 @@ test("a Move's words", () => {
 
 test("insertMove puts a Move of the picked bodies in at the marker, named Move 1, Move 2…", () => {
   const d = twoBodies();
-  const a = insertMove(d, ["feature-2", "feature-1"], v({ x: 10 }));
+  const a = insertMove(d, ["body:feature-2", "body:feature-1"], v({ x: 10 }));
   assert.equal(a.id, "feature-3");
   const m = item(a.doc, "feature-3");
   assert.deepEqual(m.dependsOn, ["feature-2", "feature-1"], "the bodies, in the order picked");
@@ -62,10 +62,10 @@ test("insertMove puts a Move of the picked bodies in at the marker, named Move 1
   assert.equal(m.intent.summary, "Move 2 bodies by (10, 0, 0) mm");
   assert.deepEqual(moveValues(m), v({ x: 10 }));
   assert.equal(a.doc.nextId, 4);
-  const b = insertMove(a.doc, ["feature-1"], v({ y: 1 }));
+  const b = insertMove(a.doc, ["body:feature-1"], v({ y: 1 }));
   assert.equal(item(b.doc, b.id).provenance.self.label, "Move 2");
   // At the marker: with it after Box 1, the Move goes second and the marker onto it.
-  const at = insertMove(moveMarker(d, "feature-1"), ["feature-1"], v({ z: 1 }));
+  const at = insertMove(moveMarker(d, "feature-1"), ["body:feature-1"], v({ z: 1 }));
   assert.deepEqual(at.doc.timeline.features.map((f) => f.id), ["feature-1", "feature-3", "feature-2"]);
   assert.equal(at.doc.timeline.marker, "feature-3");
 });
@@ -73,17 +73,19 @@ test("insertMove puts a Move of the picked bodies in at the marker, named Move 1
 test("insertMove's refusals", () => {
   const d = twoBodies();
   assert.throws(() => insertMove(d, [], NO_MOVE), { message: "pick at least one body to move" });
-  assert.throws(() => insertMove(d, ["feature-1", "feature-1"], NO_MOVE), { message: "feature-1 is picked twice" });
-  assert.throws(() => insertMove(d, ["feature-9"], NO_MOVE), { message: "feature-9 is not a body in the design" });
-  const moved = insertMove(d, ["feature-1"], NO_MOVE).doc;
-  assert.throws(() => insertMove(moved, ["feature-3"], NO_MOVE), { message: "feature-3 is not a body in the design" }, "a Move is no body");
-  assert.throws(() => insertMove(moveMarker(d, "feature-1"), ["feature-2"], NO_MOVE), { message: "Cylinder 1 comes after the rollback marker, so a move put in at the marker can't move it" });
-  assert.throws(() => insertMove(d, ["feature-1"], v({ x: NaN })), { message: "a move needs x as a number, not NaN" });
-  assert.throws(() => insertMove(d, ["feature-1"], v({ turnY: Infinity })), { message: "a move needs turnY as a number, not Infinity" });
+  assert.throws(() => insertMove(d, ["body:feature-1", "body:feature-1"], NO_MOVE), { message: "body:feature-1 is picked twice" });
+  assert.throws(() => insertMove(d, ["body:feature-9"], NO_MOVE), { message: "body:feature-9 is not a body in the design" });
+  // 35eb: picks are body ids; a bare feature id (what a file lists) is refused, never read as the body.
+  assert.throws(() => insertMove(d, ["feature-1"], NO_MOVE), { message: "feature-1 is not a body id" });
+  const moved = insertMove(d, ["body:feature-1"], NO_MOVE).doc;
+  assert.throws(() => insertMove(moved, ["body:feature-3"], NO_MOVE), { message: "body:feature-3 is not a body in the design" }, "a Move is no body");
+  assert.throws(() => insertMove(moveMarker(d, "feature-1"), ["body:feature-2"], NO_MOVE), { message: "Cylinder 1 comes after the rollback marker, so a move put in at the marker can't move it" });
+  assert.throws(() => insertMove(d, ["body:feature-1"], v({ x: NaN })), { message: "a move needs x as a number, not NaN" });
+  assert.throws(() => insertMove(d, ["body:feature-1"], v({ turnY: Infinity })), { message: "a move needs turnY as a number, not Infinity" });
 });
 
 test("changedMove edits the numbers in place, keeping id, place, flags and bodies", () => {
-  const { doc, id } = insertMove(twoBodies(), ["feature-1"], v({ x: 10 }));
+  const { doc, id } = insertMove(twoBodies(), ["body:feature-1"], v({ x: 10 }));
   const s = suppressItem(doc, id, true);
   const c = changedMove(s, id, v({ x: 25, turnZ: 90 }));
   const m = item(c, id);
@@ -97,7 +99,7 @@ test("changedMove edits the numbers in place, keeping id, place, flags and bodie
 });
 
 test("the timeline treats a Move as an item that makes no body", () => {
-  const { doc, id } = insertMove(twoBodies(), ["feature-1"], v({ x: 10 }));
+  const { doc, id } = insertMove(twoBodies(), ["body:feature-1"], v({ x: 10 }));
   assert.deepEqual(bodyFeatures(doc).map((f) => f.id), ["feature-1", "feature-2"], "two bodies, not three");
   assert.equal(partFeature(doc)?.id, "feature-2", "the part is the last body, not the Move");
   assert.equal(canEditFeature(item(doc, id)), false);
@@ -159,20 +161,20 @@ test("Move and Rotate, two tools making one kind of item: names, words and which
   assert.equal(moveSummary(["Box 1", "Cylinder 1"], NO_MOVE), "Move 2 bodies (not moved yet)");
   // Names counted per tool: Move 1, Rotate 1, Rotate 2, then Move 2 (the Rotates don't count towards the Moves).
   let d = twoBodies();
-  const m1 = insertMove(d, ["feature-1"], v({ x: 10 }));
-  const r1 = insertMove(m1.doc, ["feature-1"], v({ turnZ: 90 }), "rotate");
-  const r2 = insertMove(r1.doc, ["feature-2"], NO_MOVE, "rotate");
-  const m2 = insertMove(r2.doc, ["feature-2"], v({ y: -3 }));
+  const m1 = insertMove(d, ["body:feature-1"], v({ x: 10 }));
+  const r1 = insertMove(m1.doc, ["body:feature-1"], v({ turnZ: 90 }), "rotate");
+  const r2 = insertMove(r1.doc, ["body:feature-2"], NO_MOVE, "rotate");
+  const m2 = insertMove(r2.doc, ["body:feature-2"], v({ y: -3 }));
   d = m2.doc;
   assert.deepEqual([m1.id, r1.id, r2.id, m2.id].map((id) => item(d, id).provenance.self.label), ["Move 1", "Rotate 1", "Rotate 2", "Move 2"]);
   assert.equal(item(d, r2.id).intent.summary, "Rotate Cylinder 1 (not turned yet)");
   // Which tool opens each: a shift opens Move; a turn alone opens Rotate; a Rotate that does nothing yet stays Rotate,
   // a Move that does nothing stays Move; an old file's Move that shifts and turns opens Move (its angles shown too).
   assert.deepEqual([m1.id, r1.id, r2.id, m2.id].map((id) => moveKindOf(item(d, id))), ["move", "rotate", "rotate", "move"]);
-  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["feature-1"], NO_MOVE).doc, "feature-3")), "move");
-  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["feature-1"], v({ x: 1, turnX: 5 }), "rotate").doc, "feature-3")), "move");
+  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["body:feature-1"], NO_MOVE).doc, "feature-3")), "move");
+  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["body:feature-1"], v({ x: 1, turnX: 5 }), "rotate").doc, "feature-3")), "move");
   // A turn alone made by Move (as old files have) opens Rotate: what it does is turn.
-  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["feature-1"], v({ turnY: -30 })).doc, "feature-3")), "rotate");
+  assert.equal(moveKindOf(item(insertMove(twoBodies(), ["body:feature-1"], v({ turnY: -30 })).doc, "feature-3")), "rotate");
   // Edited, each keeps its word: Rotate 1 changed to 45° still says Rotate; Move 1 changed still says Move.
   assert.equal(item(changedMove(d, r1.id, v({ turnZ: 45 })), r1.id).intent.summary, "Rotate Box 1 turned 45° about Z");
   assert.equal(item(changedMove(d, m1.id, v({ x: 20 })), m1.id).intent.summary, "Move Box 1 by (20, 0, 0) mm");

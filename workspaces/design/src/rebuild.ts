@@ -165,6 +165,15 @@ export interface TimelineBuild {
   bodies: Record<string, BuiltBody>;
 }
 
+/**
+ * The body item `featureId` built in `build` (35eb), or undefined when it
+ * built none: not built, or an item that makes no body (a sketch, a
+ * Move). What a result's `body`, `spec` and `curves` were before 35eb.
+ */
+export function builtBody(build: Pick<TimelineBuild, "results" | "bodies">, featureId: string): BuiltBody | undefined {
+  return build.results[featureId]?.status === "built" ? build.bodies[bodyIdOf(featureId)] : undefined;
+}
+
 /** Each body the build holds for timeline items, by body id; none in the build is never undefined but missing. */
 type Bodies = Record<string, BuiltBody>;
 

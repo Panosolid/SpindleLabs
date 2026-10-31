@@ -14,7 +14,7 @@ import type { BodyView, DisplayMesh, GeometryReference } from "@fission/core";
 import { NO_MOVE, type MoveValues } from "../src/move.ts";
 import { boxCentre, boxText, draggedValues, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, MOVE_PREVIEW_LIMIT, movedMesh, movedPoint, pickedBodies, previewable, readMoveBoxes, snapDegrees, snapMm, startPivot, unmovedPoint, wrapDegrees } from "../src/move-tool.ts";
 import { insertMove } from "../src/move.ts";
-import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
+import { bodyIdOf, insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
 import { nameBody } from "../src/naming.ts";
 import { bodyReference, designReference } from "../src/references.ts";
 import { joinBodies, type ShownBody } from "../src/scene.ts";
@@ -42,7 +42,7 @@ function meshFor(faces: number, edges: number): DisplayMesh {
 }
 const shown = (feature: string, view: BodyView, bounds: BodyView["bounds"], place = 1): ShownBody => {
   const vw = { ...view, bounds, mesh: meshFor(view.faces, view.edges) };
-  return { feature, place, view: vw, names: nameBody(feature, vw, () => null) };
+  return { feature, body: `body:${feature}`, place, view: vw, names: nameBody(feature, vw, () => null) };
 };
 // A 40 × 30 × 20 box at the origin (feature-1) and a ⌀20 × 10 cylinder standing at (100, 0, 0) (feature-4).
 const box = shown("feature-1", BOX_VIEW, [[0, 0, 0], [40, 30, 20]]);
@@ -72,8 +72,8 @@ test("the bodies a selection picks: a face or an edge picks its body, each once,
   const top = designReference("face", cylinder.names, 0)!;
   const edge = designReference("edge", box.names, 3)!;
   const items: GeometryReference[] = [top, edge, bodyReference("body:feature-4"), bodyReference("body:feature-1")];
-  assert.deepEqual(pickedBodies(items, scene), ["feature-1", "feature-4"]);
-  assert.deepEqual(pickedBodies([top], scene), ["feature-4"]);
+  assert.deepEqual(pickedBodies(items, scene), ["body:feature-1", "body:feature-4"]);
+  assert.deepEqual(pickedBodies([top], scene), ["body:feature-4"]);
   // A body not on screen (hidden, or not built), an outline and an empty selection pick nothing; nor does anything before a scene.
   assert.deepEqual(pickedBodies([bodyReference("body:feature-9"), { kind: "outline", id: "profile:sketch-2" as never }], scene), []);
   assert.deepEqual(pickedBodies([], scene), []);
@@ -82,15 +82,15 @@ test("the bodies a selection picks: a face or an edge picks its body, each once,
 
 test("a new Move's pivot: the centre of the box round the picked bodies, by hand", () => {
   // The box alone: (40/2, 30/2, 20/2) = (20, 15, 10).
-  assert.deepEqual(startPivot(["feature-1"], scene), [20, 15, 10]);
+  assert.deepEqual(startPivot(["body:feature-1"], scene), [20, 15, 10]);
   // Both: x 0..110, y −10..30, z 0..20, so (55, 10, 10).
-  assert.deepEqual(startPivot(["feature-1", "feature-4"], scene), [55, 10, 10]);
+  assert.deepEqual(startPivot(["body:feature-1", "body:feature-4"], scene), [55, 10, 10]);
   assert.deepEqual(boxCentre([]), [0, 0, 0], "nothing picked: the origin");
   assert.deepEqual(startPivot([], scene), [0, 0, 0]);
 });
 
 test("the preview moves only the picked bodies' points, lines and normals, keeping every list's length and numbering", () => {
-  const m = movedMesh(scene, ["feature-4"], v({ x: 10 }));
+  const m = movedMesh(scene, ["body:feature-4"], v({ x: 10 }));
   // The box's 6 faces × 3 points = 18 points (54 numbers) and 12 lines (72 numbers) stay; the cylinder's follow.
   assert.deepEqual(m.positions.slice(0, 54), scene.mesh.positions.slice(0, 54));
   assert.deepEqual(m.edge_lines.slice(0, 72), scene.mesh.edge_lines.slice(0, 72));
@@ -101,10 +101,10 @@ test("the preview moves only the picked bodies' points, lines and normals, keepi
   for (const k of ["positions", "normals", "indices", "triangle_faces", "edge_lines", "edge_line_edges"] as const) assert.equal(m[k].length, scene.mesh[k].length, k);
   assert.equal(m.indices, scene.mesh.indices, "the triangles are the same list");
   // Turned 90° about Z: the normals +X become +Y, on the cylinder only.
-  const t = movedMesh(scene, ["feature-4"], v({ turnZ: 90 }));
+  const t = movedMesh(scene, ["body:feature-4"], v({ turnZ: 90 }));
   close(t.normals.slice(54, 57), [0, 1, 0], "cylinder's normal");
   close(t.normals.slice(0, 3), [1, 0, 0], "box's normal");
-  assert.equal(movedMesh(scene, ["feature-1"], v({ pivotX: 3 })), scene.mesh, "only a pivot: the mesh itself");
+  assert.equal(movedMesh(scene, ["body:feature-1"], v({ pivotX: 3 })), scene.mesh, "only a pivot: the mesh itself");
   assert.equal(movedMesh(scene, [], v({ x: 3 })).positions.join(), scene.mesh.positions.join(), "nothing picked: nothing moves");
 });
 
@@ -190,7 +190,7 @@ test("seeded: a Move undone puts 1,000 random points and directions back", () =>
 /** Box 1 (feature-1) and Cylinder 1 (feature-2); Move 1 (feature-3) shifts Box 1 10 mm along X; Move 2 (feature-4) then turns it 90° about X through the origin. */
 function twoMoves(): DesignDocument {
   const doc = insertPreset(partDocument("box", 40, 30, 20), "cylinder", 40, 40, 20).doc;
-  return insertMove(insertMove(doc, ["feature-1"], v({ x: 10 })).doc, ["feature-1"], v({ turnX: 90 })).doc;
+  return insertMove(insertMove(doc, ["body:feature-1"], v({ x: 10 })).doc, ["body:feature-1"], v({ turnX: 90 })).doc;
 }
 
 /** A scene of Box 1 and Cylinder 1 whose box has the point `p` and normal `n` first (as built), the rest as meshFor lays them out. */
@@ -252,12 +252,12 @@ test("seeded: 300 chains of Moves on two bodies; an edited Move's preview is the
     for (let k = 0; k < count; k++) {
       const bodies = rand() < 0.5 ? ["feature-1"] : rand() < 0.5 ? ["feature-2"] : ["feature-1", "feature-2"];
       const values = randomMove();
-      const made = insertMove(doc, bodies, values);
+      const made = insertMove(doc, bodies.map(bodyIdOf), values);
       doc = made.doc;
       moves.push({ id: made.id, bodies, values, built: rand() < 0.8 });
     }
     /** The scene as the chain builds it, with Move `edit` at `to` when given: each built Move in turn (a failed one moves nothing). */
-    const chain = (edit?: string, to?: MoveValues) => moves.reduce((scene, m) => (m.built || m.id === edit ? { ...scene, mesh: movedMesh(scene, m.bodies, m.id === edit ? to! : m.values) } : scene), original);
+    const chain = (edit?: string, to?: MoveValues) => moves.reduce((scene, m) => (m.built || m.id === edit ? { ...scene, mesh: movedMesh(scene, m.bodies.map(bodyIdOf), m.id === edit ? to! : m.values) } : scene), original);
     const results = Object.fromEntries([["feature-1", { status: "built" }], ["feature-2", { status: "built" }], ...moves.map((m) => [m.id, { status: m.built ? "built" : "failed" }])]);
     const edited = moves[Math.floor(rand() * moves.length)];
     const to = randomMove();

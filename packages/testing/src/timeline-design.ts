@@ -370,11 +370,11 @@ export function designSubject(kernel: KernelCalls, faults: Iterable<DesignFault>
         return { state: { doc: moveMarker(doc, fs.has("marker-start-ignored") && op.at === "start" ? null : op.at), meta }, made: [] };
       case "add-move": {
         // 35e2: Design's Move, as the Move panel's OK will put it in.
-        const m = insertMove(doc, op.bodies, moveValues(op));
+        const m = insertMove(doc, op.bodies.map(bodyIdOf), moveValues(op)); // the model names bodies by item, Design by body id (35eb)
         return { state: { doc: m.doc, meta }, made: [m.id] };
       }
       case "set-move":
-        return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies), meta }, made: [] };
+        return { state: { doc: changedMove(doc, op.item, moveValues(op), op.bodies?.map(bodyIdOf)), meta }, made: [] };
     }
   }
 

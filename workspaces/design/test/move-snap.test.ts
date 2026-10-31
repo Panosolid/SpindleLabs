@@ -13,7 +13,7 @@ import type { BodyView } from "@fission/core";
 import { NO_MOVE, insertMove, type MoveValues } from "../src/move.ts";
 import { movedPoint } from "../src/move-tool.ts";
 import { SNAP_CURVED_FACE, PARALLEL, SNAP_NO_FLAT, snapAngle, snapEnds, snappedValues, snapPart, turnAngles, turnBetween, turnMatrix, type SnapPart } from "../src/move-snap.ts";
-import { insertPreset, partDocument } from "../src/document.ts";
+import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { boxView, cylinderView } from "./views.ts";
 
 const v = (o: Partial<MoveValues>): MoveValues => ({ ...NO_MOVE, ...o });
@@ -302,17 +302,17 @@ test("by hand: an edited Move's ends are taken back through the later Move of th
   let doc = insertPreset(partDocument("box", 10, 10, 10), "box", 10, 10, 10).doc;
   const body = doc.timeline.features.at(-1)!.id;
   let first: string;
-  ({ doc, id: first } = insertMove(doc, [body], v({ x: 100 })));
-  ({ doc } = insertMove(doc, [body], v({ y: 50 })));
+  ({ doc, id: first } = insertMove(doc, [bodyIdOf(body)], v({ x: 100 })));
+  ({ doc } = insertMove(doc, [bodyIdOf(body)], v({ y: 50 })));
   const results = Object.fromEntries(doc.timeline.features.map((f) => [f.id, { status: "built" }]));
   const from: SnapPart = { kind: "face", point: [105, 55, 0], normal: [0, 0, -1] };
   const to: SnapPart = { kind: "face", point: [20, 65, 20], normal: [0, 0, 1] };
-  const ends = snapEnds(doc, results, first, body, from, to);
+  const ends = snapEnds(doc, results, first, bodyIdOf(body), from, to);
   close(ends.from.point, [5, 5, 0], "from");
   close(ends.to.point, [20, 15, 20], "to");
   // A Move that did not build moved nothing: only the later Move is taken back.
   const failed = { ...results, [first]: { status: "failed" } };
-  close(snapEnds(doc, failed, first, body, from, to).from.point, [105, 5, 0], "failed Move");
+  close(snapEnds(doc, failed, first, bodyIdOf(body), from, to).from.point, [105, 5, 0], "failed Move");
   // A new Move (no id) takes nothing back.
-  close(snapEnds(doc, results, null, body, from, to).from.point, [105, 55, 0], "new Move");
+  close(snapEnds(doc, results, null, bodyIdOf(body), from, to).from.point, [105, 55, 0], "new Move");
 });

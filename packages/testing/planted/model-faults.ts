@@ -147,8 +147,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: "workspaces/design/src/scene.ts",
-        find: "      view = await cache.view(r.body);",
-        replace: "      const real = await cache.view(r.body);\n      const g = globalThis as { drift?: number };\n      view = (g.drift = (g.drift ?? 0) + 1) % 2 === 0 ? { ...real, volume: real.volume * 1.001 } : real;",
+        find: "      view = await cache.view(b.handle);",
+        replace: "      const real = await cache.view(b.handle);\n      const g = globalThis as { drift?: number };\n      view = (g.drift = (g.drift ?? 0) + 1) % 2 === 0 ? { ...real, volume: real.volume * 1.001 } : real;",
       },
     ],
     run: ["timeline"],
@@ -160,8 +160,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: "workspaces/design/src/scene.ts",
-        find: '  return scene.bodies.findIndex((b) => (r.kind === "body" ? b.feature === r.featureId : b.names.feature === r.featureId));',
-        replace: '  const last = scene.bodies.length - 1;\n  const b = scene.bodies[last];\n  return b && (r.kind === "body" ? b.feature === r.featureId : b.names.feature === r.featureId) ? last : -1;',
+        find: '  return scene.bodies.findIndex((b) => (r.kind === "body" ? b.body === ref.id : b.names.feature === r.featureId));',
+        replace: '  const last = scene.bodies.length - 1;\n  const b = scene.bodies[last];\n  return b && (r.kind === "body" ? b.body === ref.id : b.names.feature === r.featureId) ? last : -1;',
       },
     ],
     run: ["timeline"],
@@ -242,16 +242,17 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "      const r = await buildFeature(doc, f, results, cache, kernel, index);",
+        find: "      const r = await buildFeature(doc, f, results, bodies, cache, kernel, index);",
         replace: [
-          "      const g = globalThis as { prev?: WeakMap<object, Map<string, { k: string; r: FeatureResult }>> };",
+          "      const g = globalThis as { prev?: WeakMap<object, Map<string, { k: string; r: FeatureResult; made: [string, BuiltBody][] }>> };",
           "      const prev = (g.prev ??= new WeakMap());",
           "      if (!prev.has(cache)) prev.set(cache, new Map());",
           "      const k = JSON.stringify(f);",
           "      const old = prev.get(cache)!.get(f.id);",
-          "      const held = old?.r.status === \"built\" && [...(cache as unknown as { bodies: Map<string, { handle: unknown }> }).bodies.values()].some((b) => b.handle === (old.r as { body?: unknown }).body);",
-          "      const r = old && old.k === k && held ? old.r : await buildFeature(doc, f, results, cache, kernel, index);",
-          "      prev.get(cache)!.set(f.id, { k, r });",
+          "      const held = old?.r.status === \"built\" && old.made.every(([, b]) => [...(cache as unknown as { bodies: Map<string, { handle: unknown }> }).bodies.values()].some((c) => c.handle === b.handle));",
+          "      if (old && old.k === k && held) for (const [id, b] of old.made) bodies[id] = b;",
+          "      const r = old && old.k === k && held ? old.r : await buildFeature(doc, f, results, bodies, cache, kernel, index);",
+          "      prev.get(cache)!.set(f.id, { k, r, made: (r.status === \"built\" ? (r.bodies ?? []) : []).map((id) => [id, bodies[id]] as [string, BuiltBody]) });",
         ].join("\n"),
       },
     ],
@@ -295,7 +296,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "move-not-held": {
     what: "a Move builds its moved bodies but leaves the timeline's bodies where they were",
-    edits: [{ file: REBUILD, find: "  for (const [id, r] of moved) done[id] = r;", replace: "" }],
+    edits: [{ file: REBUILD, find: "  for (const [id, b] of moved) bodies[id] = b;", replace: "" }],
     run: ["timeline"],
     caught: "the rebuild differs from the model",
   },
@@ -392,7 +393,7 @@ export const NAMING_PLANTS: Record<string, NamingPlant> = {
   "source-lost-silent": {
     fault: "source-lost-silent",
     what: "an extrude of a held face sketch says nothing",
-    edits: [{ file: REBUILD, find: "...made, ...(source ? { source } : {}) };", replace: "...made };" }],
+    edits: [{ file: REBUILD, find: "...(spec.warning ? { warning: spec.warning } : {}), ...(source ? { source } : {}) });", replace: "...(spec.warning ? { warning: spec.warning } : {}) });" }],
     run: ["naming"],
     caught: "hand-worked: a sketch on a cylinder's flat top",
     why: "the hand-worked file naming a cylinder's side comes before the Fusion answers",

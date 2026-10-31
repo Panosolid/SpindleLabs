@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ActionRegistry, emptyProject, outlineToSvg, RepresentationRegistry, type AnalysisOverlay, type KernelCalls, type Selected, type WorkspaceContext } from "@fission/core";
 import {
+  bodyIdOf,
   addSketch,
   askOutline,
   BodyCache,
@@ -135,7 +136,7 @@ test("seeded: on random timelines, the verbs, the toolbar's STL, the copies and 
     reached.failed += failed.size > 0 ? 1 : 0;
     const a = app(doc);
     const verbs = (refs: Selected[]) => a.actions.actionsFor(targetsOf(refs, doc, failed)).map((x) => x.label);
-    for (const f of solids) assert.deepEqual(verbs([bodyReference(f.id)]), shown.includes(f.id) ? ["Download STL"] : [], `${where}: ${f.id}`);
+    for (const f of solids) assert.deepEqual(verbs([bodyReference(bodyIdOf(f.id))]), shown.includes(f.id) ? ["Download STL"] : [], `${where}: ${f.id}`);
     assert.deepEqual(shownBodyRefs(doc, failed).map((b) => b.id), shown.map((id) => `body:${id}`), where);
     // A scene of what was shown, for the links (they read only which features it holds).
     const scene = { bodies: shown.map((feature) => ({ feature })), faceStart: [], edgeStart: [] } as unknown as Scene;
@@ -147,7 +148,7 @@ test("seeded: on random timelines, the verbs, the toolbar's STL, the copies and 
       assert.equal(all.bad, false, `${where}: ${all.message}`);
       const alone = [];
       for (const id of shown) {
-        await a.run(DOWNLOAD_STL, [bodyReference(id)]);
+        await a.run(DOWNLOAD_STL, [bodyReference(bodyIdOf(id))]);
         alone.push(a.saved.at(-1)!.bytes);
       }
       const joined = a.saved[0].bytes;

@@ -15,7 +15,7 @@
 
 import type { BodyView } from "@fission/core";
 import { isMoveItem, type DesignDocument } from "./document.ts";
-import { moveValues, type MoveValues } from "./move.ts";
+import { movedBodies, moveValues, type MoveValues } from "./move.ts";
 import { movedPoint, unmovedPoint, type PointMap } from "./move-tool.ts";
 
 type Point = [number, number, number];
@@ -237,14 +237,14 @@ export function snappedValues(v: MoveValues, from: SnapPart, to: SnapPart): { va
  * anything: suppressed, greyed, failed): what the scene's view of the body
  * has been through since the Move, as editedMoveMesh takes it.
  */
-function movesSince(doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string | null, feature: string) {
+function movesSince(doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string | null, body: string) {
   const at = id === null ? -1 : doc.timeline.features.findIndex((f) => f.id === id);
   if (at < 0) return { built: null, later: [] as MoveValues[] };
   const edited = doc.timeline.features[at];
   const built = isMoveItem(edited) && results[id!]?.status === "built" ? moveValues(edited) : null;
   const later = doc.timeline.features
     .slice(at + 1)
-    .filter((f) => isMoveItem(f) && results[f.id]?.status === "built" && f.dependsOn.includes(feature))
+    .filter((f) => isMoveItem(f) && results[f.id]?.status === "built" && movedBodies(f).includes(body))
     .map(moveValues);
   return { built, later };
 }
@@ -252,7 +252,7 @@ function movesSince(doc: DesignDocument, results: Readonly<Record<string, { stat
 /**
  * The two ends of a snap of Move `id` (null for a new one) as
  * snappedValues takes them, from parts as the scene shows them: `from` (on
- * body `fromBody`, which the Move moves) taken back through the built
+ * body `fromBody` (its body id, 35eb), which the Move moves) taken back through the built
  * Moves after this one that move its body (last first) and out of this
  * Move as built, so it is where its body was before the Move; `to` taken
  * back through those same later Moves, so landing there under this Move

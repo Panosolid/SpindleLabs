@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView, OfferedProfile } from "@fission/core";
-import { addSketch, BodyCache, changePreset, drawRectangle, FACE_WITH_HOLES, featureSpec, NO_SKETCH, partDocument, PICK_PROFILE_STATUS, rebuildTimeline, type DesignDocument } from "@fission/design";
+import { addSketch, BodyCache, builtBody, changePreset, drawRectangle, FACE_WITH_HOLES, featureSpec, NO_SKETCH, partDocument, PICK_PROFILE_STATUS, rebuildTimeline, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
@@ -42,8 +42,9 @@ async function built(doc: DesignDocument): Promise<Record<string, { volume: numb
     const out: Record<string, { volume: number; bounds: number[][] }> = {};
     for (const [id, r] of Object.entries(build.results)) {
       assert.ok(r.status !== "failed", `${id} builds: ${JSON.stringify(r)}`);
-      if (r.status === "built" && r.body !== undefined) {
-        const v = (await cache.view(r.body))!;
+      const b = builtBody(build, id);
+      if (b !== undefined) {
+        const v = (await cache.view(b.handle))!;
         out[id] = { volume: v.volume, bounds: v.bounds as number[][] };
       }
     }

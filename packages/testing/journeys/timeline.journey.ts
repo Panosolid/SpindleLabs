@@ -16,6 +16,7 @@ import { seeded, type SeededRandom } from "../src/index.ts";
 import {
   addSketch,
   buildSpec,
+  builtBody,
   deleteCurve,
   deleteItem,
   designReference,
@@ -358,7 +359,7 @@ test("Design names edges by the two faces they join, the uprights in order round
 
 /** Builds the part of a Design document on the real kernel and names it, as Design's workspace does. */
 /** One built body as the app shows it: joined alone (24d3b), so its numbering is the kernel's. */
-const sceneOf = (b: { view: BodyView; names: ReturnType<typeof nameBody> }) => joinBodies([{ feature: decodeURIComponent(b.names.feature), place: 1, view: b.view, names: b.names }]);
+const sceneOf = (b: { view: BodyView; names: ReturnType<typeof nameBody> }) => joinBodies([{ feature: decodeURIComponent(b.names.feature), body: `body:${decodeURIComponent(b.names.feature)}`, place: 1, view: b.view, names: b.names }]);
 
 async function builtNames(kernel: KernelCalls, doc: DesignDocument) {
   const feature = lastFeature(doc);
@@ -469,12 +470,15 @@ test("the owner's rule on the real kernel, hand-worked: a lost sketch's extrude 
   let doc = made.doc;
   const edit = async (next: DesignDocument) => (doc = await settleKept(kernel, doc, next));
   const point = (x: number, y: number) => pointAt(doc.sketches.find((k) => k.id === s.id)!, [x, y])!;
-  const result = async () => (await rebuildTimeline(doc, cache, kernel)).results[e];
+  const result = async () => {
+    const build = await rebuildTimeline(doc, cache, kernel);
+    return { ...build.results[e], built: builtBody(build, e) };
+  };
   const body = async () => {
     const r = await result();
-    assert.ok(r.status === "built" && r.body !== undefined, JSON.stringify(r));
-    const view = await cache.view(r.body);
-    const names = nameBody(e, view, outlineCurves((r.spec as { extrude: { profile: never } }).extrude.profile, r.curves));
+    assert.ok(r.status === "built" && r.built !== undefined, JSON.stringify(r));
+    const view = await cache.view(r.built.handle);
+    const names = nameBody(e, view, outlineCurves((r.built.spec as { extrude: { profile: never } }).extrude.profile, r.built.curves));
     return { r, view, face: (part: string) => names.faces.indexOf(part) };
   };
   const warned = (r: Awaited<ReturnType<typeof result>>) => (r.status === "built" && r.warning ? [r.warning.cause, r.warning.sketch] : null);
@@ -484,7 +488,9 @@ test("the owner's rule on the real kernel, hand-worked: a lost sketch's extrude 
   assert.ok(close(b.view.volume, 9000) && warned(b.r) === null, `${b.view.volume}`);
   // The same document again: the same handle, no new body built.
   const before = kernel.builds;
-  assert.equal((await body()).r.status === "built" && (await result()).status === "built" && ((await result()) as { body: number }).body, (b.r as { body: number }).body);
+  const again = await result();
+  assert.ok(again.status === "built" && again.built !== undefined);
+  assert.equal(again.built.handle, b.r.built!.handle);
   assert.equal(kernel.builds, before, "an unchanged feature was built again");
   // The right side deleted: the trapezium is kept (9000 mm³), warned as an open outline of the sketch; its right side is still
   // named after the deleted line: 15 × 10 = 150 mm² at (40, 7.5, 5).
@@ -713,9 +719,10 @@ test("Design's timeline edits on the real kernel, hand-worked (24e2): suppress, 
   const undo = () => (doc = steps.pop()!.doc);
   const results = async () => (await rebuildTimeline(doc, cache, kernel)).results;
   const volume = async (id: string) => {
-    const r = (await results())[id];
-    assert.ok(r.status === "built" && r.body !== undefined, `${id}: ${JSON.stringify(r)}`);
-    return (await cache.view(r.body)).volume;
+    const build = await rebuildTimeline(doc, cache, kernel);
+    const b = builtBody(build, id);
+    assert.ok(b !== undefined, `${id}: ${JSON.stringify(build.results[id])}`);
+    return (await cache.view(b.handle)).volume;
   };
   const order = () => doc.timeline.features.map((f) => f.id);
   assert.ok(close(await volume("feature-1"), 24000) && close(await volume("feature-11"), 12000));

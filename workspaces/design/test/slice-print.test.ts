@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import type { SlicedPrint } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
-import { insertPreset, partDocument } from "../src/document.ts";
+import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
 import { FILE_DEFAULTS, gcodeName, PRINT_DEFAULTS, printFileName, printFileOf, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
@@ -259,7 +259,7 @@ test("supports on the shipped build: a plate on a column gets them, normal or tr
   const kernel = nodeKernel();
   // A 30 × 30 × 2 mm plate moved up onto a 10 × 10 × 10 mm column (both centred), made as the app makes them.
   const plate = insertPreset(partDocument("box", 10, 10, 10), "box", 30, 30, 2);
-  const doc = insertMove(plate.doc, [plate.id], { ...NO_MOVE, z: 10 }).doc;
+  const doc = insertMove(plate.doc, [bodyIdOf(plate.id)], { ...NO_MOVE, z: 10 }).doc;
   const bodies = bodyFeatures(doc);
   const supportLayers = (p: SlicedPrint) => p.preview.filter((l) => l.paths.some((x) => x.role === "support")).length;
   const on = await sliceBodies(kernel, doc, bodies, { ...PRINT_DEFAULTS, supports: "normal" });
