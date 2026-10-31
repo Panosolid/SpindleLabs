@@ -150,6 +150,9 @@ function shown() {
     dialogs: [...document.querySelectorAll("dialog[open]")].map((d) => d.id || "a dialog"),
     sideways: document.documentElement.scrollWidth - innerWidth,
     extruding: document.getElementById("extrude-panel") !== null && document.getElementById("extrude-panel").getClientRects().length > 0,
+    // Move or Rotate open: a body row's click adds that body to the ones moved, as Fusion's selection box does (35e2b, issue #221).
+    // Its own hidden flag, not whether it is drawn: on a phone an open panel can wait in the shut sheet.
+    moving: document.getElementById("move-panel")?.hidden === false,
   };
 }
 
@@ -419,7 +422,7 @@ async function act(s, a) {
     case "select-bodies": {
       // Each body in turn, by its Bodies row: the selection, the Feature panel, the Body panel's volume and the highlighted faces must all be that body's.
       const view = await settle(page);
-      if (!view.design || view.sketching || view.dialogs.length || view.extruding || !s.saved) return false;
+      if (!view.design || view.sketching || view.dialogs.length || view.extruding || view.moving || !s.saved) return false;
       const design = JSON.parse(s.saved).workspaces.design;
       const { rows } = expectedView(design, new Set(view.failed));
       if (rows.length !== view.bodies) return false; // the per-step check reports that

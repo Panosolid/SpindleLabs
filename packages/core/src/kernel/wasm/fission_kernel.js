@@ -71,12 +71,12 @@ export function jgu9kn(p0, p1) {
     return takeFromExternrefTable0(ret[0]);
 }
 
-export function k7vbqz(p0, p1, p2, p3, p4, p5) {
+export function k7vbqz(p0, p1, p2, p3, p4, p5, p6) {
     const ptr0 = passArray8ToWasm0(p0, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(p5, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.k7vbqz(ptr0, len0, p1, p2, p3, p4, ptr1, len1);
+    const ret = wasm.k7vbqz(ptr0, len0, p1, p2, p3, p4, ptr1, len1, p6);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

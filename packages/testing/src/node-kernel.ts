@@ -43,7 +43,7 @@ export function nodeKernel(): KernelCalls {
     body_boolean: (target, tools, op) => entry.body_boolean(target, tools, op),
     body_count: () => entry.body_count(),
     slice_stl: (stl, layerHeight, wallCount, infillPercent, supports) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
-    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate),
+    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };
   return {
