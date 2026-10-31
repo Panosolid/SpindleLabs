@@ -80,12 +80,15 @@ export function sketchUnits(curves: number): number {
 }
 
 /**
- * Units of slicing per triangle per layer. Measured at 0.2 mm layers, 3
- * walls, 15 % infill: a 20 mm box 0.06 (12 triangles, 100 layers, 74 ms), a
- * 100 mm cylinder 0.018 (628, 500, 5.5 s), 2 mm gratings of 20 to 55 slots
- * up to 0.073 (1,112 triangles, 10 layers, 813 ms).
+ * Units of slicing per triangle per layer. Measured with 3 walls and 15 %
+ * infill: the 2 mm grating of 111 slots (2,232 triangles) 0.088 at 0.2 mm
+ * layers (1,967 ms), 0.081 at 0.08 mm and 0.097 with tree supports (the
+ * most seen); a 20 mm box 0.06 (12 triangles, 100 layers, 74 ms); a 100 mm
+ * cylinder 0.018 (628, 500, 5.5 s); a 120 mm sphere 0.0019 (59,048, 1,200,
+ * 138 s). Generous for big meshes, whose layers each cut only a few of
+ * their triangles, but never short.
  */
-export const UNITS_PER_TRIANGLE_LAYER = 0.1;
+export const UNITS_PER_TRIANGLE_LAYER = 0.12;
 
 /**
  * The units of slicing `stl` (binary STL files back to back, as slice_stl

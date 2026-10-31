@@ -83,19 +83,19 @@ function stl(zs: number[][], claimed = zs.length): Uint8Array {
 }
 
 test("a slice's units by hand: its triangles times its layers, over every file given back to back", () => {
-  // 2 triangles from z 0 to 10 at 0.2 mm: 50 layers, 2 × 50 × 0.1 = 10 units.
+  // 2 triangles from z 0 to 10 at 0.2 mm: 50 layers, 2 × 50 × 0.12 = 12 units.
   const a = stl([
     [0, 0, 10],
     [10, 10, 0],
   ]);
-  assert.ok(Math.abs(sliceUnits(a, 0.2) - 10) < 1e-9);
-  // Another file after it, 1 triangle from z 5 to 20: 3 triangles, z 0 to 20, 100 layers: 30 units.
+  assert.ok(Math.abs(sliceUnits(a, 0.2) - 12) < 1e-9);
+  // Another file after it, 1 triangle from z 5 to 20: 3 triangles, z 0 to 20, 100 layers: 36 units.
   const b = stl([[5, 20, 5]]);
   const both = new Uint8Array([...a, ...b]);
-  assert.ok(Math.abs(sliceUnits(both, 0.2) - 30) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(both, 0.2) - 36) < 1e-9);
   // A second file claiming more triangles than it holds: the kernel refuses it at once, only the first counts.
   const short = new Uint8Array([...a, ...stl([[5, 20, 5]], 2)]);
-  assert.ok(Math.abs(sliceUnits(short, 0.2) - 10) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(short, 0.2) - 12) < 1e-9);
   // Nothing readable, a flat file, or no layer height: no units, the floor.
   assert.equal(sliceUnits(new Uint8Array(10), 0.2), 0);
   assert.equal(sliceUnits(stl([[1, 1, 1]]), 0.2), 0);
@@ -103,6 +103,6 @@ test("a slice's units by hand: its triangles times its layers, over every file g
   // Read from a view into a bigger buffer, as the worker gets it.
   const offset = new Uint8Array(4 + a.length);
   offset.set(a, 4);
-  assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 10) < 1e-9);
+  assert.ok(Math.abs(sliceUnits(offset.subarray(4), 0.2) - 12) < 1e-9);
   assert.equal(callUnits("slice_stl", [a as Uint8Array<ArrayBuffer>, 0.2, 3, 15, "off"], () => undefined), sliceUnits(a, 0.2));
 });
