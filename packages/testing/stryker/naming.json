@@ -2,7 +2,7 @@
   "$comment": "Mutation testing of the exact naming model of joins, cuts and Combine (step 34a5): its hand-worked tests, the survivors' killing cases, 12 seeded sessions against the unit-cell count (each mutant runs them; 40 took about 4 hours), and the old names' reader, which runs on it. Its first run (2026-10-30) left 180 survivors; 34a5b killed or explained them (about 70 min at concurrency 4).",
   "testRunner": "command",
   "commandRunner": {
-    "command": "BOOLEAN_SESSIONS=12 node --experimental-strip-types --no-warnings --test --test-concurrency=1 test/boolean-naming-model.test.ts test/boolean-naming-split.test.ts test/boolean-naming-survivors.test.ts test/boolean-naming-session.test.ts test/old-names.test.ts"
+    "command": "BOOLEAN_SESSIONS=12 node --experimental-strip-types --no-warnings --test --test-concurrency=1 test/boolean-naming-model.test.ts test/boolean-naming-sliver.test.ts test/boolean-naming-split.test.ts test/boolean-naming-survivors.test.ts test/boolean-naming-session.test.ts test/old-names.test.ts"
   },
   "mutate": [
     "src/boolean-naming-model.ts"

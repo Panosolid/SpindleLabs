@@ -2056,5 +2056,236 @@
     "original": "[...neighbours[f]]",
     "replacement": "[]",
     "why": "Only with the planted tag-all-neighbours fault, which real code never passes; the test planting it still catches it."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "Math.max(Math.abs(a), Math.abs(b)) * 4",
+    "replacement": "Math.max(Math.abs(a), Math.abs(b)) / 4",
+    "why": "rounding() (35ed1): the allowance for a difference of two typed values; a difference of two doubles within 1 mm of each other misses what was typed by under one ulp of their size (measured: 0.1 to 0.33 ulps at 1e3 to 1e6 mm), so 4 ulps of the larger, 1 ulp, or of the smaller (the two differ by under 1 mm) all decide alike for every typed value."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "Math.max(Math.abs(a), Math.abs(b))",
+    "replacement": "Math.min(Math.abs(a), Math.abs(b))",
+    "why": "rounding() (35ed1): the allowance for a difference of two typed values; a difference of two doubles within 1 mm of each other misses what was typed by under one ulp of their size (measured: 0.1 to 0.33 ulps at 1e3 to 1e6 mm), so 4 ulps of the larger, 1 ulp, or of the smaller (the two differ by under 1 mm) all decide alike for every typed value."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "v - at > LINEAR + rounding(v, at)",
+    "replacement": "v - at >= LINEAR + rounding(v, at)",
+    "why": "axisOf (35ed1): a gap landing exactly on LINEAR plus the rounding allowance, or between LINEAR minus and plus it, needs a typed difference within a fraction of an ulp of 1e-5 in a way doubles never give near 1e-5 at sizes the tests reach; the 10 nm 100 m out case (over LINEAR by 3.4e-12) kills the sign of the allowance, '>' against '>=' only differs on exact equality."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "planes.length === 0",
+    "replacement": "false",
+    "why": "axisOf (35ed1): the grid's empty layer all round; with no planes there are no blocks, so no cell is ever filled and the grid is never read; the outer lines only bound the empty border cells, never filled, so their value (or NaN) never reaches a volume, area or name."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 1]",
+    "replacement": "[]",
+    "why": "axisOf (35ed1): the grid's empty layer all round; with no planes there are no blocks, so no cell is ever filled and the grid is never read; the outer lines only bound the empty border cells, never filled, so their value (or NaN) never reaches a volume, area or name."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "planes.length - 1",
+    "replacement": "planes.length + 1",
+    "why": "axisOf (35ed1): the grid's empty layer all round; with no planes there are no blocks, so no cell is ever filled and the grid is never read; the outer lines only bound the empty border cells, never filled, so their value (or NaN) never reaches a volume, area or name."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "lines.length - 1",
+    "replacement": "lines.length + 1",
+    "why": "snap (35ed1): a binary search for the last line at or below v; hi one past the end reads lines[length] (undefined), and undefined <= v is false, so the search narrows the same way."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "Math.abs(L[t] - L[s]) < MIN_FEATURE - rounding(L[s], L[t])",
+    "replacement": "Math.abs(L[t] - L[s]) <= MIN_FEATURE - rounding(L[s], L[t])",
+    "why": "sliver (35ed1): '<' against '<=' differs only for two lines exactly MIN_FEATURE less the rounding allowance apart, which no difference of typed doubles hits exactly."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!L.some((_, t) => t > 0 && thin(t - 1, t))",
+    "replacement": "false",
+    "why": "sliver (35ed1): the early exit is a speed-up only: when no two neighbouring lines are thin, no pair is (gaps add up), so the full scan finds nothing either; dropping it or always skipping the cut only changes speed, and always skipping is killed by every refusal (other mutants of this line)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "t > 0 && thin(t - 1, t)",
+    "replacement": "true",
+    "why": "sliver (35ed1): the early exit is a speed-up only: when no two neighbouring lines are thin, no pair is (gaps add up), so the full scan finds nothing either; dropping it or always skipping the cut only changes speed, and always skipping is killed by every refusal (other mutants of this line)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "t > 0",
+    "replacement": "true",
+    "why": "sliver (35ed1): the early exit is a speed-up only: when no two neighbouring lines are thin, no pair is (gaps add up), so the full scan finds nothing either; dropping it or always skipping the cut only changes speed, and always skipping is killed by every refusal (other mutants of this line)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "LogicalOperator",
+    "original": "t > 0 && thin(t - 1, t)",
+    "replacement": "t > 0 || thin(t - 1, t)",
+    "why": "sliver (35ed1): the early exit is a speed-up only: when no two neighbouring lines are thin, no pair is (gaps add up), so the full scan finds nothing either; dropping it or always skipping the cut only changes speed, and always skipping is killed by every refusal (other mutants of this line)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "t > 0",
+    "replacement": "t >= 0",
+    "why": "sliver (35ed1): the early exit is a speed-up only: when no two neighbouring lines are thin, no pair is (gaps add up), so the full scan finds nothing either; dropping it or always skipping the cut only changes speed, and always skipping is killed by every refusal (other mutants of this line)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "t - 1",
+    "replacement": "t + 1",
+    "why": "sliver (35ed1): the early exit is a speed-up only: when no two neighbouring lines are thin, no pair is (gaps add up), so the full scan finds nothing either; dropping it or always skipping the cut only changes speed, and always skipping is killed by every refusal (other mutants of this line)."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[0, 0, 0]",
+    "replacement": "[]",
+    "why": "sliver (35ed1): p is a cell's three indices, and all three are written before it is read, so its starting value never shows."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "sliver (35ed1): a text before the used lines indexes L as NaN, so thin() is false for it and it never pairs with anything."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "t < n[a]",
+    "replacement": "t <= n[a]",
+    "why": "sliver (35ed1): t = n compares the last cell of the column with the cell after it (the next column's first, or past the array): both in the empty border layer, or undefined against 0, so at most it adds the outermost line, a whole millimetre from any other line, never thin."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "MethodExpression",
+    "original": "[at(u, v, t - 1), at(u, v, t)].filter((x) => cells[x])",
+    "replacement": "[at(u, v, t - 1), at(u, v, t)]",
+    "why": "sliver (35ed1): filled() only feeds matters(); unfiltered it adds empty cells, which an Extrude join's touched() never counts (it drops cells outside the result and no empty cell is in the block, which the join's result holds), and every other caller's matters is always true."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "u < n[b]",
+    "replacement": "u <= n[b]",
+    "why": "sliver (35ed1): one column past the end lies in the empty border layer (or reads undefined): it uses no line, so it never makes a pair."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "v < n[c]",
+    "replacement": "v <= n[c]",
+    "why": "sliver (35ed1): one column past the end lies in the empty border layer (or reads undefined): it uses no line, so it never makes a pair."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < here.length",
+    "replacement": "i <= here.length",
+    "why": "sliver (35ed1): i = length reads here[length], undefined, so thin() is false."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "u + du >= n[b] || v + dv >= n[c]",
+    "replacement": "false",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "LogicalOperator",
+    "original": "u + du >= n[b] || v + dv >= n[c]",
+    "replacement": "u + du >= n[b] && v + dv >= n[c]",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "u + du >= n[b]",
+    "replacement": "false",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "u + du >= n[b]",
+    "replacement": "u + du > n[b]",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "u + du",
+    "replacement": "u - du",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ConditionalExpression",
+    "original": "v + dv >= n[c]",
+    "replacement": "false",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "EqualityOperator",
+    "original": "v + dv >= n[c]",
+    "replacement": "v + dv > n[c]",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "v + dv",
+    "replacement": "v - dv",
+    "why": "sliver (35ed1): the bounds of a neighbouring column are only reached from the last column, which lies in the empty border layer and uses no line, so the inner loop never runs there and the neighbour past the end is never read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "u + du",
+    "replacement": "u - du",
+    "why": "sliver (35ed1): pairs of neighbouring columns are the same pairs looked at from either side (the step test is symmetric), so the column before instead of after finds the same steps; from the first column, in the empty border layer, nothing is read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "v + dv",
+    "replacement": "v - dv",
+    "why": "sliver (35ed1): pairs of neighbouring columns are the same pairs looked at from either side (the step test is symmetric), so the column before instead of after finds the same steps; from the first column, in the empty border layer, nothing is read."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "u + du",
+    "replacement": "u - du",
+    "why": "sliver (35ed1): filled() of the column two away only feeds matters(); outside an Extrude join it is always true, and in a join the step's own column already holds a filled cell of the one result lump or the block, which decides it alike."
+  },
+  {
+    "file": "packages/testing/src/boolean-naming-model.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "v + dv",
+    "replacement": "v - dv",
+    "why": "sliver (35ed1): filled() of the column two away only feeds matters(); outside an Extrude join it is always true, and in a join the step's own column already holds a filled cell of the one result lump or the block, which decides it alike."
   }
 ]
