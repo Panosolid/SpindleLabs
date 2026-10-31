@@ -33,8 +33,8 @@ async function check(name, fn) {
   }
 }
 
-async function fresh(width, tap) {
-  const context = await browser.newContext({ viewport: { width, height: tap ? 667 : 800 }, hasTouch: tap, isMobile: tap, acceptDownloads: true });
+async function fresh(width, tap, height = tap ? 667 : 800) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: tap, isMobile: tap, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -88,6 +88,10 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(files.get("Metadata/plate_1.gcode.md5").toString("utf8"), createHash("md5").update(plate).digest("hex").toUpperCase(), "the MD5 the printer checks");
       assert.equal(layersIn(plate.toString("utf8")), 100, "20 mm / 0.2 mm");
       assert.match(files.get("Metadata/plate_1.json").toString("utf8"), /"bed_type":"textured_plate"/);
+      // Bambu Studio loads the settings (and so opens the file) only when the
+      // model names Bambu Studio and a version; Ben's 10-31 file was refused.
+      assert.match(files.get("3D/3dmodel.model").toString("utf8"), /<metadata name="Application">BambuStudio-\d+\.\d+\.\d+\.\d+<\/metadata>/, "the model names the maker Bambu Studio checks");
+      assert.match(files.get("Metadata/project_settings.config").toString("utf8"), /"printer_settings_id": "Bambu Lab P1S 0\.4 nozzle"/, "Bambu Studio's own P1S preset");
       await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
       assert.match(await page.textContent("#slice-print-status"), /^Saved spindlelabs-0\.2mm-2w-15pc-textured\.gcode\.3mf: 100 layers, /);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-p1s.png` });
@@ -117,6 +121,71 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     }
   });
 }
+
+// The dialog fits (Ben 10-31: on a laptop Supports was cut off and could not be reached; 470 px high, where the
+// old one-column dialog cut it, is the regression case). On a laptop-height
+// window every choice and button is on screen without scrolling; on a phone the buttons stay in view and
+// every choice can be scrolled to inside the dialog.
+for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [1280, 470, false], [375, 667, true], [393, 852, true]]) {
+  await check(`${width} × ${height}${tap ? ", taps" : ""}: every choice of Slice for printing can be reached, the buttons always on screen`, async () => {
+    const page = await fresh(width, tap, height);
+    try {
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      const ids = ["slice-print-format", "slice-print-plate", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-close", "slice-print-preview", "slice-print-go"];
+      /** Each control's box against the window and the dialog's visible area: the ids not wholly inside both. */
+      const hidden = () =>
+        page.evaluate((ids) => {
+          const d = document.getElementById("slice-print-dialog").getBoundingClientRect();
+          return ids.filter((id) => {
+            const r = document.getElementById(id).getBoundingClientRect();
+            return !(r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5 && r.left >= 0 && r.right <= innerWidth);
+          });
+        }, ids);
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-fit-${width}x${height}.png` });
+      // No list squashed to fit (the old dialog shrank Supports' list until its words were cut): all six the same height.
+      const heights = await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
+      assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);
+      if (!tap) {
+        assert.deepEqual(await hidden(), [], "all on screen without scrolling");
+      } else {
+        // The buttons are always in view; each choice comes into view when the dialog scrolls to it.
+        for (const id of ids.slice(0, 6)) {
+          await page.$eval(`#${id}`, (e) => e.scrollIntoView({ block: "nearest" }));
+          const out = await hidden();
+          assert.ok(!out.includes(id), `${id} reachable: ${out}`);
+          assert.ok(!out.some((x) => x.startsWith("slice-print-") && ["slice-print-close", "slice-print-preview", "slice-print-go"].includes(x)), `buttons in view: ${out}`);
+        }
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
+// A window too short even for the compact dialog: the mouse wheel over it scrolls it until Supports is in view, the buttons staying put.
+await check("1280 × 420: the wheel scrolls the dialog to Supports, the buttons always on screen", async () => {
+  const page = await fresh(1280, false, 420);
+  try {
+    await chooseFile(page, "file-slice-print", false);
+    await page.waitForSelector("#slice-print-dialog[open]");
+    const box = await page.$eval("#slice-print-dialog", (d) => d.getBoundingClientRect().toJSON());
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(300);
+    const fits = (id) =>
+      page.$eval(`#${id}`, (e) => {
+        const r = e.getBoundingClientRect();
+        const d = e.closest("dialog").getBoundingClientRect();
+        return r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5;
+      });
+    assert.ok(await fits("slice-print-supports"), "Supports scrolled into view");
+    assert.ok(await fits("slice-print-go"), "Slice and download still in view");
+    if (shots) await page.screenshot({ path: `${shots}/slice-print-fit-1280x420-scrolled.png` });
+  } finally {
+    await page.context().close();
+  }
+});
 
 await browser.close();
 await server.close();
