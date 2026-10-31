@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyHandle, Feature, KernelCalls } from "@fission/core";
-import { buildingItems, builds, type DesignDocument } from "../src/document.ts";
+import { buildingItems, builds, numberBodies, type DesignDocument } from "../src/document.ts";
 import { bodyFeatures, browserTree, rowReference, rowReferences } from "../src/browser.ts";
 import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 import { shownBodies } from "../src/scene.ts";
@@ -31,7 +31,7 @@ test("buildingItems worked by hand: the marker, suppression, a lost sketch with 
   // feature-5 (extrudes sketch-9, deleted, kept shape), feature-6 (extrudes sketch-8, deleted, none),
   // feature-7 a box, then the marker on feature-7, then feature-8 a box after it.
   const doc: DesignDocument = {
-    version: 4,
+    version: 5,
     nextId: 30,
     profiles: [],
     sketches: [{ id: "sketch-1", ...triangle(10), constraints: [] }, { id: "sketch-3", ...triangle(20), constraints: [] }],
@@ -92,7 +92,8 @@ function randomDesign(pick: (n: number) => number, length: number): DesignDocume
   }
   const m = pick(5);
   const marker = m === 0 ? "start" : m === 1 ? undefined : m === 2 ? "feature-99999" : features[pick(features.length)]?.id;
-  return { version: 4, nextId: n, profiles: [], sketches, kept, timeline: marker === undefined ? { features } : { features, marker } };
+  // Numbered as every design read from a file or made by an edit is (35e).
+  return numberBodies({ version: 5, nextId: n, profiles: [], sketches, kept, timeline: marker === undefined ? { features } : { features, marker } });
 }
 
 test("seeded random timelines: buildingItems is builds asked of every item, and the browser's rows agree", () => {
@@ -175,7 +176,7 @@ test("the rebuild asks for every outline and body at once, each once, and builds
     sketches.push({ id: `sketch-${2000 + i}`, ...triangle(100 * i, 10 * (1 + Math.floor(i / 2))), constraints: [] });
     features.push(item(`sketch-${2000 + i}`, "sketch", { plane: "XY" }), item(`feature-${3000 + i}`, "extrude", { sketch: `sketch-${2000 + i}`, distance: 1 + i }));
   }
-  const doc: DesignDocument = { version: 4, nextId: 5000, profiles: [], sketches, timeline: { features } };
+  const doc: DesignDocument = { version: 5, nextId: 5000, profiles: [], sketches, timeline: { features } };
   const k = heldKernel();
   const cache = new BodyCache(k.kernel);
   const done = rebuildTimeline(doc, cache, k.kernel);

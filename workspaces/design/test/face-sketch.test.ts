@@ -314,7 +314,7 @@ test("a sketch on a face is written to a file and read back exactly", () => {
   const body = { origin: [7, -3, 0], xAxis: [0, 1, 0], normal: [0, 0, 1] };
   assert.deepEqual(opened((d) => (d.sketches[0].face.body = body))().sketches[0].face!.body, body);
   // Its box deleted: the sketch stays, held with its plane lost (Q1), so the file opens.
-  assert.doesNotThrow(opened((d) => (d.timeline.features = d.timeline.features.slice(1))));
+  assert.doesNotThrow(opened((d) => ((d.timeline.features = d.timeline.features.slice(1)), (d.bodies = d.bodies.filter((b: { id: string }) => b.id !== "body:feature-1")))));
 });
 
 test("a file's sketch on a face is checked when it is opened: each way it can be broken is refused with its reason", () => {

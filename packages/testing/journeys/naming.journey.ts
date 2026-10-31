@@ -61,7 +61,7 @@ async function solids(doc: DesignDocument): Promise<{ results: Record<string, Fe
 
 /** An empty design with a 40 × 30 rectangle sketched on `plane`, corners (0, 0) and (40, 30) in the sketch's own coordinates. */
 function rectangleOn(plane: "XY" | "XZ" | "YZ"): { doc: DesignDocument; sketch: string } {
-  const empty: DesignDocument = { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const empty: DesignDocument = { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const s = addSketch(empty, plane);
   return { doc: drawRectangle(s.doc, s.id, [0, 0], [40, 30]).doc, sketch: s.id };
 }

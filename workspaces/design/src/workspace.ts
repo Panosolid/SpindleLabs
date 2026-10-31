@@ -36,7 +36,7 @@ import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from 
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
-import { BodyCache, followedDoc, rebuildTimeline, settleKept, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, followedDoc, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { isFaceSketch } from "./face-sketch.ts";
 import { droppedNote, highlightOf, panelFocus, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -217,6 +217,31 @@ const folding = new Map<string, boolean>();
 const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) ?? !n.startsFolded;
 
 /** Lights the browser rows whose geometry is selected (aria-current), and only those; `failed`, the last rebuild's failed ids, select nothing. */
+/**
+ * A Timeline row's Retry (35d4): shown, after its words, while its item
+ * took the kernel too long; its title says so. A click tries it again.
+ */
+function retryOn(row: HTMLElement, slow: boolean, retry: (id: string) => void) {
+  const line = row.parentElement;
+  const id = row.dataset.node!;
+  const had = line?.querySelector<HTMLButtonElement>(":scope > .retry-row");
+  if (!slow) {
+    had?.remove();
+    if (row.title.startsWith("Took too long: ")) row.title = row.dataset.tip ?? "";
+    return;
+  }
+  row.title = `Took too long: ${row.dataset.label ?? id} was stopped, so it has no body. Retry tries it again.`;
+  if (had || !line) return;
+  const button = row.ownerDocument.createElement("button");
+  button.type = "button";
+  button.className = "retry-row";
+  button.dataset.retry = id; // read by the e2e test
+  button.textContent = "Retry";
+  button.title = `Try ${row.dataset.label ?? id} again`;
+  button.addEventListener("click", () => retry(id));
+  row.after(button);
+}
+
 function lightRows(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, items: readonly GeometryReference[]) {
   const refOf = rowReferences(doc, failed);
   for (const row of slot.querySelectorAll<HTMLElement>(".tree-row")) {
@@ -541,6 +566,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Settling an edit (26c, 26g) places its face sketches on these bodies too, reusing what is built: a body is never
   // held twice, and the ones a settle builds that no rebuild keeps are freed once it ends (BodyCache.using).
   const bodies = new BodyCache(kernel);
+  /** The items that took the kernel too long (35d4): failed with "took too long" and not tried again until Retry on their row. */
+  const slow = new SlowItems();
   // A kernel that trapped is replaced by a fresh one (kernel-client.ts): its bodies are gone, so the design is built
   // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). A restart
   // while that build runs (memory still tight, another call trapping) builds once more when it ends, or the design
@@ -601,8 +628,20 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   async function buildPart(doc: DesignDocument) {
     const feature = partFeature(doc);
-    const build = await rebuildTimeline(doc, bodies, kernel);
+    const build = await rebuildTimeline(doc, bodies, kernel, slow);
+    // 35d4: a body whose view took too long is failed as its build would be, and not tried again until Retry.
+    const drawn = await shownBodies(doc, build, bodies, (id) => {
+      const f = doc.timeline.features.find((x) => x.id === id)!;
+      slow.note(doc, f);
+      build.results[id] = { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
+    });
+    // The kernel keeps a display mesh only for the bodies on screen (35d2's store): the rest are hidden there.
+    await bodies.showOnly(drawn.flatMap((b) => {
+      const r = build.results[b.feature];
+      return r?.status === "built" && r.body !== undefined ? [r.body] : [];
+    }));
     failedNow = new Set(Object.keys(build.results).filter((id) => build.results[id].status === "failed"));
+    slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
@@ -610,7 +649,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     let failure: string | undefined;
     if (result?.status === "failed") failure = result.message;
     else if (feature && result && (result.status !== "built" || result.body === undefined || result.spec === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
-    const drawn = await shownBodies(doc, build, bodies);
     return { scene: joinBodies(drawn), warnings: warningsOf(doc, build), failure, followed: followedDoc(doc, build) };
   }
   /**
@@ -810,6 +848,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const lostSketches = () => new Set(warningsNow.flatMap((w) => (w.lost ? [w.item] : [])));
   /** The items the last rebuild failed (24f3: red in the bar and the browser's Timeline rows); the data's own failures are added by `timelineBarItems`. */
   let failedNow: ReadonlySet<string> = new Set();
+  /** Those of them that took the kernel too long (35d4): each with a Retry on its row. */
+  let slowNow: ReadonlySet<string> = new Set();
+  /** Retry on a row (35d4): the item that took too long is tried once more, and the design built again with it. */
+  function retry(id: string) {
+    if (!slow.retry(id)) return;
+    void show(designDoc(), shape);
+  }
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
@@ -841,6 +886,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!ctx.timeline) return;
     showTimelineBar(ctx.timeline, doc, {
       failed: failedNow,
+      slow: slowNow,
+      onRetry: retry,
       warnings: warnedRows(),
       picked,
       onPick: (id) => {
@@ -889,6 +936,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       row.classList.toggle("timeline-menu-greyed", by !== undefined);
       if (by !== undefined) row.title = `Greyed: ${by} is suppressed`;
       else if (row.title.startsWith("Greyed: ")) row.title = row.dataset.tip ?? "";
+      retryOn(row, slowNow.has(id), retry);
     }
   }
 

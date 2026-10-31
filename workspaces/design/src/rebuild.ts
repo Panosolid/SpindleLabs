@@ -26,8 +26,15 @@
 // one whose face sketch is held says its source is lost (rule 7).
 // `settleKept` also keeps and forgets the held placements, judged with
 // nothing suppressed and no marker, as the naming model's `settle` does.
+//
+// Step 35d4: an item whose kernel call ran past its time limit (the
+// error's kind "timed-out", never its words) fails with "took too long";
+// the kernel was started again, so the design is built once more from the
+// document, and that item is not tried again (`SlowItems`) until the user
+// asks (Retry on its row) or changes it or anything before it: a call that
+// always runs too long would otherwise stop every fresh kernel in turn.
 
-import { KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
+import { KERNEL_TOOK_TOO_LONG, KernelError, type BodyHandle, type BodySpec, type BodyView, type Feature, type KernelCalls, type KernelInput, type Outline, type Plane, type SketchXY } from "@fission/core";
 import { buildingItems, isMoveItem, isSketchExtrude, isSketchItem, keptOf, makesBody, sketchInputs, specOf, type DesignDocument, type KeptShape, type Sketch, type SketchPlane } from "./document.ts";
 import { bodyFrame, carried, faceFeature, faceReference, frameNow, frameOf, isFaceSketch, planeWords, squared, type PlaneWarning, type SketchPlacement } from "./face-sketch.ts";
 import { pinNow, pointWords, vertexNames, type PointWarning } from "./face-edges.ts";
@@ -90,7 +97,53 @@ export type FeatureResult =
    * isn't built yet (a sketch on another plane). `curves`: the sketch
    * curves at fault, when the kernel named them.
    */
-  | { status: "failed"; cause: LostCause | "failed-input" | "error"; input?: string; message: string; curves?: string[] };
+  | { status: "failed"; cause: LostCause | "failed-input" | "error" | "timed-out"; input?: string; message: string; curves?: string[] };
+
+/**
+ * The items whose build took the kernel too long (35d4), each with what it
+ * was built from then: the items up to it in the timeline and their
+ * sketches. A rebuild fails such an item at once, without asking the
+ * kernel, while that is unchanged; an edit to it or to anything before it,
+ * or `retry`, lets the next rebuild try it again.
+ */
+export class SlowItems {
+  private items = new Map<string, string>();
+
+  /** `f` took too long, built as `doc` has it. */
+  note(doc: DesignDocument, f: Feature): void {
+    this.items.set(f.id, builtFrom(doc, f.id));
+  }
+
+  /** Whether `f` took too long built from what `doc` has before it, and so is not tried again. */
+  has(doc: DesignDocument, f: Feature): boolean {
+    const was = this.items.get(f.id);
+    return was !== undefined && was === builtFrom(doc, f.id);
+  }
+
+  /** The next rebuild tries `id` again; false when it hadn't taken too long. */
+  retry(id: string): boolean {
+    return this.items.delete(id);
+  }
+
+  /** The ids noted, in the order they were. */
+  get ids(): string[] {
+    return [...this.items.keys()];
+  }
+}
+
+/** What item `id` is built from: the timeline up to it and the sketches of those items, as text. */
+function builtFrom(doc: DesignDocument, id: string): string {
+  const { features } = doc.timeline;
+  const upTo = features.slice(0, features.findIndex((f) => f.id === id) + 1);
+  const ids = new Set(upTo.flatMap((f) => [f.id, ...(typeof f.intent.parameters.sketch === "string" ? [f.intent.parameters.sketch] : [])]));
+  return JSON.stringify({ items: upTo, sketches: doc.sketches.filter((s) => ids.has(s.id)) });
+}
+
+/** A failed item's words when it took the kernel too long (35d4). */
+export const tookTooLong = (label: string) => `${label} took too long: ${KERNEL_TOOK_TOO_LONG} Retry on its row tries it again.`;
+
+/** Whether `e` is a kernel call that ran past its time limit (its kind, never its words). */
+export const timedOut = (e: unknown): boolean => e instanceof KernelError && e.kind === "timed-out";
 
 export interface TimelineBuild {
   order: string[];
@@ -107,7 +160,8 @@ export interface TimelineBuild {
 const CLOSED = "Design was closed, so nothing more is built";
 
 export class BodyCache {
-  private bodies = new Map<string, { handle: BodyHandle; view?: Promise<BodyView> }>();
+  /** `hidden`: the kernel holds no display mesh for it (35d4, `showOnly`); a body is built with one. */
+  private bodies = new Map<string, { handle: BodyHandle; view?: Promise<BodyView>; hidden?: true }>();
   /** Each kept body's key by its handle, so `view` finds it in one step (security audit S2). */
   private keys = new Map<BodyHandle, string>();
   /** Bodies asked of the kernel and not answered yet: the same spec asked again waits for the same answer, so asking ahead never builds twice. */
@@ -159,11 +213,38 @@ export class BodyCache {
     if (entry.view === undefined) {
       const asked = this.kernel.call("body_view", handle);
       entry.view = asked;
+      delete entry.hidden; // body_view meshes a hidden body again and keeps the mesh
       asked.catch(() => {
         if (entry.view === asked) entry.view = undefined;
       });
     }
     return entry.view;
+  }
+
+  /**
+   * The kernel keeps a display mesh only for these of its bodies (35d4,
+   * the store's mesh memory, 35d2): every other kept body is hidden
+   * (`body_hide`), and its view let go here too, so looking at it again
+   * asks `body_view`, which meshes it again. A body the kernel fails to
+   * hide stays as it was, shown, and is tried at the next call.
+   */
+  async showOnly(handles: Iterable<BodyHandle>): Promise<void> {
+    const shown = new Set(handles);
+    for (const entry of [...this.bodies.values()]) {
+      if (entry.hidden || shown.has(entry.handle)) continue;
+      try {
+        await this.kernel.call("body_hide", entry.handle);
+      } catch {
+        continue;
+      }
+      entry.hidden = true;
+      entry.view = undefined;
+    }
+  }
+
+  /** How many kept bodies the kernel holds a display mesh for (35d4). */
+  get meshed(): number {
+    return [...this.bodies.values()].filter((b) => !b.hidden).length;
   }
 
   /** Frees every body but these: now, or once the last use running ends. */
@@ -480,9 +561,9 @@ async function placeOpen(doc: DesignDocument, cache: BodyCache, kernel: KernelCa
  * every body no feature holds. Sketch items build no body; a solid
  * feature's result is its handle or why it has none.
  */
-export async function rebuildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls): Promise<TimelineBuild> {
+export async function rebuildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls, slow?: SlowItems): Promise<TimelineBuild> {
   return cache.using(async () => {
-    const build = await buildTimeline(doc, cache, calls);
+    const build = await buildTimeline(doc, cache, calls, slow);
     await cache.keepOnly(handlesOf(build.results));
     return build;
   });
@@ -493,10 +574,12 @@ const handlesOf = (results: Record<string, FeatureResult>): BodyHandle[] =>
   Object.values(results).flatMap((r) => (r.status === "built" ? [...(r.body !== undefined ? [r.body] : []), ...(r.holds ?? [])] : []));
 
 /** `rebuildTimeline` without freeing anything: every result, its bodies in `cache` with whatever else is there. */
-async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls): Promise<TimelineBuild> {
+async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: KernelCalls, slow?: SlowItems): Promise<TimelineBuild> {
   const kernel = outlinesAtOnce(calls, [doc]);
   const index = indexOf(doc);
-  bodiesAtOnce(doc, cache, kernel, index);
+  // 35d4: an item that took too long is failed below without asking the kernel, so nothing of it is asked ahead either.
+  const skipped = new Set(slow ? doc.timeline.features.filter((f) => slow.has(doc, f)) : []);
+  const aheadSlow = bodiesAtOnce(doc, cache, kernel, index, skipped);
   // No prototype: every id is an entry, even one named like an object's own (results["__proto__"], re-check N1).
   const results: Record<string, FeatureResult> = Object.create(null);
   const { features, marker } = doc.timeline;
@@ -504,7 +587,16 @@ async function buildTimeline(doc: DesignDocument, cache: BodyCache, calls: Kerne
   for (const f of features) {
     if (rolled) results[f.id] = { status: "rolled-back" };
     else if (f.suppressed) results[f.id] = { status: "suppressed" };
-    else results[f.id] = await buildFeature(doc, f, results, cache, kernel, index);
+    else if (skipped.has(f)) results[f.id] = { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
+    else if (aheadSlow.has(f)) {
+      // Its body, asked ahead, took too long while an item before it was built: asked again it would stop the fresh kernel too.
+      slow?.note(doc, f);
+      results[f.id] = { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
+    } else {
+      const r = await buildFeature(doc, f, results, cache, kernel, index);
+      if (r.status === "failed" && r.cause === "timed-out") slow?.note(doc, f);
+      results[f.id] = r;
+    }
     if (marker === f.id) rolled = true;
   }
   return { order: features.map((f) => f.id), results };
@@ -519,20 +611,25 @@ const words = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * items that build (`buildingItems`) with a spec that reads are asked, the
  * very bodies `buildFeature` asks for, so nothing extra is built; the loop
  * then finds each one asked or answered (`BodyCache.body`). A refusal is
- * read there, with its words.
+ * read there, with its words. Returns the items whose ask took too long
+ * (35d4), filled as the answers come: such an ask is gone from the cache
+ * by the time the loop reaches its item, and asked again would run on the
+ * fresh kernel, as long.
  */
-function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls, index: DocIndex): void {
+function bodiesAtOnce(doc: DesignDocument, cache: BodyCache, kernel: KernelCalls, index: DocIndex, skipped: ReadonlySet<Feature>): Set<Feature> {
+  const slow = new Set<Feature>();
   const building = buildingItems(doc);
   for (const f of doc.timeline.features) {
-    if (!makesBody(f) || !building.has(f)) continue;
+    if (!makesBody(f) || !building.has(f) || skipped.has(f)) continue;
     // A sketch on a face is placed on its face as built, and a pinned point (27c) follows its body, so its extrude waits for the loop.
     const on = isSketchExtrude(f) ? index.items.get(f.intent.parameters.sketch as string) : undefined;
     if (on !== undefined && (isFaceSketch(on) || follows(index.sketches.get(on.id)))) continue;
     const ask = isSketchExtrude(f)
       ? extrudeSpec(kernel, doc, f, index, on && originPlacement(on)).then((made) => ("status" in made ? undefined : cache.body(made.spec)))
       : Promise.resolve().then(() => cache.body(specOf(doc, f)));
-    ask.catch(() => {});
+    ask.catch((e) => void (timedOut(e) && slow.add(f)));
   }
+  return slow;
 }
 
 /** Where a sketch on an origin plane lies; null for XY, where an extrude is built as before 26c, with no frame. */
@@ -721,6 +818,7 @@ async function buildFeature(doc: DesignDocument, f: Feature, done: Record<string
     const source = lost && { ...lost, sketch: sketchId, message: `${f.provenance.self.label}'s source is lost: ${item!.provenance.self.label}'s plane is ${lost.cause === "plane-lost" ? "lost" : "ambiguous"}, so it stays where it was` };
     return { status: "built", body: await cache.body(made.spec), ...made, ...(source ? { source } : {}) };
   } catch (e) {
+    if (timedOut(e)) return { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
     return { status: "failed", cause: "error", message: words(e) };
   }
 }

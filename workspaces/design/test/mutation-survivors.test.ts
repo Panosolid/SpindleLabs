@@ -11,7 +11,11 @@ import { extrudeSketch } from "../src/extrude.ts";
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 /** A saved box part as plain data, the way a file holds it. */
-const box = (): Record<string, any> => clone(partDocument("box", 40, 30, 20));
+/** The box as file data without its bodies' numbers (35e), so the same data can say an older version, which had none. */
+const box = (): Record<string, any> => {
+  const { bodies: _, nextBody: __, ...rest } = clone(partDocument("box", 40, 30, 20));
+  return rest;
+};
 /** Refused with exactly this message (not a TypeError from reading past a missing part). */
 const refused = (data: unknown, message: string) =>
   assert.throws(() => readDesignDocument(data), (e: Error) => e.constructor === Error && e.message === message);
@@ -53,7 +57,7 @@ test("hand-worked: a version 1 file whose ids carry no numbers starts the counte
   f.id = "base";
   const doc = readDesignDocument({ version: 1, profiles: [], timeline: { features: [f] } });
   assert.equal(doc.nextId, 1);
-  assert.equal(doc.version, 4);
+  assert.equal(doc.version, 5);
 });
 
 test("a version 3 file missing its profiles list or its timeline is refused as having no timeline", () => {

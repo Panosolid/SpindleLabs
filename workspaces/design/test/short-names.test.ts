@@ -105,8 +105,9 @@ function oldDoc(): DesignDocument {
   for (const f of doc.timeline.features) back = named(back, f.id, old(f));
   const sketch = back.timeline.features[1];
   back.timeline.features[1] = { ...sketch, intent: { ...sketch.intent, summary: "Sketch 1 on a face of Feature 1 (box)" }, provenance: { ...sketch.provenance, from: [{ workspace: "design", id: "feature-1", label: "Feature 1 (box)" }] } };
-  // Saved before version 4, as every file holding these names was.
-  return { ...back, version: 3 } as unknown as DesignDocument;
+  // Saved before version 4, as every file holding these names was (so with no bodies' numbers either: 35e).
+  const { bodies: _, nextBody: __, ...unnumbered } = back;
+  return { ...unnumbered, version: 3 } as unknown as DesignDocument;
 }
 
 test("hand-worked: an older project's presets get short names in timeline order, and every copy of the old names follows", () => {

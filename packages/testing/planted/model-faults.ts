@@ -147,8 +147,8 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: "workspaces/design/src/scene.ts",
-        find: "    const view = await cache.view(r.body);",
-        replace: "    const real = await cache.view(r.body);\n    const g = globalThis as { drift?: number };\n    const view = (g.drift = (g.drift ?? 0) + 1) % 2 === 0 ? { ...real, volume: real.volume * 1.001 } : real;",
+        find: "      view = await cache.view(r.body);",
+        replace: "      const real = await cache.view(r.body);\n      const g = globalThis as { drift?: number };\n      view = (g.drift = (g.drift ?? 0) + 1) % 2 === 0 ? { ...real, volume: real.volume * 1.001 } : real;",
       },
     ],
     run: ["timeline"],
@@ -233,7 +233,7 @@ export const PLANTS: Record<ModelFault, Plant> = {
   },
   "full-replay": {
     what: "rebuildTimeline empties the body cache first (before its use starts: inside it the cache only frees once the use ends, so a clear there changes nothing), so every body is built again",
-    edits: [{ file: REBUILD, find: "  return cache.using(async () => {\n    const build = await buildTimeline(doc, cache, calls);", replace: "  await cache.clear();\n  return cache.using(async () => {\n    const build = await buildTimeline(doc, cache, calls);" }],
+    edits: [{ file: REBUILD, find: "  return cache.using(async () => {\n    const build = await buildTimeline(doc, cache, calls, slow);", replace: "  await cache.clear();\n  return cache.using(async () => {\n    const build = await buildTimeline(doc, cache, calls, slow);" }],
     run: ["timeline"],
     caught: "an edit rebuilt bodies that didn't change",
   },
@@ -242,18 +242,16 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: REBUILD,
-        find: "    else results[f.id] = await buildFeature(doc, f, results, cache, kernel, index);",
+        find: "      const r = await buildFeature(doc, f, results, cache, kernel, index);",
         replace: [
-          "    else {",
           "      const g = globalThis as { prev?: WeakMap<object, Map<string, { k: string; r: FeatureResult }>> };",
           "      const prev = (g.prev ??= new WeakMap());",
           "      if (!prev.has(cache)) prev.set(cache, new Map());",
           "      const k = JSON.stringify(f);",
           "      const old = prev.get(cache)!.get(f.id);",
           "      const held = old?.r.status === \"built\" && [...(cache as unknown as { bodies: Map<string, { handle: unknown }> }).bodies.values()].some((b) => b.handle === (old.r as { body?: unknown }).body);",
-          "      results[f.id] = old && old.k === k && held ? old.r : await buildFeature(doc, f, results, cache, kernel, index);",
-          "      prev.get(cache)!.set(f.id, { k, r: results[f.id] });",
-          "    }",
+          "      const r = old && old.k === k && held ? old.r : await buildFeature(doc, f, results, cache, kernel, index);",
+          "      prev.get(cache)!.set(f.id, { k, r });",
         ].join("\n"),
       },
     ],
