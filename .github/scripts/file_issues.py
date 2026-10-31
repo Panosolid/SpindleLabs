@@ -250,6 +250,7 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
     starting "check "."""
     kinds = []
     dirs_with_kinds = set(explained_dirs)
+    clean_dirs = set()  # folders whose own report says that leg finished with nothing to file (issue #199)
     for path, text in sorted(reports.items()):
         top = path.split("/")[0]
         found = []
@@ -272,6 +273,9 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
                     path = line.partition("): ")[2].partition(" | ")[0] or "?"
                     per_file.setdefault(f"explained.json lists mutants that no longer survive in {path}", []).append(line)
             found += [(f"check TypeScript mutants: {what}", "\n".join(lines)) for what, lines in per_file.items()]
+            # check.mjs prints "<target>: N survivors, all explained: true" only at the end of a leg that passed.
+            if not per_file and re.search(r"^[a-z]+: \d+ survivors, all explained: true$", text, re.M):
+                clean_dirs.add(top)
         elif path == "journeys/soak.json":
             # The long-session soak runs in the journeys job: each problem it judged is a kind, so a soak failure on a
             # night with a journey FAIL is filed too (it was hidden by it, weak-spot hunt 10-29).
@@ -286,6 +290,8 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
             if code not in MUTANTS_FINE:
                 why = "the unmutated tests failed" if code == "4" else f"cargo mutants stopped with exit code {code}"
                 found.append((f"check whole-kernel mutants: {why}", f"{top}: exit code {code}"))
+            else:
+                clean_dirs.add(top)
         if found:
             dirs_with_kinds.add(top)
             kinds += found
@@ -295,8 +301,9 @@ def check_kinds(reports, jobs, explained_dirs, present_dirs=()):
             continue
         prefixes = JOB_DIRS.get(job, ())
         # Explained when one of its folders gave a kind and none of its folders that came in gave none (a matrix leg
-        # that crashed beside a leg that found something was hidden, weak-spot hunt 10-29).
-        silent = sorted(d for d in present_dirs if job_dir(d, prefixes) and d not in dirs_with_kinds)
+        # that crashed beside a leg that found something was hidden, weak-spot hunt 10-29). A leg whose own report
+        # says it passed isn't silent: it is why the job's other legs failed (issue #199).
+        silent = sorted(d for d in present_dirs if job_dir(d, prefixes) and d not in dirs_with_kinds | clean_dirs)
         if prefixes and any(job_dir(d, prefixes) for d in dirs_with_kinds) and not silent:
             continue
         example = f"job {job}: {result}" + (f" (no kind from {', '.join(silent)})" if silent and prefixes else "")

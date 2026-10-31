@@ -222,6 +222,9 @@ export interface SlicedPrint {
 /** The build plate a P1S print file is for: Bambu's textured PEI plate (its first layer prints 0.04 mm lower, as the plate's peaks stop the nozzle when homing), or a smooth one (smooth PEI, cool or engineering plate). */
 export type BuildPlate = "textured" | "smooth";
 
+/** The nozzle fitted to the P1S, named in its print file: Bambu Studio refuses to send a file whose nozzle type is not the printer's. Standard is the stock hotend; High Flow is Bambu's high-flow hotend. Both are 0.4 mm and print the same moves. */
+export type NozzleType = "standard" | "high-flow";
+
 /** Supports under overhangs (P5d3): none, normal (columns straight down) or tree (branches merging going down), both under the same dense roof. */
 export type SupportStyle = "off" | "normal" | "tree";
 
