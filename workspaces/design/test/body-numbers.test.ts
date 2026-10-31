@@ -181,7 +181,6 @@ test("the reader refuses bodies' numbers broken in each way, with a message nami
     [(d) => (d.bodies[0].id = 7), /^Error: Design body 1 has no id$/],
     [(d) => (d.bodies[0].id = "feature-1"), /^Error: Design body feature-1 is not "body:" and the id of an item that makes a body$/],
     [(d) => (d.bodies[0].id = "body:sketch-2"), /^Error: Design body body:sketch-2 is not "body:" and the id/],
-    [(d) => (d.bodies[0].id = "body:feature-99"), /^Error: Design body body:feature-99 is not "body:" and the id/],
     [(d) => (d.bodies[0].id = "body:feature-1/piece:1"), /^Error: Design body body:feature-1\/piece:1 is not "body:" and the id/],
     [(d) => (d.bodies[1].id = "body:feature-1"), /^Error: Design body body:feature-1 is listed twice$/],
     [(d) => (d.bodies[0].number = 0), /^Error: Design body body:feature-1's number 0 is not a counting number$/],
@@ -190,12 +189,19 @@ test("the reader refuses bodies' numbers broken in each way, with a message nami
     [(d) => (d.bodies[2].number = 1), /^Error: Design body number 1 is given twice$/],
     // At 3 the counter would give Body 3 again.
     [(d) => (d.nextBody = 3), /^Error: Design data's nextBody 3 is not above body body:feature-12's number 3, so a new body could repeat it$/],
-    [(d) => d.bodies.pop(), /^Error: Design feature feature-12 makes a body with no number in the bodies list$/],
     // Numbers in data saying an older version, which never had them.
     [(d) => (d.version = 4), /^Error: Design data says version 4 but has bodies' numbers, which version 5 brought$/],
     [(d) => ((d.version = 3), delete d.bodies), /^Error: Design data says version 3 but has bodies' numbers, which version 5 brought$/],
   ];
   for (const [edit, message] of cases) assert.throws(broken(edit), message, String(edit));
+  // A file edited elsewhere is settled as an edit would settle it, every number it gives kept: a body whose item
+  // is gone loses its number, and a body with none gets the next (the cylinder's 3 dropped, so it gets 4, then 5 is next).
+  const gone = broken((d) => (d.bodies[0].id = "body:feature-99"))();
+  assert.deepEqual(gone.bodies, [{ id: "body:feature-11", number: 2 }, { id: "body:feature-12", number: 3 }, { id: "body:feature-1", number: 4 }]);
+  assert.equal(gone.nextBody, 5);
+  const unnumbered = broken((d) => d.bodies.pop())();
+  assert.deepEqual(unnumbered.bodies!.at(-1), { id: "body:feature-12", number: 4 });
+  assert.equal(unnumbered.nextBody, 5);
   // Version 5 data leaving both out is numbered as version 4 data is (written by hand or by a test).
   const { bodies: _, nextBody: __, ...bare } = good;
   assert.deepEqual(readDesignDocument(bare), three());

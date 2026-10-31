@@ -59,6 +59,12 @@ test("what a file should show, worked by hand", () => {
   // Finding 5: the box failed (the bar marks it): no row for it, and the extrude keeps its number, Body 2.
   assert.deepEqual(expectedView(design(), new Set(["feature-1"])).rows, [{ row: "body-2", place: 2, id: "feature-3" }]);
   assert.equal(expectedView(design(), new Set(["feature-1"])).bodies, 1);
+  // 35e: the box suppressed, its number given by the file: the extrude keeps Body 2 (by place it would be Body 1).
+  const numbered = { ...design(), bodies: [{ id: "body:feature-1", number: 1 }, { id: "body:feature-3", number: 2 }], nextBody: 3 };
+  numbered.timeline.features[0].suppressed = true;
+  assert.deepEqual(expectedView(numbered).rows, [{ row: "body-2", place: 2, id: "feature-3" }]);
+  // A body the file has no number for gets the next: the extrude's dropped, the counter at 7, so Body 7.
+  assert.deepEqual(expectedView({ ...numbered, bodies: [numbered.bodies[0]], nextBody: 7 }).rows, [{ row: "body-7", place: 7, id: "feature-3" }]);
   // A failed mark on an item that builds nothing anyway (a sketch) changes no row.
   assert.equal(expectedView(design(), new Set(["sketch-2"])).bodies, 2);
   // The marker on Sketch 2: the extrude after it is rolled back, leaving the box alone (1 body).

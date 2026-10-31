@@ -574,9 +574,10 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   // Version 3 to 4 renames the old preset names (the data opened, so it is a whole design by now).
   const v3 = upgraded.workspaces.design;
   if (isObj(v3) && v3.version === 3) upgraded.workspaces.design = withShortNames({ ...v3, version: 4 } as unknown as DesignDocument);
-  // Version 4 to 5 numbers the bodies as the file showed them (35e).
+  // Version 4 to 5 numbers the bodies as the file showed them, and version 5 is settled as an edit would settle it:
+  // a body with no number gets the next, a gone item's number goes (35e).
   const v4 = upgraded.workspaces.design;
-  if (isObj(v4) && v4.version === 4) upgraded.workspaces.design = numberBodies({ ...v4, version: 5 } as unknown as DesignDocument);
+  if (isObj(v4) && (v4.version === 4 || v4.version === 5)) upgraded.workspaces.design = numberBodies({ ...v4, version: 5 } as unknown as DesignDocument);
   if (canonical(JSON.parse(saved)) !== canonical(upgraded)) return { kind: "saving lost or changed something the file had", detail: "" };
   return null;
 }

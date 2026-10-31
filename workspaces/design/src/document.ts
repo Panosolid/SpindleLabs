@@ -153,9 +153,10 @@ export interface DesignDocument {
   kept?: Record<string, KeptShape>;
   /**
    * Every body's id and number (35e, `numberBodies`), in the order they
-   * were given. A document read from a file always has them, and an edit
-   * that makes a body numbers it; left out (with `nextBody`) only in data
-   * written by hand or by a test, numbered as version 4 data is when read.
+   * were given. A document read from a file always has them all, and an
+   * edit that makes a body numbers it; left out (with `nextBody`) only in
+   * data written by hand or by a test, numbered as version 4 data is when
+   * read.
    */
   bodies?: BodyRecord[];
   /** The number the next new body gets ("Body 4"): above every number given, even a deleted body's. */
@@ -937,9 +938,13 @@ function checkMove(f: Feature, byId: ReadonlyMap<string, { item: Feature; at: nu
 }
 
 /**
- * A version 5 file's bodies (35e): each body an item makes has one id and
- * number, no number given twice, and the counter above all of them, so no
- * new body could take one.
+ * A version 5 file's bodies (35e): each listed once, as "body:" and an
+ * item's id, never a sketch's or a Move's, no number given twice, and the
+ * counter above all of them, so no new body could take one. A body whose
+ * item is gone, or an item with no number, is what a file edited by hand
+ * (or by another program) can hold: the reader settles both as an edit
+ * would (`numberBodies`: the number dropped, the next number given), so
+ * every number the file gives stays as it is.
  */
 function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { item: Feature }>) {
   const { bodies, nextBody } = d;
@@ -950,9 +955,9 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
   const numbers = new Set<number>();
   for (const [i, b] of bodies.entries()) {
     if (!isRecord(b) || typeof b.id !== "string") throw new Error(`Design body ${i + 1} has no id`);
-    const m = /^body:(.+)$/.exec(b.id);
+    const m = /^body:([^:/]+)$/.exec(b.id);
     const item = m ? byId.get(m[1])?.item : undefined;
-    if (!item || !makesBody(item)) throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body`);
+    if (!m || (item && !makesBody(item))) throw new Error(`Design body ${shown(b.id)} is not "body:" and the id of an item that makes a body`);
     if (ids.has(b.id)) throw new Error(`Design body ${b.id} is listed twice`);
     ids.add(b.id);
     if (!Number.isSafeInteger(b.number) || b.number < 1) throw new Error(`Design body ${b.id}'s number ${typeof b.number === "string" ? JSON.stringify(b.number) : shown(b.number)} is not a counting number`);
@@ -960,7 +965,6 @@ function checkBodies(d: Partial<DesignDocument>, byId: ReadonlyMap<string, { ite
     numbers.add(b.number);
     if (b.number >= nextBody!) throw new Error(`Design data's nextBody ${nextBody} is not above body ${b.id}'s number ${b.number}, so a new body could repeat it`);
   }
-  for (const f of byId.values()) if (makesBody(f.item) && !ids.has(bodyIdOf(f.item.id))) throw new Error(`Design feature ${f.item.id} makes a body with no number in the bodies list`);
 }
 
 export function readDesignDocument(data: unknown): DesignDocument {
@@ -1119,7 +1123,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
   if (!unnumbered) checkBodies(d, byId);
   const read = withRuledNames(d as DesignDocument);
   const named = old ? withShortNames(read) : read;
-  return unnumbered ? numberBodies(named) : named;
+  // Numbered as version 4 data showed, or (version 5) any body the file gives no number gets the next one.
+  return numberBodies(named);
 }
 
 /**

@@ -192,8 +192,11 @@ export function editFile(text, edit, at) {
  * their suppressed and rolled-back marks, and the Bodies group's rows. A
  * solid builds when it is not suppressed, not after the marker, and, for a
  * sketch extrude, its sketch builds, or the sketch is gone and its last
- * shape was kept. Each one is "Body n", n its place among those; one the
- * kernel refused (`failed`, the ids the timeline bar marks failed, which
+ * shape was kept. Each one is "Body n", n its own number (35e): the one the
+ * file gives it, else (a body the file has no number for: a version 4
+ * file, or one edited here) the next after the file's counter and every
+ * number it gives, the bodies that build first and then the rest, each in
+ * timeline order; one the kernel refused (`failed`, the ids the timeline bar marks failed, which
  * the per-step check holds to `kernelVerdict` where that can tell) has no
  * row (bug hunt 2026-10-19, finding 5).
  */
@@ -212,7 +215,11 @@ export function expectedView(design, failed = new Set()) {
     return active(s.i);
   };
   const solids = features.filter((f, i) => f.intent.type !== "sketch" && builds(f, i));
-  const rows = solids.flatMap((f, i) => (failed.has(f.id) ? [] : [{ row: `body-${i + 1}`, place: i + 1, id: f.id }]));
+  const made = features.filter((f) => f.intent.type !== "sketch" && f.intent.type !== "move");
+  const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id)).map((b) => [b.id.slice(5), b.number]));
+  let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
+  for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
+  const rows = solids.flatMap((f) => (failed.has(f.id) ? [] : [{ row: `body-${given.get(f.id)}`, place: given.get(f.id), id: f.id }]));
   return {
     items: features.map((f, i) => ({ id: f.id, suppressed: f.suppressed === true, rolledBack: i >= stop })),
     solids: solids.map((f) => f.id),
