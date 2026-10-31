@@ -111,7 +111,7 @@ test("a missing config, a renamed source file or test, a target check.mjs doesn'
   assert.deepEqual(targetProblems(stryker, without("packages/core/test/links.test.ts")), ["model.json runs test/links.test.ts, which is not in packages/core"]);
   const [problem] = targetProblems(stryker, edited("check.mjs", ', svg: "packages/core"', ""));
   assert.match(problem, /^run\.sh's targets .* differ from check\.mjs's /);
-  assert.deepEqual(targetProblems(stryker, edited("run.sh", "targets=(core design storage model svg viewport ai naming)", "targets=(core design)")), ['run.sh runs "core design" by default, not every target']);
+  assert.deepEqual(targetProblems(stryker, edited("run.sh", "targets=(core design storage model svg viewport ai naming combine)", "targets=(core design)")), ['run.sh runs "core design" by default, not every target']);
 });
 
 test("the nightly ts-mutants job runs every target run.sh knows, one job each, and collect-results.sh reports each", () => {

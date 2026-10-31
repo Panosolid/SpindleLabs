@@ -2287,5 +2287,390 @@
     "original": "v + dv",
     "replacement": "v - dv",
     "why": "sliver (35ed1): filled() of the column two away only feeds matters(); outside an Extrude join it is always true, and in a join the step's own column already holds a filled cell of the one result lump or the block, which decides it alike."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < 3",
+    "replacement": "i <= 3",
+    "why": "At i = 3 a[3] and b[3] are undefined, NaN >= SAME_CORNER is false, so the extra turn returns nothing and the result is still 0."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "MethodExpression",
+    "original": "Math.max(Math.abs(a), Math.abs(b))",
+    "replacement": "Math.min(Math.abs(a), Math.abs(b))",
+    "why": "Two sizes within TIE of the larger are within TIE·(1 − TIE) of the smaller; the window between the two bounds is about TIE² of the size, below a double's precision, so no two numbers fall in it."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "i < Math.max(a.length, b.length)",
+    "replacement": "i <= Math.max(a.length, b.length)",
+    "why": "The extra turn compares two undefined entries, both -Infinity, which are equal: lex compares made orders only, and every made order is [place, role, loop, piece] (4 numbers, featureBody) or [Infinity] (no order), whose first numbers already differ."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "MethodExpression",
+    "original": "Math.max(a.length, b.length)",
+    "replacement": "Math.min(a.length, b.length)",
+    "why": "Stopping at the shorter one only matters for two orders of different lengths with one a prefix of the other: lex compares made orders only, and every made order is [place, role, loop, piece] (4 numbers, featureBody) or [Infinity] (no order), whose first numbers already differ, so no prefix ties."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "UnaryOperator",
+    "original": "-Infinity",
+    "replacement": "+Infinity",
+    "why": "The fill for a missing entry is never read where it decides: lex compares made orders only, and every made order is [place, role, loop, piece] (4 numbers, featureBody) or [Infinity] (no order), whose first numbers already differ."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "UnaryOperator",
+    "original": "-Infinity",
+    "replacement": "+Infinity",
+    "why": "The fill for a missing entry is never read where it decides: lex compares made orders only, and every made order is [place, role, loop, piece] (4 numbers, featureBody) or [Infinity] (no order), whose first numbers already differ."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "x < y",
+    "replacement": "x <= y",
+    "why": "Reached only when x !== y, where < and <= agree."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "!made.has(n)",
+    "replacement": "true",
+    "why": "One face name always has one made order (its feature's place and its role in that feature), so whichever input's copy is kept is the same."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "new Array<number>(count)",
+    "replacement": "new Array()",
+    "why": "Mutates share (first is filled the same way and killed): share is written for every piece some face reaches before it is read; two unreached pieces have first = Infinity, fall through Infinity − Infinity (NaN, falsy) to share, where undefined against undefined is NaN, falsy like 0 against 0: both go on to volume; a reached piece against an unreached one is decided by first."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "f.names.length > 0",
+    "replacement": "true",
+    "why": "A face with no names asks made for undefined, which no name maps to, so it gets [Infinity] either way."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "f.names.length > 0",
+    "replacement": "f.names.length >= 0",
+    "why": "A face with no names asks made for undefined, which no name maps to, so it gets [Infinity] either way."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "p - q",
+    "replacement": "p + q",
+    "why": "The last tie-break: the list starts in the kernel's order 0, 1, 2… and p + q, like p − q for p > q, says the later is greater for any two different pieces; V8's sort leaves a list already in that order as it is (four tied pieces in boolean-names-survivors.test.ts keep their order under both)."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "3 * t < indices.length",
+    "replacement": "3 * t <= indices.length",
+    "why": "The extra turn reads indices past the end: undefined positions give NaN, every comparison with NaN is false, so it never adds a crossing."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "det === 0",
+    "replacement": "false",
+    "why": "With det 0, u and v are infinite or NaN and fail the range tests (NaN and ±Infinity are never within [0, 1]), so the triangle is skipped anyway."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "u < 0",
+    "replacement": "u <= 0",
+    "why": "At exactly u = 0 or 1: a ray meeting a triangle exactly on its edge or corner (u, v or u + v exactly 0 or 1) needs a point and direction chosen to hit it: RAY's parts are irrational-looking, so for the corner of an axis-aligned target block this does not happen."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "u > 1",
+    "replacement": "false",
+    "why": "u > 1 with v >= 0 gives u + v > 1, rejected by the next test anyway."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "u > 1",
+    "replacement": "u >= 1",
+    "why": "At exactly u = 0 or 1: a ray meeting a triangle exactly on its edge or corner (u, v or u + v exactly 0 or 1) needs a point and direction chosen to hit it: RAY's parts are irrational-looking, so for the corner of an axis-aligned target block this does not happen."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "v < 0",
+    "replacement": "v <= 0",
+    "why": "At exactly v = 0 or u + v = 1: a ray meeting a triangle exactly on its edge or corner (u, v or u + v exactly 0 or 1) needs a point and direction chosen to hit it: RAY's parts are irrational-looking, so for the corner of an axis-aligned target block this does not happen."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "u + v > 1",
+    "replacement": "u + v >= 1",
+    "why": "At exactly v = 0 or u + v = 1: a ray meeting a triangle exactly on its edge or corner (u, v or u + v exactly 0 or 1) needs a point and direction chosen to hit it: RAY's parts are irrational-looking, so for the corner of an axis-aligned target block this does not happen."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "dot(e2, q) / det > 0",
+    "replacement": "dot(e2, q) / det >= 0",
+    "why": "t exactly 0 means the point lies on the triangle; the target corner tested lies inside the piece, never on its surface."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "dot(e2, q) / det > 0",
+    "replacement": "dot(e2, q) / det <= 0",
+    "why": "Counting the crossings behind the point instead of in front: a line through a closed surface crosses it an even number of times, so both counts have the same parity."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArithmeticOperator",
+    "original": "dot(e2, q) / det",
+    "replacement": "dot(e2, q) * det",
+    "why": "Only the sign of t is read, and x / det and x · det have the same sign."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "faceTable's list of faces: push returns the new length, so each face's index (length − 1) still points at it; the extra first entry is a string with no names, carrying nothing and bordering nothing."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[k]",
+    "replacement": "[]",
+    "why": "tagOf is called with a name some face carries (its shown name, or a reference's name resolveFaceName found on two or more faces), so carrying has it; the fallback [k] holds only k, which tagAmong leaves out, as it does with an empty list."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "name === null",
+    "replacement": "false",
+    "why": "A face with no name shows null; carrying has no null key, so it goes on to return name, which is null."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "OptionalChaining",
+    "original": "carrying.get(name)?.length",
+    "replacement": "carrying.get(name).length",
+    "why": "name is a face's shown name, which carrying always holds."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "designNames' list of edges at each corner: the extra entry is a string, edge_faces of it is undefined and falls back to no faces, adding no ends."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The fallback for an edge with no corners: the string is a corner index nothing lists, atVertex has nothing there, so no ends."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The fallback for a corner index past the list (no edges there): its one entry is a string, edge_faces of it is undefined, no faces, no ends."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "The fallback for edge_faces of an edge atVertex holds, always a listed edge (a pair, or null falling back): the string face index has no face, so names[0] is undefined and it is not an end."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "n !== null",
+    "replacement": "true",
+    "why": "A null edge is counted under null, a key no named edge looks up (said names are strings), and null edges stay null below."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "t < triangle_faces.length",
+    "replacement": "t <= triangle_faces.length",
+    "why": "The extra turn reads triangle_faces past its end, undefined, never the face asked for, so it is skipped."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d1 <= 0",
+    "replacement": "d1 < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d2 <= 0",
+    "replacement": "d2 < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d3 >= 0",
+    "replacement": "d3 > 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d4 <= d3",
+    "replacement": "d4 < d3",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d6 >= 0",
+    "replacement": "d6 > 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d5 <= d6",
+    "replacement": "d5 < d6",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "vc <= 0",
+    "replacement": "vc < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d1 >= 0",
+    "replacement": "d1 > 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "d3 <= 0",
+    "replacement": "true",
+    "why": "The condition is implied by the corner tests before it failing (Ericson's order): 200,000 random points near random triangles gave no disagreement with an independent distance with the condition made true."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d3 <= 0",
+    "replacement": "d3 < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "vb <= 0",
+    "replacement": "vb < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "d2 >= 0",
+    "replacement": "true",
+    "why": "The condition is implied by the corner tests before it failing (Ericson's order): 200,000 random points near random triangles gave no disagreement with an independent distance with the condition made true."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d2 >= 0",
+    "replacement": "d2 > 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "d6 <= 0",
+    "replacement": "true",
+    "why": "The condition is implied by the corner tests before it failing (Ericson's order): 200,000 random points near random triangles gave no disagreement with an independent distance with the condition made true."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d6 <= 0",
+    "replacement": "d6 < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "va <= 0",
+    "replacement": "va < 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "d4 - d3 >= 0",
+    "replacement": "true",
+    "why": "The condition is implied by the corner tests before it failing (Ericson's order): 200,000 random points near random triangles gave no disagreement with an independent distance with the condition made true."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d4 - d3 >= 0",
+    "replacement": "d4 - d3 > 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ConditionalExpression",
+    "original": "d5 - d6 >= 0",
+    "replacement": "true",
+    "why": "The condition is implied by the corner tests before it failing (Ericson's order): 200,000 random points near random triangles gave no disagreement with an independent distance with the condition made true."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "d5 - d6 >= 0",
+    "replacement": "d5 - d6 > 0",
+    "why": "faceHolds follows Ericson's closest point regions; on a boundary between two regions both formulas give the same closest point (the closest point moves continuously), so <= against < picks a different branch with the same answer."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "resolveOldEdge's fallback for a face index past the body's faces: \"Stryker was here\" is never a face name looked for (they are face:… names), so includes is false either way."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "resolveOldEdge's fallback for a face index past the body's faces: \"Stryker was here\" is never a face name looked for (they are face:… names), so includes is false either way."
+  },
+  {
+    "file": "workspaces/design/src/boolean-names.ts",
+    "mutator": "EqualityOperator",
+    "original": "found.length > 1",
+    "replacement": "found.length >= 1",
+    "why": "Reached only when found.length is not 1, where > 1 and >= 1 agree."
   }
 ]
