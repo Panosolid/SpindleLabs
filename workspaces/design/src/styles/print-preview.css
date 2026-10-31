@@ -128,7 +128,9 @@
 
 @media (max-width: 640px) {
   .print-preview .print-preview-head { top: 8px; left: 8px; right: 8px; padding-left: 14px; }
-  .print-preview #print-preview-words { display: none; }
+  /* The slice's words (layers, grams, time) stay on a phone: small, over up to three lines beside the title (slicer hunt 2026-10-31: they were hidden, so a phone never said how long or how much plastic). */
+  .print-preview #print-preview-words { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; white-space: normal; font-size: 0.68em; line-height: 1.2; }
+  .print-preview .print-preview-head { gap: 8px; }
   .print-preview #print-preview-close:not(#none) { width: 44px; height: 44px; min-width: 44px; }
   /* The Show card as one row of pills that scrolls sideways. */
   .print-preview #print-preview-show {

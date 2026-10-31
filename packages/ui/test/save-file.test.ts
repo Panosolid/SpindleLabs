@@ -160,3 +160,20 @@ test("a name typed with bad characters or left empty is made safe, not refused",
   }
   assert.deepEqual(downloads, []);
 });
+
+test("the name box opens inside a modal dialog that is open, or it would sit behind it unreachable; with none open it is on the page", () => {
+  // Slicer hunt 2026-10-31: the Slice dialog (top layer, the rest of the page inert) hid the box for a slice over 5 s.
+  const { doc } = page();
+  const dialog = doc.createElement("dialog");
+  dialog.setAttribute("open", "");
+  doc.body.append(dialog);
+  void askName(doc, "Box", STL_KIND);
+  const box = doc.querySelector(".save-name")!;
+  assert.equal(box.parentElement, dialog, "inside the open dialog");
+  doc.querySelector<HTMLButtonElement>(".save-name .cancel")!.click();
+  assert.equal(doc.querySelector(".save-name"), null);
+  dialog.removeAttribute("open");
+  void askName(doc, "Box", STL_KIND);
+  assert.equal(doc.querySelector(".save-name")!.parentElement, doc.body, "no dialog open: on the page, as before");
+  doc.querySelector<HTMLButtonElement>(".save-name .cancel")!.click();
+});
