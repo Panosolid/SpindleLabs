@@ -8,7 +8,7 @@ import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
 import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import { calibrate } from "./time-limit.ts";
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
 
 // A .wasm that didn't download or compile fails every call with the app's
 // words, not the browser's; a build that doesn't take the app's key keeps
@@ -76,9 +76,8 @@ const ops = {
   body_boolean: (target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult => kernel.body_boolean(target, tools, op),
   body_count: () => kernel.body_count(),
   slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
-  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate) =>
-    // The nozzle (kernel 0.33.9's 7th argument) is left out until the app's Nozzle choice: the Standard nozzle.
-    kernel.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, undefined),
+  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType) =>
+    kernel.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 

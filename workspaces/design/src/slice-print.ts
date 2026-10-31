@@ -40,16 +40,20 @@ export const SUPPORT_OPTIONS: readonly { label: string; value: SupportStyle }[] 
   { label: "Tree (less plastic)", value: "tree" },
 ];
 
+/** The nozzle fitted to the P1S, as the engine names it (kernel-types.ts' NozzleType: the kernel call checks the two agree). */
+export type NozzleType = "standard" | "high-flow";
+
 /** Which file to save: the P1S's print file, or plain G-code for another printer. */
 export type PrintFormat = "p1s" | "gcode";
 
-/** The file's choices: its kind and, for the P1S's, the build plate (the owner's textured PEI by default). */
+/** The file's choices: its kind and, for the P1S's, the build plate (the owner's textured PEI by default) and the nozzle fitted (the stock Standard by default; the dialog remembers the last one chosen, as a printer's nozzle rarely changes). */
 export interface FileChoices {
   format: PrintFormat;
   plate: BuildPlate;
+  nozzle: NozzleType;
 }
 
-export const FILE_DEFAULTS: FileChoices = { format: "p1s", plate: "textured" };
+export const FILE_DEFAULTS: FileChoices = { format: "p1s", plate: "textured", nozzle: "standard" };
 
 /**
  * The file kinds, as the dialog lists them. The plain file's start
@@ -64,6 +68,23 @@ export const PLATE_OPTIONS: readonly { label: string; value: BuildPlate }[] = [
   { label: "Textured PEI plate", value: "textured" },
   { label: "Smooth, cool or engineering plate", value: "smooth" },
 ];
+export const NOZZLE_OPTIONS: readonly { label: string; value: NozzleType }[] = [
+  { label: "0.4 mm Standard", value: "standard" },
+  { label: "0.4 mm High Flow", value: "high-flow" },
+];
+
+/** Where the dialog keeps the nozzle last chosen (this browser only). */
+export const NOZZLE_KEY = "spindlelabs.slice.nozzle";
+
+/** The nozzle last chosen, or the default when none was kept, the value is not one of ours, or storage is blocked. */
+export function rememberedNozzle(storage: Pick<Storage, "getItem"> | null): NozzleType {
+  try {
+    const v = storage?.getItem(NOZZLE_KEY);
+    return v === "standard" || v === "high-flow" ? v : FILE_DEFAULTS.nozzle;
+  } catch {
+    return FILE_DEFAULTS.nozzle;
+  }
+}
 
 /** The P1S's print file, as the save box names it. */
 export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
@@ -100,10 +121,10 @@ export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, feat
   return kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports);
 }
 
-/** The same slice as the P1S's print file for `plate`. */
-export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate): Promise<P1sPrintFile> {
+/** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
+export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile> {
   const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate);
+  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle);
 }
 
 /**
@@ -171,9 +192,12 @@ export function gcodeName(choices: PrintChoices, project?: string): string {
   return `${baseName(choices, project)}.gcode`;
 }
 
-/** The P1S file's name: as the plain file's, plus the plate, so a file for one plate is never taken for the other's. */
-export function printFileName(choices: PrintChoices, plate: BuildPlate, project?: string): string {
-  return `${baseName(choices, project)}-${plate}${P1S_KIND.extension}`;
+/**
+ * The P1S file's name: as the plain file's, plus the plate and, for a High Flow nozzle, "high-flow", so a file for one
+ * plate or nozzle is never taken for another's.
+ */
+export function printFileName(choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle, project?: string): string {
+  return `${baseName(choices, project)}-${plate}${nozzle === "high-flow" ? "-high-flow" : ""}${P1S_KIND.extension}`;
 }
 
 /**
@@ -295,9 +319,26 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   format.wrap.title = "The P1S's own print file, with its start and end routines, ready to send to the printer; or plain G-code for another printer.";
   const plate = choice("slice-print-plate", "Build plate", PLATE_OPTIONS, FILE_DEFAULTS.plate);
   plate.wrap.title = "The plate on the printer's bed: the textured plate's first layer prints 0.04 mm lower, as its bumps stop the nozzle when the printer finds the bed.";
-  // The plate matters to the P1S's file only.
+  const storage = (() => {
+    try {
+      return slot.ownerDocument.defaultView?.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  const nozzle = choice("slice-print-nozzle", "Nozzle", NOZZLE_OPTIONS, rememberedNozzle(storage));
+  nozzle.wrap.title = "The nozzle on your P1S. Bambu Studio won't send a file made for the other kind (Standard is the one it comes with; High Flow is Bambu's faster hotend). Your choice is remembered.";
+  nozzle.select.addEventListener("change", () => {
+    try {
+      storage?.setItem(NOZZLE_KEY, nozzle.select.value);
+    } catch {
+      // Storage blocked: the choice still holds for this dialog.
+    }
+  });
+  // The plate and the nozzle matter to the P1S's file only.
   const plateFor = () => {
     plate.select.disabled = format.select.value !== "p1s";
+    nozzle.select.disabled = format.select.value !== "p1s";
   };
   format.select.addEventListener("change", plateFor);
   const status = el("p", "slice-print-status");
@@ -313,10 +354,10 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   go.title = "Slices the bodies shown and saves the file chosen above.";
   go.type = "button";
   actions.append(close, preview, go);
-  // The six choices in one block: two columns where there is room, so the dialog fits a laptop's height (Ben 10-31: Supports was cut off).
+  // The choices in one block: two columns where there is room, so the dialog fits a laptop's height (Ben 10-31: Supports was cut off).
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
-  choices6.append(format.wrap, plate.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap);
+  choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap);
   dialog.append(heading, printer, untested, choices6, status, actions);
   slot.append(dialog);
 
@@ -325,7 +366,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     status.classList.toggle("slice-print-bad", bad);
   };
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value) });
-  const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured" });
+  const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   let busy = false;
   // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
   let generation = 0;
@@ -335,7 +376,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     return () => mine === generation && dialog.open;
   };
   // A result stays displayed next to choices it no longer matches: any change clears it.
-  for (const c of [quality, walls, infill, supports, format, plate]) c.select.addEventListener("change", () => !busy && say("", false));
+  for (const c of [quality, walls, infill, supports, format, plate, nozzle]) c.select.addEventListener("change", () => !busy && say("", false));
   go.addEventListener("click", async () => {
     if (busy) return;
     busy = true;

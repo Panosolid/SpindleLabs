@@ -11,7 +11,7 @@ import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, gcodeOfPackage, printMovesOf, refusalWords, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -63,7 +63,7 @@ test("plastic left out is warned about from half a hundredth of a mm³ (it round
 const { Window } = await import("happy-dom");
 
 /** The name a stand-in saves under: the one the workspace offers. */
-const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate) : gcodeName(c));
+const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate, f.nozzle) : gcodeName(c));
 
 function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<void> = async () => {}) {
   const window = new Window();
@@ -132,19 +132,19 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   const format = t.$<HTMLSelectElement>("slice-print-format");
   const plate = t.$<HTMLSelectElement>("slice-print-plate");
   // The owner's printer and plate: the P1S file on the textured PEI plate.
-  assert.deepEqual(FILE_DEFAULTS, { format: "p1s", plate: "textured" });
+  assert.deepEqual(FILE_DEFAULTS, { format: "p1s", plate: "textured", nozzle: "standard" });
   assert.equal(format.value, "p1s");
   assert.equal(plate.value, "textured");
   assert.equal(plate.disabled, false);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured" }]);
+  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured", nozzle: "standard" }]);
   // The name by hand: the plain file's spindlelabs-0.2mm-2w-15pc, then the plate, then the P1S's ending.
   assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.2mm-2w-15pc-textured.gcode.3mf: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   plate.value = "smooth";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth" });
+  assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth", nozzle: "standard" });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-smooth\.gcode\.3mf: /);
   // Plain G-code: the plate box greys out, and the file is .gcode.
   format.value = "gcode";
@@ -161,7 +161,39 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   assert.equal(plate.disabled, false);
   // Names by hand, with supports and the other plate.
   assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal" }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "high-flow"), "spindlelabs-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
   await t.window.happyDOM.close();
+});
+
+test("the nozzle: Standard by default, High Flow when picked, remembered for next time, P1S file only", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.window.localStorage.clear();
+  t.d.ask();
+  const nozzle = t.$<HTMLSelectElement>("slice-print-nozzle");
+  const format = t.$<HTMLSelectElement>("slice-print-format");
+  // Bambu Studio refuses to send a file made for the other nozzle (Ben's 10-31 send: his P1S has High Flow, the file said Standard).
+  assert.equal(nozzle.value, "standard");
+  assert.deepEqual([...nozzle.options].map((o) => o.textContent), ["0.4 mm Standard", "0.4 mm High Flow"]);
+  nozzle.value = "high-flow";
+  nozzle.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.deepEqual(t.files[0], { format: "p1s", plate: "textured", nozzle: "high-flow" });
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-textured-high-flow\.gcode\.3mf: /);
+  // Kept for next time: a printer's nozzle rarely changes.
+  assert.equal(t.window.localStorage.getItem(NOZZLE_KEY), "high-flow");
+  // Plain G-code: the nozzle box greys out, as the plate's does.
+  format.value = "gcode";
+  format.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(nozzle.disabled, true);
+  await t.window.happyDOM.close();
+  // What is read back: ours, or the default for anything else or blocked storage.
+  const kept = (v: string | null) => ({ getItem: () => v });
+  assert.equal(rememberedNozzle(kept("high-flow")), "high-flow");
+  assert.equal(rememberedNozzle(kept("standard")), "standard");
+  for (const v of [null, "", "High Flow", "hardened"]) assert.equal(rememberedNozzle(kept(v)), "standard", String(v));
+  assert.equal(rememberedNozzle(null), "standard");
+  assert.equal(rememberedNozzle({ getItem: () => { throw new Error("blocked"); } }), "standard");
 });
 
 test("the dialog says a refusal in the engine's words, warns about plastic left out, and keeps its keys", async () => {
@@ -358,6 +390,16 @@ test("the cube's P1S print file on the shipped build: a package the printer chec
   // A plate the engine doesn't know is the app's bug, refused as a bad request.
   await assert.rejects(printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "glass" as never), (e: Error & { kind?: string }) => e.kind === "bad-request" && /bad plate/.test(e.message));
   await assert.rejects(printFileOf(kernel, doc, [], PRINT_DEFAULTS, "textured"), /no body to slice/);
+  // The nozzle: named where Bambu Studio's send window reads it, and its G-code dialect named, so its time reads our speed limits in mm/s (Ben's 10-31 file showed 1h32m for this cube without it).
+  const settings = (p: Uint8Array) => new TextDecoder().decode(storedZip(p).get("Metadata/project_settings.config"));
+  assert.match(settings(f.package), /"nozzle_volume_type": \["Standard"\]/);
+  assert.match(settings(f.package), /"gcode_flavor": "marlin"/);
+  const hf = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured", "high-flow");
+  assert.match(settings(hf.package), /"nozzle_volume_type": \["High Flow"\]/);
+  assert.match(new TextDecoder().decode(storedZip(hf.package).get("Metadata/slice_info.config")), /key="nozzle_volume_type" value="1"/);
+  // Only what the file says changes, not one move.
+  assert.deepEqual(layerMoves(new TextDecoder().decode(storedZip(hf.package).get("Metadata/plate_1.gcode"))), layerMoves(gcode));
+  await assert.rejects(printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured", "hardened" as never), (e: Error & { kind?: string }) => e.kind === "bad-request" && /bad nozzle/.test(e.message));
 });
 
 // ---- Slicer hunt 2026-10-31: the dialog's follow-ups ----
@@ -428,7 +470,7 @@ test("Preview is given the file choices, so it can slice the file that is downlo
   t.d.ask();
   t.$("slice-print-preview").click();
   await t.settle();
-  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured" }]);
+  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured", nozzle: "standard" }]);
   await t.window.happyDOM.close();
 });
 
@@ -465,8 +507,9 @@ test("the preview reads a P1S file's layer moves only: 100 layers for the 20 mm 
 
 test("a file's name starts with the project's name, so files of two projects differ on the printer's list; an unnamed project keeps 'spindlelabs'", () => {
   // By hand: name, then the layer height, walls and infill, then the plate and the ending.
-  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "Bracket"), "Bracket-0.2mm-2w-15pc-textured.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "standard", "Bracket"), "Bracket-0.2mm-2w-15pc-textured.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "high-flow", "Bracket"), "Bracket-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
   assert.equal(gcodeName({ ...PRINT_DEFAULTS, supports: "tree" }, "Bracket"), "Bracket-0.2mm-2w-15pc-tree-supports.gcode");
-  for (const unnamed of [undefined, "", "   ", "Untitled", "untitled"]) assert.equal(printFileName(PRINT_DEFAULTS, "smooth", unnamed), "spindlelabs-0.2mm-2w-15pc-smooth.gcode.3mf", String(unnamed));
-  assert.notEqual(printFileName(PRINT_DEFAULTS, "textured", "A"), printFileName(PRINT_DEFAULTS, "textured", "B"));
+  for (const unnamed of [undefined, "", "   ", "Untitled", "untitled"]) assert.equal(printFileName(PRINT_DEFAULTS, "smooth", "standard", unnamed), "spindlelabs-0.2mm-2w-15pc-smooth.gcode.3mf", String(unnamed));
+  assert.notEqual(printFileName(PRINT_DEFAULTS, "textured", "standard", "A"), printFileName(PRINT_DEFAULTS, "textured", "standard", "B"));
 });

@@ -73,7 +73,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "0.2", "2", "15", "off"], "the P1S's file and defaults");
+      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "standard", "0.2", "2", "15", "off"], "the P1S's file and defaults (the stock Standard nozzle)");
       assert.match(await page.textContent("#slice-print-untested"), /haven't been test-printed yet/);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-open.png` });
       // On the screen at phone width too.
@@ -96,9 +96,26 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.match(await page.textContent("#slice-print-status"), /^Saved spindlelabs-0\.2mm-2w-15pc-textured\.gcode\.3mf: 100 layers, /);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-p1s.png` });
 
+      // A High Flow nozzle (Ben's P1S): the file names it where Bambu Studio's send window reads it, and the
+      // G-code dialect, so its time reads the speed limits in mm/s; the name says so too.
+      await page.selectOption("#slice-print-nozzle", "high-flow");
+      const [hf] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      assert.equal(hf.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
+      const hfFiles = storedZip(readFileSync(await hf.path()));
+      const hfSettings = hfFiles.get("Metadata/project_settings.config").toString("utf8");
+      assert.match(hfSettings, /"nozzle_volume_type": \["High Flow"\]/);
+      assert.match(hfSettings, /"gcode_flavor": "marlin"/);
+      assert.match(files.get("Metadata/project_settings.config").toString("utf8"), /"nozzle_volume_type": \["Standard"\]/, "the first file was for the Standard nozzle");
+      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved spindlelabs-0.2mm-2w-15pc-textured-high-flow"));
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-high-flow.png` });
+      // Remembered: a printer's nozzle rarely changes.
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.nozzle")), "high-flow");
+      await page.selectOption("#slice-print-nozzle", "standard");
+
       // Plain G-code for another printer: the plate greys out.
       await page.selectOption("#slice-print-format", "gcode");
       assert.equal(await page.$eval("#slice-print-plate", (s) => s.disabled), true);
+      assert.equal(await page.$eval("#slice-print-nozzle", (s) => s.disabled), true, "the nozzle matters to the P1S's file only");
       const [file] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
       assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc.gcode");
       const gcode = readFileSync(await file.path(), "utf8");
@@ -132,7 +149,7 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      const ids = ["slice-print-format", "slice-print-plate", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-close", "slice-print-preview", "slice-print-go"];
+      const ids = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-close", "slice-print-preview", "slice-print-go"];
       /** Each control's box against the window and the dialog's visible area: the ids not wholly inside both. */
       const hidden = () =>
         page.evaluate((ids) => {

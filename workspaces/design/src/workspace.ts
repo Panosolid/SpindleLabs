@@ -435,8 +435,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
       };
       if (file.format === "p1s") {
-        const print = await printFileOf(kernel, doc!, features, choices, file.plate);
-        return save(print, printFileName(choices, file.plate, ctx.project.name), P1S_KIND, print.package);
+        const print = await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle);
+        return save(print, printFileName(choices, file.plate, file.nozzle, ctx.project.name), P1S_KIND, print.package);
       }
       const print = await sliceBodies(kernel, doc!, features, choices);
       return save(print, gcodeName(choices, ctx.project.name), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
@@ -446,7 +446,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
       // The file Slice and download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
-      const p1s = file.format === "p1s" ? await printFileOf(kernel, doc!, features, choices, file.plate) : null;
+      const p1s = file.format === "p1s" ? await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle) : null;
       const gcode = p1s ? printMovesOf(gcodeOfPackage(p1s.package) ?? "") : null;
       const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
       if (!alive()) throw new SliceDropped();
