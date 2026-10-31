@@ -167,16 +167,25 @@ export function refusalWords(message: string): string {
 }
 
 /** The plain file's name: the layer height, the walls and infill and its supports, so two slices of one part never share a name. */
-export function gcodeName(choices: PrintChoices): string {
-  return `${baseName(choices)}.gcode`;
+export function gcodeName(choices: PrintChoices, project?: string): string {
+  return `${baseName(choices, project)}.gcode`;
 }
 
 /** The P1S file's name: as the plain file's, plus the plate, so a file for one plate is never taken for the other's. */
-export function printFileName(choices: PrintChoices, plate: BuildPlate): string {
-  return `${baseName(choices)}-${plate}${P1S_KIND.extension}`;
+export function printFileName(choices: PrintChoices, plate: BuildPlate, project?: string): string {
+  return `${baseName(choices, project)}-${plate}${P1S_KIND.extension}`;
 }
 
-const baseName = (choices: PrintChoices) => `spindlelabs-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}`;
+/**
+ * The project's name leads a file's name, so files of different projects look different on the printer's list; a project
+ * not named yet (empty, or the "Untitled" it starts with) gives "spindlelabs".
+ */
+export const nameLead = (project?: string): string => {
+  const name = (project ?? "").trim();
+  return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
+};
+
+const baseName = (choices: PrintChoices, project?: string) => `${nameLead(project)}-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}`;
 
 /** Normal supports keep the name they had when supports were on or off. */
 const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-supports", tree: "-tree-supports" };

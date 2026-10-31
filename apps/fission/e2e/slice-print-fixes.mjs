@@ -5,7 +5,8 @@
 //  3. the preview shows the file that is downloaded (same time and filament as the download's words, not the plain file's);
 //  4. closing the dialog mid-slice drops the file (nothing downloads); the dialog reopened says Slicing… and the buttons stay off;
 //  5. a result is cleared when a choice changes; an engine refusal reads as advice;
-//  6. at phone width the preview still says how long and how much plastic.
+//  6. closing the preview puts keyboard focus on File ▾;
+//  7. at phone width the preview still says how long and how much plastic.
 // At a desktop width with clicks and a phone's with taps. Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
@@ -121,6 +122,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       }
       await page.click("#print-preview-close");
       await page.waitForSelector("#print-preview", { state: "detached" });
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "file-menu", "focus goes to File ▾, where Slice for printing is");
       const lost = await page.evaluate(() => {
         const c = document.querySelector("#viewport canvas");
         const x = window.__ctx.find((k) => k.canvas === c);

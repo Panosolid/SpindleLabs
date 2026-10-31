@@ -436,10 +436,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       };
       if (file.format === "p1s") {
         const print = await printFileOf(kernel, doc!, features, choices, file.plate);
-        return save(print, printFileName(choices, file.plate), P1S_KIND, print.package);
+        return save(print, printFileName(choices, file.plate, ctx.project.name), P1S_KIND, print.package);
       }
       const print = await sliceBodies(kernel, doc!, features, choices);
-      return save(print, gcodeName(choices), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
+      return save(print, gcodeName(choices, ctx.project.name), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
     async preview(choices, file, alive) {
