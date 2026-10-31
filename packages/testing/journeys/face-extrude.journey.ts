@@ -247,7 +247,7 @@ test("regression: Extrude opened before the body is drawn (a slow kernel after a
 });
 
 test("with nothing to extrude the panel says so: an empty design, and a sphere alone (no flat face, no sketch)", async () => {
-  const empty: DesignDocument = { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const empty: DesignDocument = { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const a = await app(empty);
   await openExtrude(a);
   assert.equal(a.$("#extrude-status")!.textContent, NO_SKETCH);

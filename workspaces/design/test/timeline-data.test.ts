@@ -48,27 +48,30 @@ function fixtureProblem(read: (data: unknown) => DesignDocument): string | null 
   // lines 5, 7, 9, 10 (counter 11); the extrude by 10 is feature-11, and
   // in version 2 it replaced the box; Sketch 2 is sketch-12 with a line
   // (points 13, 14, line-15) and a half disc arc round point-16 (arc-17),
-  // so the counter is at 18. Versions 3 and 4 keep every one of these.
-  if (doc.version !== 4) return `version ${doc.version}`;
+  // so the counter is at 18. Versions 3 and 4 keep every one of these, and
+  // version 5 (35e) gives the extrude's body the number it showed: Body 1.
+  if (doc.version !== 5) return `version ${doc.version}`;
+  if (JSON.stringify(doc.bodies) !== JSON.stringify([{ id: "body:feature-11", number: 1 }]) || doc.nextBody !== 2) return `bodies ${JSON.stringify(doc.bodies)}, next ${doc.nextBody}`;
   if (JSON.stringify(ids(doc)) !== JSON.stringify(["sketch-2", "feature-11", "sketch-12"])) return `items ${ids(doc)}`;
   if (doc.nextId !== 18) return `nextId ${doc.nextId}`;
   if (Object.hasOwn(doc.timeline, "marker")) return "a marker appeared";
   // Its one solid feature stays unsuppressed and is the part.
   if (doc.timeline.features.some((f) => f.suppressed)) return "something was suppressed";
   if (lastFeature(doc).id !== "feature-11") return `part ${lastFeature(doc).id}`;
-  if (JSON.stringify({ ...doc, version: 2 }) !== JSON.stringify(v2)) return "something else changed";
+  const { bodies: _, nextBody: __, ...rest } = doc;
+  if (JSON.stringify({ ...rest, version: 2 }) !== JSON.stringify(v2)) return "something else changed";
   const saved = projectToJson(projectFromJson(REAL_V2, DESIGN));
   if (projectToJson(projectFromJson(saved, DESIGN)) !== saved) return "save and reopen changed the text";
   return null;
 }
 
-test("the real version 2 file (saved by main before 24d1) opens as version 4 with every id kept, and reopens byte-identical", () => {
+test("the real version 2 file (saved by main before 24d1) opens as version 5 with every id kept, and reopens byte-identical", () => {
   assert.equal(JSON.parse(REAL_V2).workspaces.design.version, 2);
   assert.equal(fixtureProblem(readDesignDocument), null);
   const doc = projectFromJson(REAL_V2, DESIGN).workspaces.design as DesignDocument;
   assert.deepEqual(partOf(doc), { shape: "sketch-extrude", sizes: { height: 10 } });
-  // Saved, it is version 4 (the current one).
-  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 4);
+  // Saved, it is version 5 (the current one).
+  assert.equal(JSON.parse(projectToJson(projectFromJson(REAL_V2, DESIGN))).workspaces.design.version, 5);
 });
 
 test("the fixture test fails for a migration broken on purpose, each way", () => {
@@ -99,7 +102,8 @@ function twoSolids(): Record<string, unknown> {
   const s = addSketch(doc);
   doc = drawRectangle(s.doc, s.id, [0, 0], [20, 10]).doc;
   doc = insertPreset(doc, "cylinder", 10, 10, 5).doc;
-  return { ...structuredClone(doc), version: 2 };
+  const { bodies: _, nextBody: __, ...unnumbered } = structuredClone(doc);
+  return { ...unnumbered, version: 2 };
 }
 
 test("a version 2 file with two solid features opens with the earlier one suppressed, so it looks as it did", () => {
@@ -113,7 +117,8 @@ test("a version 2 file with two solid features opens with the earlier one suppre
   assert.equal(lastFeature(doc).id, "feature-11");
   assert.deepEqual(partOf(doc), { shape: "cylinder", sizes: { width: 10, height: 5 } });
   // Everything else is as it was.
-  const back = { ...doc, version: 2, timeline: { features: doc.timeline.features.map((f, i) => (i === 0 ? { ...f, suppressed: false } : f)) } };
+  const { bodies: _, nextBody: __, ...rest } = doc;
+  const back = { ...rest, version: 2, timeline: { features: doc.timeline.features.map((f, i) => (i === 0 ? { ...f, suppressed: false } : f)) } };
   assert.deepEqual(back, v2);
   // Version 2 data with a marker is refused, never half-migrated.
   const marked = structuredClone(v2) as { timeline: Record<string, unknown> };
