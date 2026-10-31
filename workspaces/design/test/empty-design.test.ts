@@ -59,10 +59,12 @@ test("hand-worked: each of the five ways to build nothing has no part, and opens
     assert.deepEqual(reopen(d), d, name);
     assert.equal(projectToJson({ ...emptyProject("Empty"), workspaces: { design: reopen(d) } }), text, name);
   }
-  // Everything deleted leaves nothing behind but the counter: no profiles, sketches or kept shapes.
+  // Everything deleted leaves nothing behind but the counters: no profiles, sketches, kept shapes or bodies' numbers.
   const gone = EMPTY[4][1]();
-  assert.deepEqual(gone, { ...part(), profiles: [], sketches: [], timeline: { features: [] } });
+  assert.deepEqual(gone, { ...part(), profiles: [], sketches: [], timeline: { features: [] }, bodies: [] });
   assert.equal(gone.nextId, 12);
+  // Body 1 and Body 2 were given, so the next body is Body 3 (35e: a number is never given twice).
+  assert.equal(gone.nextBody, 3);
 });
 
 test("hand-worked: a box typed into a design with no body goes in at the marker, with the counter's next id, and is the part", () => {

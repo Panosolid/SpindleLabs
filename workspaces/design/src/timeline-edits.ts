@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { EYE_ROWS, isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { EYE_ROWS, isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -59,6 +59,11 @@ function withTimeline(doc: DesignDocument, features: Feature[], marker: string |
  * confirmed delete.
  */
 export function deleteItem(doc: DesignDocument, id: string): DesignDocument {
+  return numberBodies(deletedItem(doc, id));
+}
+
+/** `deleteItem` before its body's number goes. */
+function deletedItem(doc: DesignDocument, id: string): DesignDocument {
   const item = itemIn(doc, id);
   const all = doc.timeline.features;
   const k = all.indexOf(item);

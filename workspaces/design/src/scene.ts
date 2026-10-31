@@ -8,7 +8,7 @@
 import type { BodyView, DisplayMesh, GeometryReference, KernelError, Plane } from "@fission/core";
 import { bodyFrame } from "./face-sketch.ts";
 import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, type DesignDocument } from "./document.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, readDesignReference, resolveReference, sharedBy } from "./references.ts";
@@ -16,7 +16,7 @@ import { designReference, readDesignReference, resolveReference, sharedBy } from
 /** One built body: the feature that built it, the kernel's view of it, and its faces' and edges' names. */
 export interface ShownBody {
   feature: string;
-  /** Its browser row's number, n in "Body n": its place among `bodyFeatures`, counting ones that did not build. */
+  /** Its browser row's number, n in "Body n": the body's own (35e, `bodyNumbers`), given when it first appeared. */
   place: number;
   view: BodyView;
   names: BodyNames;
@@ -55,7 +55,8 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       // not in the cache: the loop below says so
     }
   }
-  for (const [i, f] of features.entries()) {
+  const numbers = bodyNumbers(doc);
+  for (const f of features) {
     if (bodyHidden(doc, f.id)) continue;
     const r = build.results[f.id];
     if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
@@ -70,7 +71,7 @@ export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cac
       continue;
     }
     const frame = bodyFrame(spec);
-    shown.push({ feature: f.id, place: i + 1, view, names: featureNames(f.id, { spec, curves: r.curves }, view), ...(frame ? { frame } : {}) });
+    shown.push({ feature: f.id, place: numbers.get(bodyIdOf(f.id))!, view, names: featureNames(f.id, { spec, curves: r.curves }, view), ...(frame ? { frame } : {}) });
   }
   return shown;
 }

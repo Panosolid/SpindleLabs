@@ -6,7 +6,7 @@
 // says exactly what it holds.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESIGN_LIMITS, readDesignDocument, type DesignDocument, type KeptShape, type Sketch } from "../src/document.ts";
+import { DESIGN_LIMITS, readDesignDocument, type DesignDocument, type KeptShape, type Sketch, numberBodies } from "../src/document.ts";
 
 interface Shape {
   /** Sketch-and-extrude pairs; each sketch holds `content` points and curves. */
@@ -35,7 +35,7 @@ function content(n: number, take: () => number): { points: Sketch["points"]; cur
 function bigDesign({ pairs, content: per = 6, lone = 0, loneContent = 6, kept = [] }: Shape): DesignDocument {
   let next = 1;
   const take = () => next++;
-  const doc: DesignDocument = { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const doc: DesignDocument = { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const extrudes: string[] = [];
   const sketch = (n: number) => {
     const id = `sketch-${take()}`;
@@ -52,7 +52,8 @@ function bigDesign({ pairs, content: per = 6, lone = 0, loneContent = 6, kept = 
   for (let i = 0; i < lone; i++) sketch(loneContent);
   if (kept.length) doc.kept = Object.fromEntries(kept.map((n, i): [string, KeptShape] => [extrudes[i], content(n, take)]));
   doc.nextId = next;
-  return doc;
+  // Numbered as every design read from a file is (35e).
+  return numberBodies(doc);
 }
 
 /** Through JSON, as a file arrives. */

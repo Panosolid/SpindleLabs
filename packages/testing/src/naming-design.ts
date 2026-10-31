@@ -166,7 +166,7 @@ function edgeMatches(name: string, edge: EdgeName): boolean {
 /** Design on `kernel` as a subject without cuts (the circle extruded as a new body), with bugs planted. */
 export function namingDesignSubject(kernel: KernelCalls, faults: Iterable<NamingDesignFault> = []): NamingDesignSubject {
   const fs = new Set(faults);
-  let state: State = { doc: { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }, meta: {} };
+  let state: State = { doc: { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }, meta: {} };
   let undo: string[] = [];
   let redo: string[] = [];
   let cache = new BodyCache(kernel);
