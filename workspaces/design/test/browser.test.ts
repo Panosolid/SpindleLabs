@@ -8,7 +8,7 @@ import { addSketch, drawLine } from "../src/sketch.ts";
 /** Each node as "label" or [label, children], for comparing whole trees. */
 const shape = (nodes: BrowserNode[]): unknown[] => nodes.map((n) => (n.children ? [n.label, shape(n.children)] : n.label));
 
-const ORIGIN = ["Origin", ["XY plane", "XZ plane", "YZ plane", "X axis", "Y axis", "Z axis"]];
+const ORIGIN = ["Origin", ["XY plane", "XZ plane", "YZ plane", "X axis", "Y axis", "Z axis", "Build area (P1S)"]];
 
 /** Each row's tooltip, for the rows whose tooltip is not their label alone (U0e: an item's short name, its description under it). */
 const tips = (nodes: BrowserNode[]): unknown[] => nodes.map((n) => (n.children ? [n.label, tips(n.children)] : (n.title ?? null)));

@@ -5,6 +5,7 @@
 
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
+import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "./build-area.ts";
 import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
@@ -91,7 +92,7 @@ export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> =
  * sketch is a timeline row by its id and a row in Sketches by
  * "sketches/<id>", so no two rows share an id.
  */
-export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): BrowserNode[] {
+export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, buildAreaShown = false): BrowserNode[] {
   const features = document.timeline.features;
   // Each sketch's item by its id, looked up once (S2: a search per sketch took the timeline's length squared).
   const items = new Map<string, Feature>();
@@ -128,7 +129,18 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
     { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(bodyIdOf(feature.id), EYE_FOLDERS.bodies) })) },
-    { id: "origin", label: "Origin", icon: "origin", ...eye(EYE_FOLDERS.origin), children: ORIGIN.map((n) => ({ ...n, ...eye(n.id, EYE_FOLDERS.origin) })), startsFolded: true },
+    {
+      id: "origin",
+      label: "Origin",
+      icon: "origin",
+      ...eye(EYE_FOLDERS.origin),
+      // Last, the printer's build area (Ben, 2026-11-01): its eye is a view setting (build-area.ts), shut at first.
+      children: [
+        ...ORIGIN.map((n) => ({ ...n, ...eye(n.id, EYE_FOLDERS.origin) })),
+        { id: BUILD_AREA_ROW, label: BUILD_AREA_LABEL, title: BUILD_AREA_TITLE, icon: "box", hidden: !buildAreaShown, ...(isHidden(document, EYE_FOLDERS.origin) ? { folderHidden: true } : {}) },
+      ],
+      startsFolded: true,
+    },
   ];
 }
 

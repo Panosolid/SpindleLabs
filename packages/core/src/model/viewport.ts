@@ -90,6 +90,21 @@ export interface OriginPlane {
 export interface OriginShown {
   axes: readonly [boolean, boolean, boolean];
   planes: readonly { id: string; plane: Plane }[];
+  /** The printer's build area, when its eye is open (Design's build-area.ts): left out when not shown. */
+  buildArea?: BuildAreaShown;
+}
+
+/**
+ * The printer's build area drawn in the view: the printable box from `lo` to `hi` (world mm, z up), its floor's front
+ * strip and front-left corner kept clear (each [x0, y0, x1, y1] on the floor), and whether the bodies go outside it
+ * (drawn red then).
+ */
+export interface BuildAreaShown {
+  lo: readonly [number, number, number];
+  hi: readonly [number, number, number];
+  strip: readonly [number, number, number, number];
+  corner: readonly [number, number, number, number];
+  outside: boolean;
 }
 
 /** Every axis and no plane: the origin until a workspace says otherwise. */
