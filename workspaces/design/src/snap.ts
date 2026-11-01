@@ -157,13 +157,14 @@ function ownClicks(sketch: Sketch, tool: SketchTool): SketchXY[] {
  * every sketch point, then every line's midpoint ((a + b) / 2), then
  * (26f) `edges`, the ends, middles and centres of the edges of the face
  * the sketch is on (face-edges.ts; never a column or row), leaving
- * out the tool's own clicks: a click there draws nothing (an arc's end on
- * its start, its third point on an end). Columns and rows: every sketch
+ * out the tool's own clicks and any point within SAME_PLACE of one: a
+ * click there draws nothing (an arc's end on its start, its third point on
+ * an end). Columns and rows: every sketch
  * point and the tool's own clicks (lining up with one is horizontal or
  * vertical), except for the rectangle, where a
  * second corner on the first corner's column or row draws nothing, so
- * neither the first corner nor any point on its column (or row) is
- * offered as a column (or row). `body`: the body edges to land on part
+ * neither the first corner nor any point on its column (or row), or within
+ * 2·SAME_PLACE of it (`flat`), is offered as a column (or row). `body`: the body edges to land on part
  * way along (`curves`), and the bodies' corners lying in the sketch's
  * plane (`corners`), columns and rows too, after the sketch's own. Last
  * of all, the sketch's origin (0, 0): a point after every other, and a
@@ -189,10 +190,14 @@ export function snapTargets(sketch: Sketch, tool: SketchTool, edges: readonly Ed
   for (const c of body.corners) if (!refs.some((r) => same(r, c))) refs.push(c);
   if (!refs.some((r) => same(r, ORIGIN))) refs.push(ORIGIN);
   const corner = tool.kind === "rectangle" ? (own[0] ?? null) : null;
+  // A point within SAME_PLACE of one of the tool's own clicks is that click to the kernel (a twin a rounding off it, hunt
+  // 2026-11-01), so it is left out as the click is; a rectangle's column or row within 2·SAME_PLACE of its first corner's
+  // would make it flat (sketch.ts `flat`), so it is left out as the corner's own is.
+  const apart = (a: SketchXY, b: SketchXY) => Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) > SAME_PLACE;
   return {
-    points: points.filter((t) => !own.some((o) => same(t.at, o))),
-    columns: corner ? refs.filter((r) => r[0] !== corner[0]) : refs,
-    rows: corner ? refs.filter((r) => r[1] !== corner[1]) : refs,
+    points: points.filter((t) => own.every((o) => apart(t.at, o))),
+    columns: corner ? refs.filter((r) => Math.abs(r[0] - corner[0]) > 2 * SAME_PLACE) : refs,
+    rows: corner ? refs.filter((r) => Math.abs(r[1] - corner[1]) > 2 * SAME_PLACE) : refs,
     own,
     curves: [...body.curves],
   };

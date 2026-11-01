@@ -11,6 +11,7 @@
 import type { SketchArc, SketchXY } from "@fission/core";
 import type { DesignDocument, Sketch } from "./document.ts";
 import { drawArc, pointAt, type LineEnd } from "./sketch.ts";
+import { SAME_PLACE } from "./snap.ts";
 
 /** The centre arc tool on one sketch: the centre, then the start, or null before each; `swept` the pointer's angle round the centre from the start, unwrapped (radians, counter-clockwise above 0). */
 export interface CentreArcTool {
@@ -123,10 +124,22 @@ export const NO_TURN = "An arc needs to turn: click its end away from its start.
  */
 export const SAME_ARC = "There is an arc between these two points round this centre already: a second one on top of it would break the outline.";
 
-/** Whether the sketch has an arc from `start` to `end` round `centre`, all three shared points (a new point is never under an arc already there). */
+/**
+ * Whether the sketch has an arc from `start` to `end` round `centre`: the
+ * ends shared points (a new end is never under an arc already there), the
+ * centre the same point, or a new one within SAME_PLACE of its centre (one
+ * place to the kernel): a 3-point arc drawn again through another point of
+ * the same arc works its centre out a rounding off the first's (hunt
+ * 2026-11-01).
+ */
 export function arcThere(sketch: Sketch, start: LineEnd, end: LineEnd, centre: LineEnd): boolean {
-  if (typeof start !== "string" || typeof end !== "string" || typeof centre !== "string") return false;
-  return sketch.curves.some((c) => c.kind === "arc" && c.start === start && c.end === end && c.centre === centre);
+  if (typeof start !== "string" || typeof end !== "string") return false;
+  return sketch.curves.some((c) => {
+    if (c.kind !== "arc" || c.start !== start || c.end !== end) return false;
+    if (typeof centre === "string") return c.centre === centre;
+    const p = sketch.points.find((q) => q.id === c.centre);
+    return p !== undefined && Math.sqrt((p.x - centre[0]) ** 2 + (p.y - centre[1]) ** 2) <= SAME_PLACE;
+  });
 }
 
 /**
