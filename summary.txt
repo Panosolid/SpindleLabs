@@ -1,4 +1,4 @@
-SpindleLabs random testing, all runs so far (updated 2026-11-01 00:09 UTC)
+SpindleLabs random testing, all runs so far (updated 2026-11-01 22:01 UTC)
 
 hours of testing:                 0.0
 rounds:                           
@@ -16,9 +16,9 @@ The commit and branch columns of log.csv (and commit.txt in each
 failures folder) say which code a round tested.
 
 Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, the slowest walk more than 15% over the baseline, or more than 15% slower than main's build on the same runner; past twice the baseline or 30% slower than main it fails):
-  tested commit eb639be on main, 2026-11-01 00:09 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41232766937)
-  FLAG Design: shape to STL: slowest 1.80 s = 43.80× the fixed workload, baseline 1.16 s (55% over, flag above 15%, fail above 100%)
-  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 3.18 s = 77.34× the fixed workload (baseline 9.70 s)
+  tested commit 849026d on main, 2026-11-01 22:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41341466712)
+  FLAG Design: shape to STL: slowest 1.51 s = 34.32× the fixed workload, baseline 1.16 s (30% over, flag above 15%, fail above 100%)
+  OK Design: sketch to STL: 8 clicks (baseline 8), slowest 2.32 s = 52.66× the fixed workload (baseline 9.70 s)
   PENDING Box to laser panels: waits for Laser (L1–L3), X13
   PENDING Logo to everything: waits for Vector (V3), Laser (L1), Render (R1)
   PENDING Enclosure and board: waits for Circuit (E3), Slice (P1)
@@ -27,74 +27,57 @@ Latest magic-moment journeys against tests/baseline.json (FLAG: an extra click, 
 journeys/flags.txt lists every FLAG line so far.
 
 Latest golden models run (tests/golden rebuilt and checked against their hand-worked answers, timed against tests/baseline.json; a failing model files a random-testing issue):
-  tested commit eb639be on main, 2026-11-01 00:09 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41232766937)
-  seed 1793473719, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793473719 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
-  bracket-two-holes: 50 rebuilds, fastest 2.7 ms, slowest 5.5 ms, OK
-  enclosure: 50 rebuilds, fastest 1.7 ms, slowest 6.4 ms, OK
-  gear: 50 rebuilds, fastest 15.6 ms, slowest 27.4 ms, OK
-  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 17.5 ms, OK
-  stepped-boss: 50 rebuilds, fastest 2.6 ms, slowest 4.0 ms, OK
-  thirty-features: 50 rebuilds, fastest 10.2 ms, slowest 42.5 ms, OK
+  tested commit 849026d on main, 2026-11-01 22:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41341466712)
+  seed 1793561015, 50 rounds of 6 models; every answer right and the same every round; replay: FISSION_SEED=1793561015 FISSION_GOLDEN_ROUNDS=50 npm run golden -w @fission/testing
+  bracket-two-holes: 50 rebuilds, fastest 2.7 ms, slowest 12.1 ms, OK
+  enclosure: 50 rebuilds, fastest 1.8 ms, slowest 23.2 ms, OK
+  gear: 50 rebuilds, fastest 15.6 ms, slowest 45.3 ms, OK
+  l-bracket: 50 rebuilds, fastest 0.4 ms, slowest 2.0 ms, OK
+  stepped-boss: 50 rebuilds, fastest 2.6 ms, slowest 4.1 ms, OK
+  thirty-features: 50 rebuilds, fastest 10.3 ms, slowest 20.0 ms, OK
   | metric | baseline | now | change | |
   | app.golden_bracket_two_holes.kernel_calls | 2 | 2 | +0.0% |  |
-  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.0398 | -2.7% |  |
+  | app.golden_bracket_two_holes.relative_time | 0.0409 | 0.04 | -2.2% |  |
   | app.golden_enclosure.kernel_calls | 14 | 14 | +0.0% |  |
-  | app.golden_enclosure.relative_time | 0.0284 | 0.0264 | -7.0% |  |
+  | app.golden_enclosure.relative_time | 0.0284 | 0.0262 | -7.7% |  |
   | app.golden_gear.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_gear.relative_time | 0.2412 | 0.2366 | -1.9% |  |
+  | app.golden_gear.relative_time | 0.2412 | 0.2375 | -1.5% |  |
   | app.golden_l_bracket.kernel_calls | 3 | 3 | +0.0% |  |
-  | app.golden_l_bracket.relative_time | 0.0065 | 0.0057 | -12.3% |  |
+  | app.golden_l_bracket.relative_time | 0.0065 | 0.006 | -7.7% |  |
   | app.golden_models.failed_percent | 0 | 0 | - |  |
   | app.golden_stepped_boss.kernel_calls | 8 | 8 | +0.0% |  |
-  | app.golden_stepped_boss.relative_time | 0.039 | 0.0387 | -0.8% |  |
+  | app.golden_stepped_boss.relative_time | 0.039 | 0.0386 | -1.0% |  |
   | app.golden_thirty_features.kernel_calls | 47 | 47 | +0.0% |  |
-  | app.golden_thirty_features.relative_time | 0.1632 | 0.1562 | -4.3% |  |
+  | app.golden_thirty_features.relative_time | 0.1632 | 0.1565 | -4.1% |  |
   0 metric(s) failed, 0 flagged, 0 better.
   Golden STEP files: 27 bodies read by OpenCascade, 0 disagreement(s)
 golden/log.txt has one line per night.
 
 Latest monkey sessions (seeded 2,000-action sessions in the real app, every check after every action; a failing seed files a random-testing issue):
-  tested commit eb639be on main, 2026-11-01 00:09 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41232766937)
-  Monkey, seeds 202610310-202610311: 2 session(s) of 2000 actions in Chromium; 2 FAILED
-  seed 202610310: FAIL: a reload brings the project back: /workspaces/design/bodies/13: {"id":"body:feature-18","number":15} became undefined
-  seed 202610311: FAIL: selection agrees: clicking Body 4 (Sphere: ⌀0.5 mm) selected ""; with Body 4 (Sphere: ⌀0.5 mm) selected the Feature panel says "Sphere: ⌀26 mm"; with Body 4 (Sphere: ⌀0.5 mm) selected the Body panel shows —, but that body is 0.0654498 mm³; with Body 4 (Sphere: ⌀0.5 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 7 (Sphere: ⌀25 mm) selected ""; with Body 7 (Sphere: ⌀25 mm) selected the Feature panel says "Sphere: ⌀26 mm"; with Body 7 (Sphere: ⌀25 mm) selected the Body panel shows —, but that body is 8181.23 mm³; with Body 7 (Sphere: ⌀25 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 8 (Sphere: ⌀26 mm) selected ""; with Body 8 (Sphere: ⌀26 mm) selected the Body panel shows —, but that body is 9202.77 mm³; with Body 8 (Sphere: ⌀26 mm) selected 0 faces light up, but the Body panel says it has NaN
+  tested commit 849026d on main, 2026-11-01 22:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41341466712)
+  Monkey, seeds 202611010-202611011: 2 session(s) of 2000 actions in Chromium; 2 FAILED
+  seed 202611010: FAIL: save then open gives the same file: /workspaces/design/timeline/features/2/intent/parameters/depth: 30 became undefined
+  seed 202611011: FAIL: selection agrees: clicking Body 3 (Box: 1000 × 0.5 × 20 mm) selected ""; with Body 3 (Box: 1000 × 0.5 × 20 mm) selected the Feature panel says "Cylinder: ⌀3.5 × 999999 mm"; with Body 3 (Box: 1000 × 0.5 × 20 mm) selected the Body panel shows —, but that body is 10000.0 mm³; with Body 3 (Box: 1000 × 0.5 × 20 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 4 (Box: 1 × 30 × 20 mm) selected ""; with Body 4 (Box: 1 × 30 × 20 mm) selected the Feature panel says "Cylinder: ⌀3.5 × 999999 mm"; with Body 4 (Box: 1 × 30 × 20 mm) selected the Body panel shows —, but that body is 600.000 mm³; with Body 4 (Box: 1 × 30 × 20 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 5 (Sphere: ⌀19 mm) selected ""; with Body 5 (Sphere: ⌀19 mm) selected the Feature panel says "Cylinder: ⌀3.5 × 999999 mm"; with Body 5 (Sphere: ⌀19 mm) selected the Body panel shows —, but that body is 3591.36 mm³; with Body 5 (Sphere: ⌀19 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 9 (Box: 62 × 20 × 5 mm) selected ""; with Body 9 (Box: 62 × 20 × 5 mm) selected the Feature panel says "Cylinder: ⌀3.5 × 999999 mm"; with Body 9 (Box: 62 × 20 × 5 mm) selected the Body panel shows —, but that body is 6200.00 mm³; with Body 9 (Box: 62 × 20 × 5 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 8 (Sphere: ⌀55 mm) selected ""; with Body 8 (Sphere: ⌀55 mm) selected the Feature panel says "Cylinder: ⌀3.5 × 999999 mm"; with Body 8 (Sphere: ⌀55 mm) selected the Body panel shows —, but that body is 87113.7 mm³; with Body 8 (Sphere: ⌀55 mm) selected 0 faces light up, but the Body panel says it has NaN; clicking Body 11 (Cylinder: ⌀3.5 × 999999 mm) selected ""; with Body 11 (Cylinder: ⌀3.5 × 999999 mm) selected the Body panel shows —, but that body is 9.62112e+6 mm³; with Body 11 (Cylinder: ⌀3.5 × 999999 mm) selected 0 faces light up, but the Body panel says it has NaN
 monkey/log.txt has one line per night.
 
 Latest TypeScript mutation run (packages/testing/stryker, survivors must be killed or explained):
-  tested commit eb639be on main, 2026-11-01 00:09 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41232766937)
+  tested commit 849026d on main, 2026-11-01 22:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41341466712)
   core: 10 survivors, all explained: true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | isRecord(f) && typeof f.id === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | LogicalOperator | isRecord(f) && typeof f.id === "string" => isRecord(f) || typeof f.id === "string"
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | typeof f.id === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | type(f) !== "move" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | StringLiteral | "move" => ""
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:881: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:884: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:624: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:625: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:998: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1017: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | MethodExpression | makers.some((m, i) => f.dependsOn[i] !== m) => makers.every((m, i) => f.dependsOn[i] !== m)
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | ArrowFunction | (m, i) => f.dependsOn[i] !== m => () => undefined
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[i] !== m => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1007: workspaces/design/src/document.ts | StringLiteral | ", " => ""
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | at !== undefined && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id) => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | at !== undefined => true
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | EqualityOperator | at !== undefined => at === undefined
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | MethodExpression | d.bodies.some((b) => isRecord(b) && b.id === id) => d.bodies.every(b => isRecord(b) && b.id === id)
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ArrowFunction | (b) => isRecord(b) && b.id === id => () => undefined
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | isRecord(b) && b.id === id => false
-  UNEXPLAINED survivor at workspaces/design/src/document.ts:1066: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 => true
-  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
-  explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 => true
-  design: 51 survivors, all explained: false
-  24 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  design: no report (the job stopped before the check)
   storage: 39 survivors, all explained: true
   model: 40 survivors, all explained: true
   svg: 4 survivors, all explained: true
   viewport: 33 survivors, all explained: true
   ai: 17 survivors, all explained: true
-  naming: no report (the job stopped before the check)
+  explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sorted.length - 1 => sorted.length + 1
+  explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
+  explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ConditionalExpression | sorted.length === 0 => false
+  explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 1] => []
+  naming: 147 survivors, all explained: true
+  6 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+  combine: 55 survivors, all explained: true
 
 Fuzzing (the STL reader, the project loader, the sketch-extrude and timeline sessions and the kernel fuzz targets), all runs so far (updated 2026-11-01 03:04 UTC)
   hours of fuzzing: 35.4

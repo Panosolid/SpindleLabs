@@ -1,34 +1,17 @@
-tested commit eb639be on main, 2026-11-01 00:09 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41232766937)
+tested commit 849026d on main, 2026-11-01 22:01 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41341466712)
 core: 10 survivors, all explained: true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | isRecord(f) && typeof f.id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | LogicalOperator | isRecord(f) && typeof f.id === "string" => isRecord(f) || typeof f.id === "string"
-UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | typeof f.id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | type(f) !== "move" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | StringLiteral | "move" => ""
-UNEXPLAINED survivor at workspaces/design/src/document.ts:881: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:884: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:624: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:625: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:998: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1017: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | MethodExpression | makers.some((m, i) => f.dependsOn[i] !== m) => makers.every((m, i) => f.dependsOn[i] !== m)
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | ArrowFunction | (m, i) => f.dependsOn[i] !== m => () => undefined
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[i] !== m => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1007: workspaces/design/src/document.ts | StringLiteral | ", " => ""
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | at !== undefined && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id) => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | at !== undefined => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | EqualityOperator | at !== undefined => at === undefined
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | MethodExpression | d.bodies.some((b) => isRecord(b) && b.id === id) => d.bodies.every(b => isRecord(b) && b.id === id)
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ArrowFunction | (b) => isRecord(b) && b.id === id => () => undefined
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | isRecord(b) && b.id === id => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1066: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 => true
-explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
-explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 => true
-design: 51 survivors, all explained: false
-24 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+design: no report (the job stopped before the check)
 storage: 39 survivors, all explained: true
 model: 40 survivors, all explained: true
 svg: 4 survivors, all explained: true
 viewport: 33 survivors, all explained: true
 ai: 17 survivors, all explained: true
-naming: no report (the job stopped before the check)
+explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArithmeticOperator | sorted.length - 1 => sorted.length + 1
+explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
+explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
+explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [] => ["Stryker was here"]
+explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ConditionalExpression | sorted.length === 0 => false
+explained.json lists a mutant that no longer survives (remove it): packages/testing/src/boolean-naming-model.ts | ArrayDeclaration | [0, 1] => []
+naming: 147 survivors, all explained: true
+6 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+combine: 55 survivors, all explained: true
