@@ -7,3 +7,4 @@ fix
 - Extrude's preview now follows changes to the design while the panel is open, so OK makes what was shown.
 - Extrude says when a sketch's projected lines don't close, and a distance out of range gets a short message.
 - Pressing Enter twice no longer adds a line to the pointer; a reopened sketch keeps its grid size; a refused grid size puts the last good one back.
+- Changing a preset's shape no longer moves a sketch drawn on one of its sides onto a different face; it stays where it was and says its face is gone.
