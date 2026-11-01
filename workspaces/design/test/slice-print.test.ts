@@ -11,7 +11,7 @@ import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, rememberedBetterGrip, GRIP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -28,12 +28,12 @@ test("a slice in words, worked by hand", () => {
   assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220, printTimeS: 3900 })), "1 layer, 13 g of PLA (4.22 m of filament), about 1 h 5 min of printing (plus heating and levelling).");
   // An engine fault (not a number) shows no time rather than a wrong one.
   assert.equal(printWords(print({ printTimeS: Number.NaN })), "100 layers, 5.2 g of PLA (1.73 m of filament).");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off", warmUp: true }), "spindlelabs-0.16mm-3w-20pc.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off", warmUp: true, betterGrip: false }), "spindlelabs-0.16mm-3w-20pc.gcode");
   // Supports on gets its own name, so the same part with and without never overwrite each other.
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree", warmUp: true }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true, betterGrip: false }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree", warmUp: true, betterGrip: false }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
   // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %, no supports.
-  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true });
+  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true, betterGrip: false });
 });
 
 test("print time in words rounds to the nearest minute, worked by hand", () => {
@@ -107,19 +107,19 @@ test("the dialog slices with the choices picked, then says what the slice came t
   t.$<HTMLSelectElement>("slice-print-format").dispatchEvent(new t.window.Event("change") as unknown as Event);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: "off", warmUp: true }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: "off", warmUp: true, betterGrip: false }]);
   assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.16mm-3w-40pc.gcode: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
   // Normal supports picked: the next slice asks for them, and the file's name says so; then trees, likewise.
   t.$<HTMLSelectElement>("slice-print-supports").value = "normal";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: "normal", warmUp: true });
+  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: "normal", warmUp: true, betterGrip: false });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-supports\.gcode: /);
   t.$<HTMLSelectElement>("slice-print-supports").value = "tree";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked[2], { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree", warmUp: true });
+  assert.deepEqual(t.asked[2], { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree", warmUp: true, betterGrip: false });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-tree-supports\.gcode: /);
   t.$("slice-print-close").click();
   assert.equal(t.d.open, false);
@@ -160,7 +160,7 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   format.dispatchEvent(new t.window.Event("change") as unknown as Event);
   assert.equal(plate.disabled, false);
   // Names by hand, with supports and the other plate.
-  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
+  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true, betterGrip: false }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
   assert.equal(printFileName(PRINT_DEFAULTS, "textured", "high-flow"), "spindlelabs-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
   await t.window.happyDOM.close();
 });
@@ -238,7 +238,7 @@ test("Preview slices with the choices picked and closes the dialog; a refusal ke
   t.$<HTMLSelectElement>("slice-print-infill").value = "25";
   t.$("slice-print-preview").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: "off", warmUp: true }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: "off", warmUp: true, betterGrip: false }]);
   assert.equal(t.d.open, false);
   const bad = dialog(async () => ({ print: print(), saved: true }), async () => {
     throw new Error("There is no body to slice: make or show one first.");
@@ -290,6 +290,100 @@ test("the warm-up loop: ticked by default, unticked when turned off, remembered 
   const off = { ...PRINT_DEFAULTS, warmUp: false };
   assert.equal(gcodeName(off), "spindlelabs-0.2mm-2w-15pc-no-warm-up.gcode");
   assert.equal(printFileName(off, "smooth", "high-flow"), "spindlelabs-0.2mm-2w-15pc-no-warm-up-smooth-high-flow.gcode.3mf");
+});
+
+test("Better grip: unticked by default, ticked when turned on, remembered for next time, in both files' names", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.window.localStorage.clear();
+  t.d.ask();
+  const box = t.$<HTMLInputElement>("slice-print-grip");
+  // Ben 11-01: first layers lifting; the brim and a slower, hotter first layer hold them, but cost a brim to peel: off by default.
+  assert.equal(box.type, "checkbox");
+  assert.equal(box.checked, false);
+  assert.equal(box.closest("label")!.textContent, "Better grip");
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(t.asked[0].betterGrip, false);
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-textured\.gcode\.3mf: /);
+  // Turned on: asked with it, the name says so, the last result is cleared, and it is kept.
+  box.checked = true;
+  box.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(t.$("slice-print-status").textContent, "");
+  assert.equal(t.window.localStorage.getItem(GRIP_KEY), "on");
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(t.asked[1].betterGrip, true);
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-grip-textured\.gcode\.3mf: /);
+  t.$("slice-print-preview").click();
+  await t.settle();
+  assert.equal(t.asked[2].betterGrip, true);
+  // Off again: kept as off.
+  box.checked = false;
+  box.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(t.window.localStorage.getItem(GRIP_KEY), "off");
+  await t.window.happyDOM.close();
+  // What is read back: on only for our "on"; off for anything else, nothing kept, or blocked storage.
+  const kept = (v: string | null) => ({ getItem: () => v });
+  assert.equal(rememberedBetterGrip(kept("on")), true);
+  for (const v of [null, "", "off", "ON", "true"]) assert.equal(rememberedBetterGrip(kept(v)), false, String(v));
+  assert.equal(rememberedBetterGrip(null), false);
+  assert.equal(rememberedBetterGrip({ getItem: () => { throw new Error("blocked"); } }), false);
+  // Names: on adds "-grip" after the warm-up loop's word, before the plate.
+  const on = { ...PRINT_DEFAULTS, betterGrip: true };
+  assert.equal(gcodeName(on), "spindlelabs-0.2mm-2w-15pc-grip.gcode");
+  assert.equal(gcodeName({ ...on, warmUp: false }), "spindlelabs-0.2mm-2w-15pc-no-warm-up-grip.gcode");
+  assert.equal(printFileName(on, "smooth", "high-flow"), "spindlelabs-0.2mm-2w-15pc-grip-smooth-high-flow.gcode.3mf");
+});
+
+test("a dialog opened where Better grip was turned on opens ticked", async () => {
+  const window = new Window();
+  window.localStorage.setItem(GRIP_KEY, "on");
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  const asked: PrintChoices[] = [];
+  const d = slicePrint(slot, { slice: async (c) => (asked.push(c), { print: print(), saved: true, name: "x" }), preview: async () => {} });
+  d.ask();
+  assert.equal((doc.getElementById("slice-print-grip") as HTMLInputElement).checked, true);
+  (doc.getElementById("slice-print-go") as HTMLButtonElement).click();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(asked[0].betterGrip, true);
+  await window.happyDOM.close();
+});
+
+test("Better grip on the shipped build: the 20 mm cube's ten brim loops after the warm-up loop, worked by hand", async () => {
+  const kernel = nodeKernel();
+  const doc = partDocument("box", 20, 20, 20);
+  const choices = { ...PRINT_DEFAULTS, betterGrip: true };
+  const on = await sliceBodies(kernel, doc, bodyFeatures(doc), choices);
+  const roles = on.preview[0].paths.map((x) => x.role);
+  // Two warm-up loops, then the brim: ⌊(5 − 0.5) / 0.457⌋ + 1 = 10 loops (0.457 the beads' spacing, 0.5 − 0.2 × (1 − π/4)).
+  assert.deepEqual(roles.slice(0, 12), ["skirt", "skirt", ...Array(10).fill("brim")]);
+  assert.notEqual(roles[12], "brim");
+  assert.ok(on.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "brim")));
+  // The cube is centred, 118–138 mm; brim loop k's centre is 0.1 mm + 0.25 + k × 0.457 out, the outer one (k = 9) first:
+  // its least x 118 − 4.4637 = 113.5363; the warm-up loop goes round the brim's edge (4.7137 out, + 1 µm), 3 mm + 0.25
+  // further: 118 − 7.9647 = 110.0353 for its inner loop.
+  const least = (k: number) => Math.min(...on.preview[0].paths[k].points.filter((_, i) => i % 2 === 0));
+  assert.ok(Math.abs(least(2) - 113.5362833) < 1e-5, `${least(2)}`);
+  assert.ok(Math.abs(least(1) - 110.0352833) < 1e-5, `${least(1)}`);
+  assert.match(on.gcode, /^;TYPE:Brim$/m);
+  // The first layer is 5 °C hotter (225 for PLA's 220), back to 220 on the second, and no faster than 30 mm/s (F1800).
+  assert.match(on.gcode, /^M109 S225$/m);
+  assert.match(on.gcode, /^M104 S220$/m);
+  // Off: no brim; Σ (80 + 2π·d_k) = 951.23 mm of a 0.0914 mm² bead less: 36.15 mm less filament.
+  const off = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
+  assert.ok(off.preview[0].paths.every((x) => x.role !== "brim"));
+  assert.doesNotMatch(off.gcode, /;TYPE:Brim/);
+  assert.doesNotMatch(off.gcode, /^M109 S225$/m);
+  const less = on.filamentMm - off.filamentMm;
+  assert.ok(less > 36.152 && less < 36.157, `${less}`);
+  // The P1S's file too.
+  const file = await printFileOf(kernel, doc, bodyFeatures(doc), choices, "textured");
+  const g = gcodeOfPackage(file.package)!;
+  assert.match(g, /^;TYPE:Brim$/m);
+  assert.match(g, /^; nozzle_temperature_initial_layer = 225$/m);
+  assert.match(g, /^; brim_width = 5$/m);
 });
 
 test("a dialog opened where the warm-up loop was turned off opens unticked", async () => {
