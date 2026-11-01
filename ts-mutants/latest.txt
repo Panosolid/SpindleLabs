@@ -1,50 +1,34 @@
-tested commit e55f588 on main, 2026-10-30 21:38 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41118705351)
+tested commit eb639be on main, 2026-11-01 00:09 UTC (https://github.com/Panosolid/SpindleLabs/actions/runs/41232766937)
 core: 10 survivors, all explained: true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:518: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:682: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:697: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:761: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:764: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1012: workspaces/design/src/document.ts | ConditionalExpression | n !== null => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | n !== null => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:659: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:688: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:878: workspaces/design/src/document.ts | EqualityOperator | there.at > byId.get(f.id)!.at => there.at >= byId.get(f.id)!.at
-UNEXPLAINED survivor at workspaces/design/src/document.ts:722: workspaces/design/src/document.ts | ConditionalExpression | typeof p.workspace === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:722: workspaces/design/src/document.ts | ConditionalExpression | typeof p.id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:725: workspaces/design/src/document.ts | ConditionalExpression | typeof provenance.self.workspace !== "string" => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:800: workspaces/design/src/document.ts | OptionalChaining | f.provenance?.self?.label => f.provenance?.self.label
-UNEXPLAINED survivor at workspaces/design/src/document.ts:800: workspaces/design/src/document.ts | OptionalChaining | f.provenance?.self => f.provenance.self
-UNEXPLAINED survivor at workspaces/design/src/document.ts:804: workspaces/design/src/document.ts | ConditionalExpression | chars.length > NAME_LIMIT => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:804: workspaces/design/src/document.ts | EqualityOperator | chars.length > NAME_LIMIT => chars.length >= NAME_LIMIT
-UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | MethodExpression | cleaned.filter((n) => n !== "") => cleaned
-UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | ArrowFunction | (n) => n !== "" => () => undefined
-UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | ConditionalExpression | n !== "" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | ConditionalExpression | n !== "" => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | EqualityOperator | n !== "" => n === ""
-UNEXPLAINED survivor at workspaces/design/src/document.ts:807: workspaces/design/src/document.ts | StringLiteral | "" => "Stryker was here!"
-UNEXPLAINED survivor at workspaces/design/src/document.ts:820: workspaces/design/src/document.ts | MethodExpression | [...name].slice(0, NAME_LIMIT - suffix.length).join("").trimEnd() => [...name].slice(0, NAME_LIMIT - suffix.length).join("").trimStart()
-UNEXPLAINED survivor at workspaces/design/src/document.ts:821: workspaces/design/src/document.ts | LogicalOperator | used.has(nameKey(tried)) || kept.has(nameKey(tried)) => used.has(nameKey(tried)) && kept.has(nameKey(tried))
-UNEXPLAINED survivor at workspaces/design/src/document.ts:831: workspaces/design/src/document.ts | ConditionalExpression | isMoveItem(f) => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:831: workspaces/design/src/document.ts | StringLiteral | "Move" => ""
-UNEXPLAINED survivor at workspaces/design/src/document.ts:834: workspaces/design/src/document.ts | ConditionalExpression | kind === null => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:834: workspaces/design/src/document.ts | StringLiteral | "Item" => ""
-UNEXPLAINED survivor at workspaces/design/src/document.ts:848: workspaces/design/src/document.ts | ConditionalExpression | names[i] !== f.provenance.self.label => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:849: workspaces/design/src/document.ts | ConditionalExpression | changed.size === 0 => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:850: workspaces/design/src/document.ts | ConditionalExpression | o.workspace === "design" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:877: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
-UNEXPLAINED survivor at workspaces/design/src/document.ts:984: workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:995: workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
-UNEXPLAINED survivor at workspaces/design/src/document.ts:984: workspaces/design/src/document.ts | ConditionalExpression | makesBody(at.item) || isSketchItem(at.item) => true
-design: 48 survivors, all explained: false
-36 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | isRecord(f) && typeof f.id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | LogicalOperator | isRecord(f) && typeof f.id === "string" => isRecord(f) || typeof f.id === "string"
+UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | typeof f.id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | ConditionalExpression | type(f) !== "move" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:616: workspaces/design/src/document.ts | StringLiteral | "move" => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:881: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:884: workspaces/design/src/document.ts | ArrayDeclaration | [] => ["Stryker was here"]
+UNEXPLAINED survivor at workspaces/design/src/document.ts:624: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:625: workspaces/design/src/document.ts | ConditionalExpression | typeof id === "string" => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:998: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1017: workspaces/design/src/document.ts | ConditionalExpression | maker === null => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | MethodExpression | makers.some((m, i) => f.dependsOn[i] !== m) => makers.every((m, i) => f.dependsOn[i] !== m)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | ArrowFunction | (m, i) => f.dependsOn[i] !== m => () => undefined
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1006: workspaces/design/src/document.ts | ConditionalExpression | f.dependsOn[i] !== m => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1007: workspaces/design/src/document.ts | StringLiteral | ", " => ""
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | at !== undefined && Array.isArray(d.bodies) && d.bodies.some((b) => isRecord(b) && b.id === id) => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | at !== undefined => true
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | EqualityOperator | at !== undefined => at === undefined
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | MethodExpression | d.bodies.some((b) => isRecord(b) && b.id === id) => d.bodies.every(b => isRecord(b) && b.id === id)
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ArrowFunction | (b) => isRecord(b) && b.id === id => () => undefined
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1020: workspaces/design/src/document.ts | ConditionalExpression | isRecord(b) && b.id === id => false
+UNEXPLAINED survivor at workspaces/design/src/document.ts:1066: workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 || v3.version === 6 => true
+explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | typeof id !== "string" => false
+explained.json lists a mutant that no longer survives (remove it): workspaces/design/src/document.ts | ConditionalExpression | v3.version === 5 => true
+design: 51 survivors, all explained: false
+24 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
 storage: 39 survivors, all explained: true
 model: 40 survivors, all explained: true
 svg: 4 survivors, all explained: true
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:52: packages/viewport/src/pane.ts | ArrowFunction | () => scene.editedScreenPoints() => () => undefined
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:53: packages/viewport/src/pane.ts | ArrowFunction | (at: SketchXY) => scene.sketchScreenPoint(at) => () => undefined
-UNEXPLAINED survivor at packages/viewport/src/pane.ts:61: packages/viewport/src/pane.ts | ArrowFunction | (shown: OriginShown) => scene.showOrigin(shown) => () => undefined
-viewport: 36 survivors, all explained: false
-3 problem(s): kill each survivor with a test, or explain in explained.json why no caller can tell
+viewport: 33 survivors, all explained: true
 ai: 17 survivors, all explained: true
-naming: 120 survivors, all explained: true
+naming: no report (the job stopped before the check)

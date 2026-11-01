@@ -1,0 +1,2 @@
+Monkey, seeds 202610310-202610311: 2 session(s) of 2000 actions in Chromium; 2 FAILED
+failure: a reload brings the project back: /workspaces/design/bodies/13: {"id":"body:feature-18","number":15} became undefined | seed 202610310 at action 1194; replay: cd apps/fission && npm run build && FISSION_SEED=202610310 MONKEY_STEPS=2000 node e2e/monkey.mjs
