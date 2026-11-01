@@ -304,7 +304,7 @@ Chamfer and fillets (44, 45, 46)
 49. 46d. The fillet hunt (major step): 20 h
 - 46e (the free-form fillet surface) only if Ben wants fillets complete before 47: 46e1 and 46e2, 22 h each.
 
-Fillets done: 49 chunks, about 880 hours, plus 15% for blow-ups, about 57 days from the start of chunk 1.
+Fillets done: 49 chunks, about 870 hours, plus 15% for blow-ups, about 42 days of round-the-clock work from the start of chunk 1 (the primary roadmap thread runs day and night; waiting on Ben or a usage slow-down adds to it).
 
 After fillets (rougher; resized when 46 is done)
 - 47a. Solver test harness and hand-worked sketches, before any solver code: 16 h
