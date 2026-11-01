@@ -11,7 +11,7 @@ import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
 import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
-import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
+import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, heldBefore, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot, boxCentre } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
 import { PART_VIEW, syncGraph } from "./graph.ts";
@@ -67,8 +67,13 @@ import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, regist
 let saved: { doc: DesignDocument; shape: PartKind; sizes: string[]; part: string | null } | null = null;
 let framed: Framing | null = null;
 let framedKind: PartKind | null = null;
-/** Design was put away by an Undo or Redo made in another workspace: the next mount is that restore's, not an opened file's. */
-let putAwayByRestore = false;
+/**
+ * Design was put away by an Undo or Redo made in another workspace: the
+ * project that restore put back, so the next mount on it is the restore's.
+ * On any other project (a file opened or a new project since: undo hunt
+ * 11-01, which then opened in the old sketch's id, unframed) it is not.
+ */
+let putAwayByRestore: object | null = null;
 /**
  * Rebuilds asked for and not answered yet, per view element: its `data-rebuilding` says whether any is, so a test reads
  * the page only once it shows the last edit (the monkey). Counted across mounts: every Undo remounts Design on the same
@@ -417,8 +422,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     framedKind = null; // an opened file is a new part: frame it (not after Undo or Redo: keepCamera)
   }
   /** Mounted by Undo or Redo (step 20c): the first build keeps the camera unless the body no longer fits, even for another shape. */
-  let keepCamera = ctx.history.restoring() || putAwayByRestore;
-  putAwayByRestore = false;
+  const restored = putAwayByRestore !== null && putAwayByRestore === ctx.project;
+  if (putAwayByRestore !== null && !restored) editingSketch = null; // that sketch was the old project's
+  let keepCamera = ctx.history.restoring() || restored;
+  putAwayByRestore = null;
   const inspecting: Inspecting = {
     // Opens the folded panel until the user moves on (U0b), at the numbers.
     facts() {
@@ -968,7 +975,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
-  let resultsNow: Readonly<Record<string, { status: string }>> = {};
+  let resultsNow: Readonly<Record<string, { status: string; holds?: readonly number[] }>> = {};
   /**
    * What a pointer on sketch `id` may snap to on its face's edges (26f):
    * their ends, middles and centres in the plane the sketch is drawn in
@@ -1239,7 +1246,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       // note (17e); so do ones whose name now names two (25a4: never a guess);
       // the rest follow their names, however the kernel numbers them now.
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
-      const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines);
+      const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines, (id) => doc.timeline.features.some((f) => f.id === id));
       lastScene = scene;
       if (buildAreaOn) showOrigin(doc);
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
@@ -1255,7 +1262,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const part = partFeature(doc);
       partShown = scene.bodies.find((b) => b.feature === part?.id) ?? (failure === undefined ? null : partShown);
       note = droppedNote(dropped, shared, selectedSketches);
-      if (dropped.length > 0) {
+      if (kept.length < ctx.selection.items.length) {
         settling = true;
         ctx.selection.set(kept);
         settling = false;
@@ -2053,10 +2060,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ok: (typed) => void finishMove(typed),
     cancel: () => leaveMove(),
     snap: () => (snapping ? stopSnap() : startSnap()),
-    centre: () => {
-      moveBox.setPivot(startPivot(moveBodies, lastScene));
-      previewMove();
-    },
+    centre: () => void centreOfBodies(),
   });
   /** The bodies the Move panel moves (body ids, 35eb): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
@@ -2220,6 +2224,38 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * box that isn't a number shows them as built. The arrows and rings
    * follow (`showMoveHandles`).
    */
+  /**
+   * Centre of the bodies: the centre of the box round the Move's bodies
+   * where they are before it. A new Move's are where the scene shows them;
+   * an edited Move's are found as the Moves from it on hold them
+   * (`heldBefore`), since the scene shows them after it and every later
+   * Move. Nothing changes if the panel moved on while the kernel answered.
+   */
+  async function centreOfBodies() {
+    const id = moveBox.editing;
+    const scene = lastScene;
+    const picked = [...moveBodies];
+    let boxes: (readonly [readonly [number, number, number], readonly [number, number, number]])[];
+    if (id === null) boxes = (scene?.bodies ?? []).filter((b) => picked.includes(b.body)).map((b) => b.view.bounds);
+    else {
+      const held = heldBefore(designDoc(), resultsNow, id, picked);
+      try {
+        boxes = [];
+        for (const [n, body] of picked.entries()) {
+          const h = held[n];
+          const shown = scene?.bodies.find((b) => b.body === body);
+          if (h !== null) boxes.push((await bodies.view(h)).bounds);
+          else if (shown) boxes.push(shown.view.bounds);
+        }
+      } catch {
+        return; // the kernel didn't answer: the pivot stays as typed
+      }
+    }
+    if (!moveBox.shown || moveBox.editing !== id || lastScene !== scene || picked.join() !== moveBodies.join()) return;
+    moveBox.setPivot(boxCentre(boxes));
+    previewMove();
+  }
+
   function previewMove() {
     if (!lastScene) return;
     const read = readMoveBoxes(moveBox.typed);
@@ -2836,8 +2872,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       markStale();
     },
     unmount() {
-      putAwayByRestore = ctx.history.restoring();
-      if (!putAwayByRestore) editingSketch = null;
+      putAwayByRestore = ctx.history.restoring() ? ctx.project : null;
+      if (putAwayByRestore === null) editingSketch = null;
       // A click, Enter or hover still waiting on the kernel was for the sketch shown until now; an undo that puts the
       // workspace away may have taken that sketch out, so it is dropped as a tool change drops it (app sweep 2026-10-28).
       toolChanges++;

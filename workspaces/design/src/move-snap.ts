@@ -234,14 +234,15 @@ export function snappedValues(v: MoveValues, from: SnapPart, to: SnapPart): { va
  * The built Moves after Move `id` (null: a new Move, at the marker, with
  * none built after it) that move body `feature` too, in timeline order, and
  * Move `id`'s numbers as built (null when it is new or did not move
- * anything: suppressed, greyed, failed): what the scene's view of the body
+ * anything: suppressed, greyed, failed, or `body` was not one of its bodies as built): what the scene's view of the body
  * has been through since the Move, as editedMoveMesh takes it.
  */
 function movesSince(doc: DesignDocument, results: Readonly<Record<string, { status: string }>>, id: string | null, body: string) {
   const at = id === null ? -1 : doc.timeline.features.findIndex((f) => f.id === id);
   if (at < 0) return { built: null, later: [] as MoveValues[] };
   const edited = doc.timeline.features[at];
-  const built = isMoveItem(edited) && results[id!]?.status === "built" ? moveValues(edited) : null;
+  // A body put into the Move while editing it (35e2i) was never moved by it as built (hunt 11-01: Snap took it back out of a shift it never had).
+  const built = isMoveItem(edited) && results[id!]?.status === "built" && movedBodies(edited).includes(body) ? moveValues(edited) : null;
   const later = doc.timeline.features
     .slice(at + 1)
     .filter((f) => isMoveItem(f) && results[f.id]?.status === "built" && movedBodies(f).includes(body))
