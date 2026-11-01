@@ -56,3 +56,17 @@ test("small context stays small for local models; large gets more", () => {
   assert.ok(JSON.stringify(small).length < 4000, `${JSON.stringify(small).length} characters`);
   assert.equal(buildContext(project, { workspace: "design", graph, detail: "large" }).features.length, 200);
 });
+
+test("a workspace's data this build doesn't read is described as far as it is readable, never thrown on (real-use hunt S7)", () => {
+  // Render has no reader yet, so its data opens as it is: a timeline holding null, a number or an item with no intent.
+  const project = emptyProject("P");
+  project.workspaces.design = { version: 1, profiles: [], timeline: { features: [feature(1)] } };
+  project.workspaces.render = { timeline: { features: [null, 7, { id: "r-1" }, { id: "r-2", intent: { summary: "Scene", parameters: {} }, suppressed: false }] } };
+  project.workspaces.slice = { timeline: { features: "none" } };
+  project.workspaces.laser = null;
+  // Materials are a draft: one with no name, or a number for one, is left out of the names, never thrown on.
+  project.materials = [{ id: "m1", name: "PLA" }, { id: "m2" }, { id: "m3", name: 5 }] as never;
+  const c = buildContext(project, { workspace: "design", graph: new DependencyGraph() });
+  assert.deepEqual(c.features.map((f) => f.id), ["feature-1", "r-2"]);
+  assert.deepEqual(c.materials, ["PLA"]);
+});

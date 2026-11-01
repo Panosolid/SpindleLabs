@@ -21,7 +21,7 @@
 // Seeded: the same seed gives the same cases. A failure is shrunk to the
 // shortest text that fails the same way.
 
-import { FORMAT_VERSION, MAX_NESTING, emptyProject, projectFromJson, projectToJson, type DataReader, type Project } from "@fission/core";
+import { FORMAT_VERSION, MAX_NESTING, NewerFormatError, emptyProject, projectFromJson, projectToJson, type DataReader, type Project } from "@fission/core";
 import {
   addSketch,
   builds,
@@ -109,6 +109,11 @@ export function outerModel(data: unknown): { refusal: string | null; upgraded?: 
   if (!Array.isArray(p.materials)) return { refusal: '"materials" must be a list' };
   if (!Array.isArray(p.links)) return { refusal: '"links" must be a list' };
   if (!isObj(p.workspaces)) return { refusal: '"workspaces" must be an object' };
+  // Each material and link an object (real-use hunt S7).
+  for (const key of ["materials", "links"] as const) {
+    const i = (p[key] as unknown[]).findIndex((x) => !isObj(x));
+    if (i >= 0) return { refusal: `${key}[${i}] is not an object` };
+  }
   return { refusal: null, upgraded: p };
 }
 
@@ -517,7 +522,8 @@ export function checkText(text: string, readers: readonly DataReader[] = READERS
   try {
     project = projectFromJson(text, readers);
   } catch (e) {
-    if (!(e instanceof Error) || e.constructor !== Error) return { kind: `threw a ${e instanceof Error ? e.name : typeof e}, not an Error`, detail: String(e) };
+    // A NewerFormatError is the loader's own too: a file from a newer SpindleLabs, kept by the journal for it (real-use hunt S2).
+    if (!(e instanceof Error) || (e.constructor !== Error && e.constructor !== NewerFormatError)) return { kind: `threw a ${e instanceof Error ? e.name : typeof e}, not an Error`, detail: String(e) };
     const m = e.message;
     if (!OWN_MESSAGES.some((re) => re.test(m))) return { kind: `refused with a message that is not the loader's: ${shapeOf(m)}`, detail: m };
     if (ENGINE_WORDS.test(m)) return { kind: `refused with an engine message: ${shapeOf(m.replace(/^[^:]*: /, ""))}`, detail: m };

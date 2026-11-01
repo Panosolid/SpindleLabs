@@ -73,9 +73,9 @@ export const PLANTS: Record<ModelFault, Plant> = {
     edits: [
       {
         file: "workspaces/design/src/sketch.ts",
-        find: "  return [`${prefix}-${doc.nextId}`, { ...doc, nextId: doc.nextId + 1 }];",
+        find: "  return [`${prefix}-${doc.nextId}`, { ...doc, nextId: counted(doc.nextId + 1) }];",
         replace:
-          '  const used = [...doc.timeline.features.map((f) => f.id), ...doc.sketches.flatMap((s) => [...s.points, ...s.curves].map((x) => x.id))];\n  const n = Math.max(0, ...used.map((u) => Number(u.split("-").pop()))) + 1;\n  return [`${prefix}-${n}`, { ...doc, nextId: Math.max(doc.nextId, n + 1) }];',
+          '  const used = [...doc.timeline.features.map((f) => f.id), ...doc.sketches.flatMap((s) => [...s.points, ...s.curves].map((x) => x.id))];\n  const n = Math.max(0, ...used.map((u) => Number(u.split("-").pop()))) + 1;\n  return [`${prefix}-${n}`, { ...doc, nextId: counted(Math.max(doc.nextId, n + 1)) }];',
       },
     ],
     run: ["timeline", "history"],

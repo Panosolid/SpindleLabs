@@ -28,8 +28,17 @@ export function filesIn(dir) {
 }
 
 /**
+ * Files of the build the service worker never keeps: CNAME names the custom
+ * domain for GitHub Pages, which reads it and need not serve it, and one
+ * file the server doesn't give stops the whole install.
+ */
+const NEVER_KEPT = new Set(["CNAME"]);
+
+/**
  * The build's version and the files to keep. `files` maps each path to
  * its bytes; sw.js itself and the on-demand list are never part of it.
+ * Also each kept or on-demand file's SHA-256 (the worker checks every
+ * answer against it) and the bytes kept (to see there is room first).
  * The version is the first 16 hex digits of SHA-256 over one line per
  * file (path, a NUL, the SHA-256 of its bytes), sorted by path, so it
  * changes when any byte, name, added or removed file does, and only then.
@@ -38,10 +47,15 @@ export function buildInfo(files, onDemand = []) {
   const paths = Object.keys(files)
     .filter((p) => p !== "sw.js" && p !== ON_DEMAND)
     .sort();
-  const lines = paths.map((p) => `${p}\0${createHash("sha256").update(files[p]).digest("hex")}\n`).join("");
+  const hashOf = Object.fromEntries(paths.map((p) => [p, createHash("sha256").update(files[p]).digest("hex")]));
+  const lines = paths.map((p) => `${p}\0${hashOf[p]}\n`).join("");
   const version = createHash("sha256").update(lines).digest("hex").slice(0, 16);
   const lazy = new Set(onDemand);
-  return { version, precache: paths.filter((p) => !lazy.has(p)) };
+  const precache = paths.filter((p) => !lazy.has(p) && !NEVER_KEPT.has(p));
+  const listed = paths.filter((p) => lazy.has(p));
+  const hashes = Object.fromEntries([...precache, ...listed].sort().map((p) => [p, hashOf[p]]));
+  const size = precache.reduce((n, p) => n + Buffer.byteLength(files[p]), 0);
+  return { version, precache, onDemand: listed, hashes, size };
 }
 
 /** The service worker's source for `info`. */

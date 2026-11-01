@@ -16,7 +16,7 @@ import "@fission/ui/theme.css";
 // Every feature's own styles (src/styles/<feature>.css in packages/ui and the
 // workspaces), loaded without a list, so two features never edit one file.
 import.meta.glob(["../../../packages/ui/src/styles/*.css", "../../../workspaces/*/src/styles/*.css"], { eager: true });
-import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, HEAD_BYTES, projectFromJson, routeFiles, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
+import { ActionRegistry, CLIPBOARD_CHORDS, chordLabel, chordOf, SHELL_SHORTCUTS, ShortcutTable, type Chord, ChangeNotes, DependencyGraph, DownstreamRegistry, emptyProject, FILE_FORMATS, formatInfo, headBytesFor, projectFromJson, routeFiles, unreadableMessage, type FileHead, projectToJson, RepresentationRegistry, createHistory, KernelClient, createSelection, type ChangeNote, type MountedWorkspace, type Project, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin, workspaceName } from "@fission/core";
 import { changeNote, fileMenu, holdSkeleton, PROJECT_KIND, saveFile, type FileHandle, iconSvg, openElsewhere, shortcutList, defaultSplit, showPlaceholder, SPLIT_MIN_WIDTH_PX, splitChoices, WarmPool, fillSettings, SettingsStore, withIcon, workspaceSwitcher } from "@fission/ui";
 import { paneViewports, Viewer, type ViewportView } from "@fission/viewport";
 import { communityPage } from "@fission/community";
@@ -62,7 +62,7 @@ if (import.meta.env.PROD) openLatest();
 const representations = new RepresentationRegistry();
 for (const w of workspaces) w.registerRepresentations?.(representations, kernel);
 // The shell opens whole projects, dropped or pasted like any other file (X6).
-representations.registerImporter({ formats: ["project"], workspace: null, open: async (_name, bytes) => openProject(new TextDecoder().decode(bytes)) });
+representations.registerImporter({ formats: ["project"], workspace: null, open: async (name, bytes) => openProject(new TextDecoder().decode(bytes), name) });
 // The one action registry: the verbs each workspace offers for a selection.
 const actions = new ActionRegistry();
 for (const w of workspaces) w.registerActions?.(actions);
@@ -609,10 +609,15 @@ const fileStatus = (message: string) => ($("file-status").textContent = message)
 $("file-dismiss").addEventListener("click", () => fileStatus(""));
 /** The file the project was last saved to (the save picker's), so Save writes it again without asking; Save As and a new or opened project let it go. */
 let savedTo: FileHandle | null = null;
+/**
+ * The name of the file the project was opened from, without its ending, which Save offers (real-use hunt B5: Save
+ * offered "Untitled", the name inside the file, so a quick Save made a second file beside it); a new or other project lets it go.
+ */
+let openedName: string | null = null;
 async function save(asNew = false) {
   try {
     await started; // the project shown, not the empty one the app starts with
-    const result = await saveFile(document, { suggestedName: ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
+    const result = await saveFile(document, { suggestedName: openedName || ctx.project.name || "Untitled", kind: PROJECT_KIND, bytes: projectToJson(ctx.project), handle: asNew ? null : savedTo });
     if (result.status === "failed") return fileStatus(result.message);
     if (result.status === "saved") savedTo = result.handle;
     fileStatus("");
@@ -653,6 +658,7 @@ $("file-bar").prepend(file.element);
 /** Puts `project` in place of the open one: every workspace mounted afresh on it, nothing to undo. */
 function replaceProject(project: Project) {
   savedTo = null; // the file belonged to the old project
+  openedName = null; // and so did its name
   ctx.selection.clear(); // it named the old part's faces
   ctx.project = project;
   useGraph(new DependencyGraph(), new ChangeNotes()); // the old notes were about the old project
@@ -667,7 +673,7 @@ function replaceProject(project: Project) {
  * kept in this browser only once it has shown (security audit S2): one that
  * freezes the tab while it builds is never stored, so never reopened.
  */
-function openProject(text: string) {
+function openProject(text: string, fileName = "") {
   const project = projectFromJson(text, workspaces);
   // A file already kept here as it is (opened before, unchanged since) goes on under its stored id, not as one more
   // copy no one can reach (real-use hunt B3). Looked up while it opens; a store that can't answer means a new copy.
@@ -679,6 +685,7 @@ function openProject(text: string) {
   guard.finished(); // the last project, if it was still opening, didn't freeze the tab
   fileStatus("");
   replaceProject(project);
+  openedName = fileName.replace(/(\.spindlelabs)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
   // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
   // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
   statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
@@ -768,18 +775,21 @@ $("open-file").addEventListener("change", async () => {
 const elsewhere = openElsewhere(document);
 /** A file the browser can no longer read: moved or deleted after the drag began, a cloud placeholder, a permission change. */
 class Unreadable extends Error {}
+/** Reads `part` of `file`; a failure says the file is too big for the browser (how much was being read) or gone. */
 async function readBytes(file: File, part: Blob): Promise<ArrayBuffer> {
   try {
     return await part.arrayBuffer();
   } catch {
-    throw new Unreadable(`Couldn't read “${file.name}”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.`);
+    throw new Unreadable(unreadableMessage(file.name, part.size));
   }
 }
-async function receive(files: File[]) {
+/** `folders[i]`: files[i] is a folder (a drop says so; it can't be read as a file). */
+async function receive(files: File[], folders: readonly boolean[] = []) {
   await started; // or the project being reopened would replace what this opens
-  let heads;
+  let heads: FileHead[];
   try {
-    heads = await Promise.all(files.map(async (f) => ({ name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, HEAD_BYTES))) })));
+    // A project-named file is read whole (it is size-capped) so it can be parsed; anything else, its start.
+    heads = await Promise.all(files.map(async (f, i): Promise<FileHead> => (folders[i] ? { name: f.name, size: f.size, head: new Uint8Array(), folder: true } : { name: f.name, size: f.size, head: new Uint8Array(await readBytes(f, f.slice(0, headBytesFor(f.name, f.size)))) })));
   } catch (e) {
     if (e instanceof Unreadable) return fileStatus(e.message);
     throw e;
@@ -824,7 +834,10 @@ window.addEventListener("drop", (e) => {
   if (!carriesFiles(e)) return;
   e.preventDefault(); // never let the browser navigate to the file
   dropHint(false);
-  void receive([...e.dataTransfer!.files]);
+  // Which of the dropped files are folders: only the drop's own items can tell, and only during the event.
+  const entries = [...e.dataTransfer!.items].filter((item) => item.kind === "file").map((item) => item.webkitGetAsEntry?.() ?? null);
+  const files = [...e.dataTransfer!.files];
+  void receive(files, files.map((_, i) => entries[i]?.isDirectory === true));
 });
 
 // One shortcut table (X7b): the shell's keys and every workspace's. A key

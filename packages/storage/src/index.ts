@@ -16,7 +16,7 @@ export { memoryKeyValue, type KeyValue } from "./key-value.ts";
 export { startAutosave, QUIET_MS, STORAGE_ANSWER_MS, STORAGE_NOT_ANSWERING, type Autosave, type AutosaveOptions, type AutosaveStatus, type Timers } from "./autosave.ts";
 export { ProjectChangedError, projectStore, storedCopy, type ProjectStore, type ProjectSummary } from "./store.ts";
 export { keepStorage, type PersistentStorage } from "./persist.ts";
-export { journalEntry, keptEntry, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
+export { fromAnotherTab, journalEntry, keptEntry, NEWER_PREFIX, readJournalEntry, recoverUnsaved, unsavedKey, UNSAVED_PREFIX, type JournalStorage } from "./unsaved.ts";
 export { ASK_MS, OPENING_KEY, reopenGuard, SETTLED_MS, type MarkStorage, type OpeningChannel, type ReopenGuard } from "./reopen.ts";
 
 /** The store for this browser, kept in IndexedDB. `readers` are the workspace plugins. */

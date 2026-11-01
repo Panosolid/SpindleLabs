@@ -16,12 +16,14 @@ interface Fake {
   shown: ImageRep[];
   log: string[];
   failShow: string | null;
+  /** When set, only an image wider than this fails to show (a GPU texture limit). */
+  failWider: number | null;
 }
 
 function fake(): Fake {
   const doc = new Window().document as unknown as Document;
   const el = () => doc.createElement("div") as unknown as HTMLElement;
-  const f: Fake = { shown: [], log: [], failShow: null, ctx: null! };
+  const f: Fake = { shown: [], log: [], failShow: null, failWider: null, ctx: null! };
   const viewport: SharedViewport = {
     element: el(),
     showBody() {},
@@ -44,7 +46,7 @@ function fake(): Fake {
     onMovePointer: null,
     showImage(rep) {
       if (rep === null) return void f.log.push("empty"); // Image's own empty view
-      if (f.failShow) throw new Error(f.failShow);
+      if (f.failShow && (f.failWider === null || rep.width > f.failWider)) throw new Error(f.failShow);
       f.shown.push(rep);
       f.log.push("show");
     },
@@ -162,6 +164,38 @@ test("an image the screen's graphics can't hold shows the viewport's message ins
   assert.equal(text(f.ctx, "image-error"), f.failShow);
   assert.equal(f.ctx.browser.querySelector("#layers-empty")!.textContent, "No image open");
   view.unmount();
+});
+
+// Regression (files hunt, 2026-11-01): an image too big for the screen's graphics wiped the image already open.
+test("an image too big for the screen's graphics leaves the open image as it was, with the message", async () => {
+  resetImageWorkspace();
+  const f = fake();
+  let size = [200, 100];
+  const decode: Decoder = async () => ({ width: size[0], height: size[1], rgba: new Uint8ClampedArray(size[0] * size[1] * 4) });
+  const view = mountImage(f.ctx, decode);
+  await pick(f.ctx, plate);
+  assert.equal(text(f.ctx, "image-pixels"), "200 × 100 px");
+  f.failWider = 300;
+  f.failShow = "This image is 400 × 100 pixels, but this screen's graphics can show at most 300 pixels along a side.";
+  size = [400, 100];
+  await pick(f.ctx, png(ihdr(400, 100), idat(), iend()), "huge.png");
+  assert.equal(text(f.ctx, "image-error"), f.failShow);
+  assert.equal(text(f.ctx, "image-pixels"), "200 × 100 px", "the open image's size is still shown");
+  assert.equal(f.ctx.browser.querySelector("#layer-list [data-node]")?.textContent, "Layer 1", "its layer is still listed");
+  assert.deepEqual([f.shown.at(-1)!.width, f.shown.at(-1)!.height], [200, 100], "and still drawn");
+  assert.equal(f.log.at(-1) === "empty", false, "never the empty view");
+  view.unmount();
+
+  // The same through a drop (the shell's openImageFile), shown when the page mounts.
+  await openImageFile("huge.png", png(ihdr(400, 100), idat(), iend()), decode);
+  const g = fake();
+  g.failWider = 300;
+  g.failShow = f.failShow;
+  const view2 = mountImage(g.ctx, decode);
+  assert.equal(text(g.ctx, "image-error"), f.failShow);
+  assert.equal(text(g.ctx, "image-pixels"), "200 × 100 px");
+  assert.deepEqual([g.shown.at(-1)!.width, g.shown.at(-1)!.height], [200, 100]);
+  view2.unmount();
 });
 
 test("the image is kept across a switch away and back; hiding gives the viewport back and empties every slot", async () => {

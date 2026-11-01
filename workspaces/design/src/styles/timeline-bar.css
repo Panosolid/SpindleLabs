@@ -38,3 +38,23 @@
    as a failed one is; its title has the words. */
 .timeline-bar .timeline-bar-item[data-greyed="true"] { color: #8a919c; border-style: dashed; opacity: 0.6; }
 .timeline-bar .timeline-bar-item[data-warned="true"] { color: #ff6b6b; border-color: #e0656d; background: #3a2226; }
+/* Phone width (phone hunt 11-01): every item, its ⋯ and the marker take a
+   tap the row's whole height (40 px with its top line, below) while they
+   still look as small: an invisible ::before reaches up and down to the
+   row's edges, and 2 px sideways. Sideways they stay close to their own
+   width, so each gap's middle and the 3 px past the last item stay the
+   row's own, where a tap puts the marker (tapPlace; timeline.mjs), and a
+   375 px phone still shows its items without scrolling. */
+@media (max-width: 640px) {
+  .timeline-bar .timeline-bar-item::before { content: ""; position: absolute; inset: -10px -3px; } /* from inside its 1 px border */
+  .timeline-bar .timeline-bar-more:not(#none) { position: relative; }
+  .timeline-bar .timeline-bar-more::before { content: ""; position: absolute; inset: -10px -3px; }
+  .timeline-bar .timeline-bar-marker::before { inset: -8px -5px; }
+}
+/* The taller row only where the screen has the height: a phone held
+   sideways at phone width (568 × 320) keeps its 32 px row, so its view
+   loses nothing (the start card fits it, phone-start.mjs). 40 px is the
+   most a thin timeline takes (layout.mjs). */
+@media (max-width: 640px) and (min-height: 501px) {
+  .timeline-bar:not(#none) { height: 40px; padding-top: 0; padding-bottom: 0; }
+}

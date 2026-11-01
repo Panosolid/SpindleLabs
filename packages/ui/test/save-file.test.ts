@@ -33,6 +33,38 @@ test("a long name is cut at 120 characters with its ending (boundary: 120 stays,
   assert.equal(fileNameFor("x".repeat(500), ext).length, 120);
 });
 
+// Regression (files hunt, 2026-11-01): 120 characters of emoji were 480 bytes, over the 255 bytes file systems allow.
+const utf8 = (s: string) => new TextEncoder().encode(s).length;
+
+test("a long name is also cut to 200 bytes of UTF-8 with its ending, never inside a character", () => {
+  const ext = ".spindle"; // 8 bytes, so 192 bytes of the name fit
+  // An emoji is 4 bytes in UTF-8 (and 2 UTF-16 units): 192 / 4 = 48 emoji.
+  const emoji = fileNameFor("😀".repeat(200), ext);
+  assert.equal(emoji, `${"😀".repeat(48)}${ext}`);
+  assert.equal(utf8(emoji), 200);
+  // A CJK character is 3 bytes: 192 / 3 = 64 characters.
+  const cjk = fileNameFor("設計".repeat(100), ext);
+  assert.equal(cjk, `${"設計".repeat(32)}${ext}`);
+  assert.equal(utf8(cjk), 200);
+  // 95 × "é" (2 bytes each, 190) then an emoji (4) is 194 + 8 = 202 bytes: the emoji goes whole, leaving 190 + 8 = 198.
+  const mixed = fileNameFor(`${"é".repeat(95)}😀`, ext);
+  assert.equal(mixed, `${"é".repeat(95)}${ext}`);
+  assert.ok(mixed.isWellFormed(), "no half of a surrogate pair left");
+});
+
+test("the byte limit's boundary: 0.9 × 200 bytes stays, 200 stays, 201 and 1.1 × 200 are cut", () => {
+  const ext = ".stl"; // 4 bytes
+  // "é" is 2 bytes. 0.9 × 200 = 180 bytes: 176 of name = 88 "é" (92 characters, under the 120-character limit too).
+  assert.equal(fileNameFor("é".repeat(88), ext), `${"é".repeat(88)}${ext}`);
+  // Exactly 200: 196 of name = 98 "é" (102 characters).
+  assert.equal(utf8(fileNameFor("é".repeat(98), ext)), 200);
+  assert.equal(fileNameFor("é".repeat(98), ext), `${"é".repeat(98)}${ext}`);
+  // 201: 98 "é" and one "x" (197 + 4): the "x" goes.
+  assert.equal(fileNameFor(`${"é".repeat(98)}x`, ext), `${"é".repeat(98)}${ext}`);
+  // 1.1 × 200 = 220 bytes: 216 of name = 108 "é" (112 characters): cut to 98 "é", 200 bytes.
+  assert.equal(fileNameFor("é".repeat(108), ext), `${"é".repeat(98)}${ext}`);
+});
+
 test("baseNameOf drops only the ending", () => {
   assert.equal(baseNameOf("Plate.spindle", ".spindle"), "Plate");
   assert.equal(baseNameOf("Plate.stl", ".spindle"), "Plate.stl");

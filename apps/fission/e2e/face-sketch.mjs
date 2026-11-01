@@ -102,7 +102,20 @@ async function at(page, p, tap = false) {
     return e?.tagName === "CANVAS" && e.closest("#viewport") ? "canvas" : e ? e.id || e.className || e.tagName : "nothing";
   }, [s.x, s.y]);
   if (on !== "canvas") throw new Error(`[${p}] is under ${on} on screen, not the canvas`);
-  if (tap) await page.touchscreen.tap(s.x, s.y);
+  if (tap) {
+    // A tap a pixel or two from a button goes to the button (Chromium moves a tap onto a control within the finger's
+    // reach): the 375 px front-plane check's corner sat 1.4 px under the Finish bar once the phone timeline grew 8 px
+    // (phone hunt 11-01) and its tap finished the sketch. So a tapped point needs the canvas for 8 px all round.
+    const near = await page.evaluate(([x, y]) => {
+      for (let k = 0; k < 16; k++) {
+        const e = document.elementFromPoint(x + 8 * Math.cos((k * Math.PI) / 8), y + 8 * Math.sin((k * Math.PI) / 8));
+        if (!(e?.tagName === "CANVAS" && e.closest("#viewport"))) return e ? e.id || e.className || e.tagName : "nothing";
+      }
+      return null;
+    }, [s.x, s.y]);
+    if (near) throw new Error(`[${p}] is within a finger's 8 px of ${near} on screen, so a tap may land on it`);
+    await page.touchscreen.tap(s.x, s.y);
+  }
   else await page.mouse.click(s.x, s.y);
 }
 
@@ -370,12 +383,13 @@ try {
     await until(page, () => document.querySelector("#viewport").dataset.sketching === "true", null, "sketching");
     const cam = await settle(page);
     near(unit(sub(cam.position, cam.target)), [0, -1, 0], 1e-5, "looking from the front");
-    // Beside the box (x 0..40), on the front plane: x along X, y along Z.
     // Above the box (z 0..20), on the front plane: x along X, y along Z.
-    // Taps from (30, 30) to (10, 40): the rectangle tool's corners, up and left on screen.
-    await rectangle(page, [[10, 0, 40], [30, 0, 40], [30, 0, 30], [10, 0, 30]], true);
+    // Taps from (40, 30) to (20, 40): the rectangle tool's corners, up and left on screen (on the 10 mm grid). Not from
+    // x 10: (10, 40) is 1.4 px under the Finish bar at the top left of the view with the 40 px phone timeline, and its
+    // tap went to Finish (`at` now refuses a tap within a finger's reach of a control).
+    await rectangle(page, [[20, 0, 40], [40, 0, 40], [40, 0, 30], [20, 0, 30]], true);
     await until(page, () => document.querySelector("#sketch-status")?.textContent === "4 lines, a closed outline.", null, "closed");
-    assert.deepEqual((await data(page, "sketchPoints")).split(" ").sort(), ["10,30", "10,40", "30,30", "30,40"]);
+    assert.deepEqual((await data(page, "sketchPoints")).split(" ").sort(), ["20,30", "20,40", "40,30", "40,40"]);
     await shot(page, "front-plane-375");
     await extrude(page, 5, true);
     // The new block: 20 · 10 · 5 = 1,000 mm³.

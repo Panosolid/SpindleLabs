@@ -13,7 +13,7 @@ export { reportFeedback } from "./model/feedback.ts";
 export type { Parameter, ParameterSweep, ProjectParameters } from "./model/parameters.ts";
 export { projectParameters } from "./model/parameters.ts";
 export type { DataReader, LengthUnit, Project, WorkspaceId } from "./model/project.ts";
-export { emptyProject, FORMAT_VERSION, MAX_NESTING, MAX_PROJECT_BYTES, projectFromJson, projectToJson, readProject } from "./model/project.ts";
+export { emptyProject, FORMAT_VERSION, MAX_NESTING, MAX_PROJECT_BYTES, NewerFormatError, projectFromJson, projectToJson, readProject } from "./model/project.ts";
 export type { FrozenCopy, LiveLink, Link, LinkSource, LinkStatus, SourceLookup } from "./model/links.ts";
 export { breakLink, fetchLinked, linkTo, resolveLink } from "./model/links.ts";
 export type { Answer, EditRoute, LinkedValue, OwnershipChange, ProposedEdit, Transfer } from "./model/ownership.ts";
@@ -40,6 +40,7 @@ export type { Feature, Intent, Origin, ParameterValue, Provenance, Timeline } fr
 export { describeProvenance, workspaceName } from "./model/feature.ts";
 export type { FileFormat, FileFormatInfo, FileHead, FileImporter, FileRoute, Identified } from "./model/files.ts";
 export { claimedFormat, FILE_FORMATS, formatInfo, HEAD_BYTES, identifyFile, routeFiles } from "./model/files.ts";
+export { headBytesFor, MAX_IMAGE_BYTES, unreadableMessage } from "./model/files.ts";
 export type { SvgFile } from "./model/svg.ts";
 export { outlineToSvg, svgNumber } from "./model/svg.ts";
 export { EXACTNESS, isExact, RepresentationRegistry, XY_PLANE } from "./model/representation.ts";

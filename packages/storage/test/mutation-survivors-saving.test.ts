@@ -173,7 +173,7 @@ test("after one save of a project opened from its kept entry, the entry it journ
   auto.changed();
   assert.equal(auto.leaving(), true);
   const entry = journal.items.get(unsavedKey("p"))!;
-  assert.match(entry, /^@\d+\n/, "no ! after the time");
+  assert.match(entry, /^@\d+~1000#[\w-]+\n/, "no ! after the time (then the save time it was made from, real-use hunt S1, and the writer)");
   assert.equal(readJournalEntry(entry).kept, false);
   await settle();
 });
@@ -412,7 +412,7 @@ test("an entry's time must start the entry: '@12' later in the text is not a tim
   assert.equal(dated.written?.toISOString(), "1970-01-02T00:00:00.000Z");
   assert.equal(dated.text, "X");
   assert.equal(dated.kept, false);
-  assert.deepEqual(readJournalEntry("abc@12\nrest"), { text: "abc@12\nrest", written: null, kept: false });
+  assert.deepEqual(readJournalEntry("abc@12\nrest"), { text: "abc@12\nrest", written: null, kept: false, base: null });
   assert.equal(readJournalEntry("@12!\nrest").kept, true);
 });
 

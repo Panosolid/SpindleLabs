@@ -4,6 +4,8 @@
    sits on the body. The buttons are named with :not(#…), which counts as an id, so they outweigh
    the workspace's own "#workspace button" padding and background. */
 .view-controls { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 2px; background: rgba(21, 27, 38, 0.92); border: 1px solid #2c3749; border-radius: var(--look-radius-s); max-width: calc(100% - 16px); width: max-content; flex-wrap: wrap; justify-content: center; } /* never wider than the view: a narrow view (the assistant open beside it) wraps the buttons; without max-content an absolute box at left: 50% gets only half the view to shrink to */
+/* Two fingers on the bar never zoom the page (phone hunt 11-01); one still scrolls it where it scrolls. */
+.view-controls { touch-action: pan-x pan-y; }
 .view-controls .nav-group { display: flex; gap: 2px; }
 .view-controls .nav-group + .nav-group { border-left: 1px solid #2c3749; padding-left: 2px; margin-left: 2px; }
 .view-controls button.nav-button:not(#no-such-id) { display: inline-flex; align-items: center; justify-content: center; min-width: var(--look-target); height: var(--look-target); padding: 0 8px; background: transparent; border: 1px solid transparent; border-radius: var(--look-radius-pill); font-size: 12px; color: #c9d1d9; }
@@ -30,4 +32,14 @@
 @media (max-width: 640px) {
   .view-controls:not(#none) { border-radius: 26px; }
   .view-controls button.nav-button:not(#no-such-id) { min-width: var(--look-target-touch); height: var(--look-target-touch); }
+}
+/* A phone held sideways (500 px tall or less) with the Properties card open
+   down the view's right side (properties-fold.css): the bar starts at the
+   left edge and stops short of the card (300 px wide, 8 px in, 8 px gap),
+   one row that scrolls sideways when it must, so none of its buttons sit
+   under the card and none of the card's under the bar (not with the AI
+   panel open, when the card keeps its place under the view cube). */
+@media (min-width: 641px) and (max-height: 500px) {
+  .view-controls:is(#workspace:not([data-split="on"]):not(:has(> #assistant:not([hidden]))):has(> #properties.properties-fold:not([data-folded]):not(:empty)) .view-controls) { left: 8px; transform: none; max-width: calc(100% - 332px); flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .view-controls:is(#workspace:not([data-split="on"]):not(:has(> #assistant:not([hidden]))):has(> #properties.properties-fold:not([data-folded]):not(:empty)) .view-controls) .nav-group { flex-shrink: 0; }
 }

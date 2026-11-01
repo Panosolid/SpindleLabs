@@ -7,7 +7,7 @@
 // when another tab updates says so too. Only in the built app (the dev
 // server has no sw.js), and never in a frame: main.ts imports this after
 // frame-guard.ts, which stops a framed page first.
-import { showNotice as show } from "./app-notice.ts";
+import { hideNotice, showNotice as show } from "./app-notice.ts";
 
 /** Offline mode's switch, from offline.config.mjs (set in vite.config.ts). Off: nothing is kept for offline use, and an earlier install is removed. */
 declare const __OFFLINE_MODE__: boolean;
@@ -20,6 +20,35 @@ const WORDS: Record<Shown, string> = {
   ready: "A new version of SpindleLabs is ready.",
   elsewhere: "SpindleLabs was updated in another tab.",
 };
+
+/** The worker could not keep a new version for lack of storage (it says so once, then waits a day before trying again). */
+function showNoRoom() {
+  show("no-room", "There isn't enough storage on this device to keep the new version of SpindleLabs for offline use, so this version stays. Freeing some space lets it update.", {
+    label: "OK",
+    title: "Hide this notice",
+    press: () => hideNotice("no-room"),
+  });
+}
+
+/**
+ * The first visit: files the page loaded before the worker controlled it
+ * (an on-demand chunk such as the in-browser AI's runner) are named to the
+ * active worker, which keeps the ones it should (sw.js keepOnDemand); later
+ * ones too, while the page stays uncontrolled.
+ */
+function nameLoadedFiles(reg: ServiceWorkerRegistration) {
+  const sw = navigator.serviceWorker;
+  const base = new URL(reg.scope);
+  const send = (entries: PerformanceEntry[]) => {
+    if (sw.controller || !reg.active) return;
+    const paths = entries.map((e) => new URL(e.name, location.href)).filter((u) => u.origin === base.origin && u.pathname.startsWith(base.pathname + "assets/")).map((u) => u.pathname.slice(base.pathname.length));
+    if (paths.length) reg.active.postMessage({ type: "keep", paths });
+  };
+  send(performance.getEntriesByType("resource"));
+  if (typeof PerformanceObserver === "undefined") return;
+  const watch = new PerformanceObserver((list) => (sw.controller ? watch.disconnect() : send(list.getEntries())));
+  watch.observe({ type: "resource" });
+}
 
 /** Shows the update notice (one at a time) with its Reload button. */
 function showNotice(kind: Shown, reload: () => void) {
@@ -72,8 +101,13 @@ export function startOffline() {
       updating = true;
       waiting.postMessage({ type: "skip-waiting" });
     });
+  sw.addEventListener("message", (event) => {
+    if (event.data?.type === "no-room") showNoRoom();
+  });
+  sw.startMessages();
   sw.register("./sw.js", { scope: "./" })
     .then((reg) => {
+      if (!sw.controller) void sw.ready.then(nameLoadedFiles);
       // A version already waiting (found on an earlier visit), one still
       // installing (the browser may have started looking before this ran),
       // or one found by the look below or later.

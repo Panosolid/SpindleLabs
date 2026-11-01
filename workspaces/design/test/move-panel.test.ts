@@ -82,3 +82,19 @@ test("hand-worked: the box a handle's drag changes glows while the drag lasts, a
   panel.show(show({ kind: "rotate", name: "Rotate" }));
   assert.deepEqual(glowing(), []);
 });
+
+test("on a touch screen (pointer: coarse) a new Move or Rotate leaves the focus where it was, so no keyboard pops up", () => {
+  const window = new Window({ width: 393, height: 852 });
+  // happy-dom answers every media query false; this one says the pointer is a finger, as a phone's browser does.
+  const real = window.matchMedia.bind(window);
+  window.matchMedia = ((q: string) => (q === "(pointer: coarse)" ? { ...real(q), matches: true } : real(q))) as typeof window.matchMedia;
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  const panel = movePanel(slot, { typed() {}, ok() {}, cancel() {}, centre() {}, snap() {} });
+  panel.show(show({}));
+  assert.notEqual(doc.activeElement?.id, "move-x", "Move: the X box is not focused");
+  panel.show(show({ kind: "rotate", name: "Rotate" }));
+  assert.notEqual(doc.activeElement?.id, "move-turnX", "Rotate: the X angle box is not focused");
+  // The same panel with a mouse (the first test): the X box has the focus, so the check above can fail.
+});

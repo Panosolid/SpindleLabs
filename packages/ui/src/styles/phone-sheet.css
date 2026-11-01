@@ -31,3 +31,14 @@
   .phone-sheet #panel-toggles:not(#none) button { pointer-events: auto; min-height: var(--look-target-touch); padding: 0 16px; background: var(--look-float); border: 1px solid var(--look-edge); border-radius: var(--look-radius-pill); box-shadow: var(--look-top-light), var(--look-shadow-1); }
   .phone-sheet #panel-toggles:not(#none) button[aria-expanded="true"] { background: var(--look-active-fill); border-color: var(--look-accent); box-shadow: var(--look-glow); }
 }
+/* A touch screen of any width (a phone held sideways is 641 px and up and
+   keeps the desktop layout): the Properties boxes' text is 16 px there too,
+   so iOS Safari never zooms the page in on a tap (phone hunt 11-01). */
+@media (pointer: coarse) {
+  .phone-sheet #properties :is(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea):not(#none) { font-size: 16px; }
+}
+/* Two fingers on the toolbar or the timeline never zoom the whole page (it
+   took the toolbar, the view and the timeline off the screen's edges with
+   nothing to zoom back by: phone hunt 11-01); a finger still scrolls them
+   sideways. The 3D view takes a pinch as its own zoom (touch-action: none). */
+.phone-sheet :is(#toolbar, #split-toolbar, #timeline, #split-timeline) { touch-action: pan-x pan-y; }

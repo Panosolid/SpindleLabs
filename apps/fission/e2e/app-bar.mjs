@@ -48,7 +48,7 @@ async function fresh(width, touch) {
 const ALREADY = "New: nothing to clear, the design is already empty.";
 const SKETCHING = "New: finish or cancel the sketch first.";
 const NO_BODY = "There is no body to download: nothing in the timeline builds.";
-const NEW_ON = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back.";
+const NEW_ON = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back until the page is reloaded or closed.";
 
 /**
  * What is wrong with the bar's icon buttons (Save, Undo, Redo, and File ▾'s

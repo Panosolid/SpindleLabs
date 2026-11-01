@@ -15,3 +15,7 @@
 @media (max-width: 640px) {
   .rename-box .rename-box-actions button:not(#none), .rename-box .rename-box-dialog input:not(#none) { min-height: 44px; }
 }
+/* Its text 16 px on a phone or any touch screen: smaller makes iOS Safari zoom the page in as the box takes the focus (phone hunt 11-01). */
+@media (max-width: 640px), (pointer: coarse) {
+  .rename-box .rename-box-dialog input:not(#none) { font-size: 16px; }
+}
