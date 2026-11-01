@@ -47,10 +47,18 @@ const work = mkdtempSync(join(tmpdir(), "offline-e2e-"));
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json", ".txt": "text/plain" };
 /** The app's server: serves `root` (swappable), and a page framing the app at /frame-it. */
-const site = { root: DIST, server: null, port: 4240 };
+const site = { root: DIST, server: null, port: 4240, log: [], hook: null };
 function startServer() {
   site.server = createServer((req, res) => {
     const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    site.log.push(path);
+    if (site.hook?.(path, res)) return;
+    // GitHub Pages reads CNAME (the custom domain) and may not serve it as a
+    // file; one missing file stops an install, so this server never serves it.
+    if (path === "/CNAME") {
+      res.writeHead(404);
+      return res.end();
+    }
     if (path === "/frame-it") {
       res.writeHead(200, { "content-type": "text/html" });
       return res.end(`<!doctype html><iframe id="app" src="/?test-hooks" style="width:800px;height:600px"></iframe>`);
@@ -114,9 +122,50 @@ async function newApp(width, serviceWorkers = "allow") {
   return { context, page };
 }
 const kernelUp = (page) => page.waitForFunction(() => /kernel v/.test(document.querySelector("#version")?.textContent ?? ""), null, { timeout: 20000 });
+/** Waits (up to 20 s) for an active worker: a failed install fails the check rather than waiting for ever. */
+const swReady = (page) =>
+  page.evaluate(() => Promise.race([navigator.serviceWorker.ready.then(() => true), new Promise((done) => setTimeout(() => done(false), 20000))])).then((ok) => assert.ok(ok, "the worker installed and is active"));
 const controlled = (page) => page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 20000 });
 const buildMark = (page) => page.evaluate(() => document.querySelector('meta[name="spindlelabs-build"]')?.content ?? null);
-const ourCaches = (page) => page.evaluate(async () => (await caches.keys()).filter((k) => k.startsWith("spindlelabs-")));
+// The worker's small record (spindlelabs-state: the version in use, an install that failed) is not a version's cache.
+const ourCaches = (page) => page.evaluate(async () => (await caches.keys()).filter((k) => k.startsWith("spindlelabs-") && k !== "spindlelabs-state"));
+/** Asks for a new sw.js and waits until the version found has installed or failed; whether one now waits. */
+const updateAndSettle = (page) =>
+  page.evaluate(async () => {
+    const reg = await navigator.serviceWorker.getRegistration();
+    await reg.update();
+    const next = reg.installing;
+    if (next) await new Promise((done) => next.addEventListener("statechange", () => (next.state === "redundant" || next.state === "installed" ? done() : null)));
+    return reg.waiting !== null;
+  });
+/** Opens the app in a new context and waits until it is controlled by the worker of the build served now. */
+async function controlledApp(width = 1280) {
+  const { context, page } = await newApp(width);
+  await page.goto(`${app}?test-hooks`);
+  await kernelUp(page);
+  await swReady(page);
+  await page.reload();
+  await controlled(page);
+  await kernelUp(page);
+  return { context, page };
+}
+/** Presses Reload on the "new version is ready" notice and waits for the new build. */
+async function takeUpdate(page) {
+  await page.waitForSelector('#app-update[data-kind="ready"]', { timeout: 20000 });
+  await Promise.all([page.waitForNavigation(), page.click("#app-update-reload")]);
+  await kernelUp(page);
+}
+/** A change for makeBuild: the kernel's .wasm renamed (`tag`), and the scripts that name it changed to match, so the server no longer has the old name. */
+const renameWasm = (tag) => (dir) => {
+  const old = wasmOf(dir);
+  const name = old.replace(/-[^-.]+\.wasm$/, `-${tag}.wasm`);
+  renameSync(join(dir, "assets", old), join(dir, "assets", name));
+  for (const f of readdirSync(join(dir, "assets")).filter((n) => n.endsWith(".js"))) {
+    const p = join(dir, "assets", f);
+    const s = readFileSync(p, "utf8");
+    if (s.includes(old)) writeFileSync(p, s.split(old).join(name));
+  }
+};
 const AI_REMOTE = JSON.stringify({ kind: "api-key", vendor: "anthropic" });
 
 try {
@@ -131,7 +180,7 @@ try {
         await page.goto(`${app}?test-hooks`);
         await page.evaluate((s) => localStorage.setItem("fission.ai.settings", s), AI_REMOTE);
         await kernelUp(page);
-        await page.evaluate(() => navigator.serviceWorker.ready);
+        await swReady(page);
         // Every file the build keeps is in this version's cache.
         const kept = await page.evaluate(async (v) => {
           const cache = await caches.open(`spindlelabs-${v}`);
@@ -212,7 +261,7 @@ try {
       assert.deepEqual(await page.evaluate(async () => [(await navigator.serviceWorker.getRegistrations()).length, (await caches.keys()).length]), [0, 0]);
       // The control: the same app unframed registers its worker.
       await page.goto(app);
-      await page.evaluate(() => navigator.serviceWorker.ready);
+      await swReady(page);
       assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 1);
     } finally {
       await context.close();
@@ -245,7 +294,7 @@ try {
       one.on("pageerror", (e) => console.log(`  page error: ${e.message}`));
       await one.goto(`${app}?test-hooks`);
       await kernelUp(one);
-      await one.evaluate(() => navigator.serviceWorker.ready);
+      await swReady(one);
       await one.reload(); // now controlled by A's worker
       await controlled(one);
       await kernelUp(one);
@@ -320,6 +369,205 @@ try {
       assert.equal(await buildMark(one), "C", "still C, whole");
       await one.waitForFunction(() => document.querySelector("#volume")?.textContent === "24,000 mm³", null, { timeout: 15000 });
     } finally {
+      await context.close();
+      site.root = DIST;
+    }
+  });
+  await check("a failed install leaves no cache, and the tab still on the version before keeps its files after the next update", async () => {
+    // Offline hunt: D's failed install left an empty cache that E's clean-up kept as "the one before", deleting C's, which tab two still ran.
+    const C = makeBuild(DIST, "fail-C");
+    site.root = C.dir;
+    const { context, page: one } = await controlledApp();
+    try {
+      const two = await context.newPage();
+      await two.goto(`${app}?test-hooks`);
+      await controlled(two);
+      await kernelUp(two);
+      const D = makeBuild(C.dir, "fail-D");
+      writeFileSync(join(D.dir, "sw.js"), serviceWorkerSource({ ...D.info, precache: [...D.info.precache, "assets/missing.js"] }));
+      site.root = D.dir;
+      assert.equal(await updateAndSettle(one), false, "D never installs");
+      assert.deepEqual(await ourCaches(one), [`spindlelabs-${C.info.version}`], "D's half-filled cache is gone");
+      const E = makeBuild(C.dir, "fail-E", renameWasm("EEEEEEEE"));
+      site.root = E.dir;
+      await updateAndSettle(one);
+      await takeUpdate(one);
+      assert.equal(await buildMark(one), "fail-E");
+      await two.waitForSelector('#app-update[data-kind="elsewhere"]', { timeout: 20000 });
+      assert.equal(await two.evaluate((p) => fetch(p).then((r) => r.status), `assets/${wasmOf(C.dir)}`), 200, "tab two's own kernel, from C's cache");
+      assert.deepEqual((await ourCaches(one)).sort(), [`spindlelabs-${C.info.version}`, `spindlelabs-${E.info.version}`].sort());
+    } finally {
+      await context.close();
+      site.root = DIST;
+    }
+  });
+
+  await check("a rollback to the build before (A, B, A: the same bytes, A's own cache) keeps B's cache for the tab still on B", async () => {
+    const A = makeBuild(DIST, "back-A");
+    const B = makeBuild(A.dir, "back-B", renameWasm("BBBBBBBB"));
+    site.root = A.dir;
+    const { context, page: one } = await controlledApp();
+    try {
+      site.root = B.dir;
+      await updateAndSettle(one);
+      await takeUpdate(one);
+      const two = await context.newPage();
+      await two.goto(`${app}?test-hooks`);
+      await controlled(two);
+      await kernelUp(two);
+      assert.equal(await buildMark(two), "back-B");
+      site.root = A.dir; // the revert: A's bytes again, so A's version
+      await updateAndSettle(one);
+      await takeUpdate(one);
+      assert.equal(await buildMark(one), "back-A");
+      assert.equal(await two.evaluate((p) => fetch(p).then((r) => r.status), `assets/${wasmOf(B.dir)}`), 200, "tab two's own kernel, from B's cache");
+      assert.deepEqual((await ourCaches(one)).sort(), [`spindlelabs-${A.info.version}`, `spindlelabs-${B.info.version}`].sort());
+    } finally {
+      await context.close();
+      site.root = DIST;
+    }
+  });
+
+  await check("a deploy landing mid-install (the next build's index.html served) is refused, and the build installs whole later; offline it opens", async () => {
+    const A = makeBuild(DIST, "mid-A");
+    const B = makeBuild(A.dir, "mid-B");
+    // C: a new entry script name, as almost every real deploy has.
+    const C = makeBuild(B.dir, "mid-C", (dir) => {
+      const js = readdirSync(join(dir, "assets")).find((f) => /^index-.*\.js$/.test(f));
+      const renamed = js.replace(/-[^-.]+\.js$/, "-CCCCCCCC.js");
+      renameSync(join(dir, "assets", js), join(dir, "assets", renamed));
+      const index = join(dir, "index.html");
+      writeFileSync(index, readFileSync(index, "utf8").split(js).join(renamed));
+    });
+    site.root = A.dir;
+    const { context, page } = await controlledApp();
+    try {
+      site.root = B.dir;
+      site.hook = (path, res) => {
+        if (path !== "/index.html") return false;
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(readFileSync(join(C.dir, "index.html")));
+        return true;
+      };
+      assert.equal(await updateAndSettle(page), false, "B with C's page is not installed");
+      assert.deepEqual(await ourCaches(page), [`spindlelabs-${A.info.version}`], "and leaves no cache");
+      site.hook = null;
+      assert.equal(await updateAndSettle(page), true, "the next look installs B whole");
+      await takeUpdate(page);
+      assert.equal(await buildMark(page), "mid-B");
+      await stopServer();
+      await context.setOffline(true);
+      await page.reload();
+      await kernelUp(page);
+      assert.equal(await buildMark(page), "mid-B");
+    } finally {
+      site.hook = null;
+      await context.close();
+      if (!site.server.listening) await startServer();
+      site.root = DIST;
+    }
+  });
+
+  await check("too little storage for the next version: said once, and the build is not downloaded again on every load", async () => {
+    const A = makeBuild(DIST, "room-A");
+    const B = makeBuild(A.dir, "room-B", renameWasm("ROOMROOM"));
+    const wasmB = wasmOf(B.dir);
+    site.root = A.dir;
+    const { context, page } = await controlledApp();
+    try {
+      const { usage } = await page.evaluate(() => navigator.storage.estimate());
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Storage.overrideQuotaForOrigin", { origin: app.slice(0, -1), quotaSize: usage + 100_000 });
+      site.root = B.dir;
+      let notices = 0;
+      for (let load = 1; load <= 3; load++) {
+        site.log.length = 0;
+        await page.reload();
+        await kernelUp(page);
+        await updateAndSettle(page);
+        await page.waitForTimeout(500);
+        if (await page.$('#app-update[data-kind="no-room"]')) notices++;
+        // The first try may download it (Chromium's quota override is enforced on writes but not shown to the worker's
+        // storage estimate, so the check before downloading can't see it here; e2e/offline.test.mjs checks that one); never again.
+        if (load > 1) assert.equal(site.log.filter((p) => p.endsWith(wasmB)).length, 0, `load ${load}: B's kernel not downloaded again`);
+        assert.equal(await buildMark(page), "room-A", "A runs on");
+      }
+      assert.equal(notices, 1, "the notice is shown once, not on every load");
+      assert.deepEqual(await ourCaches(page), [`spindlelabs-${A.info.version}`], "no half-filled cache");
+    } finally {
+      await context.close();
+      site.root = DIST;
+    }
+  });
+
+  const lib = JSON.parse(readFileSync(join(DIST, "on-demand.json"), "utf8"))[0];
+  const importLib = (page) => page.evaluate((p) => import(`/${p}`).then(() => "loaded", (e) => `failed: ${e.message}`), lib);
+  const libKept = (page, version) =>
+    page.waitForFunction(async ([v, p]) => !!(await (await caches.open(`spindlelabs-${v}`)).match(p)), [version, lib], { timeout: 10000, polling: 100 });
+  await check(`the in-browser AI's runner (${lib}, on demand) works offline once it has loaded: on the first visit, and after two updates`, async () => {
+    const A = makeBuild(DIST, "lazy-A");
+    site.root = A.dir;
+    // The first visit: the page is not yet controlled when the runner loads.
+    let { context, page } = await newApp(1280);
+    try {
+      await page.goto(`${app}?test-hooks`);
+      await kernelUp(page);
+      await swReady(page);
+      assert.equal(await importLib(page), "loaded");
+      await libKept(page, A.info.version);
+      await context.setOffline(true);
+      await page.reload();
+      await kernelUp(page);
+      assert.equal(await importLib(page), "loaded", "offline, on the first visit's install");
+    } finally {
+      await context.close();
+    }
+    ({ context, page } = await controlledApp());
+    try {
+      assert.equal(await importLib(page), "loaded");
+      let from = A.dir;
+      for (const mark of ["lazy-B", "lazy-C"]) {
+        const X = makeBuild(from, mark);
+        from = X.dir;
+        site.root = X.dir;
+        await updateAndSettle(page);
+        await takeUpdate(page);
+        await libKept(page, X.info.version);
+      }
+      await context.setOffline(true);
+      await page.reload();
+      await kernelUp(page);
+      assert.equal(await buildMark(page), "lazy-C");
+      assert.equal(await importLib(page), "loaded", "offline after two updates");
+    } finally {
+      await context.close();
+      site.root = DIST;
+    }
+  });
+
+  await check("a captive portal's page answering for the runner is never kept as it", async () => {
+    const A = makeBuild(DIST, "portal-A");
+    site.root = A.dir;
+    const { context, page } = await controlledApp();
+    try {
+      site.hook = (path, res) => {
+        if (path !== `/${lib}`) return false;
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end("<!doctype html><title>Sign in to the wifi</title>");
+        return true;
+      };
+      assert.match(await importLib(page), /^failed/);
+      await page.waitForTimeout(1000);
+      assert.equal(await page.evaluate(async (p) => !!(await caches.match(p)), lib), false, "not kept");
+      site.hook = null;
+      // A fresh page (a page remembers a module that failed): the real one is kept.
+      const again = await context.newPage();
+      await again.goto(`${app}?test-hooks`);
+      await kernelUp(again);
+      assert.equal(await importLib(again), "loaded");
+      await libKept(again, A.info.version);
+    } finally {
+      site.hook = null;
       await context.close();
       site.root = DIST;
     }

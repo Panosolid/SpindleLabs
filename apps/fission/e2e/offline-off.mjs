@@ -19,7 +19,8 @@ import { fileURLToPath } from "node:url";
 import { launch } from "./browser.mjs";
 import { writeServiceWorker } from "../offline.mjs";
 
-const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
+// E2E_DIST names another normal build (a private one, as for e2e/offline.mjs).
+const DIST = fileURLToPath(new URL(process.env.E2E_DIST ? process.env.E2E_DIST.replace(/\/?$/, "/") : "../dist/", import.meta.url));
 if (!existsSync(join(DIST, "sw.js"))) throw new Error("build the app first (npm run build): dist/sw.js is missing");
 if (readFileSync(join(DIST, "sw.js"), "utf8").startsWith("self.__SPINDLELABS_BUILD__")) {
   console.log("offline-off: skipped, this build has offline mode on");
@@ -106,7 +107,8 @@ async function installOld(page) {
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 20000 });
   const s = await state(page);
   assert.equal(s.registrations, 1);
-  assert.equal(s.caches.length, 1, "the old worker's cache exists");
+  // Its version's cache (and its small record, spindlelabs-state, which the clean-up must delete too).
+  assert.equal(s.caches.filter((k) => k !== "spindlelabs-state").length, 1, "the old worker's cache exists");
 }
 
 try {

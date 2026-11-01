@@ -14,3 +14,15 @@
 /* Timeline hunt, finding 4: a refused bar action's words just above the bar,
    where a phone (its error line far below the screen) can read them. */
 .timeline-marker .timeline-bar-note { position: absolute; left: 4px; right: 4px; bottom: 100%; margin-bottom: 4px; padding: 4px 8px; background: #3a2226; color: #ff9a9a; border: 1px solid #e0656d; border-radius: var(--look-radius-s); font-size: 12px; z-index: 2; pointer-events: none; }
+/* Phone width (phone hunt 11-01): the playback buttons as tall as the bar
+   (timeline-bar.css, 40 px where the screen has the height) and 8 px apart,
+   each taking a tap the row's height and 4 px either side with an invisible
+   ::before (32 px across) while it still looks as small. */
+@media (max-width: 640px) {
+  .timeline-marker .timeline-marker-buttons { gap: 8px; }
+  .timeline-marker .timeline-marker-button:not(#none) { position: relative; }
+  .timeline-marker .timeline-marker-button::before { content: ""; position: absolute; inset: -10px -5px; } /* from inside its 1 px border */
+}
+@media (max-width: 640px) and (min-height: 501px) {
+  .timeline-marker .timeline-marker-buttons { height: 40px; }
+}

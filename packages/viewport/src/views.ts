@@ -160,3 +160,19 @@ export function cubeView(p: readonly number[]): ViewName | null {
   const faces: [ViewName, ViewName][] = [["left", "right"], ["front", "back"], ["bottom", "top"]];
   return faces[k][sign(k) < 0 ? 0 : 1];
 }
+
+/**
+ * How much the camera's distance scales when the view's shape goes from
+ * `oldAspect` to `newAspect` (width / height, vertical fov `fovDeg`), so
+ * what fitted still fits: `fitDistance` for the new shape over the old one.
+ * A phone turned from sideways to upright narrows the view, and the part
+ * filling it ran off both sides (phone hunt 11-01); 1 while both views are
+ * at least as wide as tall (the vertical field binds in both). Turning back
+ * multiplies by the inverse, so the round trip returns the camera exactly.
+ * 1 for any shape that is not a positive, finite number.
+ */
+export function refitScale(fovDeg: number, oldAspect: number, newAspect: number): number {
+  const fine = (a: number) => Number.isFinite(a) && a > 0;
+  if (!fine(oldAspect) || !fine(newAspect) || !(fovDeg > 0 && fovDeg < 180)) return 1;
+  return fitDistance(1, fovDeg, newAspect) / fitDistance(1, fovDeg, oldAspect);
+}

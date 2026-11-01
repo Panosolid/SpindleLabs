@@ -20,15 +20,15 @@ export const COPY_SVG = "design.copy-svg";
 /** The STL-precision overlay: the whole part, while its last export warned. Design clears it on every edit. */
 export const STL_OVERLAY = "design.stl-precision";
 
-/** Asks for the file's name and place (the browser's save picker, or a name box), then saves it; false when the user closed the box. */
-async function download(bytes: Uint8Array<ArrayBuffer>, name: string): Promise<boolean> {
+/** Asks for the file's name and place (the browser's save picker, or a name box), then saves it: the name it was saved under, or false when the user closed the box. */
+async function download(bytes: Uint8Array<ArrayBuffer>, name: string): Promise<string | false> {
   const r = await saveFile(document, { suggestedName: name, kind: STL_KIND, bytes });
   if (r.status === "failed") throw new Error(r.message);
-  return r.status === "saved";
+  return r.status === "saved" ? r.name : false;
 }
 
-/** Hands a file to the user; false (rather than nothing) says they chose not to save it. */
-export type SaveFile = (bytes: Uint8Array<ArrayBuffer>, name: string) => void | boolean | Promise<void | boolean>;
+/** Hands a file to the user; false (rather than nothing) says they chose not to save it, and a string is the name it was saved under (the person may have typed another). */
+export type SaveFile = (bytes: Uint8Array<ArrayBuffer>, name: string) => void | boolean | string | Promise<void | boolean | string>;
 
 /** Puts an SVG file on the clipboard; rejects when the browser refuses. */
 export type CopySvg = (svg: string) => Promise<void>;
@@ -221,7 +221,7 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         const numbers = bodyNumbers(doc);
         const place = (f: Feature) => `Body ${numbers.get(bodyIdOf(f.id))}`;
         const warnings = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : []));
-        const message = [`Exported ${file}.`, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
+        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
         return { message, bad: warned.length > 0 };
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };

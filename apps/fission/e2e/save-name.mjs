@@ -201,6 +201,25 @@ await check("without a picker, Export STL asks for the name too, and a project s
   }
 });
 
+// Real-use hunt B5 (2026-11-01): a file opened as "bracket.spindle" offered "Untitled.spindle" on Save (the project's
+// own name inside), so a quick Save made a second file beside the one opened. Save offers the opened file's name.
+await check("after Open, Save offers the opened file's own name (bracket.spindle, and an old part.json as part.spindle)", async () => {
+  const { context, page } = await fresh(1280, FAKE_PICKER);
+  try {
+    const saved = readFileSync(new URL("./saved.spindle", import.meta.url));
+    for (const [name, want] of [["bracket.spindle", "bracket.spindle"], ["Old part.json", "Old part.spindle"]]) {
+      await page.evaluate(() => (window.__picked = []));
+      await page.setInputFiles("#open-file", { name, mimeType: "application/json", buffer: saved });
+      await page.waitForFunction(() => document.querySelector("#volume")?.textContent?.includes("mm³") && document.querySelector("#file-status")?.textContent === "");
+      await chooseFile(page, "file-save", false);
+      await page.waitForFunction(() => window.__picked.length === 1);
+      assert.equal((await picked(page))[0][0], want, `opened ${name}`);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 await check("no page errors", () => assert.deepEqual(errors, []));
 await browser.close();
 await server.close();

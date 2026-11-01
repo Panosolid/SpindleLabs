@@ -33,3 +33,12 @@
   .phone-short .toolbar-group { flex-shrink: 0; }
   .phone-short #toolbar:not(#none) { flex-wrap: nowrap; overflow-x: auto; }
 }
+/* Sideways with a tool open, its Finish and Cancel bar floats at the top
+   left of the view (phone-float.css), so the Browser card starts under it:
+   one row of 44 px buttons (72 px with the bar's padding and a gap), or
+   with words under or over them (the plane prompt; why Finish is off, two
+   lines at most) 112 px. */
+@media (min-width: 641px) and (max-height: 500px) {
+  .phone-short #workspace:not([data-split="on"]):has(.phone-float:not([hidden])) > #browser:not(#none) { margin-top: 72px; max-height: calc(100% - 136px); }
+  .phone-short #workspace:not([data-split="on"]):has(.phone-float:not([hidden]) .phone-float-words) > #browser:not(#none) { margin-top: 112px; max-height: calc(100% - 176px); }
+}

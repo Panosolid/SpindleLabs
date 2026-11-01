@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, orbitSafeOffset, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
+import { CUBE_CORNER, VIEW_NAMES, cubeView, fitDistance, orbitSafeOffset, refitScale, planeViewBasis, standardUp, viewBasis, type ViewBasis } from "../src/views.ts";
 
 type Vec3 = [number, number, number];
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -313,4 +313,24 @@ test("Look At from below a tilted bottom face: up is −y, the side nearer the b
   const c = Math.cos(Math.PI / 6);
   const b = planeViewBasis({ origin: [0, 0, 0], xAxis: [1, 0, 0], normal: [0, -s, c] }, { centre: [0, 0, 0], radius: 5 }, 45, 1, -1);
   assert.ok([0, -c, -s].every((v, i) => Math.abs(v - b.up[i]) < 1e-12), `${b.up}`);
+});
+
+test("hand-worked: refitScale keeps the narrower half-angle when the view changes shape", () => {
+  // fov 90° (half-angle 45°, tan 1). Sideways, aspect 2: the vertical field binds, the distance for radius 1 is
+  // 1 / sin 45° = √2. Upright, aspect 0.5: the horizontal half-angle is atan(1 · 0.5), sin = 0.5 / √1.25 = 1/√5,
+  // so the distance is √5. Turning upright scales by √5 / √2 = √2.5; turning back by its inverse.
+  assert.ok(Math.abs(refitScale(90, 2, 0.5) - Math.sqrt(2.5)) < 1e-12);
+  assert.ok(Math.abs(refitScale(90, 0.5, 2) - 1 / Math.sqrt(2.5)) < 1e-12);
+  // Both at least as wide as tall: the vertical field binds in both, nothing changes.
+  assert.equal(refitScale(90, 1, 3), 1);
+  // A shape that is no number leaves the camera alone.
+  for (const bad of [0, -1, NaN, Infinity]) assert.equal(refitScale(45, bad, 0.5), 1);
+  assert.equal(refitScale(0, 2, 0.5), 1);
+});
+
+test("refitScale: a round trip of shapes comes back to 1 (self-consistency)", () => {
+  for (const [a, b, c] of [[0.46, 3.1, 0.46], [0.3, 0.9, 1.7], [2, 0.5, 0.25]]) {
+    const k = refitScale(45, a, b) * refitScale(45, b, c) * refitScale(45, c, a);
+    assert.ok(Math.abs(k - 1) < 1e-12, `${a} -> ${b} -> ${c}: ${k}`);
+  }
 });

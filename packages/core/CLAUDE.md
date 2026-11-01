@@ -13,7 +13,7 @@ Contents of `packages/core`; the rules are in packages/CLAUDE.md and the root CL
   - `kernel-key.ts`: the release's handshake key, written by the kernel's Release workflow with each build; never edit by hand (`check_kernel_build.py` checks it hashes to kernel.json's `handshake_sha256`).
   - `entry-points.ts`: the build's entry points under the app's op names. The build exports each under a fixed meaningless label (copy protection), so this table is the one place that maps them; the worker, `node-kernel.ts` and the baseline call through it. A new kernel op brings a new label here.
 - `src/model/` (see docs/integration.md), built:
-  - `project.ts`: format version and migrations, `projectToJson`/`projectFromJson`: the .spindle file.
+  - `project.ts`: format version and migrations, `projectToJson`/`projectFromJson`: the .spindle file; a file (or a workspace's part) from a newer SpindleLabs is refused as a `NewerFormatError`, so the unsaved-changes journal keeps it (real-use hunt S2).
   - `representation.ts`: the representation registry (producers, converters, and the file importers: `registerImporter`/`importerFor`, one per format).
   - `actions.ts`: the one action registry: verbs per selection kind and representation; `ctx.actions`.
   - `feature.ts`: intent, provenance, timeline.

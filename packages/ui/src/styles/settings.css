@@ -1,5 +1,5 @@
 /* The Settings page (settings.ts): a card dialog over the app. At phone width it is a full-width sheet with Close pinned at the top, so one tap always gets out (Escape and a tap outside close it too). */
-.settings { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: #e6e8eb; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
+.settings { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; flex-direction: column; background: var(--look-float); color: #e6e8eb; border: 1px solid var(--look-edge); border-radius: var(--look-radius-l); box-shadow: var(--look-top-light), var(--look-shadow-2); }
 .settings[open] { display: flex; }
 .settings::backdrop { background: rgba(5, 8, 14, 0.6); }
 .settings .settings-head { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-2); padding: var(--look-space-3) var(--look-space-4); border-bottom: 1px solid var(--look-edge); }
@@ -13,6 +13,6 @@
 .settings .settings-empty { color: #8a919c; }
 .settings .settings-row { display: flex; align-items: center; justify-content: space-between; gap: var(--look-space-3); }
 @media (max-width: 640px) {
-  .settings { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; border-width: 0; }
+  .settings { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; height: 100dvh; max-height: 100dvh; border-radius: 0; border-width: 0; }
   .settings .close, .settings .settings-action { min-height: var(--look-target-touch); }
 }

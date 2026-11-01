@@ -3,7 +3,8 @@
 // profile and kept shape goes. The workspace offers it as the top bar's
 // File ▾ > New (U0f2a, `entry`; the toolbar's Start fresh button it
 // replaces went with it); the dialog asks first, says what goes, and that
-// Undo brings it back. Styles: src/styles/start-fresh.css.
+// Undo brings it back until the page is reloaded or closed (the stored
+// project is the cleared one by then; real-use hunt B4). Styles: src/styles/start-fresh.css.
 
 import type { FileEntry } from "@fission/core";
 import { isSketchItem, type DesignDocument } from "./document.ts";
@@ -46,7 +47,7 @@ export interface StartFresh {
   readonly open: boolean;
 }
 
-export const START_FRESH_TITLE = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back.";
+export const START_FRESH_TITLE = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back until the page is reloaded or closed.";
 export const ALREADY_FRESH_TITLE = "New: nothing to clear, the design is already empty.";
 /** Why New is off while a sketch is edited (the toolbar's Start fresh was hidden then, with the other modelling buttons). */
 export const SKETCHING_TITLE = "New: finish or cancel the sketch first.";
@@ -110,7 +111,7 @@ export function startFresh(slot: HTMLElement, events: { current(): DesignDocumen
   });
 
   const ask = (doc: DesignDocument) => {
-    words.textContent = `This clears everything in the design (${clearedWords(doc)}) and starts again from an empty design, as a new project opens. Undo brings it all back.`;
+    words.textContent = `This clears everything in the design (${clearedWords(doc)}) and starts again from an empty design, as a new project opens. Undo brings it all back until you reload or close this page, so use Save first to keep it as a file.`;
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
     cancel.focus();

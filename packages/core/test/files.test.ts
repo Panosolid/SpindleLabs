@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { claimedFormat, FILE_FORMATS, identifyFile, routeFiles, type FileFormat, type FileHead, type FileImporter, type Identified } from "../src/model/files.ts";
+import { claimedFormat, FILE_FORMATS, HEAD_BYTES, headBytesFor, identifyFile, MAX_IMAGE_BYTES, routeFiles, unreadableMessage, type FileFormat, type FileHead, type FileImporter, type Identified } from "../src/model/files.ts";
 import { RepresentationRegistry } from "../src/model/representation.ts";
 import { emptyProject, MAX_PROJECT_BYTES, projectToJson } from "../src/model/project.ts";
 
@@ -302,4 +302,66 @@ test("a project file over MAX_PROJECT_BYTES is refused by its size, before the s
   assert.ok(png?.kind === "open" && png.importer === image);
   // With no importer for projects the old refusal stands (nothing opens them), size aside.
   assert.match(refusal(new RepresentationRegistry(), project(MAX_PROJECT_BYTES + 1)), /nothing here opens SpindleLabs projects/);
+});
+
+// Regression (files hunt, 2026-11-01): a project whose "formatVersion" came after its first 64 KB was refused as renamed.
+test("a file named like a project is read whole (up to the project limit) and decided by parsing it", () => {
+  // How much the shell reads before routing: all of a project-named file the limit allows, else the first 64 KB.
+  assert.equal(headBytesFor("late.spindle", 100_000), 100_000);
+  assert.equal(headBytesFor("late.spindle", MAX_PROJECT_BYTES), MAX_PROJECT_BYTES);
+  assert.equal(headBytesFor("late.spindle", MAX_PROJECT_BYTES + 1), HEAD_BYTES, "too big: refused by its size from the head");
+  assert.equal(headBytesFor("photo.png", 100_000), HEAD_BYTES);
+  assert.equal(headBytesFor("small.spindle", 10), 10);
+  assert.equal(headBytesFor("tiny.png", 10), 10);
+  // A note of 70,000 characters before "formatVersion": its key starts past byte 65,536.
+  const late = bytes(JSON.stringify({ aNote: "x".repeat(70_000), ...JSON.parse(projectToJson(emptyProject())) }));
+  assert.ok(late.length > HEAD_BYTES);
+  assert.deepEqual(identifyFile({ name: "late.spindle", size: late.length, head: late }), is("project"));
+  // Only the first 64 KB is not enough (why the shell reads it whole).
+  assert.deepEqual(identifyFile({ name: "late.spindle", size: late.length, head: late.slice(0, HEAD_BYTES) }), renamed("project"));
+  // With a byte order mark.
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...late]);
+  assert.deepEqual(identifyFile({ name: "late.spindle", size: bom.length, head: bom }), is("project"));
+  // Parsed, not searched: an object without the key, a list holding one, a key only inside a string, broken JSON.
+  const pad = "x".repeat(70_000);
+  for (const text of [`{"note": "${pad}", "formatVersionX": 1}`, `[{"note": "${pad}"}, {"formatVersion": 1}]`, `{"note": "${pad} \"formatVersion\": 1"}`, `{"note": "${pad}", "formatVersion": 1`]) {
+    const b = bytes(text);
+    assert.deepEqual(identifyFile({ name: "odd.spindle", size: b.length, head: b }), renamed("project"), text.slice(-40));
+  }
+  // Another name never gets the parse: the same late project named .json (not ours) is unknown.
+  assert.deepEqual(identifyFile({ name: "late.json", size: late.length, head: late }), unknown);
+});
+
+test("an image over MAX_IMAGE_BYTES is refused by its size, before the shell reads it (boundary at 0.9×, 1×, 1× + 1 byte and 1.1×)", () => {
+  const registry = new RepresentationRegistry();
+  const image = importer(["png", "jpeg"], "image");
+  registry.registerImporter(image);
+  assert.equal(MAX_IMAGE_BYTES, 512 * 1024 * 1024);
+  const png = (size: number): FileHead => ({ name: "big.png", size, head: new Uint8Array(PNG) });
+  for (const size of [Math.round(0.9 * MAX_IMAGE_BYTES), MAX_IMAGE_BYTES]) {
+    const r = routeFiles(registry, [png(size)]);
+    assert.ok(r?.kind === "open" && r.importer === image, `${size} bytes opens`);
+  }
+  // 512 MB + 1 byte is 512.000001 MB, shown rounded up to a tenth: 512.1.
+  assert.equal(refusal(registry, png(MAX_IMAGE_BYTES + 1)), "Couldn't open “big.png”: it is 512.1 MB, and an image may be at most 512 MB.");
+  // 1.1 × 512 MB = 563.2 MB.
+  assert.equal(refusal(registry, png(Math.round(1.1 * MAX_IMAGE_BYTES))), "Couldn't open “big.png”: it is 563.2 MB, and an image may be at most 512 MB.");
+  const jpeg = { name: "big.jpg", size: MAX_IMAGE_BYTES + 1, head: new Uint8Array([0xff, 0xd8, 0xff]) };
+  assert.match(refusal(registry, jpeg), /an image may be at most 512 MB/);
+});
+
+test("a dropped folder is refused as a folder, not as a file that can't be read", () => {
+  const registry = new RepresentationRegistry();
+  registry.registerImporter(importer(["png"], "image"));
+  assert.equal(refusal(registry, { name: "Holiday photos", size: 4096, head: new Uint8Array(), folder: true }), "Couldn't open “Holiday photos”: it is a folder. Drop or paste one file from inside it.");
+  // Even one named like an image.
+  assert.match(refusal(registry, { name: "shots.png", size: 0, head: new Uint8Array(), folder: true }), /it is a folder/);
+});
+
+test("a file the browser can't read says why: too big for it past 512 MB, else moved or not allowed", () => {
+  assert.equal(unreadableMessage("part.spindle", 1000), "Couldn't read “part.spindle”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.");
+  assert.equal(unreadableMessage("scan.stl", MAX_IMAGE_BYTES), "Couldn't read “scan.stl”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.");
+  // 3 GB = 3072 MB.
+  assert.equal(unreadableMessage("scan.stl", 3 * 1024 ** 3), "Couldn't read “scan.stl”: it is 3072 MB, too big for the browser to read.");
+  assert.match(unreadableMessage("scan.stl", MAX_IMAGE_BYTES + 1), /it is 512\.1 MB, too big/);
 });

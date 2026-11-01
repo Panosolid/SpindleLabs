@@ -13,7 +13,7 @@
 // description written next to the geometry.
 
 import type { BodySpec, Feature, Plane } from "@fission/core";
-import { XY_PLANE } from "@fission/core";
+import { NewerFormatError, XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { SketchPin } from "./face-edges.ts";
 import type { SketchProjection } from "./projection.ts";
@@ -134,6 +134,21 @@ export type SketchPlane = (typeof SKETCH_PLANES)[number];
  * ten times that.
  */
 export const DESIGN_LIMITS = { items: 5_000, profiles: 5_000, sketch: 20_000, content: 500_000 } as const;
+
+/**
+ * The highest id counter a file may hold: 2^52, half the safe integers, so the ids every later edit takes (a few
+ * each) never pass Number.MAX_SAFE_INTEGER, where a saved design would no longer open (real-use hunt S3).
+ */
+export const MAX_NEXT_ID = 2 ** 52;
+
+/**
+ * `nextId`, the counter after an edit took its ids, refused past MAX_NEXT_ID: every design that opens still opens
+ * after any edit, and one at the top says so instead of saving a file that would not open again (real-use hunt S3).
+ */
+export function counted(nextId: number): number {
+  if (!(nextId <= MAX_NEXT_ID)) throw new Error(`This design has used every id it can hold (${MAX_NEXT_ID}), so nothing more can be added to it`);
+  return nextId;
+}
 
 /**
  * The rollback marker: the id of the last item built, or "start" when
@@ -362,7 +377,7 @@ export function insertPreset(doc: DesignDocument, kind: ShapeKind, w: number, d:
   let nextId = doc.nextId;
   const id = `feature-${nextId++}`;
   const { feature, profile } = presetFeature(id, presetName(doc, kind), isPrimitive(kind) ? undefined : `profile-${nextId++}`, kind, w, d, h);
-  return { id, doc: numberBodies({ ...doc, nextId, profiles: profile ? [...doc.profiles, profile] : doc.profiles, timeline: insertItem(doc, feature) }) };
+  return { id, doc: numberBodies({ ...doc, nextId: counted(nextId), profiles: profile ? [...doc.profiles, profile] : doc.profiles, timeline: insertItem(doc, feature) }) };
 }
 
 /**
@@ -388,7 +403,7 @@ export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w
   const used = new Set(features.flatMap((f) => f.dependsOn));
   const kept = doc.profiles.flatMap((p) => (p.id === profile?.id ? [profile] : p.id !== oldProfile || used.has(p.id) ? [p] : []));
   const profiles = profile && !kept.includes(profile) ? [...kept, profile] : kept;
-  return { ...doc, nextId, profiles, timeline: { ...doc.timeline, features } };
+  return { ...doc, nextId: counted(nextId), profiles, timeline: { ...doc.timeline, features } };
 }
 
 /**
@@ -1126,11 +1141,13 @@ export function readDesignDocument(data: unknown): DesignDocument {
   const pieceNames = v6.version === 6;
   const d = (pieceNames ? { ...v6, version: 7 } : v6) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  if (d.version !== 7) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6 or 7)`);
+  // A whole number above 7 is from a newer SpindleLabs (kept by the unsaved-changes journal for it); anything else is wrong.
+  if (d.version !== 7) throw new (Number.isSafeInteger(d.version) && d.version! > 7 ? NewerFormatError : Error)(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6 or 7)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
   if (!Number.isSafeInteger(d.nextId) || d.nextId! < 1) throw new Error(`Design data's nextId ${shown(d.nextId)} is not a counting number`);
+  if (d.nextId! > MAX_NEXT_ID) throw new Error(`Design data's nextId ${d.nextId} is above ${MAX_NEXT_ID}, more ids than a design can use`);
   for (const [i, profile] of d.profiles.entries()) {
     if (typeof profile !== "object" || profile === null || Array.isArray(profile)) throw new Error(`Design profile ${i + 1} is not an object`);
     // Before anything turns it into text (the id check's regular expression, the profile's own messages): issue #139.
@@ -1262,7 +1279,12 @@ export function readDesignDocument(data: unknown): DesignDocument {
   for (const f of d.timeline.features) if (isMoveItem(f)) checkMove(d, f, byId);
   // Each dependency an id (after the Move's own check, which says what a move's should be).
   for (const f of d.timeline.features)
-    for (const id of f.dependsOn as unknown[]) if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);
+    for (const id of f.dependsOn as unknown[]) {
+      if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);
+      // Built in timeline order, so an item can only depend on one before it; the graph refuses a loop, and the design showed nothing (real-use hunt S4).
+      const there = byId.get(id);
+      if (there !== undefined && there.at >= byId.get(f.id)!.at) throw new Error(`Design feature ${f.id} depends on ${id}, which is not before it in the timeline`);
+    }
   if (!unnumbered) checkBodies(d, byId);
   const read = withRuledNames(d as DesignDocument);
   const short = old ? withShortNames(read) : read;

@@ -13,7 +13,7 @@ import type { Feature, KernelCalls, Outline, Plane, SketchArc, SketchCircle, Ske
 import { XY_PLANE } from "@fission/core";
 import { faceFeature, isFacePlane, squared, type SketchFace, type SketchPlacement } from "./face-sketch.ts";
 import type { EdgeTarget, SketchPin } from "./face-edges.ts";
-import { curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
+import { counted, curvePoints, insertAt, insertItem, isSketchItem, makesBody, nameKey, profileLabel, shown, takenNames, type DesignDocument, type ReadyProfile, type Sketch, type SketchCurve, type SketchLineCurve, type SketchPlane, type SketchPoint } from "./document.ts";
 import { madePoints, profileCurves, projectedOpen, type EdgeShape, type SketchProjection } from "./projection.ts";
 import { readProfileReference } from "./references.ts";
 import { SAME_PLACE } from "./snap.ts";
@@ -59,7 +59,7 @@ export function planeFor(item: Feature | undefined, content: Sketch | undefined,
 
 /** The document with the next id taken: "line-4" and the counter moved on. */
 function take(doc: DesignDocument, prefix: string): [string, DesignDocument] {
-  return [`${prefix}-${doc.nextId}`, { ...doc, nextId: doc.nextId + 1 }];
+  return [`${prefix}-${doc.nextId}`, { ...doc, nextId: counted(doc.nextId + 1) }];
 }
 
 function sketchIn(doc: DesignDocument, id: string): Sketch {

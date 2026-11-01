@@ -62,6 +62,16 @@ test("Download STL saves the kernel's file under the shape's name and clears the
   assert.deepEqual(overlays, [`clear ${STL_OVERLAY}`]);
 });
 
+// Regression (files hunt, 2026-11-01): the note named the suggested file even when the person typed another name.
+test("Download STL's note names the file actually saved, when the save says which", async () => {
+  const r = new ActionRegistry();
+  const offered: string[] = [];
+  registerDesignActions(r, (_bytes, name) => (offered.push(name), "bracket-v2.stl")); // the person typed "bracket-v2" in the name box
+  const { ctx } = context(box, async () => ({ bytes: new Uint8Array([1]), rounding: 0, warning: null }));
+  assert.deepEqual(await r.get(DOWNLOAD_STL)!.run([body], ctx), { message: "Exported bracket-v2.stl.", bad: false });
+  assert.deepEqual(offered, ["spindlelabs-box.stl"], "the shape's name was the one offered");
+});
+
 test("a warning from the kernel is shown as bad and marks the whole body", async () => {
   const { r, saved } = registry();
   const warning = "single-precision numbers: this part's corners move by up to 1.250e-2 mm";

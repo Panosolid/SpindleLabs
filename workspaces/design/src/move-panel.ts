@@ -234,8 +234,12 @@ export function movePanel(slot: HTMLElement, on: MoveEvents): MovePanel {
       ok.disabled = false;
       box.hidden = false;
       const first = inputs.get(kind === "rotate" ? "turnX" : "x")!;
-      first.focus();
-      first.select();
+      // Not on a touch screen: the focus there pops the on-screen keyboard up over the view before the
+      // person has asked to type (phone hunt 11-01); they tap a box when they want one.
+      if (!document.defaultView?.matchMedia?.("(pointer: coarse)").matches) {
+        first.focus();
+        first.select();
+      }
     },
     setBodies,
     setPivot(p) {

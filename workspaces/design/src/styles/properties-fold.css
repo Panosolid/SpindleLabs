@@ -33,3 +33,15 @@
 @media (max-width: 640px) {
   .properties-fold > .properties-fold-handle { display: none; }
 }
+/* A phone held sideways (500 px tall or less, phone-hunt 11-01): under the
+   view cube the open card had 86 to 104 px, so a tool's numbers and its OK
+   and Cancel were cut off under the view's controls. Open, it takes the
+   view's whole right side from the top (over the view cube, which is back
+   when it folds) and scrolls inside; the view's controls move left of it
+   (view-controls.css), and the tool's Finish and Cancel float at the top
+   left (phone-float.css). Not with the AI panel open beside the view, which
+   leaves the view too narrow for a card down its side (assistant-narrow.css
+   has the card's height there). */
+@media (min-width: 641px) and (max-height: 500px) {
+  .properties-fold:is(#workspace:not([data-split="on"]):not(:has(> #assistant:not([hidden]))) #properties):not([data-folded]) { margin-top: 8px; max-height: calc(100% - 16px); overscroll-behavior: contain; }
+}

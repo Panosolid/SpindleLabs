@@ -184,3 +184,13 @@ test("megabytes, worked by hand", () => {
   assert.equal(megabytes(1), "0.1 MB"); // a single byte is still more than nothing
   assert.equal(megabytes(0), "0 MB");
 });
+
+test("a materials or links list holding something that isn't an object is refused, naming the place (real-use hunt S7)", () => {
+  // [null] opened, then describing the project to the assistant read null.name and threw.
+  const p = emptyProject() as unknown as Record<string, unknown>;
+  assert.throws(() => readProject({ ...p, materials: [null] }), /not a SpindleLabs project: materials\[0\] is not an object/);
+  assert.throws(() => readProject({ ...p, materials: [{ id: "m", name: "Steel" }, 7] }), /materials\[1\] is not an object/);
+  assert.throws(() => readProject({ ...p, materials: [[]] }), /materials\[0\] is not an object/);
+  assert.throws(() => readProject({ ...p, links: [null] }), /links\[0\] is not an object/);
+  assert.equal(readProject({ ...p, materials: [{ id: "m", name: "Steel" }] }).materials.length, 1);
+});

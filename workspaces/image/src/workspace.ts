@@ -13,13 +13,15 @@ import type { PhysicalSize } from "./physical-size.ts";
 
 /**
  * The browser's decoder: the file's own pixels, no colour management, not
- * premultiplied, and no turning by a JPEG's orientation tag (the header's
- * width and height are checked against the result; orientation comes
- * later), drawn into a canvas to read them back as RGBA.
+ * premultiplied, drawn into a canvas to read them back as RGBA. It is given
+ * the file with its EXIF orientation already set to 1 (open.ts,
+ * orientation.ts), so the browser has nothing to turn: imageOrientation
+ * "none" no longer stops current Chromium turning a photo, and
+ * "from-image" is the value every browser accepts.
  */
 async function browserDecode(bytes: Uint8Array, format: PhysicalSize["format"]): Promise<Pixels> {
   const blob = new Blob([bytes as BlobPart], { type: `image/${format}` });
-  const bitmap = await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none", imageOrientation: "none" as ImageOrientation });
+  const bitmap = await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none", imageOrientation: "from-image" });
   try {
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const c = canvas.getContext("2d")!;
@@ -34,6 +36,8 @@ async function browserDecode(bytes: Uint8Array, format: PhysicalSize["format"]):
 /** The open image and the last refusal, kept while other workspaces are shown. */
 let current: ImageDocument | null = null;
 let message: string | null = null;
+/** The last document the viewport drew; kept when a newer one can't be drawn (too big for the screen's graphics). */
+let drawn: ImageDocument | null = null;
 
 /**
  * Opens a file as the open image, as Open does: a refusal becomes the
@@ -56,6 +60,7 @@ export const currentImageObjects = () => imageObjects(() => current);
 export function resetImageWorkspace() {
   current = null;
   message = null;
+  drawn = null;
 }
 
 const PROPERTIES = `<div class="image">
@@ -121,16 +126,31 @@ export function mountImage(ctx: WorkspaceContext, decode = browserDecode): Mount
     panels();
   }
 
-  /** The image in the viewport; false if it could not be drawn (the document is dropped and the message says why). */
+  /**
+   * The image in the viewport; false if it could not be drawn: the message
+   * says why, and the document drawn before it comes back (none if it was
+   * that one, or there was none), so a file too big for the screen's
+   * graphics never wipes the image already open.
+   */
   function draw(frame: boolean): boolean {
     if (current) {
       try {
         ctx.viewport.showImage(toImageRep(current));
+        drawn = current;
         if (frame) ctx.viewport.fit();
       } catch (e) {
-        current = null;
         message = (e as Error).message;
-        ctx.viewport.showImage(null);
+        const previous = drawn !== current ? drawn : null;
+        current = drawn = null;
+        if (previous) {
+          try {
+            ctx.viewport.showImage(toImageRep(previous));
+            current = drawn = previous;
+          } catch {
+            // it no longer draws either: nothing is open
+          }
+        }
+        if (!current) ctx.viewport.showImage(null);
         return false;
       }
     } else {

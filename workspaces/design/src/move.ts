@@ -13,7 +13,7 @@
 // `moveMotions` what the kernel is asked to do.
 
 import type { BodySpec, Feature, Motion, MoveKind } from "@fission/core";
-import { bodyItem, freshName, isPiece, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
+import { bodyItem, counted, freshName, isPiece, insertItem, insertAt, isMoveItem, makesBody, MOVE_PARAMS, shown, takenNames, type DesignDocument, type MoveParam } from "./document.ts";
 
 /** A Move's numbers: the shift (mm), turns (degrees) and pivot (mm). */
 export type MoveValues = Record<MoveParam, number>;
@@ -134,7 +134,7 @@ export function insertMove(doc: DesignDocument, bodies: readonly string[], value
     dependsOn: makersOf(bodies),
     suppressed: false,
   };
-  return { id, doc: { ...doc, nextId: doc.nextId + 1, timeline: insertItem(doc, feature) } };
+  return { id, doc: { ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) } };
 }
 
 /** Words for a body picked for Move `move` that is made after it in the timeline (35e2i): it can't move what isn't made yet. */
