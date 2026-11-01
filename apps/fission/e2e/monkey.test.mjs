@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { documentRules, editFile, expectedView, settledText, kernelVerdict, modelVolume, nextAction, outlineArea, reusedIds, editLeaks, rng, shrink, signature, SKIP_TARGETS, weighted } from "./monkey-core.mjs";
+import { documentRules, editFile, expectedView, settledText, kernelVerdict, modelVolume, nextAction, outlineArea, reusedIds, editLeaks, rng, shrink, shrinkFailure, signature, SKIP_TARGETS, weighted } from "./monkey-core.mjs";
 import { MONKEY_PLANTS } from "./monkey-plants.mjs";
 
 /** A box, Sketch 2 on XY, and an extrude of Sketch 2: the smallest file with both kinds of body. */
@@ -280,6 +280,36 @@ test("the shrinker finds the actions that matter, by hand", async () => {
   let tries = 0;
   await shrink(list, async () => (tries++, false), 5);
   assert.equal(tries, 5);
+});
+
+test("a failure that does not come back on replay is kept whole, after one replay (issue #248)", async () => {
+  const list = [1, 2, 3, 4, 5, 6, 7, 8];
+  // A timing failure: the replay of the whole list passes. Worked by hand: one replay (the whole list), no shrinking,
+  // the eight actions kept as they were and replayed false.
+  let replays = 0;
+  const out = await shrinkFailure(list, async () => (replays++, false));
+  assert.deepEqual(out, { list, tries: 1, replayed: false, outOfTime: false });
+  assert.equal(replays, 1);
+  // A failure that does come back is shrunk as before: both 3 and 6 matter, so [3, 6], replayed true.
+  const back = await shrinkFailure(list, async (l) => l.includes(3) && l.includes(6));
+  assert.deepEqual(back.list, [3, 6]);
+  assert.equal(back.replayed, true);
+  assert.equal(back.outOfTime, false);
+});
+
+test("shrinking stops at its deadline and keeps the shortest list found so far (issue #248)", async () => {
+  const list = [1, 2, 3, 4, 5, 6, 7, 8];
+  // A clock that moves one minute per replay; the deadline is 2 minutes after the start.
+  // Worked by hand: replay 1 is the whole list (clock 0 -> 1); replay 2 is the first half [1, 2, 3, 4], which holds 3
+  // (clock 1 -> 2), so it is kept; then the clock reads 2 >= 2, every later candidate is refused unrun, and [1, 2, 3, 4]
+  // is the answer after exactly 2 replays.
+  let clock = 0;
+  const fails = async (l) => (clock++, l.includes(3));
+  const out = await shrinkFailure(list, fails, { deadline: 2, now: () => clock });
+  assert.deepEqual(out, { list: [1, 2, 3, 4], tries: 2, replayed: true, outOfTime: true });
+  // With no deadline the same failure shrinks all the way to [3].
+  clock = 0;
+  assert.deepEqual((await shrinkFailure(list, fails)).list, [3]);
 });
 
 test("a failure's kind ignores its numbers", () => {
