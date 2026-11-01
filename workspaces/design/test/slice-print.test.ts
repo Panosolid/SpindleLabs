@@ -264,9 +264,10 @@ test("a 20 mm cube, sliced on the shipped build: 100 layers of 0.2 mm, G-code a 
   assert.match(p.gcode, /^G1 /m);
   assert.equal(p.unprintedVolume, 0);
   // Each layer now takes at least the engine's 8 s minimum layer time (Generic PLA), so the moves take at least
-  // 100 × 8 = 800 s; the engine's own tests time it at about 863 s, 14 min. Here, that it reaches the app.
+  // 100 × 8 = 800 s; the engine's own tests time it at about 877 s, 15 min (861 s, 14 min, until the nozzle
+  // lifted over finished tops to stop scratching them, kernel 0.33.21). Here, that it reaches the app.
   assert.ok(p.printTimeS >= 800, `time ${p.printTimeS}`);
-  assert.equal(timeWords(p.printTimeS), "14 min", `time ${p.printTimeS}`);
+  assert.equal(timeWords(p.printTimeS), "15 min", `time ${p.printTimeS}`);
   // Weight from length: 1.75 mm filament, π × 0.875² mm² × length × 1.24 g/cm³ (self-consistency, not a hand-worked figure).
   assert.ok(Math.abs(p.filamentG - (Math.PI * 0.875 ** 2 * p.filamentMm * 1.24) / 1000) < 1e-6 * p.filamentG);
   // Two walls: layer 50 starts with one outer and one inner wall.
