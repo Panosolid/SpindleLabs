@@ -9,7 +9,9 @@
 // then (20 − 0.2) / 0.16 = 123.75, so 124 more: 125). At a desktop width
 // with clicks and a phone's with taps. The warm-up loop's tick box: on by
 // default (the loop on the first layer, before the part), off saves a file
-// without it, named so, and is remembered.
+// without it, named so, and is remembered. Better grip's tick box: off by
+// default; on, the file has the brim after the warm-up loop and a 5 °C
+// hotter first layer, is named so, and the choice is remembered.
 // Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -129,6 +131,28 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-no-warm-up.png` });
       await press("#slice-print-warm-up");
       assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.warm-up")), "on");
+
+      // Better grip (G3, Ben 11-01: first layers lifting): off by default, so the default file has no brim. Ticked, the
+      // file lays the brim on the first layer after the warm-up loop and before the part, heats the first layer to 225
+      // and sets 220 back after it, says so to Bambu Studio, and its name says so; the choice is kept.
+      assert.equal(await page.$eval("#slice-print-grip", (c) => c.checked), false, "off by default");
+      assert.doesNotMatch(onGcode, /;TYPE:Brim/, "no brim by default");
+      await press("#slice-print-grip");
+      assert.equal(await page.$eval("#slice-print-grip", (c) => c.checked), true);
+      const [gripped] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      assert.equal(gripped.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-grip-textured.gcode.3mf");
+      const gripGcode = storedZip(readFileSync(await gripped.path())).get("Metadata/plate_1.gcode").toString("utf8");
+      const gripFirst = firstLayer(gripGcode);
+      const brimAt = gripFirst.indexOf(";TYPE:Brim");
+      assert.ok(gripFirst.lastIndexOf(";TYPE:Skirt") < brimAt && brimAt >= 0 && brimAt < gripFirst.search(/^;TYPE:(Outer|Inner) wall$/m), "warm-up loop, then brim, then the part");
+      assert.equal((gripGcode.match(/^;TYPE:Brim$/gm) ?? []).length, (gripFirst.match(/^;TYPE:Brim$/gm) ?? []).length, "first layer only");
+      assert.match(gripGcode, /^M109 S225$/m, "the first layer 5 °C hotter");
+      assert.match(gripGcode, /^; nozzle_temperature_initial_layer = 225$/m);
+      assert.match(gripGcode, /^; brim_type = outer_only$/m);
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.better-grip")), "on", "remembered");
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-grip.png` });
+      await press("#slice-print-grip");
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.better-grip")), "off");
 
       // A High Flow nozzle (Ben's P1S): the file names it where Bambu Studio's send window reads it, and the
       // G-code dialect, so its time reads the speed limits in mm/s; the name says so too.

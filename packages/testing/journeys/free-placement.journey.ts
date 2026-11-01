@@ -74,8 +74,13 @@ test("seeded free polygons: every click lands within half a pixel unless it snap
           assert.ok(Math.abs(step.rounded[k] - raw[k]) <= spacing / 2 + 1e-12 * Math.abs(raw[k]), `${context}: ${raw} → ${step.rounded}`);
           assert.ok(Math.abs(step.rounded[k] / spacing - Math.round(step.rounded[k] / spacing)) < 1e-6, `${context}: ${step.rounded[k]} not on ${spacing}`);
         }
-        // Where it landed: that rounded point, or a snap within SNAP_PIXELS of the pointer.
-        if (step.snap.kind === "grid") assert.deepEqual(step.snap.at, step.rounded, context);
+        // Where it landed: that rounded point, the chain's own last point within SNAP_PIXELS of the pointer (landed on
+        // exactly, so a second click there draws nothing: hunt 2026-11-01), or a snap within SNAP_PIXELS of the pointer.
+        const from = tool.kind === "line" ? tool.from : null;
+        const at = typeof from === "string" ? doc.sketches.find((x) => x.id === s.id)!.points.find((q) => q.id === from) : undefined;
+        const last: readonly [number, number] | undefined = at ? [at.x, at.y] : from && typeof from !== "string" ? from : undefined;
+        const onOwn = last !== undefined && step.snap.at[0] === last[0] && step.snap.at[1] === last[1] && Math.hypot(last[0] - raw[0], last[1] - raw[1]) <= SNAP_PIXELS * pixel * (1 + 1e-9);
+        if (step.snap.kind === "grid" && !onOwn) assert.deepEqual(step.snap.at, step.rounded, context);
         else for (const k of [0, 1]) assert.ok(Math.abs(step.snap.at[k] - raw[k]) <= SNAP_PIXELS * pixel * (1 + 1e-9), `${context}: ${step.snap.kind} ${step.snap.at} from ${raw}`);
         [doc, tool] = [step.doc, step.tool];
       }

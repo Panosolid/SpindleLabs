@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import type { BodySpec, BodyView, KernelCalls, Outline } from "@fission/core";
 import { partDocument } from "../src/document.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
-import { arrowOf, extrudeSketch, featureSpec, previewSpec, signedDistance } from "../src/extrude.ts";
+import { arrowOf, distanceRefused, extrudeSketch, featureSpec, previewSpec, signedDistance } from "../src/extrude.ts";
 import { extrudePanel, PICK_PROFILE } from "../src/extrude-panel.ts";
 
 test("hand-worked: a typed distance is signed mm; 0, empty and words are none", () => {
@@ -24,6 +24,22 @@ test("hand-worked: a typed distance is signed mm; 0, empty and words are none", 
   assert.equal(signedDistance("  "), null);
   assert.equal(signedDistance("ten"), null);
   assert.equal(signedDistance("Infinity"), null);
+});
+
+test("hand-worked: a distance under 0.001 mm or over 1 km is refused in OK's words, either way; 0.9× and 1.1× of each limit", () => {
+  // The limits are typed-entry.ts's MIN_TYPED 0.001 and MAX_TYPED 1,000,000 mm; only the size counts, so −d is judged as d.
+  const small = "The distance must be at least 0.001 mm, the smallest piece the modeller keeps.";
+  const big = "The distance can be at most 1000000 mm (1 km), the largest size the modeller works at.";
+  assert.equal(distanceRefused(0.0009), small, "0.9 × 0.001");
+  assert.equal(distanceRefused(-0.0009), small);
+  assert.equal(distanceRefused(0.0011), null, "1.1 × 0.001");
+  assert.equal(distanceRefused(-0.0011), null);
+  assert.equal(distanceRefused(900000), null, "0.9 × 1 km");
+  assert.equal(distanceRefused(-1100000), big, "1.1 × 1 km, the other way");
+  assert.equal(distanceRefused(1e-320), small, "a subnormal, which the kernel refused in 330 characters");
+  assert.equal(distanceRefused(5), null);
+  assert.equal(distanceRefused(0), null, "0 is where Extrude starts (the arrow from a 1 mm build); OK says ZERO_OK for it");
+  assert.equal(distanceRefused(-0), null);
 });
 
 const square: Outline = { outer: { path: { corners: [0, 0, 10, 0, 10, 10, 0, 10], bulges: [] } }, holes: [] };

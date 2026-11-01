@@ -29,6 +29,7 @@
 // the counter's ids ("line-4") are unchanged by it.
 
 import type { BodySpec, BodyView, Outline, ShapeSpec } from "@fission/core";
+import type { ProfileKind } from "./profiles.ts";
 import type { CurveIds } from "./rebuild.ts";
 
 /** Each face's and edge's name on one body, by kernel index; null where none can be given. */
@@ -168,15 +169,43 @@ function cornerEnds(view: BodyView, faces: readonly (string | null)[], ways: Pie
 }
 
 /**
+ * Which ready-made profile (profiles.ts `outline`) an outline with no
+ * pieces is, told by its loops alone, at any size: a plate is four
+ * straight corners and two round holes, a slot four corners whose second
+ * and fourth pieces are half turns counter-clockwise (bulges 0, 1, 0, 1),
+ * a star ten straight corners, an L-bracket six. Null for any other
+ * outline: nothing to name its pieces by (face hunt 11-01).
+ */
+export function readyKind(outline: Outline): ProfileKind | null {
+  // A stand-in's outline (a test's, a broken spec) may lack loops: nothing to tell.
+  const outer = outline?.outer;
+  if (typeof outer !== "object" || outer === null || !("path" in outer) || !Array.isArray(outer.path?.corners) || !Array.isArray(outer.path.bulges) || !Array.isArray(outline.holes)) return null;
+  const { corners, bulges } = outer.path;
+  const n = corners.length / 2;
+  const straight = bulges.every((b) => b === 0);
+  const holes = outline.holes;
+  if (holes.length === 2 && holes.every((h) => "circle" in h)) return n === 4 && straight ? "plate" : null;
+  if (holes.length !== 0) return null;
+  if (n === 4 && bulges.length === 4 && bulges.every((b, k) => b === k % 2)) return "slot";
+  if (!straight) return null;
+  return n === 10 ? "star" : n === 6 ? "l-bracket" : null;
+}
+
+/**
  * `CurveOf` for an outline: the sketch curve each piece of the outer loop
  * came from (`pieces`, from sketch_outline, with `curves` the sketch's line,
  * arc and circle ids in the order its lists were given; none without
- * `curves`), or, for a ready-made profile (no pieces), the piece's number
- * as the profile gives it: "piece-2", and "hole-1-piece-0" for a hole's.
+ * `curves`), or, for a ready-made profile (no pieces), its shape and the
+ * piece's number as the profile gives it: "l-bracket-piece-2", and
+ * "plate-hole-1-piece-0" for a hole's (from Design data version 7: every
+ * shape numbered its pieces alike, so a preset made another shape moved
+ * what was on its piece 2 onto the new shape's piece 2; face hunt 11-01).
+ * None for an outline without pieces that no preset makes (`readyKind`).
  */
 export function outlineCurves(outline: Outline, curves?: { line: readonly string[]; arc: readonly string[]; circle: readonly string[] }): CurveOf {
+  const kind = outline.pieces === undefined ? readyKind(outline) : null;
   return (boundary, piece) => {
-    if (outline.pieces === undefined) return boundary === 0 ? `piece-${piece}` : `hole-${boundary}-piece-${piece}`;
+    if (outline.pieces === undefined) return kind === null ? null : boundary === 0 ? `${kind}-piece-${piece}` : `${kind}-hole-${boundary}-piece-${piece}`;
     const p = boundary === 0 ? outline.pieces[piece] : undefined;
     return p === undefined || curves === undefined ? null : (curves[p.curve][p.index] ?? null);
   };

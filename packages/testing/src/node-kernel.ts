@@ -42,8 +42,8 @@ export function nodeKernel(): KernelCalls {
     body_hide: (body) => entry.body_hide(body),
     body_boolean: (target, tools, op) => entry.body_boolean(target, tools, op),
     body_count: () => entry.body_count(),
-    slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp),
-    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp),
+    slice_stl: (stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip) => entry.slice_stl(stl, layerHeight, wallCount, infillPercent, supports, warmUp, betterGrip),
+    print_file_stl: (stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip) => entry.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, betterGrip),
     wasm_bytes: () => loaded!.memory.buffer.byteLength,
   };
   return {

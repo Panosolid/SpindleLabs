@@ -42,3 +42,8 @@
 .sketchbar .sketchbar-menu button.sketchbar-menu-holds:not(#none) { border-color: var(--look-accent); }
 .sketchbar .sketchbar-menu button[aria-expanded="true"]:not(#none) { background: #263142; }
 .sketchbar .sketchbar-submenu { z-index: 31; }
+/* Type (sketch-toolbar.ts): only at phone width on a touch screen, while the typed-size boxes show; a word, not an icon. */
+.sketchbar .sketchbar-type:not(#none) { display: none; }
+@media (max-width: 640px) and (hover: none) {
+  .sketchbar .sketchbar-type:not(#none):not([hidden]) { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 12px; font-size: 14px; }
+}
