@@ -415,8 +415,18 @@ export function changePreset(doc: DesignDocument, id: string, kind: ShapeKind, w
  */
 export function withPart(previous: DesignDocument | null | undefined, kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   if (!previous) return partDocument(kind, w, d, h);
-  const part = partFeature(previous);
-  return part === null || isSketchExtrude(part) ? insertPreset(previous, kind, w, d, h).doc : changePreset(previous, part.id, kind, w, d, h);
+  return withPartAt(previous, partFeature(previous), kind, w, d, h).doc;
+}
+
+/**
+ * withPart on `part`, the body the panel's size boxes describe (the
+ * selected one, workspace.ts; the last, `partFeature`, for withPart):
+ * changed in place when it is a preset, else (an extrude of a sketch, or
+ * null) a new preset put in at the marker. With the id of the body these
+ * sizes now are: `part`'s own, or the new one's.
+ */
+export function withPartAt(previous: DesignDocument, part: Feature | null, kind: ShapeKind, w: number, d: number, h: number): { doc: DesignDocument; id: string } {
+  return part === null || isSketchExtrude(part) ? insertPreset(previous, kind, w, d, h) : { doc: changePreset(previous, part.id, kind, w, d, h), id: part.id };
 }
 
 /**

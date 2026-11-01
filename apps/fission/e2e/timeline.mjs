@@ -930,21 +930,24 @@ try {
       assert.deepEqual(await rows(), ["body-1 Body 1"]);
       await browserClosed();
 
-      // 4. A failed part with another body: the square again, Body 1 selected, then the square's distance 777 mm, which the kernel is sent as 0.0001 (the height box edits the part's distance).
+      // 4. A failed part with another body: the square again, its distance 777 mm with nothing selected (the height box
+      // edits the part's distance then; with a body selected it edits that body, bug hunt 2026-11-01), which the kernel
+      // is sent as 0.0001 (see fresh); then Body 1 selected.
       await addSquare(page, failTap, layout);
-      await browserOpen();
-      await press(page, '#browser [data-node="body-1"]', failTap);
-      await until(page, () => document.body.dataset.selection === "body:feature-1", null, "Body 1 selected");
-      await browserClosed();
-      await page.fill("#height", "777"); // sent to the kernel as 0.0001 mm, under its 0.001 (see fresh)
+      await page.keyboard.press("Escape");
+      await until(page, () => !document.body.dataset.selection, null, "nothing selected");
+      await page.fill("#height", "777");
       await until(page, () => document.querySelector('#timeline [data-item="feature-11"]')?.dataset.failed !== undefined, null, "Extrude 1 marked failed");
       assert.deepEqual(await bar(page), ["feature-1", "sketch-2", "feature-11 failed", "|"]);
       await browserOpen();
       assert.deepEqual(await rows(), ["body-1 Body 1"], "the failed square has no row");
+      await press(page, '#browser [data-node="body-1"]', failTap);
+      await until(page, () => document.body.dataset.selection === "body:feature-1", null, "Body 1 selected");
       await browserClosed();
-      // The box selected: the panel describes the box, fresh numbers aside from the part's out-of-date mark.
+      // The box selected: the panel describes the box, fresh numbers aside from the part's out-of-date mark, and its height box is the box's 20.
       const box = await panel();
       assert.deepEqual({ ...box, stale: undefined }, { heading: "Body 1", volume: "24,000 mm³", intent: "Box: 40 × 30 × 20 mm", stale: undefined });
+      assert.equal(await page.$eval("#height", (i) => i.value), "20", "the height box is the selected box's");
       // Before the fix the old scene stayed: the square still drawn. Now the box alone.
       assert.deepEqual(await drawn(page, layout), { box: true, square: false });
       // Nothing selected: the part, Extrude 1, with the numbers it last built, marked out of date.

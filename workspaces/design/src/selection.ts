@@ -3,7 +3,7 @@
 // are unit-tested; workspace.ts applies them on every selection change.
 
 import type { Feature, GeometryReference, ViewportHighlight } from "@fission/core";
-import { partFeature, type DesignDocument } from "./document.ts";
+import { builds, makesBody, partFeature, type DesignDocument } from "./document.ts";
 import { readDesignReference, readProfileReference, resolveReference, sharedBy } from "./references.ts";
 import { bodyOf, findInScene, resolveInScene, type Scene, type ShownBody } from "./scene.ts";
 import { outlineSourceOf } from "./sketch.ts";
@@ -134,6 +134,19 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
   }
   const part = partFeature(doc);
   return part === null ? null : focus(part);
+}
+
+/**
+ * The body the Parameters' size boxes and Shape choice describe and edit:
+ * the one the Feature section describes (`panelFocus`) when it is a body
+ * that builds, else the part (`partFeature`, the last body), as before
+ * (bug hunt 2026-11-01: with Body 1 selected the boxes showed and changed
+ * the last body); null with no part. A selected sketch or Move makes no
+ * body of its own, so the boxes stay on the part.
+ */
+export function panelPart(items: readonly GeometryReference[], scene: Scene | null, doc: DesignDocument): Feature | null {
+  const f = panelFocus(items, scene, doc)?.feature ?? null;
+  return f !== null && makesBody(f) && builds(doc, f) ? f : partFeature(doc);
 }
 
 /**

@@ -29,7 +29,10 @@ async function session(seed: bigint, steps: number, checkGhost: boolean) {
   let lastWasType: string | undefined;
   for (let s = 0; s < steps; s++) {
     const live = m.features.filter((f) => !f.suppressed);
-    const part = live[live.length - 1];
+    // The body the size boxes edit: the selected one while it builds, else the last that does (the part; fixed 2026-11-01:
+    // the boxes showed and changed the part whatever was selected).
+    const selectedNow = a.selection.items.map((i) => i.id);
+    const part = live.find((f) => selectedNow.includes(`body:${f.id}`)) ?? live[live.length - 1];
     const op = pick(["insert", "insert", "select", "select", "delete", "suppress", "type", "type", "undo", "undo", "redo"] as const);
     let typed: string | undefined;
     if (op === "insert") {
@@ -68,8 +71,9 @@ async function session(seed: bigint, steps: number, checkGhost: boolean) {
       const p = m.features.find((x) => x.id === part.id)!;
       if ((p as any)[key[0]] === v) continue;
       (p as any)[key[0]] = v;
-      record(before, key);
-      typed = key;
+      // Typing for another body is another undo step (the merge key names the body).
+      record(before, `${key} ${part.id}`);
+      typed = `${key} ${part.id}`;
       log.push(`type ${key} ${v} (part ${part.id})`);
       await type(a, key, String(v));
     } else if (op === "undo" && undo.length) {
@@ -104,9 +108,9 @@ async function session(seed: bigint, steps: number, checkGhost: boolean) {
       const want = vol(shown);
       assert.ok(Math.abs(p.volume - want) <= 1e-4 * want, `volume ${p.volume}, expected ${want} for ${shown.id}, ${where}`);
     }
-    // The size boxes show the part's sizes.
-    const pt = lv[lv.length - 1];
-    if (pt) assert.equal((a.$("#width") as HTMLInputElement).value, String(pt.w), `width box shows the part's width, ${where}`);
+    // The size boxes show the sizes of the body the panel describes: the selected one, else the part.
+    const pt = focusF && !focusF.suppressed ? focusF : lv[lv.length - 1];
+    if (pt) assert.equal((a.$("#width") as HTMLInputElement).value, String(pt.w), `width box shows ${pt.id}'s width, ${where}`);
   }
   assert.ok(await a.close());
 }

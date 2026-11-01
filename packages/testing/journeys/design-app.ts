@@ -5,7 +5,7 @@
 // kernel; the viewport is a stand-in that keeps the last mesh and the last
 // selection highlight it was asked to draw. Not a journey itself.
 import assert from "node:assert/strict";
-import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, ORIGIN_AT_FIRST, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
+import { ActionRegistry, ChangeNotes, createHistory, createSelection, DependencyGraph, DownstreamRegistry, emptyProject, KernelError, ORIGIN_AT_FIRST, projectFromJson, projectToJson, RepresentationRegistry, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type KernelCalls, type MountedWorkspace, type MoveHandlesShow, type MovePointer, type Command, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type ViewportHighlight, type ViewportPick, type WorkspaceContext, type WorkspacePlugin } from "@fission/core";
 import { designWorkspace, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
@@ -300,6 +300,13 @@ export async function app(start: DesignDocument, plugin: WorkspacePlugin = desig
       await settle();
       return label;
     },
+    /** A Design command run as the shell runs the assistant's accepted answer (`run`), then waited for. */
+    async command(c: Command) {
+      await view.run?.(c);
+      await settle();
+    },
+    /** What the assistant is told about the design before a request (`aiView`). */
+    aiView: () => view.aiView?.(),
     /** Design put away and mounted again on the same project, as the shell does when Design moves to the other pane. */
     async remount() {
       view.unmount();
