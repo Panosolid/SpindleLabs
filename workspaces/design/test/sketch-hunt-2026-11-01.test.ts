@@ -17,9 +17,9 @@ import assert from "node:assert/strict";
 import type { SketchXY } from "@fission/core";
 import { partDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawArc, drawCircle, drawLine, sketchCurves, sketchOutline } from "../src/sketch.ts";
-import { clickAt, MIN_SIZE, NO_RADIUS, SHARED_CENTRE, SHORT_LINE, SMALL_CIRCLE, startTool, type SketchTool } from "../src/sketch-tool.ts";
+import { clickAt, MIN_SIZE, NO_RADIUS, SHARED_CENTRE, SHORT_LINE, SMALL_CIRCLE, SMALL_RECTANGLE, startTool, type SketchTool } from "../src/sketch-tool.ts";
 import { arcThere, SAME_ARC } from "../src/centre-arc.ts";
-import { SAME_PLACE, snapOnSketch, snapTargets } from "../src/snap.ts";
+import { SAME_PLACE, SNAP_PIXELS, snapOnSketch, snapTargets } from "../src/snap.ts";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 
 const kernel = nodeKernel();
@@ -215,4 +215,93 @@ test("hunt-1101-3 boundary: a line 0.9× MIN_SIZE long is refused, 1.1× is draw
   const allow = 4 * Number.EPSILON * 1000;
   assert.deepEqual(await lineOf([1000, 0], [1000, MIN_SIZE - 0.9 * allow]), { drew: true, said: true });
   assert.deepEqual(await lineOf([1000, 0], [1000, MIN_SIZE - 1.1 * allow]), { drew: false, said: false });
+});
+
+// ---- 4. A second click on the tool's own click ----
+
+test("hunt-1101-4: a double-click on a point a chain started on draws nothing (no stub to where the pointer is)", () => {
+  const s = fresh();
+  const doc = drawLine(s.doc, s.id, [10, 0], [20, 5]).doc;
+  // Pixel 0.01 mm: reach 10 px = 0.1 mm. The pointer at (10.03, 0.02) is √(0.03² + 0.02²) = √0.0013 ≈ 0.036 mm from the point
+  // (10, 0), in reach: the first click lands on it (the chain starts there), and so does the second, on the chain's own
+  // start, so nothing is drawn. Before the fix the second landed on the pointer itself, a 0.036 mm stub.
+  let tool: SketchTool = startTool("line", s.id);
+  let d = doc;
+  for (let k = 0; k < 2; k++) {
+    const snap = snapOnSketch(d, tool, [10.03, 0.02], [10.03, 0.02], 0.01);
+    assert.deepEqual(snap.at, [10, 0], `click ${k + 1}`);
+    const r = clickAt(d, tool, snap.at);
+    assert.equal(r.drew, false, `click ${k + 1} drew`);
+    [d, tool] = [r.doc, r.tool];
+  }
+});
+
+test("hunt-1101-4: a double-click ending a line on the x axis draws one line, not a stub after it", () => {
+  const s = fresh();
+  // Pixel 0.01 mm, reach 0.1 mm. The chain starts at (5, 5) (a click there, nothing near). The pointer at (20.03, 0.02) is
+  // 0.02 off y = 0, the x axis: the first click lands on (20.03, 0), drawing (5, 5) → (20.03, 0), and the chain goes on
+  // from (20.03, 0). The second click, the pointer not moved, is 0.02 mm from that, the chain's own point: nothing more.
+  let doc = s.doc;
+  let tool: SketchTool = startTool("line", s.id);
+  for (const raw of [[5, 5], [20.03, 0.02], [20.03, 0.02]] as SketchXY[]) {
+    const r = clickAt(doc, tool, snapOnSketch(doc, tool, raw, raw, 0.01).at);
+    [doc, tool] = [r.doc, r.tool];
+  }
+  assert.deepEqual(sketchCurves(doc.sketches[0]).lines, [{ a: [5, 5], b: [20.03, 0] }]);
+});
+
+test("hunt-1101-4 boundary: the pointer 0.9× the reach from the tool's own click lands on it, 1.1× does not", () => {
+  const s = fresh();
+  // The chain's first click at (10, 10), a new point; pixel 0.01 mm, reach 0.1 mm; the pointer straight above it.
+  const tool: SketchTool = clickAt(s.doc, startTool("line", s.id), [10, 10]).tool;
+  const reach = SNAP_PIXELS * 0.01;
+  const near: SketchXY = [10, 10 + 0.9 * reach];
+  const far: SketchXY = [10, 10 + 1.1 * reach];
+  assert.deepEqual(snapOnSketch(s.doc, tool, near, near, 0.01).at, [10, 10]);
+  assert.notDeepEqual(snapOnSketch(s.doc, tool, far, far, 0.01).at, [10, 10]);
+});
+
+test("hunt-1101-4: a sketch point nearer the pointer than the tool's own click is the one taken", () => {
+  const s = fresh();
+  // The chain from (10, 10); a circle's centre at (10.05, 10). Reach 0.1 mm. The pointer at (10.04, 10) is 0.04 from the
+  // chain's point and 0.01 from the centre: the centre, nearer, is where it lands.
+  const doc = drawCircle(s.doc, s.id, [10.05, 10], 1).doc;
+  const tool: SketchTool = clickAt(doc, startTool("line", s.id), [10, 10]).tool;
+  assert.deepEqual(snapOnSketch(doc, tool, [10.04, 10], [10.04, 10], 0.01).at, [10.05, 10]);
+});
+
+// ---- 5. A rectangle under the smallest piece ----
+
+test("hunt-1101-5: a rectangle 0.0009 mm wide is refused with a note; the kernel refuses its sides too", async () => {
+  const s = fresh();
+  // Corners (0, 0) and (0.0009, 5): its bottom and top sides are 0.0009 mm long, under 0.001.
+  const r = clicks(s.doc, startTool("rectangle", s.id), [[0, 0], [0.0009, 5]]);
+  assert.equal(r.drew, 0);
+  assert.equal(r.note, SMALL_RECTANGLE);
+  const box = (w: number, h: number) => [{ a: [0, 0], b: [w, 0] }, { a: [w, 0], b: [w, h] }, { a: [w, h], b: [0, h] }, { a: [0, h], b: [0, 0] }] as { a: SketchXY; b: SketchXY }[];
+  await assert.rejects(kernel.call("sketch_outline", box(0.0009, 5), [], []), /must be between 0.001/);
+});
+
+test("hunt-1101-5 boundary: a rectangle 0.9× MIN_SIZE wide or high is refused, 1.1× is drawn, as the kernel says", async () => {
+  const kernelSays = async (a: SketchXY, c: SketchXY) => {
+    const k: SketchXY[] = [a, [c[0], a[1]], c, [a[0], c[1]]];
+    return kernel.call("sketch_outline", k.map((p, i) => ({ a: p, b: k[(i + 1) % 4] })), [], []).then(() => true, (e) => !/must be between/.test(String(e)));
+  };
+  const allow = 4 * Number.EPSILON * 1000;
+  // Wide or high by f·MIN_SIZE from (0, 0) the other side 5 mm; and at y from (1000, 0), 1 mm wide, high by MIN_SIZE less 0.9× or
+  // 1.1× the lines' rounding allowance (4·ε·1000), the height exact as it is measured along y.
+  const cases: [SketchXY, SketchXY, boolean][] = [
+    [[0, 0], [0.9 * MIN_SIZE, 5], false],
+    [[0, 0], [1.1 * MIN_SIZE, 5], true],
+    [[0, 0], [5, 0.9 * MIN_SIZE], false],
+    [[0, 0], [5, 1.1 * MIN_SIZE], true],
+    [[1000, 0], [1001, MIN_SIZE - 0.9 * allow], true],
+    [[1000, 0], [1001, MIN_SIZE - 1.1 * allow], false],
+  ];
+  for (const [a, c, ok] of cases) {
+    const s = fresh();
+    const r = clicks(s.doc, startTool("rectangle", s.id), [a, c]);
+    assert.equal(r.drew, ok ? 1 : 0, `${a} → ${c}: ${r.note}`);
+    assert.equal(await kernelSays(a, c), ok, `the kernel on ${a} → ${c}`);
+  }
 });

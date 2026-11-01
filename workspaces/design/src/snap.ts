@@ -16,6 +16,12 @@
 //    line snaps horizontal or vertical.
 // 3. Otherwise the rounded point.
 //
+// The tool's own clicks so far (a chain's last point, a first corner, a
+// centre…) are never snapped to as points, but the pointer within
+// SNAP_PIXELS of one, with no point nearer, lands on it exactly, so a
+// second click there (a double-click) draws nothing, as clicking the same
+// spot twice does (hunt 2026-11-01).
+//
 // From step 26f a sketch on a face snaps in the same way (1 only) to the
 // ends, middles and centres of that face's edges (face-edges.ts), which are
 // not drawn into the sketch; a point that lands on one is pinned to it
@@ -246,9 +252,13 @@ function nearest(refs: readonly SketchXY[], off: (r: SketchXY) => number, reach:
  * (√(dx² + dy²) ≤ reach) is taken, the nearest first; else a column and a
  * row each at most that far (|dx| ≤ reach, |dy| ≤ reach), the nearest of
  * each; else the grid point. A pixel size that is not a positive number
- * (unknown) snaps to the grid only. Lining up with one point's column and
+ * (unknown) snaps to the grid only. One of the tool's own clicks (not a
+ * target) within the reach, with no target nearer, is landed on exactly,
+ * shown as no snap ("grid"): the tool's own click a second time draws
+ * nothing (a double-click). Lining up with one point's column and
  * row both lands on that point, and is called that point; lining up onto
- * one of the tool's own clicks (not a target) gives the grid point instead.
+ * one of the tool's own clicks from further than the reach gives the
+ * grid point instead.
  * Of the points within SAME_PLACE of the nearest, the first listed is the
  * one taken (27c). With no point in reach, an edge in reach (its nearest
  * point at most `reach` away, `nearestOn`) comes before lining up: the
@@ -264,6 +274,15 @@ export function snapPointer(raw: SketchXY, grid: SketchXY, targets: SnapTargets,
     const d = Math.sqrt((t.at[0] - raw[0]) ** 2 + (t.at[1] - raw[1]) ** 2);
     if (d <= reach && d < best) [point, best] = [t, d];
   }
+  // The tool's own click nearest the pointer, if in reach and no target is nearer: landed on exactly, so a second click
+  // there (a double-click) draws nothing, rather than a stub from the click to where the pointer is (hunt 2026-11-01).
+  let mine: SketchXY | null = null;
+  let mineOff = Infinity;
+  for (const o of targets.own) {
+    const d = Math.sqrt((o[0] - raw[0]) ** 2 + (o[1] - raw[1]) ** 2);
+    if (d <= reach && d < mineOff) [mine, mineOff] = [o, d];
+  }
+  if (mine && mineOff <= best) return { kind: "grid", at: [mine[0], mine[1]] };
   const found = (t: SnapTarget): Snap => (t.pin ? { kind: t.kind, at: t.at, edge: true } : { kind: t.kind, at: t.at });
   // Of the points at one place as the nearest, the first listed (27c): the sketch's own, then the one on its plane.
   if (point) {

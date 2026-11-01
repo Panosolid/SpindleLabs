@@ -31,6 +31,7 @@ export { pointAt };
 /** The modeller's smallest piece, 0.001 mm (centre-arc.ts MIN_CHORD): no line shorter, no circle's radius smaller. */
 export const MIN_SIZE = MIN_CHORD;
 export const SHORT_LINE = `A line must be at least ${MIN_SIZE} mm long, the smallest piece the modeller keeps: click its end further away.`;
+export const SMALL_RECTANGLE = `A rectangle must be at least ${MIN_SIZE} mm wide and high, the smallest piece the modeller keeps: click its opposite corner further away.`;
 export const SMALL_CIRCLE = `A circle's radius must be at least ${MIN_SIZE} mm, the smallest piece the modeller keeps: click further from its centre.`;
 /**
  * How near (mm) a point already there must be to an arc's worked-out
@@ -265,13 +266,16 @@ function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: De
   return { doc: drawn.doc, tool: { ...tool, from: there ? null : line.end }, drew: true };
 }
 
-/** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column draws nothing. */
+/** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column, or one making it under MIN_SIZE wide or high (`SMALL_RECTANGLE`), draws nothing. */
 const SAME_ROW = "A rectangle needs a width and a height: click the opposite corner off the first corner's row and column.";
 
 function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY): { doc: DesignDocument; tool: RectangleTool; drew: boolean; note?: string } {
   sketchOf(doc, tool.sketch);
   if (tool.corner === null) return { doc, tool: { ...tool, corner: [at[0], at[1]] }, drew: false };
   if (flat(tool.corner, at)) return { doc, tool, drew: false, note: SAME_ROW };
+  // Each side is a line, so each must be MIN_SIZE long, with a line's allowance for rounding (`underMin`), as the kernel judges them.
+  const scale = Math.max(Math.abs(tool.corner[0]), Math.abs(tool.corner[1]), Math.abs(at[0]), Math.abs(at[1]));
+  if (underMin(Math.abs(at[0] - tool.corner[0]), scale, true) || underMin(Math.abs(at[1] - tool.corner[1]), scale, true)) return { doc, tool, drew: false, note: SMALL_RECTANGLE };
   const drawn = drawRectangle(doc, tool.sketch, tool.corner, at).doc;
   // Every side a line already there (the same rectangle twice): nothing drawn, as the line tool says for one side.
   if (drawn === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
