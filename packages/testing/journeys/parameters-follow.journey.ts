@@ -15,35 +15,11 @@ import assert from "node:assert/strict";
 import { addSketch, drawRectangle, extrudeSketch, insertPreset, type DesignDocument } from "@fission/design";
 import { seeded } from "../src/index.ts";
 import { app, chooseShape } from "./design-app.ts";
+import { insert, row, type } from "./selection-hunt-helpers.ts";
 
 type A = Awaited<ReturnType<typeof app>>;
 const empty = (): DesignDocument => ({ version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
 
-/** Insert ▾ then a shape, as a person does: a new body at 40 × 30 × 20 (insert.ts INSERT_SIZES). */
-async function insert(a: A, kind: string) {
-  (a.$("#insert") as HTMLButtonElement).click();
-  await a.settle();
-  (a.$(`#insert-${kind}`) as HTMLButtonElement).click();
-  await a.settle();
-}
-/** Types `v` into size box `key`; `leave` then leaves the box (change). */
-async function type(a: A, key: string, v: string, leave = false) {
-  const el = a.$(`#${key}`) as HTMLInputElement;
-  el.value = v;
-  el.dispatchEvent(new a.window.Event("input") as unknown as Event);
-  await a.settle();
-  if (leave) {
-    el.dispatchEvent(new a.window.Event("change") as unknown as Event);
-    await a.settle();
-  }
-}
-/** A click on the browser row `node` ("body-1"). */
-async function row(a: A, node: string) {
-  const r = [...a.window.document.querySelectorAll<HTMLElement>(".tree-row")].find((x) => x.dataset.node === node);
-  assert.ok(r, `there is a row ${node}`);
-  r.click();
-  await a.settle();
-}
 const box = (a: A, key: string) => (a.$(`#${key}`) as HTMLInputElement).value;
 const shown = (a: A, key: string) => a.$(`#${key}-row`)!.hidden === false;
 const choice = (a: A) => (a.$("#shape") as HTMLSelectElement).value;
