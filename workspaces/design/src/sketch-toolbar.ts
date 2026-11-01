@@ -144,7 +144,7 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
   // they swallowed the next tap of a line drawn down; this puts the keys in their first box. In the toolbar, not over the
   // view, so it never covers where a sketch is tapped; wider screens never show it (a digit starts typing there).
   const typeButton = button("Type", "sketch-type");
-  typeButton.className = "toolbar-group-tool sketchbar-type";
+  typeButton.className = "sketchbar-type"; // not a tool: no icon, never pressed
   typeButton.title = "Type a size";
   typeButton.setAttribute("aria-label", "Type a size");
   typeButton.hidden = true;
