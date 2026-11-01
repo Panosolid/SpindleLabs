@@ -166,3 +166,45 @@ test("callUnits gives 0 (the floor) for arguments of the wrong shape, so the ker
   // A well-shaped call is unchanged.
   assert.equal(callUnits("sketch_outline", [[1], [2], [3]] as never, none), sketchUnits(3));
 });
+
+/** A binary STL of a w × d × h box from the origin: 12 triangles (2 a face), normals left zero. */
+function boxStl(w: number, d: number, h: number): Uint8Array {
+  const v = (x: number, y: number, z: number) => [x * w, y * d, z * h];
+  const quads = [
+    [v(0, 0, 0), v(1, 0, 0), v(1, 1, 0), v(0, 1, 0)],
+    [v(0, 0, 1), v(1, 0, 1), v(1, 1, 1), v(0, 1, 1)],
+    [v(0, 0, 0), v(1, 0, 0), v(1, 0, 1), v(0, 0, 1)],
+    [v(0, 1, 0), v(1, 1, 0), v(1, 1, 1), v(0, 1, 1)],
+    [v(0, 0, 0), v(0, 1, 0), v(0, 1, 1), v(0, 0, 1)],
+    [v(1, 0, 0), v(1, 1, 0), v(1, 1, 1), v(1, 0, 1)],
+  ];
+  const tris = quads.flatMap(([a, b, c, e]) => [[a, b, c], [a, c, e]]);
+  const out = new Uint8Array(84 + 50 * tris.length);
+  const data = new DataView(out.buffer);
+  data.setUint32(80, tris.length, true);
+  tris.forEach((tri, t) => tri.forEach((p, c) => p.forEach((x, k) => data.setFloat32(84 + 50 * t + 12 + 12 * c + 4 * k, x, true))));
+  return out;
+}
+
+test("a big flat-sided part costs by its area too: a box is 12 triangles however big (slicer hunt M8), worked by hand", () => {
+  // 100 × 100 × 10 mm at 0.2 mm: 50 layers. Triangles: 12 × 50 × 0.12 = 72. Area: 1e4 mm² × 50 layers × 6e-4 = 300, times the fill share.
+  const box = boxStl(100, 100, 10);
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 100) - 300 * 1.25) < 1e-6, "100 %: share 0.25 + 1 = 1.25 → 375");
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 15) - 300 * 0.4) < 1e-6, "15 %: share 0.4 → 120, over the triangles' 72");
+  assert.ok(Math.abs(sliceUnits(box, 0.2, 0) - 300 * 0.25) < 1e-6, "no infill: share 0.25 → 75, just over the triangles' 72");
+  // A small part keeps its triangle count: a 20 mm cube at 0.2 mm, 100 layers: 12 × 100 × 0.12 = 144 over 20² × 100 × 6e-4 × 0.4 = 9.6.
+  assert.ok(Math.abs(sliceUnits(boxStl(20, 20, 20), 0.2, 15) - 144) < 1e-9);
+  // The default, when none is given, is the P1S's 15 %.
+  assert.equal(sliceUnits(box, 0.2), sliceUnits(box, 0.2, 15));
+  // The hunt's box, 246 × 246 × 245 mm at 100 %, was 1,764 units of triangles and needed at least 8.7 times that.
+  const big = boxStl(246, 246, 245);
+  assert.ok(sliceUnits(big, 0.2, 100) >= 8.7 * 1764, `${sliceUnits(big, 0.2, 100)} units`);
+  // Fewer layers, fewer units; a wider box, more.
+  assert.ok(sliceUnits(boxStl(100, 100, 10), 0.28, 100) < sliceUnits(box, 0.2, 100));
+  assert.ok(sliceUnits(boxStl(200, 100, 10), 0.2, 100) > sliceUnits(box, 0.2, 100));
+  // A call carries the infill: callUnits reads it from slice_stl's fourth argument.
+  assert.equal(callUnits("slice_stl", [big as Uint8Array<ArrayBuffer>, 0.2, 3, 100, "off"], () => undefined), sliceUnits(big, 0.2, 100));
+  assert.equal(callUnits("print_file_stl", [big as Uint8Array<ArrayBuffer>, 0.2, 3, 0, "off", "textured"], () => undefined), sliceUnits(big, 0.2, 0));
+  // Infill nonsense is the default's: never NaN units.
+  assert.ok(Number.isFinite(sliceUnits(box, 0.2, NaN)));
+});

@@ -80,6 +80,8 @@ test("hand-worked: the lists in their order, each eye's undo naming, folders ove
     "origin-x": [false, false],
     "origin-y": [false, false],
     "origin-z": [false, false],
+    // The build area: a view setting kept outside the design (build-area.ts), shut until its eye is opened.
+    "origin-build-area": [true, false],
   });
   // Shut in this order: the Bodies folder, the Y axis, Extrude 1's body, Sketch 1. Listed items first in timeline
   // order (Sketch 1 before Extrude 1), then the axes and folders in EYE_ROWS' order (the Y axis before the folder).
@@ -139,6 +141,8 @@ test("each row's eye is the id its eye shuts; rows without one have none; a Move
     ["origin-x", "origin-x"],
     ["origin-y", "origin-y"],
     ["origin-z", "origin-z"],
+    // The build area's eye is not the design's: no id to hide (the workspace toggles its view setting).
+    ["origin-build-area", null],
   ]);
   for (const node of ["timeline", "profiles", "feature-1", "sketch-2", "body-9", "origin-w"]) assert.equal(eyeId(d, node), null, node);
   assert.throws(() => hideRow(d, "feature-99", true), { message: "there is no item feature-99 in the timeline" });

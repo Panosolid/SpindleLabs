@@ -1,0 +1,8 @@
+/* The build area's note (workspace.ts, showBuildAreaWords; build-area.ts): why the bodies shown won't fit the
+   printer, one short card at the bottom middle of the view, above the view's own buttons, never over the middle. */
+.build-area { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 4; max-width: min(520px, calc(100% - 32px)); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255, 77, 77, 0.6); background: rgba(40, 14, 18, 0.88); color: #ffd6d6; font-size: 0.86em; line-height: 1.35; pointer-events: none; }
+.build-area[hidden] { display: none; }
+@media (max-width: 640px) {
+  /* The view's buttons wrap to two rows on a phone (98 px): the note sits above them. */
+  .build-area { bottom: 116px; font-size: 0.8em; }
+}

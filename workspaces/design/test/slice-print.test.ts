@@ -5,13 +5,13 @@
 // The Chromium checks are apps/fission/e2e/slice-print.mjs and print-preview.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { playback, type SlicedPrint } from "@fission/core";
+import { playback, type SlicedPrint, type SliceProgress } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -597,4 +597,124 @@ test("a file's name starts with the project's name, so files of two projects dif
   assert.equal(gcodeName({ ...PRINT_DEFAULTS, supports: "tree" }, "Bracket"), "Bracket-0.2mm-2w-15pc-tree-supports.gcode");
   for (const unnamed of [undefined, "", "   ", "Untitled", "untitled"]) assert.equal(printFileName(PRINT_DEFAULTS, "smooth", "standard", unnamed), "spindlelabs-0.2mm-2w-15pc-smooth.gcode.3mf", String(unnamed));
   assert.notEqual(printFileName(PRINT_DEFAULTS, "textured", "standard", "A"), printFileName(PRINT_DEFAULTS, "textured", "standard", "B"));
+});
+
+/** A binary STL of triangles given by their corners' z (the x and y are 0: only z is read). */
+const stlOfZ = (triangles: number[][]): Uint8Array => {
+  const out = new Uint8Array(84 + 50 * triangles.length);
+  const view = new DataView(out.buffer);
+  view.setUint32(80, triangles.length, true);
+  triangles.forEach((t, i) => t.forEach((z, c) => view.setFloat32(84 + i * 50 + 12 + c * 12 + 8, z, true)));
+  return out;
+};
+
+test("the lowest z of a binary STL, worked by hand; no triangle gives NaN", () => {
+  // Corners' z: (5, 3, 4) and (7, -2, 9): the smallest of all six is -2.
+  assert.equal(stlLowestZ(stlOfZ([[5, 3, 4], [7, -2, 9]])), -2);
+  assert.ok(Number.isNaN(stlLowestZ(stlOfZ([]))));
+  assert.ok(Number.isNaN(stlLowestZ(new Uint8Array(10)))); // shorter than a header
+  // A count larger than the bytes held reads only the triangles there are (one of them), never past the end.
+  const lying = stlOfZ([[1, 2, 3]]);
+  new DataView(lying.buffer).setUint32(80, 1_000_000, true);
+  assert.equal(stlLowestZ(lying), 1);
+});
+
+test("bodies at different heights get one sentence naming the first one above the lowest; level ones, one body, or nothing known get none", () => {
+  // Lowest points 0, 20 and -3: the floor is -3, so the first above it by more than 0.01 is body 1 (0 - (-3) = 3 mm).
+  assert.equal(levelNote([0, 20, -3]), "Body 1 starts 3 mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.");
+  // 0 and 20: the floor is 0, body 2 is 20 mm above.
+  assert.match(levelNote([0, 20]), /^Body 2 starts 20 mm above the lowest body\./);
+  // 0.9× and 1.1× of the 0.01 mm tolerance: 0.009 is level, 0.011 is not.
+  assert.equal(levelNote([0, 0.009]), "");
+  assert.match(levelNote([0, 0.011]), /^Body 2 starts 0 mm above/);
+  assert.equal(levelNote([5]), "");
+  assert.equal(levelNote([]), "");
+  assert.equal(levelNote([0, Number.NaN]), "");
+});
+
+test("on the real kernel: a cube beside one 20 mm up is noted, two on the floor are not", async () => {
+  const kernel = nodeKernel();
+  const cube = (z: number) => kernel.call("export_stl", { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [0, 0, z] }] } }, "body");
+  const low = stlLowestZ((await cube(0)).bytes);
+  const up = stlLowestZ((await cube(20)).bytes);
+  assert.equal(low, 0);
+  assert.equal(up, 20);
+  assert.match(levelNote([low, up]), /^Body 2 starts 20 mm above/);
+  assert.equal(levelNote([low, low]), "");
+});
+
+test("the dialog adds the heights note after the result and marks it as a warning; without it the result is plain", async () => {
+  let note = "Body 2 starts 20 mm above the lowest body.";
+  const t = dialog(async () => ({ print: { ...print(), levelNote: note }, saved: true }));
+  t.d.ask();
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.match(t.$("slice-print-status").textContent ?? "", /plus heating and levelling\)\. Body 2 starts 20 mm above the lowest body\.$/);
+  assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), true);
+  note = "";
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.doesNotMatch(t.$("slice-print-status").textContent ?? "", /Body 2/);
+  assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
+});
+
+test("a body floating above the plate is refused with advice when supports are off, and sliced with supports on (real kernel)", async () => {
+  const kernel = nodeKernel();
+  const cube = (x: number, z: number) => kernel.call("export_stl", { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [x, 0, z] }] } }, "body");
+  // One cube on the plate at x 0, one 20 mm up at x 30: its centre is (35, 5) once the lowest point is on the plate.
+  const stl = stackStl([(await cube(0, 0)).bytes, (await cube(30, 20)).bytes]);
+  const words = (m: string) => refusalWords(m);
+  await assert.rejects(kernel.call("slice_stl", stl, 0.2, 2, 15, "off"), (e: Error) => {
+    assert.equal(words(e.message), "Part of the model hangs in the air 20 mm above the plate, around (35, 5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+    return true;
+  });
+  assert.ok((await kernel.call("slice_stl", stl, 0.2, 2, 15, "normal")).layers > 0);
+  // The wording by hand, for a message of the same shape.
+  assert.equal(refusalWords("part of the model starts in mid-air at z = 3.5 mm, around (-2, 7.5), with nothing under it: turn on supports"), "Part of the model hangs in the air 3.5 mm above the plate, around (-2, 7.5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+});
+
+test("progress words: the stage, with the layer when it goes layer by layer; nothing before the first report", () => {
+  assert.equal(progressWords(null), "");
+  assert.equal(progressWords({ fraction: 0.05, stage: "layers", done: 0, total: 1 }), "Cutting the bodies into layers…");
+  assert.equal(progressWords({ fraction: 0.325, stage: "walls", done: 120, total: 254 }), "Walls: layer 120 of 254");
+  assert.equal(progressWords({ fraction: 0.5, stage: "infill", done: 1, total: 1 }), "Infill and solid layers…");
+  assert.equal(progressWords({ fraction: 0.6, stage: "supports", done: 50, total: 254 }), "Supports: layer 50 of 254");
+  assert.equal(progressWords({ fraction: 0.8, stage: "paths", done: 7, total: 254 }), "Putting the paths in order: layer 7 of 254");
+  assert.equal(progressWords({ fraction: 0.95, stage: "file", done: 0, total: 1 }), "Writing the file…");
+});
+
+test("the progress bar follows the engine's reports while a slice runs, only forward, and goes when it ends", async () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  let tell: ((p: SliceProgress) => void) | null = null;
+  let stopped = 0;
+  let finish!: () => void;
+  const d = slicePrint(slot, {
+    slice: () => new Promise((r) => (finish = () => r({ print: print(), saved: true, name: "part.gcode.3mf" }))),
+    preview: async () => {},
+    onProgress: (l) => ((tell = l), () => void (stopped++, (tell = null))),
+  });
+  const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
+  const meter = $<HTMLProgressElement>("slice-print-meter");
+  assert.equal($("slice-print-progress").hidden, true, "no bar before a slice");
+  d.ask();
+  $("slice-print-go").click();
+  assert.equal($("slice-print-progress").hidden, false, "the bar shows as the slice starts");
+  assert.equal(meter.hasAttribute("value"), false, "no value (a moving bar) before the first report");
+  assert.equal($("slice-print-status").textContent, "Slicing…");
+  tell!({ fraction: 0.325, stage: "walls", done: 120, total: 254 });
+  assert.equal(meter.value, 0.325);
+  assert.equal($("slice-print-stage").textContent, "Walls: layer 120 of 254");
+  // A report behind the last (a second engine call starting from 0) never moves the bar back.
+  tell!({ fraction: 0.1, stage: "layers", done: 0, total: 1 });
+  assert.equal(meter.value, 0.325);
+  assert.equal($("slice-print-stage").textContent, "Walls: layer 120 of 254");
+  finish();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal($("slice-print-progress").hidden, true, "the bar goes when the slice ends");
+  assert.equal(stopped, 1, "and stops listening");
+  assert.equal(tell, null);
+  await window.happyDOM.close();
 });

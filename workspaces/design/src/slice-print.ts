@@ -9,7 +9,7 @@
 // Nothing is saved into the project: choices, never results (decision 6,
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
-import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, StlFile, SupportStyle } from "@fission/core";
+import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
 import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
@@ -107,7 +107,7 @@ export function rememberedWarmUp(storage: Pick<Storage, "getItem"> | null): bool
 export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
 
 /** What the dialog says of any slice, plain or packed. */
-export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume">;
+export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume"> & { levelNote?: string };
 
 /**
  * The bodies' STL files back to back, one file per body, as the engine
@@ -124,24 +124,51 @@ export function stackStl(files: readonly Uint8Array[]): Uint8Array<ArrayBuffer> 
   return out;
 }
 
-/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<Uint8Array<ArrayBuffer>> {
+/** The lowest z in a binary STL (80-byte header, a count, then 50 bytes a triangle: normal, three corners, 2 spare); NaN when it holds no triangle. */
+export function stlLowestZ(stl: Uint8Array): number {
+  const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  const count = stl.length >= 84 ? Math.min(view.getUint32(80, true), Math.floor((stl.length - 84) / 50)) : 0;
+  let low = Infinity;
+  for (let t = 0; t < count; t++) {
+    for (let c = 0; c < 3; c++) low = Math.min(low, view.getFloat32(84 + t * 50 + 12 + c * 12 + 8, true));
+  }
+  return count > 0 ? low : NaN;
+}
+
+/**
+ * What the engine does when bodies sit at different heights (slicer hunt 2026-10-31, finding 3): it puts the lowest point
+ * of all of them on the plate, so a body above the lowest one hangs in the air (it needs supports) and a body sunk
+ * below the floor lifts the others off it. One sentence naming the first such body, or "" when they all start at the
+ * same height (within 0.01 mm) or fewer than two.
+ */
+export function levelNote(lowest: readonly number[]): string {
+  const known = lowest.filter(Number.isFinite);
+  if (known.length < 2) return "";
+  const floor = Math.min(...known);
+  const at = lowest.findIndex((z) => Number.isFinite(z) && z - floor > 0.01);
+  if (at < 0) return "";
+  const gap = Math.round((lowest[at] - floor) * 10) / 10;
+  return `Body ${at + 1} starts ${gap} mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.`;
+}
+
+/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, and the note on their heights. */
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
-  return stackStl(files.map((f) => f.bytes));
+  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNote(files.map((f) => stlLowestZ(f.bytes))) };
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint> {
-  const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp);
+export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+  const { stl, note } = await bodiesStl(kernel, doc, features);
+  return { ...(await kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp)), levelNote: note };
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile> {
-  const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp);
+export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+  const { stl, note } = await bodiesStl(kernel, doc, features);
+  return { ...(await kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp)), levelNote: note };
 }
 
 /**
@@ -190,7 +217,7 @@ export class SliceDropped extends Error {
 /**
  * The engine's refusal in words for a beginner: "the part ... runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"
  * becomes how wide the part is and what the plate takes; "layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"
- * becomes how tall. Any other message is kept, starting with a capital.
+ * becomes how tall; "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do. Any other message is kept, starting with a capital.
  */
 export function refusalWords(message: string): string {
   const across = /runs from \((-?[\d.]+), (-?[\d.]+)\) to \((-?[\d.]+), (-?[\d.]+)\), off the (\d+) × (\d+) mm bed/.exec(message);
@@ -201,6 +228,8 @@ export function refusalWords(message: string): string {
   }
   const tall = /reaches z = ([\d.]+) mm, above the printer's ([\d.]+) mm/.exec(message);
   if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
+  const air = /starts in mid-air at z = (-?[\d.]+) mm, around \((-?[\d.]+), (-?[\d.]+)\), with nothing under it/.exec(message);
+  if (air) return `Part of the model hangs in the air ${air[1]} mm above the plate, around (${air[2]}, ${air[3]}) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.`;
   return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
@@ -273,11 +302,39 @@ export function unprintedWords(print: Pick<PrintFacts, "unprintedVolume">): stri
   return `Some of the part is thinner than one printed line, so about ${print.unprintedVolume.toFixed(2)} mm³ of it won't print.`;
 }
 
+/**
+ * The words under the progress bar: what the engine is doing now, with the layer when the stage goes layer by layer
+ * ("Walls: layer 120 of 254"); nothing before its first report (the bodies being made into STL, or an engine from
+ * before progress reports): the status line says "Slicing…" all along.
+ */
+export function progressWords(p: SliceProgress | null): string {
+  if (p === null) return "";
+  const layer = p.total > 1 ? `: layer ${p.done} of ${p.total}` : "…";
+  switch (p.stage) {
+    case "layers":
+      return "Cutting the bodies into layers…";
+    case "walls":
+      return `Walls${layer}`;
+    case "infill":
+      return "Infill and solid layers…";
+    case "supports":
+      return `Supports${layer}`;
+    case "paths":
+      return `Putting the paths in order${layer}`;
+    case "file":
+      return "Writing the file…";
+    default:
+      return "";
+  }
+}
+
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
   slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
   /** Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b, H2c); nothing is saved. */
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<void>;
+  /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
+  onProgress?(listener: (progress: SliceProgress) => void): () => void;
 }
 
 export interface SlicePrint {
@@ -376,6 +433,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   format.select.addEventListener("change", plateFor);
   const status = el("p", "slice-print-status");
   status.setAttribute("role", "status");
+  // The bar while a slice runs (Ben, 2026-11-01): how far the engine has got, from its own reports; no value (the
+  // browser's moving bar) until the first one, and hidden when nothing runs.
+  const bar = el("div", "slice-print-progress");
+  bar.hidden = true;
+  const meter = el("progress", "slice-print-meter");
+  meter.max = 1;
+  meter.setAttribute("aria-labelledby", "slice-print-stage");
+  const stage = el("span", "slice-print-stage");
+  bar.append(meter, stage);
   const actions = el("div", "slice-print-actions");
   actions.className = "slice-print-actions";
   const close = el("button", "slice-print-close", "Close");
@@ -391,16 +457,36 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
   choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, warmUpWrap);
-  dialog.append(heading, printer, untested, choices6, status, actions);
+  dialog.append(heading, printer, untested, choices6, bar, status, actions);
   slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
     status.textContent = text;
     status.classList.toggle("slice-print-bad", bad);
+    // On a phone the dialog scrolls and the buttons stick to its bottom: bring the words into view, not under them.
+    if (text) status.scrollIntoView?.({ block: "nearest" });
   };
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value), warmUp: warmUp.checked });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   let busy = false;
+  /** Shows the bar from now until `end` is called, following the engine's reports. */
+  const showProgress = () => {
+    meter.removeAttribute("value");
+    stage.textContent = progressWords(null);
+    bar.hidden = false;
+    let best = 0;
+    const stop = events.onProgress?.((p) => {
+      // Forward only: two calls (the plain slice after the file) each start from 0.
+      if (!(p.fraction >= best)) return;
+      best = p.fraction;
+      meter.value = Math.min(1, Math.max(0, p.fraction));
+      stage.textContent = progressWords(p);
+    });
+    return () => {
+      stop?.();
+      bar.hidden = true;
+    };
+  };
   // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
   let generation = 0;
   dialog.addEventListener("close", () => generation++);
@@ -415,11 +501,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     busy = true;
     go.disabled = preview.disabled = true;
     say("Slicing…", false);
+    const end = showProgress();
     try {
       const { print, saved, name } = await events.slice(choices(), file(), alive());
-      const warning = unprintedWords(print);
-      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...(warning ? [warning] : [])].join(" "), warning !== null);
+      end();
+      const warnings = [unprintedWords(print), print.levelNote || null].filter((w): w is string => w !== null);
+      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
+      end();
       if (e instanceof SliceDropped) say("", false);
       else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
     } finally {
@@ -432,11 +521,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     busy = true;
     go.disabled = preview.disabled = true;
     say("Slicing…", false);
+    const end = showProgress();
     try {
       await events.preview(choices(), file(), alive());
+      end();
       say("", false);
       dialog.close();
     } catch (e) {
+      end();
       if (e instanceof SliceDropped) say("", false);
       else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
     } finally {

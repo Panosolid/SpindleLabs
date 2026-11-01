@@ -721,7 +721,7 @@ try {
     assert.deepEqual(await rows("timeline"), ["L-bracket 1"]);
     assert.equal(await page.getAttribute("#browser .tree-row[data-node=feature-1]", "title"), "L-bracket 1\nExtrude: L-bracket profile 40 × 30 mm, by 20 mm");
     assert.deepEqual(await rows("bodies"), ["Body 1"]);
-    assert.deepEqual(await rows("origin"), ["XY plane", "XZ plane", "YZ plane", "X axis", "Y axis", "Z axis"]);
+    assert.deepEqual(await rows("origin"), ["XY plane", "XZ plane", "YZ plane", "X axis", "Y axis", "Z axis", "Build area (P1S)"]);
     const current = () => page.$$eval("#browser [aria-current=true]", (els) => els.map((e) => e.dataset.node));
     assert.deepEqual(await current(), []);
     await page.click("#browser [data-node=body-1]");

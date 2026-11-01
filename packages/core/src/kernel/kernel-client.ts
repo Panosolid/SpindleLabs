@@ -1,6 +1,6 @@
 // Main-thread side of the kernel worker: every kernel call is an async
 // message, so a slow operation never freezes the UI.
-import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, StlFile, SupportStyle } from "./kernel-types.ts";
+import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, BodyView, KernelErrorKind, KernelFailure, KernelInput, NozzleType, Outline, P1sPrintFile, SketchArc, SketchCircle, SketchLine, SketchOutline, SlicedPrint, SliceProgress, SliceStage, StlFile, SupportStyle } from "./kernel-types.ts";
 import { builtSize, callUnits, DEFAULT_UNIT_MS, facesSize, LIMIT_FLOOR_MS, limitMs, type BodySize } from "./time-limit.ts";
 
 /** Every operation the worker supports, with its arguments and result. */
@@ -56,6 +56,32 @@ export type KernelResponse = { id: number; ok: true; value: unknown } | { id: nu
  * missing when the worker couldn't time it, and DEFAULT_UNIT_MS is taken.
  */
 export type KernelReady = { ready: true; unitMs?: number };
+
+/** What the worker says while a slice (call `id`) works: how far it has got (SliceProgress), at most every PROGRESS_EVERY_MS but at every new stage. */
+export type KernelProgress = { id: number; progress: SliceProgress };
+
+/** The least time between two progress messages of one stage (ms): a bar needs no more, and each costs a message. */
+export const PROGRESS_EVERY_MS = 100;
+
+/** The engine's progress callback (its last argument to slice_stl and print_file_stl): fraction 0 to 1, stage, done of total. */
+export type ProgressCallback = (fraction: number, stage: SliceStage, done: number, total: number) => void;
+
+/**
+ * Call `id`'s progress callback: the engine's reports to the client as KernelProgress messages, a stage's at most every
+ * PROGRESS_EVERY_MS (each new stage, and the end, at once). The worker is busy in the call, but messages still go.
+ */
+export function progressPoster(id: number, post: (message: KernelProgress) => void, now: () => number): ProgressCallback {
+  let last = -Infinity;
+  let stage: SliceStage | null = null;
+  return (fraction, newStage, done, total) => {
+    const t = now();
+    if (newStage === stage && fraction < 1 && t - last < PROGRESS_EVERY_MS) return;
+    last = t;
+    stage = newStage;
+    post({ id, progress: { fraction, stage: newStage, done, total } });
+  };
+}
+
 
 /**
  * Whether a kernel call stopped the WebAssembly itself (a trap: running out
@@ -141,9 +167,16 @@ export interface KernelCalls {
   onMissing?(listener: () => void): () => void;
   /** Starts a fresh kernel in place of one that is missing or gone (the listeners of onRestart hear of it); does nothing to one that works. */
   retry?(): void;
+  /**
+   * Calls `listener` as a slice (slice_stl, print_file_stl) reports how far it has got (SliceProgress). Returns the way
+   * to stop listening. The app's client has it; a kernel without a worker (tests) may not, and an engine from before
+   * progress reports never calls it.
+   */
+  onProgress?(listener: (progress: SliceProgress) => void): () => void;
 }
 
 export class KernelClient implements KernelCalls {
+  private progressListeners = new Set<(progress: SliceProgress) => void>();
   private worker!: Worker;
   private nextId = 1;
   /** The calls sent and not yet answered, in the order sent, which is the order the worker answers them; each with its size (time-limit.ts). */
@@ -247,8 +280,13 @@ export class KernelClient implements KernelCalls {
     this.worker = worker;
     this.started = false;
     this.watchHead();
-    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady>) => {
+    worker.onmessage = (event: MessageEvent<KernelResponse | KernelReady | KernelProgress>) => {
       if (worker !== this.worker) return; // a kernel already replaced
+      if ("progress" in event.data) {
+        // Only for a call still waiting (a late one, after its answer, says nothing).
+        if (this.pending.has(event.data.id)) for (const listener of this.progressListeners) listener(event.data.progress);
+        return;
+      }
       if ("ready" in event.data) {
         const unitMs = event.data.unitMs;
         this.unitMs = typeof unitMs === "number" && Number.isFinite(unitMs) && unitMs > 0 ? unitMs : DEFAULT_UNIT_MS;
@@ -344,6 +382,11 @@ export class KernelClient implements KernelCalls {
   onRestart(listener: () => void): () => void {
     this.restartListeners.add(listener);
     return () => void this.restartListeners.delete(listener);
+  }
+
+  onProgress(listener: (progress: SliceProgress) => void): () => void {
+    this.progressListeners.add(listener);
+    return () => void this.progressListeners.delete(listener);
   }
 
   call<K extends keyof KernelOps>(op: K, ...args: KernelOps[K]["args"]): Promise<KernelOps[K]["result"]> {

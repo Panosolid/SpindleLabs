@@ -1,6 +1,6 @@
 // @fission/core: the shared document model and the bridge to the kernel.
 export { isTrap, KERNEL_RESTARTED, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelCalls, type KernelOps, type KernelRequest, type KernelResponse } from "./kernel/kernel-client.ts";
-export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, Loop, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, StlFile } from "./kernel/kernel-types.ts";
+export type { BodyHandle, BodySpec, BooleanOp, BooleanResult, EdgeFrom, FaceFrom, BuildPlate, BodyView, DisplayMesh, FaceRole, Frame, KernelErrorKind, KernelFailure, KernelInput, Loop, Motion, Outline, OutlinePiece, P1sPrintFile, PrintLayer, PrintPath, PrintRole, ShapeSpec, SlicedPrint, SupportStyle, SketchArc, SketchCircle, SketchLine, SketchOutline, SliceProgress, SliceStage, StlFile } from "./kernel/kernel-types.ts";
 // DRAFT model interfaces (see each file).
 export type { Material, MaterialLibrary } from "./model/material.ts";
 export { materialLibrary } from "./model/material.ts";
@@ -23,7 +23,7 @@ export { resolveReference } from "./model/references.ts";
 export type { History, Selection } from "./model/session.ts";
 export { createSelection, historyNotBuilt } from "./model/session.ts";
 export { createHistory, MERGE_MS, UNDO_LIMIT, type HistoryOptions } from "./model/history.ts";
-export type { CornerView, ExtrudeArrow, ExtrudePointer, ExtrudeShow, Framing, MoveHandle, MoveHandlesShow, MoveKind, MovePointer, OfferedProfile, OriginPlane, OriginShown, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "./model/viewport.ts";
+export type { BuildAreaShown, CornerView, ExtrudeArrow, ExtrudePointer, ExtrudeShow, Framing, MoveHandle, MoveHandlesShow, MoveKind, MovePointer, OfferedProfile, OriginPlane, OriginShown, SharedViewport, SketchDrawing, SketchPointer, SketchXY, ViewName, ViewportHighlight, ViewportPick } from "./model/viewport.ts";
 export { NO_HIGHLIGHT, ORIGIN_AT_FIRST } from "./model/viewport.ts";
 export type { AnalysisOverlay, OverlayMark, OverlaySeverity, OverlayTarget } from "./model/overlay.ts";
 export { SEVERITY_COLOURS, triangleColours } from "./model/overlay.ts";

@@ -71,6 +71,15 @@ test("legal calls of each size take less than their units × the calibration, wi
   check("the plate sliced", callUnits("slice_stl", [stl, 0.2, 3, 15, "off"], () => undefined), sliceMs);
   entry.body_free(a);
   entry.body_free(b);
+  // Big flat-sided parts at full infill: 12 triangles each, so only their area tells (slicer hunt M8; the limit gave
+  // the 246 mm box less than it took). 200 × 100 × 100 mm is the costliest per unit of area seen.
+  for (const [w, d, h] of [[100, 100, 100], [150, 150, 150], [200, 100, 100]]) {
+    const big = entry.body_build({ box: { width: w, depth: d, height: h } });
+    const bigStl = entry.body_stl(big, "box").bytes;
+    const [bigMs] = timed(() => entry.slice_stl(bigStl, 0.2, 2, 100, "off"));
+    check(`a ${w} × ${d} × ${h} mm box sliced at 100 % infill`, callUnits("slice_stl", [bigStl, 0.2, 2, 100, "off"], () => undefined), bigMs);
+    entry.body_free(big);
+  }
   // A 300-hole plate (304 corners), built with its view: make_extrude.
   const side = 18;
   const holes = Array.from({ length: 300 }, (_, k) => ({ circle: { center: [((k % side) + 0.5) * 5000, (Math.floor(k / side) + 0.5) * 5000] as [number, number], radius: 1500 } }));

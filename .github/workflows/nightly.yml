@@ -312,7 +312,10 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true' && (github.event_name == 'schedule' || inputs.ts_mutants)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # naming runs 12 seeded boolean sessions per mutant: 74 min on 2026-10-30,
+    # past 120 once 35ed1 added its sliver tests (issue #199: the leg was
+    # cancelled before its report); the other legs finish within an hour.
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       max-parallel: ${{ github.event_name == 'schedule' && 8 || 3 }}
