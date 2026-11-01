@@ -182,7 +182,7 @@ test("the assistant's set_part changes the last body with its own sizes, whateve
   assert.ok(await a.close());
 });
 
-test("an extruded sketch selected, Box chosen: a new box is added, and the panel moves to it", async () => {
+test("an extruded sketch selected, Box chosen: a new box is added, and the panel stays on the selected extrude", async () => {
   let doc = empty();
   const s = addSketch(doc);
   doc = drawRectangle(s.doc, s.id, [100, 0], [110, 10]).doc;
@@ -197,12 +197,16 @@ test("an extruded sketch selected, Box chosen: a new box is added, and the panel
   const f = a.doc().timeline.features;
   assert.equal(f.filter((x) => x.intent.type === "box").length, 2, "a second box");
   assert.equal(f.find((x) => x.id === e.id)!.intent.parameters.distance, 30);
-  // The selection of Body 1 went, so the boxes and the Feature section both describe the new box, never the extrude.
-  assert.equal(a.selection.items.length, 0);
-  assert.equal(choice(a), "box");
-  assert.equal(intent(a), f.at(-1)!.intent.summary);
-  // And the boxes are the new box's own sizes (not the old last box's, nor the extrude's).
+  // Nothing leaves the selection unannounced: Body 1 stays selected, so the panel and its boxes are the extrude's still.
+  assert.deepEqual(a.selection.items.map((r) => r.id), [`body:${e.id}`]);
+  assert.equal(choice(a), "sketch-extrude");
+  assert.equal(box(a, "height"), "30");
+  assert.equal(intent(a), f.find((x) => x.id === e.id)!.intent.summary);
+  // Nothing selected: the new box, the last body, with its own sizes in the boxes.
+  a.selection.clear();
+  await a.settle();
   const made = f.at(-1)!.intent.parameters;
+  assert.equal(choice(a), "box");
   assert.deepEqual([box(a, "width"), box(a, "depth"), box(a, "height")], [made.width, made.depth, made.height].map(String));
   assert.ok(await a.close());
 });

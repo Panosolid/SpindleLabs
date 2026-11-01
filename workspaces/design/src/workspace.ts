@@ -882,7 +882,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // The body the boxes describe (the selected one, else the last) is the one changed (bug hunt 2026-11-01).
     const target = current && next === undefined && loaded === undefined && remounted === undefined ? boxesFeature(current) : null;
     let doc: DesignDocument;
-    let dropSelection = false;
     if (next ?? loaded ?? remounted) doc = (next ?? loaded ?? remounted)!;
     else if (kind === "sketch-extrude" && current) doc = setExtrudeDistance(current, Number(inputs[2].value), target?.id);
     else if (!current) doc = documentFor(partCommand(), current);
@@ -890,10 +889,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const [w, d, h] = inputs.map((i) => Number(i.value));
       const made = withPartAt(current, target, kind as ShapeKind, w, d, h);
       doc = made.doc;
-      // A new body (the shape chosen for an extruded sketch): the boxes are its, and a selection of another body
-      // would take them away from it, so the selection goes (the Feature section then describes the new body), once
-      // the project holds the new design (cleared now, the boxes would follow the old one's last body).
-      dropSelection = made.id !== target?.id && ctx.selection.items.length > 0;
+      // A new body (a preset shape chosen for an extruded sketch, which has none to become) is added at the marker;
+      // the selection stays as it was (nothing leaves it unannounced, refind.journey.ts), so the boxes go back to
+      // the selected body when it is not the new one, as the Feature section does.
       boxesPart = made.id;
     }
     // No shape is the part's while the design has no body (24f4): the Shape choice says "—".
@@ -908,7 +906,6 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A user's edit is settled once recorded (`settled`), from the design before the first edit not yet settled.
     if (changed && label !== undefined && current) unsettled ??= current;
     ctx.project.workspaces.design = doc;
-    if (dropSelection) ctx.selection.clear();
     if (changed) ctx.projectChanged(label, mergeKey); // the shell autosaves (19c) and records the undo step (20b)
     await show(doc, kind);
   }
