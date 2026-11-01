@@ -12,7 +12,7 @@
 // the tool's panel says is wrong (its error, or why OK is off) is shown on
 // the bar in words too, since the sheet holding it is closed and a button's
 // title never shows on touch (weak-spot hunt 10-29). While a line, rectangle
-// or arc is part drawn it also holds Type size, which puts the keys in the
+// or arc is part drawn it also holds Type, which puts the keys in the
 // typed-size boxes: at phone width they take no taps themselves. When a tool ends, the
 // Properties sheet is put away too, leaving the whole view.
 // Wider screens never show the bar (styles/phone-float.css).
@@ -121,9 +121,11 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     bar.replaceChildren(finish);
     if (state.ender.cancel) bar.append(proxy("float-cancel", "Cancel", state.ender.cancel));
     // The typed sizes by the finger (typed-boxes.ts) take no taps at phone width, so a tap meant for the sketch never opens
-    // the keyboard instead (sketch hunt 2026-11-01): this button puts the keys in their first box.
+    // the keyboard instead (sketch hunt 2026-11-01): this button ("Type") puts the keys in their first box.
     if (sizes) {
-      const type = Object.assign(document.createElement("button"), { type: "button", id: "float-type", textContent: "Type size" });
+      // One short word, so the bar stays one row beside the view cube (a second row covered the view: Firefox's wider text, CI).
+      const type = Object.assign(document.createElement("button"), { type: "button", id: "float-type", textContent: "Type", title: "Type a size" });
+      type.setAttribute("aria-label", "Type a size");
       type.addEventListener("click", (e) => {
         if (e.detail !== 0 && !pressOnBar) return;
         viewport.querySelector<HTMLInputElement>("#typed-entry input")?.focus();

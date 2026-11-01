@@ -9,7 +9,7 @@
 // nothing, and Enter on it places nothing; Escape in a box empties it without ending the line, and a
 // second Escape ends it; letters typed in a box never reach the tool keys.
 // The rectangle's Width and Height the same way. At 375 px with taps: the
-// boxes whole on screen, a line typed by length and angle after Type size
+// boxes whole on screen, a line typed by length and angle after Type
 // on the bar over the view (the boxes take no taps there, so a tap on
 // them draws the next point instead of opening the keyboard). Screenshots
 // at 1280 and 375 px go to E2E_SHOTS when set. The arcs too: the hint by
@@ -256,9 +256,13 @@ await check("375 px with taps: the boxes on screen, a line typed by length and a
   assert.ok(b.y >= v.y && b.y + b.height <= v.y + v.height + 1, "boxes inside the view");
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth);
   assert.ok(scroll <= 375, `no sideways scroll (${scroll} px)`);
-  // At phone width the boxes take no taps until typed in: the bar over the view's Type size puts the keys in Length.
+  // At phone width the boxes take no taps until typed in: the bar over the view's Type puts the keys in Length.
+  // The bar keeps one row with Type beside Finish Sketch: a second row covered the view's top (Firefox CI, its wider text).
+  const bar = await page.locator("#phone-float").boundingBox();
+  const finish = await page.locator("#float-finish").boundingBox();
+  assert.ok(bar.height < 2 * finish.height, `the bar is one row (${bar.height} px tall, Finish ${finish.height} px)`);
   await page.tap("#float-type");
-  assert.equal(await focused(page), "typed-length", "Type size puts the keys in Length");
+  assert.equal(await focused(page), "typed-length", "Type puts the keys in Length");
   await page.keyboard.type("25");
   await page.locator("#typed-angle").tap();
   await page.keyboard.type("90");
