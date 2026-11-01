@@ -148,12 +148,16 @@ export function panelFocus(items: readonly GeometryReference[], scene: Scene | n
  * to a feature with no body shown, are left alone (not Design's to judge
  * here). A profile (an outline reference Design built) is kept while
  * `outlineIds` has it: a change to a shape with no profile (a box), or a
- * sketch deleted or emptied (25c1), drops it.
+ * sketch deleted or emptied (25c1), drops it. A body whose feature is no
+ * longer in the timeline (`inTimeline`: deleted, or its insert undone) is
+ * left out of both lists, with no note: the user took it away (hunt 11-01: a gone body stayed selected
+ * and, its id given again, came back selected on a body never picked).
  */
 export function survivors(
   items: readonly GeometryReference[],
   scene: Scene,
   outlineIds: readonly string[] = [],
+  inTimeline: (featureId: string) => boolean = () => true,
 ): { kept: GeometryReference[]; dropped: GeometryReference[]; shared: GeometryReference[] } {
   const kept: GeometryReference[] = [];
   const dropped: GeometryReference[] = [];
@@ -163,6 +167,7 @@ export function survivors(
     let keep = true;
     const profile = readProfileReference(item);
     if (profile !== null) keep = outlineIds.includes(profile);
+    else if (r && r.kind === "body" && !inTimeline(r.featureId)) continue;
     else if (r && r.kind !== "body" && bodyOf(scene, item) >= 0) {
       const found = findInScene(item, scene);
       keep = found.status === "found";
