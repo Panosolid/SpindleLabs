@@ -2,10 +2,10 @@
 // Until the sketcher (steps 21–33) it builds primitives and ready-made
 // outlines; every other workspace will refer to its bodies, faces and edges.
 
-import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
+import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Feature, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -39,7 +39,7 @@ import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
 import { BodyCache, followedDoc, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { isFaceSketch } from "./face-sketch.ts";
-import { droppedNote, highlightOf, panelFocus, selectionRows, survivors } from "./selection.ts";
+import { droppedNote, highlightOf, panelFocus, panelPart, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
 import { bodyReference, readProfileReference } from "./references.ts";
 import { addFaceSketch, addSketch, askOutline, outlineSourceOf, pinNewPoints, planeOf, projectEdges, SKETCH_STEPS, sketchCurves, sketchItem, sketchPlane, sketchSide } from "./sketch.ts";
@@ -64,7 +64,7 @@ import { COPY_SVG, DOWNLOAD_STL, hiddenStlNote, NO_BODY_STL, noBodyWords, regist
  * shown, with the document it made: when the project holds a different
  * document (a file was opened), the panel shows that one instead.
  */
-let saved: { doc: DesignDocument; shape: PartKind; sizes: string[] } | null = null;
+let saved: { doc: DesignDocument; shape: PartKind; sizes: string[]; part: string | null } | null = null;
 let framed: Framing | null = null;
 let framedKind: PartKind | null = null;
 /** Design was put away by an Undo or Redo made in another workspace: the next mount is that restore's, not an opened file's. */
@@ -394,15 +394,22 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   let loaded: DesignDocument | undefined;
   /** The document this panel last made, mounted again (Design moved to the other pane): shown as it is, never remade from the size boxes (daily hunt 2026-10-23: a design with no body got a new box). */
   let remounted: DesignDocument | undefined;
+  /**
+   * The id of the body the size boxes and Shape choice describe, which a size typed changes (bug hunt 2026-11-01): the
+   * selected body (`panelPart`), else the last (`partFeature`). Each change of selection brings the boxes to it (`followSelection`).
+   */
+  let boxesPart: string | null = null;
   if (saved && held === saved.doc) {
     shape = saved.shape;
     inputs.forEach((input, i) => (input.value = saved!.sizes[i]));
+    boxesPart = saved.part;
     remounted = held;
   } else if (held) {
     const part = partOf(held); // readDesignDocument checked it when the file was opened; null when it has no body (24f4)
     if (part) {
       shape = part.shape;
       for (const [i, key] of SIZE_KEYS.entries()) if (part.sizes[key] !== undefined) inputs[i].value = String(part.sizes[key]);
+      boxesPart = partFeature(held)!.id;
     }
     loaded = held;
     framedKind = null; // an opened file is a new part: frame it (not after Undo or Redo: keepCamera)
@@ -582,6 +589,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
         return (source ? source.kind === "sketch" : selectedSketches.has(id)) ? [id] : [];
       }),
     );
+    followSelection(doc);
     viewport.showSelection(highlightOf(items, lastScene));
     lightRows(ctx.browser, doc, failedNow, items);
     fold?.update({ selected: items.length > 0 });
@@ -768,6 +776,29 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return { op: "set_part", shape, width, depth, height };
   }
 
+  /** The body the boxes describe (`boxesPart`) in `doc` while it is a body that builds, else the last body; null with none. */
+  function boxesFeature(doc: DesignDocument): Feature | null {
+    const f = boxesPart === null ? undefined : doc.timeline.features.find((x) => x.id === boxesPart);
+    return f !== undefined && makesBody(f) && builds(doc, f) ? f : partFeature(doc);
+  }
+  /** The boxes and the Shape choice show `part`'s shape and sizes, and a size typed now changes it. */
+  function showPartSizes(doc: DesignDocument, part: Feature) {
+    const { shape: kind, sizes } = shapeOf(doc, part);
+    shape = kind;
+    for (const [i, key] of SIZE_KEYS.entries()) if (sizes[key] !== undefined) inputs[i].value = String(sizes[key]);
+    boxesPart = part.id;
+    panel.setShape(kind, kind);
+    if (saved) saved = { ...saved, shape, sizes: inputs.map((i) => i.value), part: boxesPart };
+  }
+  /**
+   * The boxes brought to the body the Feature section describes (`panelPart`): the selected body, else the last
+   * (bug hunt 2026-11-01). Only when that body changes, so a size being typed is never written over.
+   */
+  function followSelection(doc: DesignDocument) {
+    const part = panelPart(ctx.selection.items, lastScene, doc);
+    if (part !== null && part.id !== boxesPart) showPartSizes(doc, part);
+  }
+
   /**
    * Does what a Design command says: the toolbar's buttons come here, and
    * the AI's accepted commands will too. A set_part from the toolbar names
@@ -788,6 +819,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (command.op === EXTRUDE_OP) return aiExtrude(command);
     if (command.op === RENAME_OP) return aiRename(command);
     if (command.op !== "set_part") throw new Error(`Design has no command ${command.op}`);
+    // The assistant's set_part changes the last body, as it is told (ai-view.ts), with that body's own sizes for any it
+    // leaves out (`aiView` says which), whatever is selected; the boxes come back to the selection after.
+    const last = partFeature(designDoc());
+    if (last !== null && last.id !== boxesPart) showPartSizes(designDoc(), last);
+    return setPart(command);
+  }
+  /** set_part on the body the boxes describe: this shape, and the sizes the command names (the rest kept). */
+  function setPart(command: Command) {
     const kind = command.shape as ShapeKind;
     shape = kind;
     for (const [i, key] of SIZE_KEYS.entries()) if (typeof command[key] === "number") inputs[i].value = String(command[key]);
@@ -840,19 +879,36 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // project holds it. An opened file's document is kept as it is until the
     // first edit. An extrude of a sketch has one size, its distance (the height box).
     const current = ctx.project.workspaces.design as DesignDocument | undefined;
-    const doc = next ?? loaded ?? remounted ?? (kind === "sketch-extrude" && current ? setExtrudeDistance(current, Number(inputs[2].value)) : documentFor(partCommand(), current));
+    // The body the boxes describe (the selected one, else the last) is the one changed (bug hunt 2026-11-01).
+    const target = current && next === undefined && loaded === undefined && remounted === undefined ? boxesFeature(current) : null;
+    let doc: DesignDocument;
+    let dropSelection = false;
+    if (next ?? loaded ?? remounted) doc = (next ?? loaded ?? remounted)!;
+    else if (kind === "sketch-extrude" && current) doc = setExtrudeDistance(current, Number(inputs[2].value), target?.id);
+    else if (!current) doc = documentFor(partCommand(), current);
+    else {
+      const [w, d, h] = inputs.map((i) => Number(i.value));
+      const made = withPartAt(current, target, kind as ShapeKind, w, d, h);
+      doc = made.doc;
+      // A new body (the shape chosen for an extruded sketch): the boxes are its, and a selection of another body
+      // would take them away from it, so the selection goes (the Feature section then describes the new body), once
+      // the project holds the new design (cleared now, the boxes would follow the old one's last body).
+      dropSelection = made.id !== target?.id && ctx.selection.items.length > 0;
+      boxesPart = made.id;
+    }
     // No shape is the part's while the design has no body (24f4): the Shape choice says "—".
     panel.setShape(kind, partFeature(doc) === null ? null : kind);
     // An opened document is all new to the graph: out of date until it builds.
     const before = loaded ? null : (current ?? null);
     loaded = undefined;
     remounted = undefined;
-    saved = { doc, shape, sizes: inputs.map((i) => i.value) };
+    saved = { doc, shape, sizes: inputs.map((i) => i.value), part: boxesPart };
     syncGraph(ctx.graph, doc, before, ctx.changeNotes);
     const changed = ctx.project.workspaces.design !== doc;
     // A user's edit is settled once recorded (`settled`), from the design before the first edit not yet settled.
     if (changed && label !== undefined && current) unsettled ??= current;
     ctx.project.workspaces.design = doc;
+    if (dropSelection) ctx.selection.clear();
     if (changed) ctx.projectChanged(label, mergeKey); // the shell autosaves (19c) and records the undo step (20b)
     await show(doc, kind);
   }
@@ -870,6 +926,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     ctx.selection.clear();
     shape = "box";
     inputs.forEach((input, i) => (input.value = DEFAULT_SIZES[SIZE_KEYS[i]]));
+    boxesPart = null;
     framedKind = null; // a new part: frame it
     return update(START_FRESH_STEP, undefined, freshDesign());
   }
@@ -891,7 +948,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     shape = kind;
     inputs.forEach((input, i) => (input.value = String(INSERT_SIZES[SIZE_KEYS[i]])));
     if (partFeature(doc) === null) framedKind = null;
-    const made = update(insertStep(kind), undefined, inserted(doc, kind).doc);
+    const added = inserted(doc, kind);
+    boxesPart = added.id;
+    const made = update(insertStep(kind), undefined, added.doc);
     fold?.reveal();
     return made;
   }
@@ -1040,10 +1099,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (part) {
         shape = part.shape;
         for (const [i, key] of SIZE_KEYS.entries()) if (part.sizes[key] !== undefined) inputs[i].value = String(part.sizes[key]);
+        boxesPart = partFeature(next)!.id;
       } else if (shape === "sketch-extrude") {
         shape = "box";
         inputs.forEach((input, i) => (input.value = DEFAULT_SIZES[SIZE_KEYS[i]]));
-      }
+        boxesPart = null;
+      } else boxesPart = null;
       void update(step, undefined, next);
     },
     ask: (q, go) => deleting.ask(q, go),
@@ -1326,7 +1387,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     syncGraph(ctx.graph, next, before, ctx.changeNotes);
     ctx.graph.markFresh(sketchId);
     ctx.project.workspaces.design = next;
-    saved = { doc: next, shape, sizes: inputs.map((i) => i.value) };
+    saved = { doc: next, shape, sizes: inputs.map((i) => i.value), part: boxesPart };
     ctx.projectChanged(label);
     drawBrowser(next);
     showStart();
@@ -1413,6 +1474,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (mode.kind !== "none") leaveSketch(false);
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(d));
+    boxesPart = made.id;
     return update(extrudeStep(doc, id), undefined, usedSketchHidden(made.doc, id));
   }
 
@@ -1949,6 +2011,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveExtrude();
     shape = "sketch-extrude";
     inputs[SIZE_KEYS.indexOf("height")].value = String(Math.abs(distance));
+    boxesPart = made.id;
     await update(source.face ? `Extrude ${source.label}` : extrudeStep(before, id), undefined, usedSketchHidden(made.doc, source.sketch));
   }
 
@@ -2621,11 +2684,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // The Shape choice (U0d) does what the toolbar's shape buttons did: set_part with this shape and the boxes' sizes.
   panel.shapeChoice.addEventListener("change", () => {
     const kind = panel.shapeChoice.value as ShapeKind;
-    if (kind) void run({ op: "set_part", shape: kind });
+    if (kind) void setPart({ op: "set_part", shape: kind });
   });
-  // Typing in one box is one undo step (the merge key), named for the box.
+  // Typing in one box is one undo step (the merge key), named for the box; typing for another body is another step
+  // (the key names the body: Undo after typing for Body 1 put back Body 2's width typed before it, bug hunt 2026-11-01).
   inputs.forEach((input, i) => {
-    input.addEventListener("input", () => update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, SIZE_KEYS[i]));
+    input.addEventListener("input", () => update(shape === "sketch-extrude" && SIZE_KEYS[i] === "height" ? DISTANCE_STEP : `Change ${SIZE_KEYS[i]}`, `${SIZE_KEYS[i]} ${boxesPart ?? ""}`));
     // Left (or Enter): a refused size gives way to the last one. Blur too: Firefox gives no change for a number box
     // left empty after 0 and -5 (hunt 26h, CI's browsers job).
     input.addEventListener("change", () => restoreRefused(i));
@@ -2658,8 +2722,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     },
     // What the AI assistant is told before a request (25c3): the timeline as last built, and the panel's sizes, which a set_part keeps for each it leaves out.
     aiView: () => {
-      const [width, depth, height] = inputs.map((i) => Number(i.value));
       const doc = ctx.project.workspaces.design as DesignDocument | undefined;
+      // The sizes set_part keeps are the last body's (`run`), even while the boxes show a selected one.
+      const last = doc ? partFeature(doc) : null;
+      const kept = last !== null && last.id !== boxesPart ? shapeOf(doc!, last).sizes : {};
+      const [width, depth, height] = SIZE_KEYS.map((key, i) => kept[key] ?? Number(inputs[i].value));
       const label = (id: string) => doc?.timeline.features.find((f) => f.id === id)?.provenance.self.label ?? id;
       return designAIView(doc, failedNow, { width, depth, height }, aiFaces(lastScene, label), mode.kind === "edit" ? mode.tool.sketch : null);
     },
