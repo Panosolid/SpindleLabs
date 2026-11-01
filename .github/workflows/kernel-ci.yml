@@ -58,7 +58,8 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     environment: kernel
-    timeout-minutes: 60
+    # The checks normally take 45-58 minutes; 90 leaves room for a slow runner.
+    timeout-minutes: 90
     steps:
       - name: Inputs are commit ids and a label, nothing else
         run: |
