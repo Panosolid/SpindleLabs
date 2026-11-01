@@ -7,7 +7,9 @@
 // Plain G-code for another printer saves the same layers. Other choices
 // change the file's name and its layers (0.16 mm: the first layer 0.2 mm,
 // then (20 − 0.2) / 0.16 = 123.75, so 124 more: 125). At a desktop width
-// with clicks and a phone's with taps.
+// with clicks and a phone's with taps. The warm-up loop's tick box: on by
+// default (the loop on the first layer, before the part), off saves a file
+// without it, named so, and is remembered.
 // Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -96,6 +98,38 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.match(await page.textContent("#slice-print-status"), /^Saved spindlelabs-0\.2mm-2w-15pc-textured\.gcode\.3mf: 100 layers, /);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-p1s.png` });
 
+      // The warm-up loop (G2, Ben 11-01: the first 10–30 s of the first layer didn't stick): ticked by default, so
+      // the P1S's file lays it first; the settings block Bambu Studio reads says two loops. Unticked, the file has none,
+      // its name says so, and the choice is kept for next time.
+      assert.equal(await page.$eval("#slice-print-warm-up", (c) => c.checked), true, "on by default");
+      // The box sits right beside its words (a stretched box once left them across the dialog).
+      const gap = await page.$eval("#slice-print-warm-up", (c) => {
+        const r = document.createRange();
+        r.selectNodeContents(c.parentElement.lastChild);
+        const box = c.getBoundingClientRect();
+        return { gap: r.getBoundingClientRect().left - box.right, width: box.width };
+      });
+      assert.ok(gap.width <= 20 && gap.gap >= 0 && gap.gap < 16, `the box ${gap.width} px wide, ${gap.gap} px from its words`);
+      const firstLayer = (g) => g.slice(g.indexOf(";LAYER_CHANGE"), g.indexOf(";LAYER_CHANGE", g.indexOf(";LAYER_CHANGE") + 1));
+      const onGcode = plate.toString("utf8");
+      assert.match(firstLayer(onGcode), /^;TYPE:Skirt$/m, "the loop on the first layer");
+      assert.ok(firstLayer(onGcode).indexOf(";TYPE:Skirt") < firstLayer(onGcode).search(/^;TYPE:(Outer|Inner) wall$/m), "before the part");
+      // Each loop is its own path with its own type line: two in the first layer, none after it.
+      assert.equal((firstLayer(onGcode).match(/^;TYPE:Skirt$/gm) ?? []).length, 2, "two loops");
+      assert.equal((onGcode.match(/^;TYPE:Skirt$/gm) ?? []).length, 2, "first layer only");
+      assert.match(onGcode, /^; skirt_loops = 2$/m, "the settings block Bambu Studio reads");
+      await press("#slice-print-warm-up");
+      assert.equal(await page.$eval("#slice-print-warm-up", (c) => c.checked), false);
+      const [bare] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      assert.equal(bare.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-no-warm-up-textured.gcode.3mf");
+      const bareFiles = storedZip(readFileSync(await bare.path()));
+      assert.doesNotMatch(bareFiles.get("Metadata/plate_1.gcode").toString("utf8"), /;TYPE:Skirt/, "no loop when unticked");
+      assert.match(bareFiles.get("Metadata/plate_1.gcode").toString("utf8"), /^; skirt_loops = 0$/m);
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.warm-up")), "off", "remembered");
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-no-warm-up.png` });
+      await press("#slice-print-warm-up");
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.warm-up")), "on");
+
       // A High Flow nozzle (Ben's P1S): the file names it where Bambu Studio's send window reads it, and the
       // G-code dialect, so its time reads the speed limits in mm/s; the name says so too.
       await page.selectOption("#slice-print-nozzle", "high-flow");
@@ -149,7 +183,7 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      const ids = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-close", "slice-print-preview", "slice-print-go"];
+      const ids = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-warm-up", "slice-print-close", "slice-print-preview", "slice-print-go"];
       /** Each control's box against the window and the dialog's visible area: the ids not wholly inside both. */
       const hidden = () =>
         page.evaluate((ids) => {
@@ -167,7 +201,7 @@ for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [128
         assert.deepEqual(await hidden(), [], "all on screen without scrolling");
       } else {
         // The buttons are always in view; each choice comes into view when the dialog scrolls to it.
-        for (const id of ids.slice(0, 6)) {
+        for (const id of ids.slice(0, -3)) {
           await page.$eval(`#${id}`, (e) => e.scrollIntoView({ block: "nearest" }));
           const out = await hidden();
           assert.ok(!out.includes(id), `${id} reachable: ${out}`);

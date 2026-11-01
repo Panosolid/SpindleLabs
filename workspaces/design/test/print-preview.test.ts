@@ -216,13 +216,23 @@ test("a 20 mm cube from the shipped build plays as the engine sliced it: 100 lay
   for (const l of p.layers) assert.ok(Math.abs(l.height - 0.2) < 1e-6, `height ${l.height} at ${l.z}`);
   assert.ok(Math.abs(p.layers[99].z - 20) < 1e-6);
   // Two code paths agreeing: the replayed G-code's layers and the engine's own preview layers, height and kinds.
+  // The warm-up loop ("skirt") plays as the prime kind, with the prime line, so both sides leave it out here; it is
+  // checked on its own below.
   const roleKind = { "outer-wall": "outer-wall", "inner-wall": "inner-wall", "solid-infill": "solid-infill", "sparse-infill": "sparse-infill" } as const;
   for (let k = 0; k < 100; k++) {
     assert.ok(Math.abs(p.layers[k].z - print.preview[k].zTop) < 1e-6);
     const played = new Set<string>();
     for (let i = 0; i < p.count; i++) if (p.plastic[i] && p.layer[i] === k && p.kind[i] !== "prime") played.add(p.kind[i]);
-    assert.deepEqual([...played].sort(), [...new Set(print.preview[k].paths.map((x) => roleKind[x.role]))].sort(), `layer ${k}`);
+    const sliced = print.preview[k].paths.filter((x) => x.role !== "skirt").map((x) => roleKind[x.role as keyof typeof roleKind]);
+    assert.deepEqual([...played].sort(), [...new Set(sliced)].sort(), `layer ${k}`);
   }
+  // On by default: the engine's first layer has the warm-up loop, and the played first layer lays prime-kind plastic
+  // well inside the plate (the prime line is at the plate's front edge, y < 1 mm; the loop is round the cube, y > 100).
+  assert.ok(print.preview[0].paths.some((x) => x.role === "skirt"));
+  assert.ok(print.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "skirt")));
+  let loopPieces = 0;
+  for (let i = 0; i < p.count; i++) if (p.plastic[i] && p.layer[i] === 0 && p.kind[i] === "prime" && p.to[3 * i + 1] > 100) loopPieces++;
+  assert.ok(loopPieces > 8, `${loopPieces} pieces of the loop played`);
   // Every line laid is about one 0.4 mm line wide (0.3 to 0.6: walls and infill differ a little).
   for (let i = 0; i < p.count; i++) if (p.plastic[i] && p.kind[i] !== "prime") assert.ok(p.width[i] > 0.3 && p.width[i] < 0.6, `width ${p.width[i]} of ${p.kind[i]}`);
 });

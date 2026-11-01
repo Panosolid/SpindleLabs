@@ -79,10 +79,10 @@ const ops = {
   body_hide: (body: BodyHandle) => kernel.body_hide(body),
   body_boolean: (target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult => kernel.body_boolean(target, tools, op),
   body_count: () => kernel.body_count(),
-  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, told?: ProgressCallback) =>
-    loose(kernel.slice_stl)(stl, layerHeight, wallCount, infillPercent, supports, told),
-  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, told?: ProgressCallback) =>
-    loose(kernel.print_file_stl)(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, told),
+  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, warmUp: boolean, told?: ProgressCallback) =>
+    loose(kernel.slice_stl)(stl, layerHeight, wallCount, infillPercent, supports, warmUp, told),
+  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, warmUp: boolean, told?: ProgressCallback) =>
+    loose(kernel.print_file_stl)(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, warmUp, told),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
