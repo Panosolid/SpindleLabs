@@ -282,6 +282,45 @@ test("wiring, hand-worked: a tap between two items on a touch screen puts the ma
   assert.deepEqual(picks, ["sketch-2"]);
 });
 
+test("wiring, hand-worked: at phone width a tap in an item's 40 px area picks it; between two areas, or past the last, moves the marker", () => {
+  const acts: BarAction[] = [];
+  const picks: string[] = [];
+  const window = new Window({ width: 375, height: 800 });
+  assert.equal(window.matchMedia("(max-width: 640px)").matches, true, "the window is phone width");
+  const slot = window.document.createElement("div") as unknown as HTMLElement;
+  window.document.body.append(slot as never);
+  bar.showTimelineBar(slot, withMarker(threeItems(), "start"), { onAction: (a) => void acts.push(a), onPick: (id) => void picks.push(id) });
+  // The phone's layout (timeline-bar.css): 24 px items 32 px apart from 24 px in: [24, 48], [80, 104], [136, 160];
+  // each item's area 8 px round it (PHONE_TAP_PAD): [16, 56], [72, 112], [128, 168]. Client x is row x + 100.
+  const PHONE: Edge[] = [{ left: 24, right: 48 }, { left: 80, right: 104 }, { left: 136, right: 160 }];
+  let list = lay(slot, PHONE);
+  const tap = (target: Element, x: number) => {
+    target.dispatchEvent(pointer(window, "pointerdown", x, { pointerType: "touch" }));
+    target.dispatchEvent(pointer(window, "pointerup", x, { pointerType: "touch" }));
+    target.dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: x, clientY: 775 }) as unknown as Event);
+  };
+  const item2 = slot.querySelector('[data-item="sketch-2"]')!;
+  // Row 74 (client 174): 6 px before item 2, inside its area, and 10 px from gap 1's middle 64. Item 2 picked.
+  tap(item2, 174);
+  assert.deepEqual(picks, ["sketch-2"]);
+  assert.deepEqual(acts, []);
+  // Row 108, 4 px past item 2's right edge and 12 px from gap 2's middle (104 + 136) / 2 = 120: still item 2's.
+  tap(item2, 208);
+  assert.deepEqual(picks, ["sketch-2", "sketch-2"]);
+  assert.deepEqual(acts, []);
+  // Row 64, gap 1's middle, between the areas: place 1.
+  tap(list, 164);
+  assert.deepEqual(acts, [{ kind: "marker", place: 1 }]);
+  // Row 164: 4 px past the last item, inside its area. On a 1280 px window this was the end (within TAP_REACH of 160).
+  list = lay(slot, PHONE); // the move drew the bar again
+  tap(slot.querySelector('[data-item="feature-3"]')!, 264);
+  assert.deepEqual(picks, ["sketch-2", "sketch-2", "feature-3"]);
+  assert.equal(acts.length, 1);
+  // Row 200, far past the last area: the end.
+  tap(list, 300);
+  assert.deepEqual(acts, [{ kind: "marker", place: 1 }, { kind: "marker", place: 3 }]);
+});
+
 test("wiring: the click a drag's release makes is not a click on what is under the pointer then", async () => {
   const picks: string[] = [];
   let doc = threeItems();

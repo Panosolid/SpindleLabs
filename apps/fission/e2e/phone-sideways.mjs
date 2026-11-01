@@ -17,10 +17,9 @@
 //    (smaller makes iOS Safari zoom in), and a new Move leaves the focus
 //    alone (no keyboard over the view).
 // 4. Slice for printing's Close is inside the dialog at 320, 340 and 375 px, its buttons within the status's scroll margin.
-// 5. At 393 × 852 the timeline's buttons, items and marker take a tap the
-//    row's whole height (40 px), buttons and items a little wider than they
-//    look; sideways they stay close to their width, since timeline.mjs needs
-//    each gap's middle and the 3 px past the last item to be the row's.
+// 5. At 393 × 852 the timeline's buttons, items, marker and ⋯ each take a
+//    tap 40 × 40 px (the row's whole 40 px, its top line drawn inside) while they look as
+//    small; the gaps between items' areas stay the row's (timeline.mjs).
 // 6. Two fingers on the toolbar, timeline and view controls never zoom the
 //    page (their touch-action allows no pinch).
 // 7. Turning the phone upright keeps the part inside the view.
@@ -203,25 +202,28 @@ console.log("checked - 320, 340 and 375 px: Slice for printing's Close inside th
 // 5 and 6. Upright: the timeline's tap areas, and pinch-proof bars.
 {
   const { page, context } = await open(393, 852);
+  // An item picked, so its ⋯ is measured too.
+  await page.locator("#timeline li.timeline-bar-item").first().tap();
+  await page.waitForSelector("#timeline .timeline-bar-more");
   const t = await page.evaluate(() => {
     const row = document.querySelector("#timeline").getBoundingClientRect();
     const small = [];
-    for (const e of document.querySelectorAll("#timeline :is(.timeline-marker-button, .timeline-bar-item, .timeline-bar-marker)")) {
+    const parts = [...document.querySelectorAll("#timeline :is(.timeline-marker-button, .timeline-bar-item, .timeline-bar-marker, .timeline-bar-more)")];
+    for (const e of parts) {
       // The tap area: how far across and up the points that land on the element (or its ::before) reach from its centre.
       const r = e.getBoundingClientRect();
       // Whole pixels from the middle out each way (a half pixel past the screen's last row finds nothing), counted both ways.
       const cx = Math.floor(r.left + r.width / 2), cy = Math.floor(r.top + r.height / 2);
       const on = (x, y) => { const h = document.elementFromPoint(x, y); return h === e || e.contains(h); };
-      const reach = (dx, dy) => { let d = 0; while (d < 40 && on(cx + dx * (d + 1), cy + dy * (d + 1))) d++; return d; };
+      const reach = (dx, dy) => { let d = 0; while (d < 60 && on(cx + dx * (d + 1), cy + dy * (d + 1))) d++; return d; };
       const w = reach(-1, 0) + reach(1, 0) + 1, hgt = reach(0, -1) + reach(0, 1) + 1;
-      // The row's height (38 of its 39 px inside the top line), and wider than it looks (a button 8 px, an item 4 px; the
-      // marker keeps its 14 px across, its gaps being the row's own).
-      const wider = e.matches(".timeline-marker-button") ? 8 : e.matches(".timeline-bar-item") ? 4 : 10;
-      if (w < Math.floor(r.width) + wider - 2 || hgt < 38) small.push(`${e.getAttribute("aria-label") || e.className} ${w}×${hgt} (looks ${Math.round(r.width)}×${Math.round(r.height)})`);
+      // A full 40 × 40 px tap for every one of them (11-02), whatever it looks like.
+      if (w < 40 || hgt < 40) small.push(`${e.getAttribute("aria-label") || e.className} ${w}×${hgt} (looks ${Math.round(r.width)}×${Math.round(r.height)})`);
     }
-    return { small, height: Math.round(row.height) };
+    return { small, count: parts.length, height: Math.round(row.height) };
   });
-  check(t.small.length === 0, `393: timeline tap areas short of the row's height or no wider than they look: ${t.small.join(", ")}`);
+  check(t.count >= 7, `393: the timeline's buttons, item, marker and ⋯ found (${t.count})`);
+  check(t.small.length === 0, `393: timeline tap areas under 40 × 40 px: ${t.small.join(", ")}`);
   check(t.height <= 40, `393: the timeline row is ${t.height} px (at most 40, layout.mjs)`);
   // A touch's allowed gestures are those of the element and every ancestor (touch-action is not inherited, it is intersected):
   // a pinch zooms the page only when every one of them allows it.

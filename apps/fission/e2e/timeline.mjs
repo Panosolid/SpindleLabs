@@ -670,11 +670,15 @@ try {
         await page.tap('#timeline [data-item="feature-1"]');
         await until(page, () => document.querySelector('#timeline [data-more="feature-1"]'), null, "the ⋯");
         assert.deepEqual((await bar(page)), atSketch.bar);
-        // Just past the last item (the gap after it): the end.
+        // Past the last item's 40 px tap area (8 px past its edge, PHONE_TAP_PAD), 16 px past its edge in the row's
+        // 24 px end: the end. The bar scrolled to its end first, so the last item is on the screen.
+        await page.$eval("#timeline .timeline-bar", (l) => (l.scrollLeft = l.scrollWidth));
         const b = await boxOf("feature-11");
-        await tapGap(b.x + b.width + 3);
+        assert.equal(await page.evaluate(([px, py]) => document.elementFromPoint(px, py)?.closest("[data-item]")?.dataset.item, [b.x + b.width + 4, b.y + b.height / 2]), "feature-11", "4 px past the last item is still its tap area");
+        await tapGap(b.x + b.width + 16);
         await settled(V);
         assert.deepEqual((await state()).bar, all.bar);
+        await page.$eval("#timeline .timeline-bar", (l) => (l.scrollLeft = 0)); // back to the start, as the checks below expect
       }
 
       if (!dragTap) {
@@ -691,8 +695,13 @@ try {
       assert.equal(await page.getAttribute('#timeline [data-button="start"]', "aria-disabled"), "true");
       assert.equal(await page.getAttribute('#timeline [data-button="start"]', "title"), `Go to the start: ${words}`);
       const step = await undoTitle(page);
+      // At 375 px the phone's 40 px tap areas space the five items wider than the bar: the marker, after the new
+      // sketch, scrolled into view first; the drag goes to the box's left edge or, when it is scrolled off, the
+      // bar's (still before Sketch 2).
+      await page.locator("#timeline .timeline-bar-marker").scrollIntoViewIfNeeded();
       const bb = await boxOf("feature-1");
-      await drag(bb.x + 2);
+      const listLeft = (await page.locator("#timeline .timeline-bar").boundingBox()).x;
+      await drag(Math.max(bb.x + 2, listLeft + 2));
       await until(page, (w) => document.querySelector("#error")?.textContent === w, words, "the refusal shown");
       assert.equal(await undoTitle(page), step, "nothing recorded");
       assert.equal(await page.evaluate(() => document.querySelector("#viewport").dataset.sketching), "true", "still sketching");

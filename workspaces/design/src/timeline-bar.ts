@@ -113,15 +113,32 @@ export function isDrag(dx: number, dy: number): boolean {
 export const TAP_REACH = 8;
 
 /**
+ * How far (px) past its drawn edges each item takes a tap at phone width
+ * (timeline-bar.css's ::before, 8 px either side of a 24 px item: 40 px
+ * across). The playback buttons and the marker take 40 px too.
+ */
+export const PHONE_TAP_PAD = 8;
+
+/**
  * The place a tap at `x` (px from the row's visible left, scrolled
  * `scroll`) puts the marker at phone width: the gap whose middle is within
  * TAP_REACH of it (before the first item its left edge, past the last its
  * right edge), the nearest when two are; null when none is, a tap on the
  * item itself (which shows its ⋯ instead).
+ *
+ * With `pad` (the phone's PHONE_TAP_PAD) every item owns the `pad` px
+ * round it as well: a tap there is the item's (null), never a place, so
+ * its whole tap area picks it. Before the first item's area is then the
+ * start and past the last one's the end, however far.
  */
-export function tapPlace(edges: readonly ItemEdges[], x: number, scroll = 0): number | null {
+export function tapPlace(edges: readonly ItemEdges[], x: number, scroll = 0, pad = 0): number | null {
   if (edges.length === 0) return null;
   const at = x + scroll;
+  if (pad > 0) {
+    if (edges.some((e) => at >= e.left - pad && at <= e.right + pad)) return null;
+    if (at < edges[0].left) return 0;
+    if (at > edges[edges.length - 1].right) return edges.length;
+  }
   let best: number | null = null;
   let near = TAP_REACH;
   for (let place = 0; place <= edges.length; place++) {
@@ -633,7 +650,9 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
     "click",
     (e) => {
       if (press.type !== "touch" || (e.target as Element).closest(".timeline-bar-more-slot")) return;
-      const place = tapPlace(barEdges(list), press.x - list.getBoundingClientRect().left, list.scrollLeft);
+      // At phone width each item takes a tap 40 px across (PHONE_TAP_PAD round it, timeline-bar.css): all of it picks.
+      const phone = slot.ownerDocument.defaultView?.matchMedia?.("(max-width: 640px)").matches ?? false;
+      const place = tapPlace(barEdges(list), press.x - list.getBoundingClientRect().left, list.scrollLeft, phone ? PHONE_TAP_PAD : 0);
       if (place === null) return;
       e.stopPropagation(); // not a pick of the item the tap was moved onto
       act({ kind: "marker", place });
