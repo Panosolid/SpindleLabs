@@ -228,6 +228,22 @@ export type NozzleType = "standard" | "high-flow";
 /** Supports under overhangs (P5d3): none, normal (columns straight down) or tree (branches merging going down), both under the same dense roof. */
 export type SupportStyle = "off" | "normal" | "tree";
 
+/** A stage of a slice, in the order the engine runs them: cutting the bodies into layers, each layer's walls, the infill, the supports, each layer's paths in order, writing the file. */
+export type SliceStage = "layers" | "walls" | "infill" | "supports" | "paths" | "file";
+
+/**
+ * How far a slice (slice_stl, print_file_stl) has got, as the engine reports it while it works: `done` of the stage's
+ * `total` steps (layers, or 1 for a stage done at once), and the whole slice's `fraction`, 0 to 1, which only goes
+ * forward. Each stage owns a rough share of the bar (walls and supports the most), so it says where the work is, not a
+ * time. An engine from before progress reports (kernel 0.33.17 and older) sends none.
+ */
+export interface SliceProgress {
+  fraction: number;
+  stage: SliceStage;
+  done: number;
+  total: number;
+}
+
 /** A Bambu Lab P1S print file from the slicing engine (print_file_stl): the .gcode.3mf's bytes, with the P1S's own start and end routines for the plate, and what the slice came to (as SlicedPrint's). */
 export interface P1sPrintFile {
   package: Uint8Array<ArrayBuffer>;

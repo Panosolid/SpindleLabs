@@ -6,7 +6,8 @@ import init from "./wasm/fission_kernel.js";
 import { entry as kernel } from "./entry-points.ts";
 import release from "./wasm/kernel.json";
 import { startKernel } from "./handshake.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
+import type { ProgressCallback } from "./kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, kernelFailure, progressPoster, type KernelReady, type KernelRequest, type KernelResponse } from "./kernel-client.ts";
 import { calibrate } from "./time-limit.ts";
 import type { BodyHandle, BodySpec, BooleanOp, BooleanResult, BuildPlate, NozzleType, Outline, SketchArc, SketchCircle, SketchLine, SupportStyle } from "./kernel-types.ts";
 
@@ -57,6 +58,9 @@ ready.then(
   () => {},
 );
 
+// The released engine's typings may not have the progress argument yet (an older build ignores it): called loosely.
+const loose = (f: unknown) => f as (...args: unknown[]) => unknown;
+
 const ops = {
   kernel_version: () => kernel.kernel_version(),
   make_box: (w: number, d: number, h: number) => kernel.make_box(w, d, h),
@@ -75,9 +79,10 @@ const ops = {
   body_hide: (body: BodyHandle) => kernel.body_hide(body),
   body_boolean: (target: BodyHandle, tools: BodyHandle[], op: BooleanOp): BooleanResult => kernel.body_boolean(target, tools, op),
   body_count: () => kernel.body_count(),
-  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle) => kernel.slice_stl(stl, layerHeight, wallCount, infillPercent, supports),
-  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType) =>
-    kernel.print_file_stl(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle),
+  slice_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, told?: ProgressCallback) =>
+    loose(kernel.slice_stl)(stl, layerHeight, wallCount, infillPercent, supports, told),
+  print_file_stl: (stl: Uint8Array<ArrayBuffer>, layerHeight: number, wallCount: number, infillPercent: number, supports: SupportStyle, plate: BuildPlate, nozzle: NozzleType, told?: ProgressCallback) =>
+    loose(kernel.print_file_stl)(stl, layerHeight, wallCount, infillPercent, supports, plate, nozzle, told),
   wasm_bytes: () => memory?.buffer.byteLength ?? 0,
 } satisfies Record<KernelRequest["op"], (...args: never[]) => unknown>;
 
@@ -87,7 +92,9 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
   try {
     await ready;
     const fn = ops[op] as (...a: unknown[]) => unknown;
-    reply = { id, ok: true, value: fn(...args) };
+    // A slice gets its progress callback after its own arguments (it reports while the call runs).
+    const told = op === "slice_stl" || op === "print_file_stl" ? [progressPoster(id, (m) => self.postMessage(m), () => performance.now())] : [];
+    reply = { id, ok: true, value: fn(...args, ...told) };
   } catch (e) {
     // A trap leaves this kernel unfit for another call: the client replaces this worker (kernel-client.ts, restart).
     // A kernel that never downloaded says so, so the client can tell the app (kernel-client.ts, onMissing).

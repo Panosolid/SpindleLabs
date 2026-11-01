@@ -452,6 +452,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       if (!alive()) throw new SliceDropped();
       openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p));
     },
+    // The bar follows the engine's own reports (Ben, 2026-11-01).
+    onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
   });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);

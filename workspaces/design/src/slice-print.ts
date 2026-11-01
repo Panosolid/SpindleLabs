@@ -9,7 +9,7 @@
 // Nothing is saved into the project: choices, never results (decision 6,
 // docs/progress/slice.md). Styles: src/styles/slice-print.css.
 
-import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, StlFile, SupportStyle } from "@fission/core";
+import type { BuildPlate, Feature, KernelCalls, P1sPrintFile, SlicedPrint, SliceProgress, StlFile, SupportStyle } from "@fission/core";
 import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
@@ -285,11 +285,39 @@ export function unprintedWords(print: Pick<PrintFacts, "unprintedVolume">): stri
   return `Some of the part is thinner than one printed line, so about ${print.unprintedVolume.toFixed(2)} mm³ of it won't print.`;
 }
 
+/**
+ * The words under the progress bar: what the engine is doing now, with the layer when the stage goes layer by layer
+ * ("Walls: layer 120 of 254"); nothing before its first report (the bodies being made into STL, or an engine from
+ * before progress reports): the status line says "Slicing…" all along.
+ */
+export function progressWords(p: SliceProgress | null): string {
+  if (p === null) return "";
+  const layer = p.total > 1 ? `: layer ${p.done} of ${p.total}` : "…";
+  switch (p.stage) {
+    case "layers":
+      return "Cutting the bodies into layers…";
+    case "walls":
+      return `Walls${layer}`;
+    case "infill":
+      return "Infill and solid layers…";
+    case "supports":
+      return `Supports${layer}`;
+    case "paths":
+      return `Putting the paths in order${layer}`;
+    case "file":
+      return "Writing the file…";
+    default:
+      return "";
+  }
+}
+
 export interface SlicePrintEvents {
   /** Slices the bodies shown with these choices and saves the file chosen (`alive()` turns false once the dialog is closed: then throw SliceDropped before saving or showing anything); saved false when the user closed the save box, with the name it was saved under. */
   slice(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<{ print: PrintFacts; saved: boolean; name: string }>;
   /** Slices the bodies shown, as the file chosen (what Slice and download would save), and opens the print preview (H2b, H2c); nothing is saved. */
   preview(choices: PrintChoices, file: FileChoices, alive: () => boolean): Promise<void>;
+  /** Calls `listener` as a slice reports how far it has got (KernelCalls.onProgress); returns the way to stop. Left out: the bar just says it is slicing. */
+  onProgress?(listener: (progress: SliceProgress) => void): () => void;
 }
 
 export interface SlicePrint {
@@ -372,6 +400,15 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   format.select.addEventListener("change", plateFor);
   const status = el("p", "slice-print-status");
   status.setAttribute("role", "status");
+  // The bar while a slice runs (Ben, 2026-11-01): how far the engine has got, from its own reports; no value (the
+  // browser's moving bar) until the first one, and hidden when nothing runs.
+  const bar = el("div", "slice-print-progress");
+  bar.hidden = true;
+  const meter = el("progress", "slice-print-meter");
+  meter.max = 1;
+  meter.setAttribute("aria-labelledby", "slice-print-stage");
+  const stage = el("span", "slice-print-stage");
+  bar.append(meter, stage);
   const actions = el("div", "slice-print-actions");
   actions.className = "slice-print-actions";
   const close = el("button", "slice-print-close", "Close");
@@ -387,7 +424,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
   choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap);
-  dialog.append(heading, printer, untested, choices6, status, actions);
+  dialog.append(heading, printer, untested, choices6, bar, status, actions);
   slot.append(dialog);
 
   const say = (text: string, bad: boolean) => {
@@ -399,6 +436,24 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value) });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   let busy = false;
+  /** Shows the bar from now until `end` is called, following the engine's reports. */
+  const showProgress = () => {
+    meter.removeAttribute("value");
+    stage.textContent = progressWords(null);
+    bar.hidden = false;
+    let best = 0;
+    const stop = events.onProgress?.((p) => {
+      // Forward only: two calls (the plain slice after the file) each start from 0.
+      if (!(p.fraction >= best)) return;
+      best = p.fraction;
+      meter.value = Math.min(1, Math.max(0, p.fraction));
+      stage.textContent = progressWords(p);
+    });
+    return () => {
+      stop?.();
+      bar.hidden = true;
+    };
+  };
   // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
   let generation = 0;
   dialog.addEventListener("close", () => generation++);
@@ -413,11 +468,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     busy = true;
     go.disabled = preview.disabled = true;
     say("Slicing…", false);
+    const end = showProgress();
     try {
       const { print, saved, name } = await events.slice(choices(), file(), alive());
+      end();
       const warnings = [unprintedWords(print), print.levelNote || null].filter((w): w is string => w !== null);
       say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
+      end();
       if (e instanceof SliceDropped) say("", false);
       else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
     } finally {
@@ -430,11 +488,14 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     busy = true;
     go.disabled = preview.disabled = true;
     say("Slicing…", false);
+    const end = showProgress();
     try {
       await events.preview(choices(), file(), alive());
+      end();
       say("", false);
       dialog.close();
     } catch (e) {
+      end();
       if (e instanceof SliceDropped) say("", false);
       else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
     } finally {

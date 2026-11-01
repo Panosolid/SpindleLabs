@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BodySpec } from "../src/kernel/kernel-types.ts";
-import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse } from "../src/kernel/kernel-client.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -675,3 +675,54 @@ test("a boolean's limit at 1.1 × lets it go: it alone took too long", (t) =>
     assert.equal(keptAfter(t, worker, 137_700 * 1.1), false);
     await assert.rejects(cut, (e: KernelError) => e.kind === "timed-out" && e.message === KERNEL_TOOK_TOO_LONG);
   }));
+
+test("a slice's progress reaches the listeners while its call waits, and stops with the answer or the listener", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const heard: number[] = [];
+    const stop = client.onProgress((p) => heard.push(p.fraction));
+    const stl = new Uint8Array(84);
+    const sliced = client.call("slice_stl", stl, 0.2, 2, 15, "normal");
+    const say = (id: number, fraction: number) => worker.onmessage?.({ data: { id, progress: { fraction, stage: "walls", done: 1, total: 2 } } });
+    say(1, 0.25);
+    say(1, 0.5);
+    // Another call's id (never sent) is not this slice's: not heard.
+    say(7, 0.9);
+    worker.answer(1, { layers: 1 });
+    await sliced;
+    // After the answer a late report says nothing.
+    say(1, 0.75);
+    assert.deepEqual(heard, [0.25, 0.5]);
+    // Once stopped, a second slice's reports go nowhere.
+    stop();
+    const again = client.call("slice_stl", stl, 0.2, 2, 15, "normal");
+    say(2, 0.3);
+    worker.answer(2, {});
+    await again;
+    assert.deepEqual(heard, [0.25, 0.5]);
+  }));
+
+test("the worker's progress poster sends a stage's reports at most every PROGRESS_EVERY_MS, but every new stage and the end at once", () => {
+  const sent: { id: number; progress: { fraction: number; stage: string } }[] = [];
+  let t = 1000;
+  const told = progressPoster(5, (m) => sent.push(m), () => t);
+  told(0.1, "walls", 0, 10); // first: sent
+  t += PROGRESS_EVERY_MS - 1;
+  told(0.13, "walls", 1, 10); // 99 ms later, same stage: dropped
+  t += 1;
+  told(0.16, "walls", 2, 10); // 100 ms after the last sent: sent
+  t += 1;
+  told(0.4, "infill", 1, 1); // a new stage: sent at once
+  told(0.95, "file", 0, 1); // and another
+  told(1, "file", 1, 1); // the end, 0 ms later: sent
+  assert.deepEqual(
+    sent.map((m) => [m.id, m.progress.stage, m.progress.fraction]),
+    [
+      [5, "walls", 0.1],
+      [5, "walls", 0.16],
+      [5, "infill", 0.4],
+      [5, "file", 0.95],
+      [5, "file", 1],
+    ],
+  );
+});

@@ -5,13 +5,13 @@
 // The Chromium checks are apps/fission/e2e/slice-print.mjs and print-preview.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { playback, type SlicedPrint } from "@fission/core";
+import { playback, type SlicedPrint, type SliceProgress } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
 import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -586,4 +586,50 @@ test("a body floating above the plate is refused with advice when supports are o
   assert.ok((await kernel.call("slice_stl", stl, 0.2, 2, 15, "normal")).layers > 0);
   // The wording by hand, for a message of the same shape.
   assert.equal(refusalWords("part of the model starts in mid-air at z = 3.5 mm, around (-2, 7.5), with nothing under it: turn on supports"), "Part of the model hangs in the air 3.5 mm above the plate, around (-2, 7.5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+});
+
+test("progress words: the stage, with the layer when it goes layer by layer; nothing before the first report", () => {
+  assert.equal(progressWords(null), "");
+  assert.equal(progressWords({ fraction: 0.05, stage: "layers", done: 0, total: 1 }), "Cutting the bodies into layers…");
+  assert.equal(progressWords({ fraction: 0.325, stage: "walls", done: 120, total: 254 }), "Walls: layer 120 of 254");
+  assert.equal(progressWords({ fraction: 0.5, stage: "infill", done: 1, total: 1 }), "Infill and solid layers…");
+  assert.equal(progressWords({ fraction: 0.6, stage: "supports", done: 50, total: 254 }), "Supports: layer 50 of 254");
+  assert.equal(progressWords({ fraction: 0.8, stage: "paths", done: 7, total: 254 }), "Putting the paths in order: layer 7 of 254");
+  assert.equal(progressWords({ fraction: 0.95, stage: "file", done: 0, total: 1 }), "Writing the file…");
+});
+
+test("the progress bar follows the engine's reports while a slice runs, only forward, and goes when it ends", async () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  let tell: ((p: SliceProgress) => void) | null = null;
+  let stopped = 0;
+  let finish!: () => void;
+  const d = slicePrint(slot, {
+    slice: () => new Promise((r) => (finish = () => r({ print: print(), saved: true, name: "part.gcode.3mf" }))),
+    preview: async () => {},
+    onProgress: (l) => ((tell = l), () => void (stopped++, (tell = null))),
+  });
+  const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
+  const meter = $<HTMLProgressElement>("slice-print-meter");
+  assert.equal($("slice-print-progress").hidden, true, "no bar before a slice");
+  d.ask();
+  $("slice-print-go").click();
+  assert.equal($("slice-print-progress").hidden, false, "the bar shows as the slice starts");
+  assert.equal(meter.hasAttribute("value"), false, "no value (a moving bar) before the first report");
+  assert.equal($("slice-print-status").textContent, "Slicing…");
+  tell!({ fraction: 0.325, stage: "walls", done: 120, total: 254 });
+  assert.equal(meter.value, 0.325);
+  assert.equal($("slice-print-stage").textContent, "Walls: layer 120 of 254");
+  // A report behind the last (a second engine call starting from 0) never moves the bar back.
+  tell!({ fraction: 0.1, stage: "layers", done: 0, total: 1 });
+  assert.equal(meter.value, 0.325);
+  assert.equal($("slice-print-stage").textContent, "Walls: layer 120 of 254");
+  finish();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal($("slice-print-progress").hidden, true, "the bar goes when the slice ends");
+  assert.equal(stopped, 1, "and stops listening");
+  assert.equal(tell, null);
+  await window.happyDOM.close();
 });
