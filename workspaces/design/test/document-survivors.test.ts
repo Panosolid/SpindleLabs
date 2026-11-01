@@ -137,3 +137,87 @@ test("two edges seen end on make two projected points, and the file reads (catch
   assert.equal(both.ids.length, 2);
   assert.equal(reread(both.doc).sketches[0].projected?.length, 2);
 });
+
+// Survivors of the night of 2026-10-31 (run 41232766937, issue #220 again):
+// upgrading version 5 data to version 6 and checking a Move's bodies (35ec).
+/** Box 1 and Box 2, then Move 1 (feature-3) of Box 1 by 5 mm in x: what an edit writes. */
+const movedBox = (): Record<string, any> => clone(insertMove(insertPreset(partDocument("box", 40, 30, 20), "box", 10, 10, 10).doc, ["body:feature-1"], { ...NO_MOVE, x: 5 }).doc);
+/** The same as version 5 wrote it: the Move without its bodies list (dependsOn holds its items). */
+const asV5 = (d: Record<string, any>) => {
+  const x = clone(d);
+  x.version = 5;
+  for (const f of x.timeline.features) if (f.intent.type === "move") delete f.intent.parameters.bodies;
+  return x;
+};
+
+test("upgrading version 5: a null item is refused by the item check, never a TypeError (catches `isRecord(f) && typeof f.id === \"string\"` made true or ||)", () => {
+  const d = asV5(movedBox());
+  // The control: the version 5 file reads, its Move gaining bodies ["body:feature-1"].
+  assert.deepEqual(reread(d).timeline.features[2].intent.parameters.bodies, ["body:feature-1"]);
+  d.timeline.features.push(null);
+  // Item 4 is null: the upgrade skips it and the item check names it (a mutant reads null.id first, a TypeError).
+  refused(d, "Design feature 4 has no id or intent");
+});
+
+test("upgrading version 5: a hidden Move keeps its item id, so the refusal names the Move's own id (catches `type(f) !== \"move\"` made true and \"move\" made \"\")", () => {
+  const d = asV5(movedBox());
+  // The control: a hidden box's item id becomes its body id (version 6).
+  d.hidden = ["feature-1"];
+  assert.deepEqual(reread(d).hidden, ["body:feature-1"]);
+  // A Move makes no body, so "feature-3" stays as written and is refused as such; the mutants turn it into "body:feature-3".
+  d.hidden = ["feature-3"];
+  refused(d, "Design data hides feature-3, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+});
+
+test("upgrading version 5: a hidden entry that is a list is refused as a list, not read as the text it turns into (catches `typeof id === \"string\"` made true)", () => {
+  const d = asV5(movedBox());
+  // String(["body:feature-1"]) is "body:feature-1", a body id, which version 5 never wrote: the mutant refuses it with that
+  // message; the real check skips anything not text and the hidden check refuses it as a list.
+  d.hidden = [["body:feature-1"]];
+  refused(d, "Design data hides a list, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+  // A text body id in version 5 is refused by the upgrade (the control: the check is there and names it).
+  d.hidden = ["body:feature-1"];
+  refused(d, "Design data says version 5 but hides body:feature-1 by a body id, which version 6 brought");
+});
+
+test("a Move of two bodies must depend on both items in order; the refusal lists them with commas (catches some→every, its test made false or undefined, and \", \" made \"\")", () => {
+  const d = movedBox();
+  const move = d.timeline.features[2];
+  move.intent.parameters.bodies = ["body:feature-1", "body:feature-2"];
+  // The control: both items, in the bodies' order, reads.
+  move.dependsOn = ["feature-1", "feature-2"];
+  assert.deepEqual(reread(d).timeline.features[2].dependsOn, ["feature-1", "feature-2"]);
+  // Right length, first right, second wrong: some item differs, so refused (every would need all to differ).
+  const MISMATCH = "Design move feature-3 must depend on exactly the items that made the bodies it moves, in their order (feature-1, feature-2)";
+  move.dependsOn = ["feature-1", "feature-1"];
+  refused(d, MISMATCH);
+  // Swapped: the order counts.
+  move.dependsOn = ["feature-2", "feature-1"];
+  refused(d, MISMATCH);
+});
+
+test("a Move of a piece the bodies list names passes the Move's check (the list is refused after, by its own check, which names the piece) (catches the piece test of isBodyOf made false, every, undefined)", () => {
+  // Pieces aren't written in files yet (the bodies list holds an item's own bodies only, 35f1), but the Move's check already
+  // accepts one the list names: so the refusal comes from the list's check, after the Moves'. The mutants refuse at the Move.
+  const d = movedBox();
+  d.timeline.features[2].intent.parameters.bodies = ["body:feature-1/piece:1"];
+  d.bodies.push({ id: "body:feature-1/piece:1", number: 3 });
+  d.nextBody = 4;
+  refused(d, 'Design body body:feature-1/piece:1 is not "body:" and the id of an item that makes a body');
+  // The control: not in the list, the Move's own check refuses it.
+  d.bodies.pop();
+  refused(d, "Design move feature-3 moves body:feature-1/piece:1, which is not a body made before it in the timeline");
+});
+
+test("hiding a piece of an item that isn't there is refused by the hidden check, even when the bodies list names it (catches `at !== undefined` made true)", () => {
+  const d = movedBox();
+  d.hidden = ["body:feature-2/piece:1"];
+  d.bodies.push({ id: "body:feature-2/piece:1", number: 3 });
+  d.nextBody = 4;
+  // The control: feature-2 exists, so the hidden check passes and the bodies list's check refuses the piece.
+  refused(d, 'Design body body:feature-2/piece:1 is not "body:" and the id of an item that makes a body');
+  // feature-7 is no item: the hidden check refuses it there (the mutant lets it through to the list's check).
+  d.hidden = ["body:feature-7/piece:1"];
+  d.bodies[2].id = "body:feature-7/piece:1";
+  refused(d, "Design data hides body:feature-7/piece:1, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+});
