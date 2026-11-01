@@ -382,6 +382,8 @@ async function act(s, a) {
     case "reload": {
       const before = await save(s);
       await page.waitForTimeout(800); // the store writes after a change; a user closing the tab at once is another matter
+      // A file just opened is kept once it has shown (a busy runner took over 800 ms, issue #247): the top bar says Saved then.
+      await page.waitForFunction(() => document.getElementById("save-status")?.dataset.state !== "saving", null, { timeout: 20000 }).catch(() => fail("a reload brings the project back", "the top bar still said Saving… 20 s after the last action"));
       await page.reload(); // to the workspace on screen (its #link), so the timeline may not be there
       // Ready means the last project is open again, not just the kernel: Save before that writes a file without the design (a bug of its own, found by seed 124 under load, reproduced with the CPU slowed 8×).
       // An empty design has no timeline rows to wait for (seed 32 reloaded one and waited forever), only the bar.
