@@ -103,7 +103,7 @@ test("a Move's body that is a list, not an id, is refused by the Move's own chec
 
 test("a body's id must start with body: (catches the ^ dropped) and its number's message names a list as a list (catches the text check made always true)", () => {
   const d = clone(partDocument("box", 40, 30, 20)) as Record<string, any>;
-  assert.equal(d.version, 6);
+  assert.equal(d.version, 7);
   const bodies = (b: unknown) => ({ ...clone(d), bodies: [b] });
   refused(bodies({ id: "xbody:feature-1", number: 1 }), 'Design body xbody:feature-1 is not "body:" and the id of an item that makes a body');
   refused(bodies({ id: "body:feature-1", number: [1] }), "Design body body:feature-1's number a list is not a counting number");

@@ -48,8 +48,8 @@
 // function, so a pinned point is exactly where a snap put it, to the bit.
 
 import type { BodyView, Plane, SketchXY, StableId } from "@fission/core";
-import type { DesignDocument } from "./document.ts";
-import { faceReference, isFacePlane } from "./face-sketch.ts";
+import { bodyHidden, bodyIdOf, type DesignDocument } from "./document.ts";
+import { faceFeature, faceReference, isFacePlane } from "./face-sketch.ts";
 import type { BodyNames } from "./naming.ts";
 import { sharedBy } from "./references.ts";
 import { findInScene, type Scene } from "./scene.ts";
@@ -267,13 +267,32 @@ export function sketchEdgeTargets(doc: DesignDocument, sketchId: string, scene: 
   return placedBefore(doc, sketchId, scene, plane).map(({ off: _, ...t }) => t);
 }
 
+/**
+ * Whether sketch `sketchId` is on a face that is gone or shared now, so it
+ * follows nothing and nothing can be taken from the bodies into it: its
+ * settled content holds a plane (`face.held`, the rebuild's verdict), or
+ * its face's body is shown (`scene`) and the face isn't found on it once,
+ * or its face's body is in no scene and isn't hidden (deleted, failed).
+ * A body hidden by its eye is still built, so a sketch on its face is only
+ * held when the settled design says so (face hunt 11-01: hidden, it was
+ * judged lost because the scene leaves hidden bodies out). False for a
+ * sketch on an origin plane.
+ */
+export function faceHeld(doc: DesignDocument, sketchId: string, scene: Scene): boolean {
+  const facePlane = doc.timeline.features.find((f) => f.id === sketchId)?.intent.parameters.plane;
+  if (!isFacePlane(facePlane)) return false;
+  if (doc.sketches.find((s) => s.id === sketchId)?.face?.held !== undefined) return true;
+  const feature = faceFeature(facePlane);
+  if (feature !== null && !scene.bodies.some((b) => b.feature === feature) && bodyHidden(doc, bodyIdOf(feature))) return false;
+  return findInScene(faceReference(facePlane), scene).status !== "found";
+}
+
 /** `sketchEdgeTargets` with each point's distance from the plane, in that order. */
 function placedBefore(doc: DesignDocument, sketchId: string, scene: Scene | null, plane: Plane | undefined): Placed[] {
   const features = doc.timeline.features;
   const at = features.findIndex((f) => f.id === sketchId);
-  const facePlane = features[at]?.intent.parameters.plane;
   if (scene === null || plane === undefined || at < 0) return [];
-  if (isFacePlane(facePlane) && findInScene(faceReference(facePlane), scene).status !== "found") return [];
+  if (faceHeld(doc, sketchId, scene)) return [];
   const before = new Set(features.slice(0, at).map((f) => f.id));
   const all = scene.bodies.filter((b) => before.has(b.feature)).flatMap((b) => placedTargets(b.view, b.names, plane));
   const key = (t: Placed) => `${t.feature}/${t.name}`;

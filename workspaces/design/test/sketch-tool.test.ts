@@ -8,7 +8,7 @@ import type { SketchXY } from "@fission/core";
 import { partDocument, readDesignDocument, type DesignDocument } from "../src/document.ts";
 import { addSketch, drawArc, drawCircle, drawRectangle, pointNear, SKETCH_STEPS, sketchCurves, sketchLines } from "../src/sketch.ts";
 import { SAME_PLACE } from "../src/snap.ts";
-import { arcSegments, CIRCLE_SEGMENTS, circleSegments, clickAt, curveCount, DEFAULT_GRID, drawStep, ORIGIN_PLANES, originPlanes, PLANE_VIEWS, previewLine, previewSegments, SAME_CIRCLE, SAME_LINE, SKETCH_TOOLS, sketchDrawings, startTool, toolBusy, type CircleTool, type LineTool, type RectangleTool, type SketchTool } from "../src/sketch-tool.ts";
+import { arcSegments, CIRCLE_SEGMENTS, circleSegments, clickAt, curveCount, SMALL_RECTANGLE, DEFAULT_GRID, drawStep, ORIGIN_PLANES, originPlanes, PLANE_VIEWS, previewLine, previewSegments, SAME_CIRCLE, SAME_LINE, SKETCH_TOOLS, sketchDrawings, startTool, toolBusy, type CircleTool, type LineTool, type RectangleTool, type SketchTool } from "../src/sketch-tool.ts";
 import { DESIGN_SHORTCUTS, sketchToolKey } from "../src/shortcuts.ts";
 
 function fresh() {
@@ -575,5 +575,8 @@ test("a rectangle within 2·SAME_PLACE of one row or column is refused, 0.9× an
   assert.equal(drawRectangle(f.doc, id, [0, 0], [10, 2.2 * SAME_PLACE]).ids.length, 4);
   const down = clickAt(f.doc, f.tool, [0, 0]);
   assert.match(clickAt(down.doc, down.tool, [10, 1.8 * SAME_PLACE]).note ?? "", /^A rectangle needs a width and a height/);
-  assert.equal(clickAt(down.doc, down.tool, [10, 2.2 * SAME_PLACE]).drew, true);
+  // 2.2·SAME_PLACE high is not flat, but under the smallest piece, 0.001 mm (hunt 2026-11-01): refused for that, not for flatness.
+  const thin = clickAt(down.doc, down.tool, [10, 2.2 * SAME_PLACE]);
+  assert.equal(thin.drew, false);
+  assert.equal(thin.note, SMALL_RECTANGLE);
 });

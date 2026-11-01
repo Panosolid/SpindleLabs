@@ -749,7 +749,7 @@ test("Design says the project changed when it writes the part; placeholders neve
     } else {
       // Mounting on an empty project writes the empty design a new project starts with (U0c): one change, no body.
       assert.equal(changes.get(ctx), 1);
-      assert.deepEqual(ctx.project.workspaces.design, { version: 6, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
+      assert.deepEqual(ctx.project.workspaces.design, { version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 });
       const before = ctx.project.workspaces.design;
       const width = ctx.properties.querySelector("#width") as HTMLInputElement; // the width box (the tool panels above it have boxes of their own)
       width.value = "50";

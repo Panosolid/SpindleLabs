@@ -153,7 +153,7 @@ async function check(name, fn, known) {
 const GRID_ERROR_MOVES_EXTRUDE = {
   engines: ["firefox"],
   bug: "an invalid grid size's message moves Extrude mid-click (sketch-panel.ts)",
-  symptom: /^Extrude's OK on: timed out; the page shows .*grid error "Type the grid size in mm\."$/,
+  symptom: /^Extrude's OK on: timed out; the page shows .*grid error "Type the grid size in mm\. The grid stays at [^"]* mm\."$/,
 };
 
 try {
@@ -233,7 +233,9 @@ try {
     await page.fill("#sketch-grid", "0");
     await page.press("#sketch-grid", "Enter");
     await until(page, () => !document.querySelector("#sketch-grid-error").hidden, null, "a refused grid");
-    assert.match(await page.textContent("#sketch-grid-error"), /grid spacing must be between/);
+    // Refused in plain words before the kernel is asked, the last good size (10) back in the box (typed-sizes hunt 2026-11-01).
+    assert.equal(await page.textContent("#sketch-grid-error"), "The grid size must be more than 0 mm. The grid stays at 10 mm.");
+    assert.equal(await page.inputValue("#sketch-grid"), "10");
     await page.fill("#sketch-grid", "2.5");
     await page.press("#sketch-grid", "Enter");
     await until(page, () => document.querySelector("#sketch-grid-error").hidden, null, "the grid taken");

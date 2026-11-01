@@ -143,7 +143,7 @@ export type Marker = string;
 
 export interface DesignDocument {
   /** Version of this part of the project file (see docs/project-format.md). */
-  version: 6;
+  version: 7;
   /** The number the next new id gets. Ids are never reused, even after a delete (docs/document-model.md, section 2). */
   nextId: number;
   profiles: ReadyProfile[];
@@ -335,7 +335,7 @@ function presetFeature(id: string, label: string, profileId: string | undefined,
 /** The document for a new project: one preset, feature-1 named "<Shape> 1" (and profile-1 for a profile shape), the counter at 2. */
 export function partDocument(kind: ShapeKind, w: number, d: number, h: number): DesignDocument {
   const { feature, profile } = presetFeature("feature-1", `${SHAPE_LABELS[kind]} 1`, "profile-1", kind, w, d, h);
-  return numberBodies({ version: 6, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
+  return numberBodies({ version: 7, nextId: 2, profiles: profile ? [profile] : [], sketches: [], timeline: { features: [feature] } });
 }
 
 /** The index a new timeline item goes in at: just after the marker, first when it is at the start, else last. */
@@ -634,6 +634,61 @@ export function migrateDesignV5(d: Record<string, unknown>): Record<string, unkn
     if (typeof id === "string" && bodyItem(id) !== null) throw new Error(`Design data says version 5 but hides ${id} by a body id, which version 6 brought`);
   const hidden = Array.isArray(d.hidden) ? { hidden: d.hidden.map((id) => (typeof id === "string" && solids.has(id) ? bodyIdOf(id) : id)) } : {};
   return { ...d, ...hidden, version: 6, timeline: { ...timeline, features } };
+}
+
+/** A face, edge or vertex name of version 6 with a ready-made profile's pieces as version 7 names them: "side:piece-2" → "side:l-bracket-piece-2". */
+const kindPieces = (name: string, kind: ProfileKind): string => name.replace(/side:(?=(?:hole-\d+-)?piece-\d+(?![\w-]))/g, `side:${kind}-`);
+
+/**
+ * Version 6 named a ready-made profile's sides by piece number alone
+ * ("side:piece-2", "side:hole-1-piece-0"), alike for every profile shape.
+ * Version 7 (face hunt 11-01) puts the shape in ("side:l-bracket-piece-2",
+ * naming.ts `outlineCurves`), so each such name in a version 6 (or older)
+ * file is read with the shape its preset has in the file: a face sketch's
+ * plane, its pins' names (on the face's feature, or the pin's own) and its
+ * projected edges. A name on a box, cylinder, sphere or sketch's extrude
+ * has no pieces and stays; so does the document when nothing changes. Run
+ * once the file is checked.
+ */
+export function withKindPieces(doc: DesignDocument): DesignDocument {
+  const presetKind = presetKinds(doc);
+  const byId = new Map(doc.timeline.features.map((f) => [f.id, f]));
+  const profileKind = (id: string | null | undefined): ProfileKind | null => {
+    const f = id == null ? undefined : byId.get(id);
+    const kind = f === undefined ? null : presetKind(f);
+    return kind === null || isPrimitive(kind) ? null : (kind as ProfileKind);
+  };
+  const renamed = (name: string, id: string | null | undefined): string => {
+    const kind = profileKind(id);
+    return kind === null ? name : kindPieces(name, kind);
+  };
+  let changed = false;
+  const faceOf = new Map<string, string | null>();
+  const features = doc.timeline.features.map((f) => {
+    const plane = f.intent.parameters.plane;
+    if (!isSketchItem(f) || !isFacePlane(plane)) return f;
+    const feature = faceFeature(plane);
+    faceOf.set(f.id, feature);
+    const now = renamed(plane, feature);
+    if (now === plane) return f;
+    changed = true;
+    return { ...f, intent: { ...f.intent, parameters: { ...f.intent.parameters, plane: now } } };
+  });
+  const sketches = doc.sketches.map((sketch) => {
+    const face = faceOf.get(sketch.id) ?? null;
+    const pins = sketch.pins?.map((p) => {
+      const name = renamed(p.name, p.feature ?? face);
+      return name === p.name ? p : { ...p, name };
+    });
+    const projected = sketch.projected?.map((p) => {
+      const edge = renamed(p.edge, p.feature);
+      return edge === p.edge ? p : { ...p, edge };
+    });
+    if (pins?.every((p, k) => p === sketch.pins![k]) !== false && projected?.every((p, k) => p === sketch.projected![k]) !== false) return sketch;
+    changed = true;
+    return { ...sketch, ...(pins ? { pins } : {}), ...(projected ? { projected } : {}) };
+  });
+  return changed ? { ...doc, sketches, timeline: { ...doc.timeline, features } } : doc;
 }
 
 /**
@@ -1073,12 +1128,15 @@ export function readDesignDocument(data: unknown): DesignDocument {
   // does version 5 data leaving both out (written by hand or by a test: what an edit or a save writes always has them).
   const numbered = Object.hasOwn(v3, "bodies") || Object.hasOwn(v3, "nextBody");
   if ((old || v3.version === 4) && numbered) throw new Error(`Design data says version ${v3.version} but has bodies' numbers, which version 5 brought`);
-  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6) && !numbered);
+  const unnumbered = old || v3.version === 4 || ((v3.version === 5 || v3.version === 6 || v3.version === 7) && !numbered);
   const v5 = old || v3.version === 4 ? { ...v3, version: 5 } : v3;
   // Version 6 lists bodies by body id (35ec), where version 5 and older listed their items' ids.
-  const d = (v5.version === 5 ? migrateDesignV5(v5) : v5) as Partial<DesignDocument>;
+  const v6 = v5.version === 5 ? migrateDesignV5(v5) : v5;
+  // Version 7 names a ready-made profile's pieces with its shape (face hunt 11-01): version 6 and older names are read so, once checked (below).
+  const pieceNames = v6.version === 6;
+  const d = (pieceNames ? { ...v6, version: 7 } : v6) as Partial<DesignDocument>;
   // Text quoted, so "5" (text) never reads as the 5 it is not (app sweep, finding 25).
-  if (d.version !== 6) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5 or 6)`);
+  if (d.version !== 7) throw new Error(`Design data version ${typeof d.version === "string" ? JSON.stringify(d.version) : shown(d.version)} is not one this SpindleLabs reads (1, 2, 3, 4, 5, 6 or 7)`);
   // An empty timeline is an empty design (24f4: everything deleted), shown with no body.
   if (!Array.isArray(d.profiles) || !Array.isArray(d.timeline?.features)) throw new Error("Design data has no timeline");
   if (!Array.isArray(d.sketches)) throw new Error("Design data has no sketches list");
@@ -1217,7 +1275,8 @@ export function readDesignDocument(data: unknown): DesignDocument {
     for (const id of f.dependsOn as unknown[]) if (typeof id !== "string") throw new Error(`Design feature ${f.id} depends on ${shown(id)}, which is not an id`);
   if (!unnumbered) checkBodies(d, byId);
   const read = withRuledNames(d as DesignDocument);
-  const named = old ? withShortNames(read) : read;
+  const short = old ? withShortNames(read) : read;
+  const named = pieceNames ? withKindPieces(short) : short;
   // Numbered as version 4 data showed, or (version 5) any body the file gives no number gets the next one.
   return numberBodies(named);
 }

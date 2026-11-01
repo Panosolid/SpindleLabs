@@ -6,7 +6,7 @@ import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, typ
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
 import { bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, builds, makesBody, originDrawn, partFeature, partOf, readDesignDocument, shapeOf, withPartAt, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
-import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
+import { arrowOf, DEFAULT_DISTANCE, distanceRefused, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
@@ -84,6 +84,8 @@ const rebuildsOn = new WeakMap<HTMLElement, number>();
 let editingSketch: { id: string; grid: number; typed: string; tool: ToolKind } | null = null;
 /** Grid snap on or off (sketch feel SF1; off by default: points go where you click), kept for every sketch until the page reloads. */
 let gridSnap = DEFAULT_GRID_SNAP;
+/** Each sketch's grid size as typed and taken, kept until the page reloads like Snap to grid: Edit Sketch opens it on the grid it was left on (typed-sizes hunt 2026-11-01). */
+const sketchGrids = new Map<string, { grid: number; typed: string }>();
 /** How long (ms) Ctrl or Cmd is held with no other key before the snap under a still pointer goes: long enough for a shortcut's second key. */
 const HELD_SHOW_MS = 150;
 /** The Snap button on the sketch's toolbar: snapping to points, edges and line-ups on (the default) or off, kept for every sketch until the page reloads. */
@@ -1325,7 +1327,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on) });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start("") });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1363,8 +1365,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
     viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
-    if (!editing) return (typed.hide(), hint.hide());
+    if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
+    sketchBar.showType(typedFields(editing.tool).length > 0);
     typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
@@ -1584,7 +1587,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     leaveEdit();
     leaveMove();
     if (mode.kind !== "none") leaveSketch();
-    editingSketch = { id, grid: DEFAULT_GRID, typed: String(DEFAULT_GRID), tool: "line" };
+    const kept = sketchGrids.get(id);
+    editingSketch = { id, grid: kept?.grid ?? DEFAULT_GRID, typed: kept?.typed ?? String(DEFAULT_GRID), tool: "line" };
     enterSketch();
     if (mode.kind !== "edit") return;
     showKept();
@@ -1663,22 +1667,31 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     viewport.setView("home");
   }
 
-  /** A grid size typed: the kernel judges it (snapping 0, 0 to it); a refused one keeps the grid and says why. */
+  /**
+   * A grid size typed: under 0.001 mm or over 1 km is refused in plain words before the kernel is asked (1e300 got the
+   * kernel's refusal with all 301 digits), then the kernel judges it (snapping 0, 0 to it). A refused one keeps the
+   * grid, puts its size back in the box and says why and that the old grid is still in use (typed-sizes hunt 2026-11-01).
+   */
   async function setGrid(typed: string) {
     if (mode.kind !== "edit" || !editingSketch) return;
     const sketch = editingSketch;
     const grid = Number(typed);
     try {
       if (typed.trim() === "" || !Number.isFinite(grid)) throw new Error("Type the grid size in mm.");
+      const refused = lengthRefused(grid);
+      if (refused !== null) throw new Error(refused.replace(/^A length/, "The grid size"));
       await kernel.call("snap_to_grid", 0, 0, grid);
     } catch (e) {
-      return sketchBox.showError(e instanceof Error ? e.message : String(e));
+      if (mode.kind !== "edit" || editingSketch !== sketch) return;
+      sketchBox.showGrid(sketch.typed);
+      return sketchBox.showError(`${e instanceof Error ? e.message : String(e)} The grid stays at ${sketch.typed} mm.`);
     }
     // The kernel answered after an Undo, Escape or Finish put this sketch away: the size is for a sketch no longer open.
     if (mode.kind !== "edit" || editingSketch !== sketch) return;
     sketchBox.showError("");
     mode.grid = sketch.grid = grid;
     sketch.typed = typed;
+    sketchGrids.set(sketch.id, { grid, typed });
     drawSketches();
   }
 
@@ -1738,6 +1751,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     sketch: string | null;
     /** The kernel said the chosen sketch's outline closes (checkExtrude): only then is a preview built. */
     closed: boolean;
+    /** The design the chosen sketch's outline was last checked in: a newer one checks and previews it again (`offerProfiles`). */
+    checked: DesignDocument | null;
     offered: OfferedProfile[];
     distance: number | null;
     base: { doc: DesignDocument; sketch: string; spec: BodySpec } | null;
@@ -1778,7 +1793,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A flat face selected first is chosen once it is offered (UX1c); meanwhile nothing is.
     const wanted = editing === null && ctx.selection.items.length === 1 && ctx.selection.items[0].kind === "face" ? String(ctx.selection.items[0].id) : null;
     const chosen = items.find((f) => f.id === editing)?.id ?? items.find((f) => f.id === selected)?.id ?? (wanted ? undefined : items.at(-1)?.id) ?? null;
-    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
+    extruding = { usable: new Set(items.map((f) => f.id)), faces: new Map(), refusedFaces: new Map(), wanted, sketch: chosen, closed: false, checked: null, offered: [], distance: DEFAULT_DISTANCE, base: null, preview: null, arrow: null };
     extrudeBox.show(chosen ? sketchLabel(chosen) : null, String(DEFAULT_DISTANCE));
     // No usable sketch: say why (a body's flat faces are still offered to click, UX1c); with no sketch at all and a body, just how to pick.
     if (items.length > 0 ? !chosen : sketches.length === 0 && (lastScene?.bodies.length ?? 0) > 0) extrudeBox.showStatus(PICK_PROFILE_STATUS, false);
@@ -1852,6 +1867,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (was !== null && before.has(was)) {
       if (!extruding.faces.has(was)) chooseProfile(null);
       else if (before.get(was) !== extruding.faces.get(was)) void checkExtrude(was);
+    } else if (was !== null && extruding.usable.has(was) && extruding.checked !== null && extruding.checked !== doc) {
+      // A sketch chosen before the design changed (a size typed: the face under it moved, its projected edges changed
+      // shape): its outline is checked and previewed again, so OK makes the body shown (extrude hunt 2026-11-01).
+      Object.assign(extruding, { closed: false, base: null, preview: null });
+      void checkExtrude(was);
     }
     const wanted = extruding.wanted;
     extruding.wanted = null;
@@ -1864,7 +1884,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function chooseProfile(id: string | null) {
     const e = extruding;
     if (!e || e.sketch === id || (id !== null && !e.usable.has(id) && !e.faces.has(id))) return;
-    Object.assign(e, { sketch: id, closed: false, base: null, preview: null, arrow: null });
+    Object.assign(e, { sketch: id, closed: false, checked: null, base: null, preview: null, arrow: null });
     extrudeBox.showProfile(id ? sourceOf(id).label : null);
     extrudeBox.showError("");
     if (id) void checkExtrude(id);
@@ -1877,9 +1897,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     if (!e) return;
     e.distance = d;
-    extrudeBox.showError("");
-    if (d === null) e.preview = null;
+    // Under 0.001 mm or over 1 km: refused in OK's words, never sent to the kernel (extrude hunt 2026-11-01).
+    const refused = d === null ? null : distanceRefused(d);
+    extrudeBox.showError(refused ?? "");
+    if (d === null || refused !== null) e.preview = null;
     showExtrudeView();
+    if (refused !== null) return;
     if (d !== null) refreshPreview();
   }
 
@@ -1926,7 +1949,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const e = extruding;
     const id = e?.sketch;
     const d = e?.distance;
-    if (!e || !id || !e.closed || d === null || d === undefined) return;
+    if (!e || !id || !e.closed || d === null || d === undefined || distanceRefused(d) !== null) return;
     // A face's sketch lives in the design it was offered in (UX1c), a sketch in the design now.
     const { doc, sketch } = sourceOf(id);
     try {
@@ -1941,7 +1964,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const view = await kernel.call("body_view", handle).finally(() => void bodies.release(handle));
       // Out of date: another sketch chosen or the panel closed. A newer distance only means another build follows.
       if (extruding !== e || e.sketch !== id) return;
-      e.preview = e.distance === null || d === 0 ? null : view;
+      // A distance refused since this build began (extrudeDistance said why) shows no preview under the words.
+      e.preview = e.distance === null || d === 0 || distanceRefused(e.distance) !== null ? null : view;
       e.arrow = arrowOf(view, d === 0 ? 1 : d) ?? e.arrow;
     } catch (err) {
       if (extruding !== e || e.sketch !== id || e.distance !== d) return;
@@ -1958,8 +1982,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const sketch = source.doc.sketches.find((s) => s.id === source.sketch);
     if (!sketch) return;
     const name = source.label;
+    if (extruding?.sketch === id) extruding.checked = source.doc;
     extrudeBox.showStatus(sketch.curves.length === 0 ? `${name} has nothing drawn yet.` : `Checking ${name}…`, false);
     if (sketch.curves.length === 0) return;
+    // Only projected curves, none joining another: the outline leaves them all out, so the kernel would be asked about no
+    // curves and say none are drawn (extrude hunt 2026-11-01); say why, as the sketch panel and the rebuild do.
+    const projectedOnly = projectedOpen(sketch);
+    if (projectedOnly !== null) return extrudeBox.showStatus(`${name} can't be extruded: ${projectedOnly}.`, false);
     try {
       const { current, value } = await onceMoreAfterRestart(() => extrudeOutline(sketchCurves(sketch)));
       if (!current || extruding?.sketch !== id) return;
@@ -2353,6 +2382,12 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    * on the way), or null: an Enter places from where the pointer was as Enter was pressed, once that move is rounded.
    */
   let lastMove: { at: SketchXY; pixel: number | undefined; rounded: Promise<SketchXY> } | null = null;
+  /**
+   * An Enter in the typed boxes placed a point and the pointer has not moved since: a second Enter with nothing typed
+   * places nothing (typed-sizes hunt 2026-11-01: "10, Tab, 0, Enter, Enter" drew a stray line to where the pointer had
+   * been before the typed point). A move clears it, so Enter after a real move still places as a click.
+   */
+  let enteredStill = false;
   /** The pointer's last move over the sketch, snapped again when Ctrl or Cmd is pressed or let go with the pointer still. */
   let lastHover: SketchPointer | null = null;
   /** A press of Ctrl or Cmd waiting to show: dropped when another key follows, a shortcut like Ctrl+Z rather than a hold. */
@@ -2411,6 +2446,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     }
     if (pointer.kind === "move") {
       lastHover = at ? pointer : null;
+      enteredStill = false;
       const move = ++moves;
       if (!at) {
         mode.pointer = mode.snap = null;
@@ -2537,6 +2573,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function placeTyped() {
     if (mode.kind !== "edit") return;
+    // Nothing typed and the pointer still since the last Enter: that Enter placed its point already (enteredStill).
+    if (enteredStill && Object.keys(locks).length === 0) return;
+    enteredStill = true;
     const took = locks;
     const texts = typed.texts();
     const from = lastMove;
@@ -2666,6 +2705,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     globalThis.removeEventListener?.("blur", onLostFocus);
     clearTimeout(heldShow);
     typed.hide();
+    sketchBar.showType(false);
     hint.hide();
     moveHint.hidden = true;
     showStart(); // hidden while asleep; wake shows it again if it still applies

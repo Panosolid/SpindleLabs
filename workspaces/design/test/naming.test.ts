@@ -101,9 +101,12 @@ test("outlineCurves: a sketch's pieces by the curve ids of each kind, a ready-ma
   assert.deepEqual([of(0, 0), of(0, 1), of(0, 2), of(1, 0)], ["line-7", "arc-9", null, null]);
   // Without the sketch's curves there are no names to give.
   assert.equal(outlineCurves(sketched)(0, 0), null);
-  // A ready-made outline (no pieces): numbered as the profile gives them; a hole's with its loop.
-  const plate: Outline = { outer: { path: { corners: [], bulges: [] } }, holes: [] };
-  assert.deepEqual([outlineCurves(plate)(0, 3), outlineCurves(plate)(2, 0)], ["piece-3", "hole-2-piece-0"]);
+  // A ready-made outline (no pieces): its shape, then numbered as the profile gives them; a hole's with its loop (version 7,
+  // face hunt 11-01: test/preset-piece-names.test.ts). A plate is four straight corners and two round holes.
+  const plate: Outline = { outer: { path: { corners: [0, 0, 40, 0, 40, 30, 0, 30], bulges: [] } }, holes: [{ circle: { center: [10, 15], radius: 4.5 } }, { circle: { center: [30, 15], radius: 4.5 } }] };
+  assert.deepEqual([outlineCurves(plate)(0, 3), outlineCurves(plate)(2, 0)], ["plate-piece-3", "plate-hole-2-piece-0"]);
+  // An outline with no pieces that no preset makes (no corners at all): nothing to name it by.
+  assert.equal(outlineCurves({ outer: { path: { corners: [], bulges: [] } }, holes: [] })(0, 3), null);
 });
 
 test("featureNames: a box by role alone; a sketch's extrude by the sketch's own curve ids", () => {

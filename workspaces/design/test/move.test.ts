@@ -157,7 +157,7 @@ test("a Move read from a file is checked: its numbers and its bodies", () => {
 test("hand-worked: version 6 lists a Move's bodies by body id, and the reader checks the list against dependsOn", () => {
   // The version 3 file above, read: its Move of feature-1 gains bodies ["body:feature-1"] (version 6, 35ec), dependsOn kept.
   const read = readDesignDocument(file({}));
-  assert.equal(read.version, 6);
+  assert.equal(read.version, 7);
   assert.deepEqual(read.timeline.features[1].intent.parameters.bodies, ["body:feature-1"]);
   assert.deepEqual(read.timeline.features[1].dependsOn, ["feature-1"]);
   // Saved and opened again: the same.

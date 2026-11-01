@@ -101,8 +101,12 @@ test("the tool's own click on the origin is never a target, and lining up onto i
   // A chain started at (0, 0): the origin is left out of the points (a click there draws nothing).
   const t = snapTargets(sketchOf(doc, sketch), line(sketch, [0, 0]));
   assert.ok(!t.points.some((p) => p.kind === "origin"));
-  // (1, 1) at reach 5: on both axes' line-ups, which meet at the chain's own point: the grid's point, not a snap.
-  assert.deepEqual(snapOnSketch(doc, line(sketch, [0, 0]), [1, 1], [1, 1], 0.5), { kind: "grid", at: [1, 1] });
+  // (1, 1) at reach 5: √2 from the chain's own point, in reach, so it lands on it exactly (a second click there draws nothing,
+  // hunt 2026-11-01), shown as no snap, not as the origin.
+  assert.deepEqual(snapOnSketch(doc, line(sketch, [0, 0]), [1, 1], [1, 1], 0.5), { kind: "grid", at: [0, 0] });
+  // (4, 4): √32 ≈ 5.66 from it, out of reach, but on both axes' line-ups (4 ≤ 5 off each), which meet at the chain's own
+  // point: the grid's point, not a snap.
+  assert.deepEqual(snapOnSketch(doc, line(sketch, [0, 0]), [4, 4], [4, 4], 0.5), { kind: "grid", at: [4, 4] });
   // Away from the origin, the axes still line the chain up: (12, 1) is horizontal along the x axis.
   assert.deepEqual(snapOnSketch(doc, line(sketch, [0, 0]), [12, 1], [12, 1], 0.5), { kind: "aligned", at: [12, 0], column: null, row: [0, 0] });
 });

@@ -132,13 +132,16 @@ test("an empty sketch snaps to the grid away from its origin and axes, and an un
   assert.throws(() => snapOnSketch(doc, line("sketch-99"), [0, 0], [0, 0], 1), /no sketch sketch-99/);
 });
 
-test("the line tool never snaps onto its own last point, by a point or by lining up", () => {
+test("the line tool's own last point is no target and no line-up, but in reach it is landed on, so a second click draws nothing", () => {
   const { doc, sketch } = oneLine();
   const from = pointAt(sketchOf(doc, sketch), [33, 0])!;
   const targets = snapTargets(sketchOf(doc, sketch), line(sketch, from));
   assert.ok(!targets.points.some((t) => t.at[0] === 33 && t.at[1] === 0), "a click there would draw nothing");
-  // (33.5, 0.5) is 0.5 off its column and its row (and (0, 0)'s row): lined up, that is (33, 0) itself, so the grid's (30, 0).
-  assert.deepEqual(snapOnSketch(doc, line(sketch, from), [33.5, 0.5], [30, 0], 0.5), { kind: "grid", at: [30, 0] });
+  // (33.5, 0.5) is √0.5 ≈ 0.71 from it, in reach (5): landed on exactly, (33, 0), shown as no snap (hunt 2026-11-01).
+  assert.deepEqual(snapOnSketch(doc, line(sketch, from), [33.5, 0.5], [30, 0], 0.5), { kind: "grid", at: [33, 0] });
+  // (37, 4) is √32 ≈ 5.66 from it, out of reach, but 4 off its column and its row (and (0, 0)'s row): lined up, that is
+  // (33, 0) itself, so the grid's (35, 5).
+  assert.deepEqual(snapOnSketch(doc, line(sketch, from), [37, 4], [35, 5], 0.5), { kind: "grid", at: [35, 5] });
   // A chain's first click not yet a point lines up too: from (−50, 50), the pointer (−49, 80) snaps vertical.
   assert.deepEqual(snapOnSketch(doc, line(sketch, [-50, 50]), [-49, 80], [-50, 80], 0.5), { kind: "aligned", at: [-50, 80], column: [-50, 50], row: null });
 });
@@ -276,7 +279,8 @@ function rng(seed: number) {
  * (sketchCurves' coordinates) rather than the sketch's point list. Every
  * line end and arc end is an endpoint, every circle or arc centre that is
  * no end a centre, every line's middle a midpoint; the tool's own
- * click is no target. Nearest within reach wins, an endpoint or centre
+ * click is no target, but one within reach with no target nearer is
+ * landed on exactly, as the grid (hunt 2026-11-01). Nearest within reach wins, an endpoint or centre
  * before a midpoint at the same place. Else the nearest column and row
  * within reach (the own clicks included, the rectangle's corner's column
  * and row not), else the grid; lined up onto an own click is the grid.
@@ -296,6 +300,8 @@ function model(sketch: Sketch, owns: SketchXY[], rectangle: boolean, raw: Sketch
   const all = [...[...ends.values()].map((at) => ({ at, kind: "endpoint" as const })), ...[...centres.values()].map((at) => ({ at, kind: "centre" as const })), ...mids.map((at) => ({ at, kind: "midpoint" as const })), { at: [0, 0] as SketchXY, kind: "origin" as const }].filter((t) => !owns.some((o) => key(o) === key(t.at)));
   const d = (p: SketchXY) => Math.sqrt((p[0] - raw[0]) ** 2 + (p[1] - raw[1]) ** 2);
   const within = all.filter((t) => d(t.at) <= reach).sort((a, b) => d(a.at) - d(b.at) || rank[a.kind] - rank[b.kind]);
+  const mine = owns.filter((o) => d(o) <= reach).sort((a, b) => d(a) - d(b))[0];
+  if (mine && (!within.length || d(mine) <= d(within[0].at))) return { kind: "grid", at: mine };
   if (within.length) return { kind: within[0].kind, at: within[0].at };
   const extra = new Map(owns.filter((o) => !ends.has(key(o)) && !centres.has(key(o))).map((o) => [key(o), o]));
   const refs = [...ends.values(), ...centres.values(), ...extra.values(), [0, 0] as SketchXY];

@@ -17,7 +17,7 @@ import { seeded } from "../src/index.ts";
 import { app, chooseShape } from "./design-app.ts";
 
 type A = Awaited<ReturnType<typeof app>>;
-const empty = (): DesignDocument => ({ version: 6, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
+const empty = (): DesignDocument => ({ version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
 
 /** Insert ▾ then a shape, as a person does: a new body at 40 × 30 × 20 (insert.ts INSERT_SIZES). */
 async function insert(a: A, kind: string) {

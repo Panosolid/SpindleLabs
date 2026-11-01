@@ -220,7 +220,7 @@ test("hand-worked: a version 5 file's eyes list items' ids; opened, each solid i
   // folder; version 6 lists the two bodies as body:feature-1 and body:feature-11, the rest unchanged, in the same order.
   const v5 = { ...structuredClone(part()), version: 5, hidden: ["feature-1", "sketch-2", "feature-11", "folder-bodies"] };
   const read = readDesignDocument(v5);
-  assert.equal(read.version, 6);
+  assert.equal(read.version, 7);
   assert.deepEqual(read.hidden, ["body:feature-1", "sketch-2", "body:feature-11", "folder-bodies"]);
   assert.deepEqual([bodyHiddenIn(read, "body:feature-1"), bodyHiddenIn(read, "body:feature-11")], [true, true]);
   // A version 5 list holding what version 5 refused is still refused, in version 6's words.

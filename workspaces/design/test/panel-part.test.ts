@@ -16,7 +16,7 @@ import { panelPart } from "../src/selection.ts";
 import { addSketch, drawRectangle } from "../src/sketch.ts";
 import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
 
-const empty = (): DesignDocument => ({ version: 6, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
+const empty = (): DesignDocument => ({ version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] }, bodies: [], nextBody: 1 }) as DesignDocument;
 
 /** Box 1 (feature-1) then Box 2 (feature-2), both 40 × 30 × 20. */
 function twoBoxes(): DesignDocument {
