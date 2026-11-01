@@ -19,6 +19,7 @@ lines (folder seed-monkey-unexplained): the monkey's count is the last word.
 
 Exit code: 1 when any seed failed or went unreported, else 0."""
 
+import json
 import os
 import re
 import shutil
@@ -61,6 +62,24 @@ def others(log):
     return found
 
 
+def how_kept(saved):
+    """A line on how the monkey kept a failed session's actions (issue #248), or "" when it shrank them in full."""
+    try:
+        with open(saved) as f:
+            kept = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(kept, dict):
+        return ""
+    if kept.get("replayed") is False:
+        return "actions.json: the whole session; its actions did not fail again when replayed, so it is a timing failure (a slow runner or a race)"
+    if kept.get("outOfTime"):
+        return "actions.json: the shortest list found before shrinking ran out of time, not the shortest there is"
+    if kept.get("shrunk") is False:
+        return "actions.json: the whole session; the job ended before it was replayed"
+    return ""
+
+
 def write(log, results, out, first, count, steps):
     """Writes the report and failure folders; returns the number of failed seeds."""
     seeds = list(range(first, first + count))
@@ -98,6 +117,10 @@ def write(log, results, out, first, count, steps):
         saved = os.path.join(results, f"seed-{seed}.json")
         if os.path.isfile(saved):
             shutil.copy(saved, os.path.join(folder, "actions.json"))
+            note = how_kept(saved)
+            if note:
+                with open(os.path.join(folder, "monkey-report.txt"), "a") as f:
+                    f.write(note + "\n")
     with open(os.path.join(out, "report.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
     return total

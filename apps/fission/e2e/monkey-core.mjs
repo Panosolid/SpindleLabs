@@ -455,5 +455,29 @@ export async function shrink(list, fails, budget = 200) {
   return { list: current, tries };
 }
 
+/**
+ * A failed session's actions made short, when they can be (issue #248). The
+ * whole list is replayed once first: a session that does not fail the same
+ * way again (`fails` false) failed on timing (a slow runner, a race), and
+ * shrinking it would only spend replays that pass; its whole list is kept
+ * (`replayed` false). Shrinking stops at `deadline` (a time from `now`):
+ * the list found so far is kept and `outOfTime` says so, so a slow failure
+ * can never use up the job's hours before its actions are saved.
+ */
+export async function shrinkFailure(list, fails, { budget = 200, deadline = Infinity, now = Date.now } = {}) {
+  if (!(await fails(list))) return { list, tries: 1, replayed: false, outOfTime: false };
+  let tries = 1; // the replays really run: the whole list, then each candidate tried before the deadline
+  let outOfTime = false;
+  const shrunk = await shrink(list, async (candidate) => {
+    if (now() >= deadline) {
+      outOfTime = true;
+      return false;
+    }
+    tries++;
+    return fails(candidate);
+  }, budget);
+  return { list: shrunk.list, tries, replayed: true, outOfTime };
+}
+
 /** A failure's kind, for the shrinker: the check's name and its message with numbers and ids blurred. */
 export const signature = (failure) => `${failure.check}: ${String(failure.message).split("\n")[0].replace(/\d+(\.\d+)?/g, "#")}`;

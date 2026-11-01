@@ -32,14 +32,14 @@ def git(cwd, *args):
 
 
 class Night(unittest.TestCase):
-    def night(self, log, first=20261025, count=2, steps=2000, saved=()):
-        """Runs monkey_night.write; returns (failed, {relative path: text})."""
+    def night(self, log, first=20261025, count=2, steps=2000, saved=(), how=None):
+        """Runs monkey_night.write; returns (failed, {relative path: text}). `how`: the fields the monkey adds to a saved list."""
         with tempfile.TemporaryDirectory() as d:
             results, out = os.path.join(d, "results"), os.path.join(d, "out")
             os.makedirs(results)
             for seed in saved:
                 with open(os.path.join(results, f"seed-{seed}.json"), "w") as f:
-                    json.dump({"seed": seed, "actions": [{"kind": "phone"}]}, f)
+                    json.dump({"seed": seed, **(how or {}), "actions": [{"kind": "phone"}]}, f)
             failed = monkey_night.write(log, results, out, first, count, steps)
             files = {}
             for root, _, names in os.walk(out):
@@ -62,6 +62,26 @@ class Night(unittest.TestCase):
                          "replay: cd apps/fission && npm run build && FISSION_SEED=20261026 MONKEY_STEPS=2000 node e2e/monkey.mjs")
         self.assertEqual(json.loads(files["seed-monkey-20261026/actions.json"])["actions"], [{"kind": "phone"}])
         self.assertNotIn("seed-monkey-20261025/monkey-report.txt", files)
+
+    def test_how_the_actions_were_kept_is_said_after_the_failure_line(self):
+        # Issue #248: a session that does not fail again on replay keeps its whole list, and the report says why.
+        cases = [
+            ({"shrunk": False, "replayed": False}, "actions.json: the whole session; its actions did not fail again when replayed, so it is a timing failure (a slow runner or a race)"),
+            ({"shrunk": True, "replayed": True, "outOfTime": True}, "actions.json: the shortest list found before shrinking ran out of time, not the shortest there is"),
+            ({"shrunk": False}, "actions.json: the whole session; the job ended before it was replayed"),
+        ]
+        for how, line in cases:
+            with self.subTest(how=how):
+                _, files = self.night(LOG, saved=[20261026], how=how)
+                report = files["seed-monkey-20261026/monkey-report.txt"].splitlines()
+                # The failure line stays second (file_issues.py reads it); the note is the third and last line.
+                self.assertTrue(report[1].startswith("failure: no sideways scrolling"))
+                self.assertEqual(report[2:], [line])
+        # Shrunk in full (and an older list with no fields): nothing added.
+        for how in ({"shrunk": True, "replayed": True}, None):
+            with self.subTest(how=how):
+                _, files = self.night(LOG, saved=[20261026], how=how)
+                self.assertEqual(len(files["seed-monkey-20261026/monkey-report.txt"].splitlines()), 2)
 
     def test_a_clean_night(self):
         failed, files = self.night("seed 5: pass (2000 actions)\nseed 6: pass (2000 actions; known bug seen: x)\n", first=5)
