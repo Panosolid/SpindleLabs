@@ -21,6 +21,7 @@
 
 import { seeded, type SeededRandom } from "./index.ts";
 import {
+  bodyName,
   rebuildBooleans,
   resolveEdge,
   resolveFace,
@@ -77,18 +78,76 @@ function randomBlock(r: SeededRandom, id: string, operation: BlockFeature["opera
 }
 
 /**
+ * A block's corners moved inward by k/64 mm on every side (k ≥ 1), exact
+ * in binary. Blocks on whole millimetres with different k (k + j < 64)
+ * never share a plane and every two planes are at least 1/64 mm apart:
+ * a ± k/64 = b ± j/64 only if k ± j is a multiple of 64.
+ */
+export function shrunk(f: BlockFeature, k: number): BlockFeature {
+  const d = k / 64;
+  return { ...f, rect: [f.rect[0] + d, f.rect[1] + d, f.rect[2] - d, f.rect[3] - d], z: [f.z[0] + d, f.z[1] - d] };
+}
+
+/**
+ * Step 35ed2's "kernel form" of one feature at `place` in the session:
+ * what the test-only Combine on the real kernel can build (new blocks and
+ * Combines; Extrude join and cut are step 39), with every block shrunk by
+ * (place + 1)/64 mm so no two inputs share a plane until 36a. An Extrude
+ * join becomes its block and a Combine joining it to the bodies it lists
+ * (the first the target); an Extrude cut its block and one Combine cutting
+ * it from each listed body in turn, keeping the tool for all but the last.
+ */
+export function kernelForm(f: BooleanFeature, place: number): BooleanFeature[] {
+  if (f.kind === "combine") return [f];
+  const block: BlockFeature = { ...shrunk(f, place + 1), operation: "new" };
+  delete (block as { bodies?: unknown }).bodies;
+  if (f.operation === "new") return [block];
+  const listed = [...new Set(f.bodies ?? [])];
+  const tool = bodyName(f.id);
+  if (f.operation === "join") return [block, { kind: "combine", id: `${f.id}-join`, target: listed[0], tools: [...listed.slice(1), tool], operation: "join" }];
+  return [block, ...listed.map((target, i): CombineFeature => ({ kind: "combine", id: `${f.id}-cut-${i + 1}`, target, tools: [tool], operation: "cut", keepTools: i < listed.length - 1 }))];
+}
+
+/** References to what is there after a feature: a face or two (by a name, sometimes its tag and an origin on it), an edge. */
+function pickReferences(r: SeededRandom, rebuild: BooleanRebuild, after: number): BooleanSession["references"] {
+  const references: BooleanSession["references"] = [];
+  const faces = rebuild.bodies.flatMap((b) => b.faces);
+  for (let n = int(r, 0, 2); n > 0 && faces.length > 0; n--) {
+    const face = pick(r, faces);
+    const name = r.next() < 0.8 ? face.names[0] : pick(r, face.names);
+    const [lo, hi] = pick(r, face.rects);
+    const t = () => pick(r, [0, 0.25, 0.5, 1]);
+    const origin = [0, 1, 2].map((a) => lo[a] + t() * (hi[a] - lo[a])) as [number, number, number];
+    const ref: SessionReference = { kind: "face", name };
+    if (r.next() < 0.7) ref.origin = origin;
+    if (face.tag !== null && name === face.names[0] && r.next() < 0.6) ref.tag = face.tag;
+    references.push({ after, ref });
+  }
+  const edges = rebuild.bodies.flatMap((b) => b.edges).filter((e) => e.name !== null);
+  if (edges.length > 0 && r.next() < 0.5) references.push({ after, ref: { kind: "edge", name: pick(r, edges).name! } });
+  return references;
+}
+
+/**
  * A seeded session of `steps` features. What it picks depends on the
  * bodies there are (it rebuilds the model as it goes), now and then a body
  * that is not there (the feature must fail), and after each feature it may
  * make references to what it sees.
+ *
+ * In "kernel" form (step 35ed2) every feature is put in `kernelForm` as it
+ * is made and the bodies it picks and the references it makes come from
+ * that session's model, with the same picking as the plain form: the same
+ * seed makes the same choices of what to do, on what it finds there.
  */
-export function randomBooleanSession(seed: bigint, steps: number): BooleanSession {
+export function randomBooleanSession(seed: bigint, steps: number, form: "plain" | "kernel" = "plain"): BooleanSession {
   const r = seeded(seed);
   const features: BooleanFeature[] = [];
+  const out: BooleanFeature[] = [];
   const references: BooleanSession["references"] = [];
   let ids: string[] = [];
   let rebuild: BooleanRebuild | null = null;
   while (features.length < steps) {
+    const made = features.length;
     const id = `feature-${features.length + 1}`;
     const choice = r.next();
     const listed = () => (r.next() < 0.05 ? ["body:nowhere"] : some(r, ids, 2));
@@ -144,25 +203,13 @@ export function randomBooleanSession(seed: bigint, steps: number): BooleanSessio
       const c: CombineFeature = { kind: "combine", id, target, tools, operation: pick(r, ["join", "cut", "intersect"] as const), keepTools: r.next() < 0.25 };
       features.push(c);
     }
-    rebuild = rebuildBooleans(features);
+    for (let i = made; i < features.length; i++) out.push(...kernelForm(features[i], i));
+    const session = form === "kernel" ? out : features;
+    rebuild = rebuildBooleans(session);
     ids = rebuild.bodies.map((b) => b.id);
-    // References to what is there now: a face or two, an edge.
-    const faces = rebuild.bodies.flatMap((b) => b.faces);
-    for (let n = int(r, 0, 2); n > 0 && faces.length > 0; n--) {
-      const face = pick(r, faces);
-      const name = r.next() < 0.8 ? face.names[0] : pick(r, face.names);
-      const [lo, hi] = pick(r, face.rects);
-      const t = () => pick(r, [0, 0.25, 0.5, 1]);
-      const origin = [0, 1, 2].map((a) => lo[a] + t() * (hi[a] - lo[a])) as [number, number, number];
-      const ref: SessionReference = { kind: "face", name };
-      if (r.next() < 0.7) ref.origin = origin;
-      if (face.tag !== null && name === face.names[0] && r.next() < 0.6) ref.tag = face.tag;
-      references.push({ after: features.length - 1, ref });
-    }
-    const edges = rebuild.bodies.flatMap((b) => b.edges).filter((e) => e.name !== null);
-    if (edges.length > 0 && r.next() < 0.5) references.push({ after: features.length - 1, ref: { kind: "edge", name: pick(r, edges).name! } });
+    references.push(...pickReferences(r, rebuild, session.length - 1));
   }
-  return { seed, features, references };
+  return { seed, features: form === "kernel" ? out : features, references };
 }
 
 // The comparison ----------------------------------------------------------------
@@ -396,6 +443,28 @@ export function invarianceDifference(s: BooleanSession, faults: readonly Boolean
       ref.kind === "edge" ? { kind: "edge", name: nameBack(ref.name, forth) } : { ...ref, name: nameBack(ref.name, forth), ...(ref.tag ? { tag: ref.tag.map((n) => nameBack(n, forth)).sort() } : {}) };
     const [m, t] = [wordsBack(asMade(ref), (id) => id), wordsBack(modelFinds(renamedRebuild, renamedRef, faults), back)];
     if (m !== t) return `seed ${s.seed}, renamed: ${ref.kind} reference ${ref.name}: as made ${m}, renamed ${t}`;
+  }
+  return null;
+}
+
+/**
+ * Step 35ed2's guard for sessions on the real kernel: the first two blocks
+ * with planes on one axis closer than `apart` (1/64 mm: the kernel refuses
+ * planes 10–20 nm apart at its input and accepts 0.5 µm slivers until 36c,
+ * and faces lying on each other until 36a), in words, or null.
+ */
+export function closePlanes(features: readonly BooleanFeature[], apart = 1 / 64): string | null {
+  const blocks = features.filter((f): f is BlockFeature => f.kind === "block");
+  for (const [axis, of] of [
+    ["x", (f: BlockFeature) => [f.rect[0], f.rect[2]]],
+    ["y", (f: BlockFeature) => [f.rect[1], f.rect[3]]],
+    ["z", (f: BlockFeature) => f.z],
+  ] as const) {
+    const planes = blocks.flatMap((f) => of(f).map((at) => ({ at, id: f.id }))).sort((a, b) => a.at - b.at);
+    for (let i = 1; i < planes.length; i++) {
+      const [a, b] = [planes[i - 1], planes[i]];
+      if (a.id !== b.id && b.at - a.at < apart) return `${a.id} and ${b.id}: ${axis} ${a.at} and ${b.at}`;
+    }
   }
   return null;
 }

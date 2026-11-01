@@ -148,7 +148,9 @@ export function askName(doc: Document, suggested: string, kind: SaveKind): Promi
         done(null);
       }
     });
-    doc.body.append(root);
+    // A modal <dialog> open now (the Slice dialog, while a long slice runs) is in the top layer and makes the rest of the
+    // page inert, so a box on the body would open behind it, unreachable (slicer hunt 2026-10-31): inside it, it works.
+    (doc.querySelector("dialog[open]") ?? doc.body).append(root);
     input.focus();
     input.select();
   });

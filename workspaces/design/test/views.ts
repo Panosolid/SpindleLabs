@@ -76,5 +76,5 @@ export function cylinderView(r: number, h: number): BodyView {
 
 /** A scene of one body, as `joinBodies` gives it, without its mesh (these views have none): numbering as the kernel's. */
 export function onlyBody(view: BodyView, names: BodyNames): Scene {
-  return { bodies: [{ feature: names.feature, place: 1, view, names }], mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, faceStart: [0], edgeStart: [0] };
+  return { bodies: [{ feature: names.feature, body: `body:${names.feature}`, place: 1, view, names }], mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, faceStart: [0], edgeStart: [0] };
 }

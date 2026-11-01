@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { projectFromJson } from "@fission/core";
-import { BodyCache, designWorkspace, rebuildTimeline, type DesignDocument } from "@fission/design";
+import { BodyCache, builtBody, designWorkspace, rebuildTimeline, type DesignDocument } from "@fission/design";
 import { nodeKernel } from "../src/node-kernel.ts";
 
 const FILE = new URL("../../../apps/fission/e2e/regressions/phone-project-all-red.spindle", import.meta.url);
@@ -40,9 +40,9 @@ test("Ben's phone project builds every item on a fresh kernel, where it was draw
     assert.deepEqual(ids, ["sketch-1", "feature-10", "sketch-11", "sketch-12", "feature-35", "sketch-36", "feature-42", "feature-43"]);
     for (const id of ids) assert.equal(build.results[id]?.status, "built", `${id}: ${JSON.stringify(build.results[id])}`);
     const bounds = async (id: string) => {
-      const r = build.results[id];
-      assert.ok(r.status === "built" && r.body !== undefined);
-      return (await cache.view(r.body)).bounds;
+      const b = builtBody(build, id);
+      assert.ok(b !== undefined, id);
+      return (await cache.view(b.handle)).bounds;
     };
     // Extrude 1: Sketch 1's rectangle, x 10.7..40.9 and y −14.7..32.6 on the XY plane, extruded 39 mm up.
     const e1 = await bounds("feature-10");
@@ -53,9 +53,9 @@ test("Ben's phone project builds every item on a fresh kernel, where it was draw
     // Move 1 shifts it 5 mm in y: the same item without the Move spans y 5 less.
     const unmoved = { ...doc, timeline: { features: doc.timeline.features.filter((f) => f.id !== "feature-43") } };
     const plain = await rebuildTimeline(unmoved, cache, kernel);
-    const p = plain.results["feature-35"];
-    assert.ok(p.status === "built" && p.body !== undefined);
-    const e2plain = (await cache.view(p.body)).bounds;
+    const p = builtBody(plain, "feature-35");
+    assert.ok(p !== undefined);
+    const e2plain = (await cache.view(p.handle)).bounds;
     assert.ok(Math.abs(e2[0][1] - e2plain[0][1] - 5) <= LINEAR && Math.abs(e2[1][1] - e2plain[1][1] - 5) <= LINEAR, `moved ${JSON.stringify(e2)} vs ${JSON.stringify(e2plain)}`);
   } finally {
     await cache.close();

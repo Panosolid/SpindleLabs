@@ -185,8 +185,8 @@ export interface StlFile {
   warning: string | null;
 }
 
-/** What one path of a slice prints. */
-export type PrintRole = "outer-wall" | "inner-wall" | "solid-infill" | "sparse-infill";
+/** What one path of a slice prints ("skirt": the warm-up loop round the first layer, printed before the part). */
+export type PrintRole = "outer-wall" | "inner-wall" | "solid-infill" | "sparse-infill" | "support" | "skirt";
 
 /** One path of a slice's preview: on the bed, mm, its points flattened x, y, x, y, … */
 export interface PrintPath {
@@ -222,8 +222,27 @@ export interface SlicedPrint {
 /** The build plate a P1S print file is for: Bambu's textured PEI plate (its first layer prints 0.04 mm lower, as the plate's peaks stop the nozzle when homing), or a smooth one (smooth PEI, cool or engineering plate). */
 export type BuildPlate = "textured" | "smooth";
 
+/** The nozzle fitted to the P1S, named in its print file: Bambu Studio refuses to send a file whose nozzle type is not the printer's. Standard is the stock hotend; High Flow is Bambu's high-flow hotend. Both are 0.4 mm and print the same moves. */
+export type NozzleType = "standard" | "high-flow";
+
 /** Supports under overhangs (P5d3): none, normal (columns straight down) or tree (branches merging going down), both under the same dense roof. */
 export type SupportStyle = "off" | "normal" | "tree";
+
+/** A stage of a slice, in the order the engine runs them: cutting the bodies into layers, each layer's walls, the infill, the supports, each layer's paths in order, writing the file. */
+export type SliceStage = "layers" | "walls" | "infill" | "supports" | "paths" | "file";
+
+/**
+ * How far a slice (slice_stl, print_file_stl) has got, as the engine reports it while it works: `done` of the stage's
+ * `total` steps (layers, or 1 for a stage done at once), and the whole slice's `fraction`, 0 to 1, which only goes
+ * forward. Each stage owns a rough share of the bar (walls and supports the most), so it says where the work is, not a
+ * time. An engine from before progress reports (kernel 0.33.17 and older) sends none.
+ */
+export interface SliceProgress {
+  fraction: number;
+  stage: SliceStage;
+  done: number;
+  total: number;
+}
 
 /** A Bambu Lab P1S print file from the slicing engine (print_file_stl): the .gcode.3mf's bytes, with the P1S's own start and end routines for the plate, and what the slice came to (as SlicedPrint's). */
 export interface P1sPrintFile {
@@ -238,6 +257,29 @@ export interface P1sPrintFile {
 /** A body the kernel keeps between calls: a whole number from 1, never reused. Free it with body_free. */
 export type BodyHandle = number;
 
+/** A boolean's operation (Combine's Join, Cut and Intersect). */
+export type BooleanOp = "union" | "subtract" | "intersect";
+
+/** Where one face of a boolean's result came from: face `face` of the input `body`, all of it or a piece (`whole`), turned over or not. */
+export interface FaceFrom {
+  body: BodyHandle;
+  face: number;
+  whole: boolean;
+  turned: boolean;
+}
+
+/** Where one edge of a boolean's result came from: the input edges it lies along, or the two input faces whose crossing made it (the earlier body's face first). */
+export interface EdgeFrom {
+  along: { body: BodyHandle; edge: number; whole: boolean }[];
+  crossing: [{ body: BodyHandle; face: number }, { body: BodyHandle; face: number }][];
+}
+
+/** What body_boolean gives: the result bodies' handles, and for each, where its faces and edges came from (indexed like its faces and edges). */
+export interface BooleanResult {
+  bodies: BodyHandle[];
+  history: { faces: FaceFrom[]; edges: EdgeFrom[] }[];
+}
+
 /** What kind of failure a kernel call had. */
 export type KernelErrorKind =
   /** The kernel refuses an input; the user's to fix. */
@@ -251,7 +293,9 @@ export type KernelErrorKind =
   /** The kernel already holds its most bodies (MAX_LIVE_BODIES); free some. */
   | "too-many-bodies"
   /** Any other kernel failure (including a crash): a kernel bug. */
-  | "internal";
+  | "internal"
+  /** Never the kernel's own: the call ran past its time limit (kernel-client.ts, time-limit.ts), so the kernel was started again. */
+  | "timed-out";
 
 /**
  * Which input a failure is about, so the app

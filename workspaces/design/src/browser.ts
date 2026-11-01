@@ -5,7 +5,8 @@
 
 import type { Feature, GeometryReference } from "@fission/core";
 import { ICONS, type IconName } from "@fission/ui";
-import { bodyHidden, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
+import { BUILD_AREA_LABEL, BUILD_AREA_ROW, BUILD_AREA_TITLE } from "./build-area.ts";
+import { bodyHidden, bodyIdOf, bodyItem, bodyNumbers, buildingItems, EYE_FOLDERS, isHidden, isSketchItem, makesBody, ORIGIN_PLANES, presetKinds, profileLabel, type DesignDocument } from "./document.ts";
 import { bodyReference, profileReference } from "./references.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -54,7 +55,7 @@ export function itemIcons(doc: Pick<DesignDocument, "profiles">): (f: Feature) =
 /**
  * The solid features that build (`builds`: not suppressed, not after the
  * rollback marker, their sketch there), in build order: each makes a body
- * (24d1), "Body 1", "Body 2"…, all drawn (24d3b).
+ * (24d1), each with its own number (35e), all drawn (24d3b).
  */
 export function bodyFeatures(document: DesignDocument): Feature[] {
   const building = buildingItems(document);
@@ -67,12 +68,16 @@ const NONE_FAILED: ReadonlySet<string> = new Set();
 /**
  * The Bodies group's rows: one for each feature in `bodyFeatures` that the
  * last rebuild did not fail (`failed`, its ids), "body-n" and "Body n", n
- * its place among `bodyFeatures`, so a body keeps its number when one
- * before it fails. A feature that failed has no body, so no row (bug hunt
+ * the body's own number (35e, `bodyNumbers`), so a body keeps it when one
+ * before it fails, is suppressed or is reordered. A feature that failed has no body, so no row (bug hunt
  * 2026-10-19, finding 5: its row selected a body that did not exist).
  */
 export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): { id: string; label: string; feature: Feature }[] {
-  return bodyFeatures(document).flatMap((f, i) => (failed.has(f.id) ? [] : [{ id: `body-${i + 1}`, label: `Body ${i + 1}`, feature: f }]));
+  const numbers = bodyNumbers(document);
+  return bodyFeatures(document).flatMap((f) => {
+    const n = numbers.get(bodyIdOf(f.id))!;
+    return failed.has(f.id) ? [] : [{ id: `body-${n}`, label: `Body ${n}`, feature: f }];
+  });
 }
 
 /**
@@ -87,7 +92,7 @@ export function bodyRows(document: DesignDocument, failed: ReadonlySet<string> =
  * sketch is a timeline row by its id and a row in Sketches by
  * "sketches/<id>", so no two rows share an id.
  */
-export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): BrowserNode[] {
+export function browserTree(document: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED, buildAreaShown = false): BrowserNode[] {
   const features = document.timeline.features;
   // Each sketch's item by its id, looked up once (S2: a search per sketch took the timeline's length squared).
   const items = new Map<string, Feature>();
@@ -123,8 +128,19 @@ export function browserTree(document: DesignDocument, failed: ReadonlySet<string
       }),
     },
     { id: "profiles", label: "Profiles", icon: "folder", children: document.profiles.map((p) => ({ id: p.id, label: profileLabel(p), icon: "profile" })) },
-    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(feature.id, EYE_FOLDERS.bodies) })) },
-    { id: "origin", label: "Origin", icon: "origin", ...eye(EYE_FOLDERS.origin), children: ORIGIN.map((n) => ({ ...n, ...eye(n.id, EYE_FOLDERS.origin) })), startsFolded: true },
+    { id: "bodies", label: "Bodies", icon: "folder", ...eye(EYE_FOLDERS.bodies), children: bodyRows(document, failed).map(({ id, label, feature }) => ({ id, label, icon: "body", ...eye(bodyIdOf(feature.id), EYE_FOLDERS.bodies) })) },
+    {
+      id: "origin",
+      label: "Origin",
+      icon: "origin",
+      ...eye(EYE_FOLDERS.origin),
+      // Last, the printer's build area (Ben, 2026-11-01): its eye is a view setting (build-area.ts), shut at first.
+      children: [
+        ...ORIGIN.map((n) => ({ ...n, ...eye(n.id, EYE_FOLDERS.origin) })),
+        { id: BUILD_AREA_ROW, label: BUILD_AREA_LABEL, title: BUILD_AREA_TITLE, icon: "box", hidden: !buildAreaShown, ...(isHidden(document, EYE_FOLDERS.origin) ? { folderHidden: true } : {}) },
+      ],
+      startsFolded: true,
+    },
   ];
 }
 
@@ -162,14 +178,14 @@ export function rowReference(node: string, doc: DesignDocument, failed: Readonly
  */
 export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): (node: string) => GeometryReference | null {
   // A hidden body (U0f3) is not drawn, so its rows select nothing: a selection of something unseen.
-  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));
-  const solids = new Set(rows.values());
+  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, bodyIdOf(r.feature.id)) ? [] : [[r.id, bodyIdOf(r.feature.id)] as const])));
+  const solids = new Map([...rows.values()].map((b) => [bodyItem(b)!, b]));
   // A profile, and (25c1) a sketch with curves by either of its rows: its outline.
   const outlines = new Set([...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))]);
   return (node) => {
     const body = rows.get(node);
     if (body !== undefined) return bodyReference(body);
-    if (solids.has(node)) return bodyReference(node);
+    if (solids.has(node)) return bodyReference(solids.get(node)!);
     const outline = node.startsWith("sketches/") ? node.slice("sketches/".length) : node;
     return outlines.has(outline) ? profileReference(outline) : null;
   };
@@ -177,13 +193,16 @@ export function rowReferences(doc: DesignDocument, failed: ReadonlySet<string> =
 
 /**
  * What a browser row's eye shuts or opens (`hideRow`'s id): a Body row its
- * feature, a sketch's row its item, an origin row itself, the Sketches,
+ * body id (Design data version 6), a sketch's row its item, an origin row itself, the Sketches,
  * Bodies and Origin folders theirs (EYE_FOLDERS); null for a row with no
  * eye (the Timeline's, the Profiles').
  */
 export function eyeId(doc: DesignDocument, node: string, failed: ReadonlySet<string> = NONE_FAILED): string | null {
   if (node.startsWith("sketches/")) return node.slice("sketches/".length);
-  if (node.startsWith("body-")) return bodyRows(doc, failed).find((r) => r.id === node)?.feature.id ?? null;
+  if (node.startsWith("body-")) {
+    const row = bodyRows(doc, failed).find((r) => r.id === node);
+    return row === undefined ? null : bodyIdOf(row.feature.id);
+  }
   if (ORIGIN.some((n) => n.id === node)) return node;
   return Object.hasOwn(EYE_FOLDERS, node) ? EYE_FOLDERS[node as keyof typeof EYE_FOLDERS] : null;
 }

@@ -11,7 +11,7 @@ const box = nameBody("feature-1", BOX_VIEW, () => null);
 const cylinder = nameBody("feature-1", CYLINDER_VIEW, () => null);
 const face = (i: number, names = box) => designReference("face", names, i)!;
 const edge = (i: number) => designReference("edge", box, i)!;
-const body = bodyReference("feature-1");
+const body = bodyReference("body:feature-1");
 const boxScene = onlyBody(BOX_VIEW, box);
 const cylinderScene = onlyBody(CYLINDER_VIEW, cylinder);
 
@@ -22,7 +22,7 @@ test("the highlight lists the selected faces and edges of the body on screen, by
   // On the cylinder the box's top (face 1) is the cylinder's top, index 1; its front (2) and top front edge (4) aren't there.
   assert.deepEqual(highlightOf([face(1), face(2), edge(4)], cylinderScene), { body: false, faces: [1], edges: [] });
   // Another feature's face or body (not on screen) draws nothing.
-  assert.deepEqual(highlightOf([face(1, nameBody("feature-2", BOX_VIEW, () => null)), bodyReference("feature-2")], boxScene), { body: false, faces: [], edges: [] });
+  assert.deepEqual(highlightOf([face(1, nameBody("feature-2", BOX_VIEW, () => null)), bodyReference("body:feature-2")], boxScene), { body: false, faces: [], edges: [] });
   // Before a body is built nothing is drawn.
   assert.deepEqual(highlightOf([face(1), body], null), { body: false, faces: [], edges: [] });
 });

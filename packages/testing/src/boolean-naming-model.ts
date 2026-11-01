@@ -29,6 +29,14 @@
 // eight must be connected through their faces, and so must the empty ones;
 // either split is an edge or a corner where the surface pinches.
 //
+// Sizes as the kernel judges them (step 35ed1): two coordinates within
+// LINEAR (10 nm, a corner's own tolerance) of each other are one plane, so
+// 0.3 and 0.1 + 0.2 are one grid line; and a result with a gap or sliver
+// thinner than MIN_FEATURE (1 µm) fails the feature in the kernel's words
+// (a thin wall or gap, or a step shorter than that), judged on the result
+// only, never on the inputs (a cut's far wall 0.5 µm outside the part is
+// fine). See `sliver`.
+//
 // `faults` plants the bugs the tests use to prove each check can fail; real
 // code never passes any.
 
@@ -98,6 +106,15 @@ export interface BooleanRebuild {
  * The bugs `faults` plants, one per rule (section 8 of
  * docs/document-model.md), each caught by test/boolean-naming-model.test.ts.
  */
+/** Two coordinates within this (mm) are one plane: a corner's own tolerance, the kernel's LINEAR (10 nm). */
+export const LINEAR = 1e-5;
+/** No wall, gap or step of a result may be thinner than this (mm): the kernel's MIN_FEATURE (1 µm). */
+export const MIN_FEATURE = 1e-3;
+/** How far a difference of two typed coordinates can miss what was typed: 4 ulps of the larger, as the kernel allows. */
+const rounding = (a: number, b: number) => Math.max(Math.abs(a), Math.abs(b)) * 4 * Number.EPSILON;
+/** The words a feature fails with when its result would hold a sliver: the kernel's phrase. */
+export const SLIVER = "it would leave a gap or sliver thinner than 1 µm";
+
 export type BooleanFault =
   | "keep-largest" // rule 1: the largest piece keeps the id, not the first face's
   | "keep-first-reached" // rule 1: the first face reaching a piece decides, whole or not
@@ -117,7 +134,10 @@ export type BooleanFault =
   | "edge-no-ends" // rule 5: edges meeting the same two faces twice not told apart
   | "made-by-id-text" // made order: features taken in the order of their ids' text, not their place in the timeline
   | "grid-whole-mm" // the grid takes every coordinate to the nearest whole millimetre
-  | "float-ties"; // rule 1: shares and volumes compared to the last bit, so rounding decides ties
+  | "float-ties" // rule 1: shares and volumes compared to the last bit, so rounding decides ties
+  | "near-planes-apart" // 35ed1: coordinates within LINEAR kept as two planes
+  | "thin-allowed" // 35ed1: a wall or gap thinner than MIN_FEATURE not refused
+  | "step-allowed"; // 35ed1: a step (short edge) shorter than MIN_FEATURE not refused
 
 export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
   "keep-largest",
@@ -145,6 +165,13 @@ export const BOOLEAN_FAULTS: readonly BooleanFault[] = [
  */
 export const ORDER_FAULTS: readonly BooleanFault[] = ["made-by-id-text", "grid-whole-mm", "float-ties"];
 
+/**
+ * Faults in the kernel's sizes (step 35ed1). The sessions keep every part
+ * in whole steps far above both sizes, so only the hand-worked cases of
+ * test/boolean-naming-sliver.test.ts can catch these.
+ */
+export const SIZE_FAULTS: readonly BooleanFault[] = ["near-planes-apart", "thin-allowed", "step-allowed"];
+
 export const faceName = (feature: string, role: string): string => `face:${esc(feature)}/${role}`;
 export const bodyName = (feature: string, piece?: number): string => `body:${esc(feature)}${piece === undefined ? "" : `/piece:${piece}`}`;
 export const blockFaceName = (f: BlockFeature, role: "start" | "end" | 1 | 2 | 3 | 4): string =>
@@ -165,10 +192,32 @@ interface Grid {
   nz: number;
 }
 
-function axisOf(values: number[]): number[] {
+/**
+ * An axis's grid lines: its values sorted, each run of values within LINEAR
+ * of the run's first one a single plane at that first value (the kernel
+ * takes a corner within its tolerance of a plane as on it).
+ */
+function axisOf(values: number[], faults: ReadonlySet<BooleanFault>): number[] {
   const sorted = [...new Set(values)].sort((a, b) => a - b);
+  const planes: number[] = [];
+  for (const v of sorted) {
+    const at = planes[planes.length - 1];
+    if (at === undefined || faults.has("near-planes-apart") || v - at > LINEAR + rounding(v, at)) planes.push(v);
+  }
   // An empty layer all round, so no filled cell is ever on the grid's edge.
-  return sorted.length === 0 ? [0, 1] : [sorted[0] - 1, ...sorted, sorted[sorted.length - 1] + 1];
+  return planes.length === 0 ? [0, 1] : [planes[0] - 1, ...planes, planes[planes.length - 1] + 1];
+}
+
+/** The grid line a value lies on: the last line at or below it (its run's first value). */
+function snap(lines: readonly number[], v: number): number {
+  let lo = 0;
+  let hi = lines.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (lines[mid] <= v) lo = mid;
+    else hi = mid - 1;
+  }
+  return lines[lo];
 }
 
 function gridOf(features: readonly BooleanFeature[], faults: ReadonlySet<BooleanFault>): Grid {
@@ -182,7 +231,7 @@ function gridOf(features: readonly BooleanFeature[], faults: ReadonlySet<Boolean
     zs.push(f.z[0], f.z[1]);
   }
   const whole = (v: number[]) => (faults.has("grid-whole-mm") ? v.map(Math.round) : v);
-  const g = { xs: axisOf(whole(xs)), ys: axisOf(whole(ys)), zs: axisOf(whole(zs)) };
+  const g = { xs: axisOf(whole(xs), faults), ys: axisOf(whole(ys), faults), zs: axisOf(whole(zs), faults) };
   return { ...g, nx: g.xs.length - 1, ny: g.ys.length - 1, nz: g.zs.length - 1 };
 }
 
@@ -267,11 +316,12 @@ const opposite = (d: number) => d ^ 1;
 
 function blockSolid(g: Grid, f: BlockFeature): Solid {
   const cells = new Uint8Array(g.nx * g.ny * g.nz);
-  const [x0, y0, x1, y1] = f.rect;
+  const [x0, y0, x1, y1] = [snap(g.xs, f.rect[0]), snap(g.ys, f.rect[1]), snap(g.xs, f.rect[2]), snap(g.ys, f.rect[3])];
+  const [z0, z1] = [snap(g.zs, f.z[0]), snap(g.zs, f.z[1])];
   const inside = (lo: number, hi: number, a: number, b: number) => a >= lo && b <= hi;
   for (let c = 0; c < cells.length; c++) {
     const [i, j, k] = ijk(g, c);
-    if (inside(x0, x1, g.xs[i], g.xs[i + 1]) && inside(y0, y1, g.ys[j], g.ys[j + 1]) && inside(f.z[0], f.z[1], g.zs[k], g.zs[k + 1])) cells[c] = 1;
+    if (inside(x0, x1, g.xs[i], g.xs[i + 1]) && inside(y0, y1, g.ys[j], g.ys[j + 1]) && inside(z0, z1, g.zs[k], g.zs[k + 1])) cells[c] = 1;
   }
   // -x is line 4, +x line 2, -y line 1, +y line 3, -z the start cap, +z the end cap.
   const role: Record<number, "start" | "end" | 1 | 2 | 3 | 4> = { 0: 4, 1: 2, 2: 1, 3: 3, 4: "start", 5: "end" };
@@ -441,6 +491,61 @@ function pinched(g: Grid, cells: Uint8Array, matters: (around: readonly number[]
   return false;
 }
 
+/**
+ * Whether the solid holds a gap or sliver thinner than MIN_FEATURE (B0 rule
+ * 1: thin faces and short edges are errors). Along each axis, a column of
+ * cells uses a grid line where its fill changes across it. Two lines closer
+ * than MIN_FEATURE are a sliver when one column uses both (a thin wall or a
+ * thin gap) or a column uses one and its neighbour across a face the other
+ * (a step: an edge that short). `matters` sees the filled cells beside the
+ * two lines, so a join can leave alone what it does not touch. Lines closer
+ * than LINEAR are already one (`axisOf`).
+ */
+function sliver(g: Grid, cells: Uint8Array, faults: ReadonlySet<BooleanFault>, matters: (filled: readonly number[]) => boolean = () => true): boolean {
+  const lines = [g.xs, g.ys, g.zs];
+  const n = [g.nx, g.ny, g.nz];
+  for (let a = 0; a < 3; a++) {
+    const L = lines[a];
+    const thin = (s: number, t: number) => Math.abs(L[t] - L[s]) < MIN_FEATURE - rounding(L[s], L[t]);
+    // Lines further apart than MIN_FEATURE one by one are so in any pair.
+    if (!L.some((_, t) => t > 0 && thin(t - 1, t))) continue;
+    const [b, c] = [(a + 1) % 3, (a + 2) % 3];
+    const at = (u: number, v: number, t: number) => {
+      const p = [0, 0, 0];
+      p[a] = t;
+      p[b] = u;
+      p[c] = v;
+      return cellAt(g, p[0], p[1], p[2]);
+    };
+    /** Lines column (u, v) uses (1 … n − 1: line t lies between cells t − 1 and t). */
+    const used = (u: number, v: number) => {
+      const out: number[] = [];
+      for (let t = 1; t < n[a]; t++) if (cells[at(u, v, t - 1)] !== cells[at(u, v, t)]) out.push(t);
+      return out;
+    };
+    const filled = (u: number, v: number, t: number) => [at(u, v, t - 1), at(u, v, t)].filter((x) => cells[x]);
+    const columns: number[][][] = [];
+    for (let u = 0; u < n[b]; u++) {
+      columns.push([]);
+      for (let v = 0; v < n[c]; v++) columns[u].push(used(u, v));
+    }
+    for (let u = 0; u < n[b]; u++)
+      for (let v = 0; v < n[c]; v++) {
+        const here = columns[u][v];
+        if (!faults.has("thin-allowed"))
+          for (let i = 1; i < here.length; i++) if (thin(here[i - 1], here[i]) && matters([...filled(u, v, here[i - 1]), ...filled(u, v, here[i])])) return true;
+        if (faults.has("step-allowed")) continue;
+        for (const [du, dv] of [[1, 0], [0, 1]]) {
+          if (u + du >= n[b] || v + dv >= n[c]) continue;
+          for (const s of here)
+            for (const t of columns[u + du][v + dv])
+              if (s !== t && thin(s, t) && matters([...filled(u, v, s), ...filled(u + du, v + dv, t)])) return true;
+        }
+      }
+  }
+  return false;
+}
+
 /** Whether the cells of `mask` among a 2 × 2 × 2 block (bit b = x + 2y + 4z) are connected through faces; none is. */
 function connected8(mask: number): boolean {
   if (mask === 0) return true;
@@ -582,6 +687,9 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
   const refusePinch = (s: Solid, matters?: (around: readonly number[]) => boolean) => {
     if (!fs.has("pinch-allowed") && pinched(g, s.cells, matters)) throw new Failed("the result would touch itself only along an edge or at a corner");
   };
+  const refuseSliver = (s: Solid, matters?: (filled: readonly number[]) => boolean) => {
+    if (sliver(g, s.cells, fs, matters)) throw new Failed(SLIVER);
+  };
 
   for (const f of features) {
     try {
@@ -589,7 +697,10 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
         if (![f.id, ...linesOf(f)].every(writable)) throw new Failed("an id is not valid text");
         if (!blockValid(f)) throw new Failed("the rectangle or the heights are not valid");
         const block = blockSolid(g, f);
+        // A block within LINEAR of flat is one plane: nothing at all.
+        if (!block.cells.includes(1)) throw new Failed(SLIVER);
         if (f.operation === "new") {
+          refuseSliver(block);
           bodies = [...bodies, { id: bodyName(f.id), solid: block }];
           continue;
         }
@@ -602,7 +713,9 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
           // Decision 2, for what this feature makes: a pinch where the extrude takes part, or inside one
           // result body; listed bodies that already touched along an edge and stay apart are left as they were.
           const lumps = piecesOf(g, raw.cells);
-          refusePinch(raw, (around) => around.some((c) => block.cells[c] === 1) || new Set(around.filter((c) => raw.cells[c] === 1).map((c) => lumps.of[c])).size === 1);
+          const touched = (around: readonly number[]) => around.some((c) => block.cells[c] === 1) || new Set(around.filter((c) => raw.cells[c] === 1).map((c) => lumps.of[c])).size === 1;
+          refusePinch(raw, touched);
+          refuseSliver(raw, touched);
           const after = settled(g, raw, rankBy(order), fs);
           const pieces = piecesOf(g, after.cells);
           const out: Body[] = [];
@@ -649,6 +762,7 @@ export function rebuildBooleans(features: readonly BooleanFeature[], faults: Ite
       throw new Failed(`it would leave nothing of ${body.id}`);
     }
     refusePinch(raw);
+    refuseSliver(raw);
     const rank = rankBy([body.solid, ...tools]);
     const after = settled(g, raw, rank, fs);
     const pieces = piecesOf(g, after.cells);

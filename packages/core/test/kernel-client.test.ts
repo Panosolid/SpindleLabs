@@ -2,7 +2,8 @@
 // Run with `npm test` (Node's built-in test runner).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isTrap, KERNEL_NOT_ANSWERING, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse } from "../src/kernel/kernel-client.ts";
+import type { BodySpec } from "../src/kernel/kernel-types.ts";
+import { isTrap, KERNEL_NOT_DOWNLOADED, KERNEL_RESTARTED, KERNEL_STOPPED_FOR_ANOTHER, KERNEL_TOOK_TOO_LONG, KernelClient, KernelError, kernelFailure, latestOnly, type KernelResponse, progressPoster, PROGRESS_EVERY_MS } from "../src/kernel/kernel-client.ts";
 
 /** A promise we resolve by hand, to force replies out of order. */
 function deferred<T>() {
@@ -111,9 +112,9 @@ class FakeWorker {
   answer(id: number, value: unknown) {
     this.onmessage?.({ data: { id, ok: true, value } });
   }
-  /** The kernel downloaded and started (kernel.worker.ts): from now on its calls are timed. */
-  ready() {
-    this.onmessage?.({ data: { ready: true } });
+  /** The kernel downloaded, started and timed its calibration boolean (`unitMs`, kernel.worker.ts): from now on its calls are timed. */
+  ready(unitMs?: unknown) {
+    this.onmessage?.({ data: unitMs === undefined ? { ready: true } : { ready: true, unitMs } });
   }
 }
 
@@ -310,21 +311,23 @@ test("a worker script that didn't load (a deploy took it away) is a missing kern
 // error said "Reload the page" for good, though a fresh kernel works.
 // Timers here are Node's mock timers, so each wait is exact.
 const DEADLINE = 1000;
+// Their calibration is 1 ms a unit (`ready(1)`), so every call here is
+// small enough for the floor, DEADLINE, to be its limit (a box: 44 × 1 × 4).
 
-test("a kernel silent past its deadline is let go: every call waiting fails in words, a fresh one is started, the design hears once", (t) =>
+test("a call past its limit is let go with its kernel: it alone took too long, every other call waiting fails in words, a fresh one is started, the design hears once", (t) =>
   withFakeWorker(
     async (client, old) => {
       t.mock.timers.enable({ apis: ["setTimeout"] });
       let heard = 0;
       client.onRestart(() => heard++);
       const made = FakeWorker.made;
-      old.ready();
+      old.ready(1);
       const stuck = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
       const queued = client.call("body_count");
       // 1.1 × the deadline with no answer at all: the kernel is lost.
       t.mock.timers.tick(DEADLINE * 1.1);
-      await assert.rejects(stuck, (e: KernelError) => e instanceof KernelError && e.kind === "internal" && e.message === KERNEL_NOT_ANSWERING);
-      await assert.rejects(queued, (e: KernelError) => e.message === KERNEL_NOT_ANSWERING);
+      await assert.rejects(stuck, (e: KernelError) => e instanceof KernelError && e.kind === "timed-out" && e.message === KERNEL_TOOK_TOO_LONG);
+      await assert.rejects(queued, (e: KernelError) => e.kind === "internal" && e.message === KERNEL_STOPPED_FOR_ANOTHER);
       assert.equal(old.terminated, true, "the silent worker is let go");
       assert.equal(FakeWorker.made, made + 1, "one fresh worker");
       assert.equal(heard, 1, "the design is built again, once");
@@ -336,16 +339,78 @@ test("a kernel silent past its deadline is let go: every call waiting fails in w
       // The old kernel's late answer is never taken.
       old.answer(1, 7);
     },
-    { answerWithinMs: DEADLINE },
+    { floorMs: DEADLINE },
   ));
 
-test("a kernel answering each call within its deadline is kept, however long the calls take together (0.9 × each)", (t) =>
+/** A fake page (`document`) whose visibility the test sets, for the time-limit tests of a phone that sleeps. */
+function withFakeDocument<T>(fn: (page: { hidden: boolean; fire(type: string): void }) => Promise<T>) {
+  const listeners = new Map<string, Array<() => void>>();
+  const page = {
+    hidden: false,
+    addEventListener(type: string, fn: () => void) {
+      listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+    },
+    fire(type: string) {
+      (listeners.get(type) ?? []).forEach((f) => f());
+    },
+  };
+  const g = globalThis as { document?: unknown };
+  const real = g.document;
+  g.document = page;
+  return fn(page).finally(() => (g.document = real));
+}
+
+test("a phone that sleeps mid-call does not make a healthy kernel 'take too long' (hidden page, frozen page, late timer)", (t) =>
+  withFakeDocument((page) =>
+    withFakeWorker(
+      async (client, old) => {
+        t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
+        let heard = 0;
+        client.onRestart(() => heard++);
+        const made = FakeWorker.made;
+        old.ready(1);
+        const call = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+        // Hidden for ten minutes, then the timer fires on resume (both clocks jump).
+        page.hidden = true;
+        page.fire("visibilitychange");
+        t.mock.timers.tick(600_000);
+        page.hidden = false;
+        page.fire("visibilitychange");
+        assert.equal(old.terminated, false, "the kernel is kept");
+        assert.equal(FakeWorker.made, made);
+        assert.equal(heard, 0, "the design is not rebuilt");
+        // The call gets its whole limit again; the worker answers in time.
+        t.mock.timers.tick(DEADLINE * 0.9);
+        old.answer(1, 5);
+        await call; // answered, not failed
+        // A frozen page (no visibility change) that wakes much later is the same.
+        const second = client.call("body_count");
+        t.mock.timers.tick(600_000);
+        assert.equal(old.terminated, false, "a late timer alone is not a slow kernel");
+        old.answer(2, 0);
+        assert.equal(await second, 0);
+        // A device that slept with no events at all: the timer only fires late.
+        const frozen = client.call("body_count");
+        page.fire("freeze");
+        t.mock.timers.tick(DEADLINE * 1.1);
+        assert.equal(old.terminated, false, "frozen: not blamed");
+        // And a kernel really stuck, with the page awake, is still let go (1.1 ×).
+        t.mock.timers.tick(DEADLINE * 1.1);
+        await assert.rejects(frozen, (e: KernelError) => e.kind === "timed-out");
+        assert.equal(old.terminated, true);
+        assert.equal(heard, 1);
+      },
+      { floorMs: DEADLINE },
+    ),
+  ));
+
+test("a kernel answering each call within its limit is kept, however long the calls take together (0.9 × each)", (t) =>
   withFakeWorker(
     async (client, worker) => {
       t.mock.timers.enable({ apis: ["setTimeout"] });
       let heard = 0;
       client.onRestart(() => heard++);
-      worker.ready();
+      worker.ready(1);
       const calls = [client.call("body_count"), client.call("body_count"), client.call("body_count")];
       // Each answer comes 0.9 × the deadline after the one before: 2.7 × in all, never cut.
       for (let id = 1; id <= 3; id++) {
@@ -359,22 +424,23 @@ test("a kernel answering each call within its deadline is kept, however long the
       t.mock.timers.tick(DEADLINE * 100);
       assert.equal(worker.terminated, false, "idle is not lost");
     },
-    { answerWithinMs: DEADLINE },
+    { floorMs: DEADLINE },
   ));
 
-test("more calls sent to a silent kernel never push its deadline back", (t) =>
+test("more calls sent to a silent kernel never push the oldest call's limit back", (t) =>
   withFakeWorker(
     async (client, worker) => {
       t.mock.timers.enable({ apis: ["setTimeout"] });
-      worker.ready();
+      worker.ready(1);
       const waiting = [client.call("body_count")];
       t.mock.timers.tick(DEADLINE * 0.6);
       waiting.push(client.call("body_count"));
       t.mock.timers.tick(DEADLINE * 0.5); // 1.1 × since the first call, 0.5 × since the second
       assert.equal(worker.terminated, true, "timed from the first call left waiting");
-      for (const w of waiting) await assert.rejects(w, (e: KernelError) => e.message === KERNEL_NOT_ANSWERING);
+      await assert.rejects(waiting[0], (e: KernelError) => e.message === KERNEL_TOOK_TOO_LONG);
+      await assert.rejects(waiting[1], (e: KernelError) => e.message === KERNEL_STOPPED_FOR_ANOTHER);
     },
-    { answerWithinMs: DEADLINE },
+    { floorMs: DEADLINE },
   ));
 
 test("the kernel's download is never timed: calls wait for it however long it takes, then each is timed", (t) =>
@@ -385,21 +451,21 @@ test("the kernel's download is never timed: calls wait for it however long it ta
       // A slow phone network: the .wasm takes 50 × the deadline to arrive.
       t.mock.timers.tick(DEADLINE * 50);
       assert.equal(worker.terminated, false, "still downloading, not lost");
-      worker.ready();
+      worker.ready(1);
       // From the moment it started, the call waiting is timed: 0.9 × is fine, then it answers.
       t.mock.timers.tick(DEADLINE * 0.9);
       worker.answer(1, "0.32.30");
       assert.equal(await first, "0.32.30");
       assert.equal(worker.terminated, false);
     },
-    { answerWithinMs: DEADLINE },
+    { floorMs: DEADLINE },
   ));
 
 test("a started kernel that crashes in the middle of a call is started again, never left failing for good", () =>
   withFakeWorker(async (client, old) => {
     let heard = 0;
     client.onRestart(() => heard++);
-    old.ready();
+    old.ready(1);
     const waiting = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
     assert.equal(old.fail("Uncaught Error: planted crash"), true, "taken as handled");
     await assert.rejects(waiting, (e: KernelError) => e.message === KERNEL_RESTARTED);
@@ -412,16 +478,251 @@ test("a started kernel that crashes in the middle of a call is started again, ne
     assert.equal(await next, 0, "later calls work on the fresh kernel");
   }));
 
-test("the default deadline is a minute: a long call on a slow phone is never cut short at 54 s", (t) =>
+test("the default floor is 10 s: a quick call on a busy device is never cut short at 9 s", (t) =>
   withFakeWorker(async (client, worker) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     worker.ready();
     const call = client.call("body_count");
-    // 0.9 × 60 s: kept.
-    t.mock.timers.tick(54_000);
+    // 0.9 × 10 s: kept.
+    t.mock.timers.tick(9_000);
     assert.equal(worker.terminated, false);
-    // 1.1 × 60 s: lost.
-    t.mock.timers.tick(12_000);
+    // 1.1 × 10 s: lost.
+    t.mock.timers.tick(2_000);
     assert.equal(worker.terminated, true);
-    await assert.rejects(call);
+    await assert.rejects(call, (e: KernelError) => e.kind === "timed-out");
   }));
+
+// Step 35d3: each call's limit from its size and the device's calibration
+// (time-limit.ts): the floor, or units × the calibration's ms × HEADROOM 4.
+
+/** An extrude of a path with `n` corners (a regular n-gon of radius 100 mm). */
+const ngon = (n: number): BodySpec => ({
+  extrude: { profile: { outer: { path: { corners: Array.from({ length: n }, (_, k) => [100 * Math.cos((2 * Math.PI * k) / n), 100 * Math.sin((2 * Math.PI * k) / n)]).flat(), bulges: [] } }, holes: [] }, distance: 5 },
+});
+
+/** Ticks `ms` and says whether the worker is still kept. */
+function keptAfter(t: { mock: { timers: { tick(ms: number): void } } }, worker: FakeWorker, ms: number) {
+  t.mock.timers.tick(ms);
+  return !worker.terminated;
+}
+
+test("a big build's limit grows with its corners and the device's calibration: kept at 0.9 ×, failed alone at 1.1 ×", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    // Calibration: one unit takes 2 ms here. A 1,000-corner profile: 1,000 × 11 units = 11,000 units,
+    // × 2 ms × 4 = 88,000 ms (by hand), well over the 10 s floor.
+    worker.ready(2);
+    const done = client.call("body_count");
+    worker.answer(1, 0);
+    assert.equal(await done, 0);
+    const big = client.call("body_build", ngon(1000));
+    const after = client.call("body_count");
+    assert.equal(keptAfter(t, worker, 88_000 * 0.9), true, "0.9 × the limit: kept");
+    assert.equal(keptAfter(t, worker, 88_000 * 0.2), false, "1.1 × the limit: let go");
+    await assert.rejects(big, (e: KernelError) => e.kind === "timed-out" && e.message === KERNEL_TOOK_TOO_LONG);
+    await assert.rejects(after, (e: KernelError) => e.kind === "internal" && e.message === KERNEL_STOPPED_FOR_ANOTHER);
+  }));
+
+test("a slow device's calibration is never failed by the limit: the same build ten times slower is kept at ten times the time", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    // A device whose calibration took 20 ms (ten times the one above): the 1,000-corner build's limit is
+    // 11,000 × 20 × 4 = 880,000 ms. Answered at 0.9 × that, it is kept and answered.
+    worker.ready(20);
+    const big = client.call("body_build", ngon(1000));
+    assert.equal(keptAfter(t, worker, 880_000 * 0.9), true);
+    worker.answer(1, 1);
+    assert.equal(typeof (await big), "number");
+    // The next call is timed from that answer, with its own (floor) limit: 9 s kept, 11 s let go.
+    const next = client.call("body_count");
+    assert.equal(keptAfter(t, worker, 9_000), true);
+    assert.equal(keptAfter(t, worker, 2_000), false);
+    await assert.rejects(next, (e: KernelError) => e.kind === "timed-out");
+  }));
+
+test("a calibration the worker couldn't take, or took wrong, is the default 20 ms a unit", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    for (const unitMs of [undefined, 0, -3, Number.NaN, Infinity, "5"]) {
+      await withFakeWorker(async (client, worker) => {
+        worker.ready(unitMs);
+        const big = client.call("body_build", ngon(1000));
+        // 11,000 units × 20 ms × 4 = 880,000 ms.
+        assert.equal(keptAfter(t, worker, 880_000 * 0.9), true, `${String(unitMs)}: 0.9 × kept`);
+        assert.equal(keptAfter(t, worker, 880_000 * 0.2), false, `${String(unitMs)}: 1.1 × let go`);
+        await assert.rejects(big);
+      });
+    }
+});
+
+test("a stuck call between answered ones fails alone: the one before keeps its answer, the ones after are sent again by the design", (t) =>
+  withFakeWorker(async (client, old) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let heard = 0;
+    client.onRestart(() => heard++);
+    old.ready(1);
+    const before = client.call("kernel_version");
+    const stuck = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+    const after = client.call("body_count");
+    // The first answers after 9 s (its floor is 10 s); the stuck build is timed from then, so 9 s more is kept.
+    t.mock.timers.tick(9_000);
+    old.answer(1, "0.35.0");
+    assert.equal(await before, "0.35.0");
+    assert.equal(keptAfter(t, old, 9_000), true, "timed from the answer before it, not from when it was sent");
+    assert.equal(keptAfter(t, old, 2_000), false);
+    await assert.rejects(stuck, (e: KernelError) => e.kind === "timed-out");
+    await assert.rejects(after, (e: KernelError) => e.message === KERNEL_STOPPED_FOR_ANOTHER);
+    assert.equal(heard, 1);
+    // The fresh kernel times again only after its own calibration.
+    const fresh = FakeWorker.last;
+    const next = client.call("body_count");
+    t.mock.timers.tick(100_000);
+    assert.equal(fresh.terminated, false, "not timed before its ready");
+    fresh.ready(1);
+    fresh.answer((fresh.posted[0] as { id: number }).id, 0);
+    assert.equal(await next, 0);
+  }));
+
+test("a body's view, STL and STEP are timed by the body it is: a sphere's mesh is 60 units, a box's 44", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    // 100 ms a unit: the sphere's view 60 × 100 × 4 = 24,000 ms; the box's 4 corners × 11 × 100 × 4 = 17,600 ms.
+    worker.ready(100);
+    const sphere = client.call("body_build", { sphere: { radius: 5 } });
+    worker.answer(1, 1);
+    const box = client.call("body_build", { box: { width: 1, depth: 1, height: 1 } });
+    worker.answer(2, 2);
+    const [s, b] = [await sphere, await box];
+    for (const [handle, ms, op] of [
+      [s, 24_000, "body_view"],
+      [b, 17_600, "body_stl"],
+      [s, 24_000, "body_step"],
+    ] as const) {
+      const call = op === "body_stl" ? client.call(op, handle, "part") : client.call(op, handle);
+      const id = (worker.posted.at(-1) as { id: number }).id;
+      assert.equal(keptAfter(t, worker, ms * 0.9), true, `${op} at 0.9 ×`);
+      worker.answer(id, op === "body_view" ? { faces: 2 } : "x");
+      await call;
+    }
+    const last = client.call("body_view", b);
+    assert.equal(keptAfter(t, worker, 17_600 * 1.1), false, "the box's view at 1.1 ×");
+    await assert.rejects(last, (e: KernelError) => e.kind === "timed-out");
+  }));
+
+test("body_boolean with the app's handles: the kernel's numbers sent, the results given handles of their own, the history named by the app's handles", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    // Two bodies built: the kernel numbers them 11 and 12, the app 1 and 2.
+    const a = client.call("body_build", { box: { width: 10, depth: 10, height: 10 } });
+    worker.answer(1, 11);
+    const b = client.call("body_build", CUBE_MOVED);
+    worker.answer(2, 12);
+    assert.deepEqual([await a, await b], [1, 2]);
+    const joined = client.call("body_boolean", 1, [2], "union");
+    assert.deepEqual(worker.posted.at(-1), { id: 3, op: "body_boolean", args: [11, [12], "union"] });
+    worker.answer(3, {
+      bodies: [13],
+      history: [{ faces: [{ body: 11, face: 0, whole: false, turned: false }, { body: 12, face: 4, whole: true, turned: false }], edges: [{ along: [{ body: 12, edge: 1, whole: true }], crossing: [[{ body: 11, face: 0 }, { body: 12, face: 3 }]] }] }],
+    });
+    assert.deepEqual(await joined, {
+      bodies: [3],
+      history: [{ faces: [{ body: 1, face: 0, whole: false, turned: false }, { body: 2, face: 4, whole: true, turned: false }], edges: [{ along: [{ body: 2, edge: 1, whole: true }], crossing: [[{ body: 1, face: 0 }, { body: 2, face: 3 }]] }] }],
+    });
+    // The result is held by its own handle: hiding it sends the kernel's number.
+    const hidden = client.call("body_hide", 3);
+    assert.deepEqual(worker.posted.at(-1), { id: 4, op: "body_hide", args: [13] });
+    worker.answer(4, undefined);
+    await hidden;
+    // An unknown input is refused before anything is sent.
+    const sent = worker.posted.length;
+    await assert.rejects(client.call("body_boolean", 1, [9], "subtract"), (e: KernelError) => e.kind === "unknown-body" && /body 9 /.test(e.message));
+    assert.equal(worker.posted.length, sent);
+  }));
+
+const CUBE_MOVED: BodySpec = { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [5, 5, 5] }] } };
+
+test("a boolean's limit grows with its inputs' faces; its result's view with the result's faces", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(1);
+    // Two 1,000-corner plates: 1,002 faces each, 1,004,004 pairs, capped at 202,500: × 0.17 = 34,425
+    // units, × 1 ms × 4 = 137,700 ms.
+    const a = client.call("body_build", ngon(1000));
+    worker.answer(1, 1);
+    const b = client.call("body_build", ngon(1000));
+    worker.answer(2, 2);
+    await Promise.all([a, b]);
+    const cut = client.call("body_boolean", 1, [2], "subtract");
+    assert.equal(keptAfter(t, worker, 137_700 * 0.9), true, "the boolean at 0.9 ×");
+    worker.answer(3, { bodies: [3], history: [{ faces: Array(120).fill({ body: 1, face: 0, whole: false, turned: false }), edges: [] }] });
+    const [piece] = (await cut).bodies;
+    // The piece's 120 faces, shapes unknown: 120 × 30 = 3,600 units, × 1 ms × 4 = 14,400 ms.
+    const view = client.call("body_view", piece);
+    assert.equal(keptAfter(t, worker, 14_400 * 0.9), true);
+    assert.equal(keptAfter(t, worker, 14_400 * 0.2), false);
+    await assert.rejects(view, (e: KernelError) => e.kind === "timed-out");
+  }));
+
+test("a boolean's limit at 1.1 × lets it go: it alone took too long", (t) =>
+  withFakeWorker(async (client, worker) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    worker.ready(1);
+    client.call("body_build", ngon(1000));
+    worker.answer(1, 1);
+    client.call("body_build", ngon(1000));
+    worker.answer(2, 2);
+    await Promise.resolve();
+    const cut = client.call("body_boolean", 1, [2], "subtract");
+    assert.equal(keptAfter(t, worker, 137_700 * 1.1), false);
+    await assert.rejects(cut, (e: KernelError) => e.kind === "timed-out" && e.message === KERNEL_TOOK_TOO_LONG);
+  }));
+
+test("a slice's progress reaches the listeners while its call waits, and stops with the answer or the listener", () =>
+  withFakeWorker(async (client, worker) => {
+    worker.ready(1);
+    const heard: number[] = [];
+    const stop = client.onProgress((p) => heard.push(p.fraction));
+    const stl = new Uint8Array(84);
+    const sliced = client.call("slice_stl", stl, 0.2, 2, 15, "normal");
+    const say = (id: number, fraction: number) => worker.onmessage?.({ data: { id, progress: { fraction, stage: "walls", done: 1, total: 2 } } });
+    say(1, 0.25);
+    say(1, 0.5);
+    // Another call's id (never sent) is not this slice's: not heard.
+    say(7, 0.9);
+    worker.answer(1, { layers: 1 });
+    await sliced;
+    // After the answer a late report says nothing.
+    say(1, 0.75);
+    assert.deepEqual(heard, [0.25, 0.5]);
+    // Once stopped, a second slice's reports go nowhere.
+    stop();
+    const again = client.call("slice_stl", stl, 0.2, 2, 15, "normal");
+    say(2, 0.3);
+    worker.answer(2, {});
+    await again;
+    assert.deepEqual(heard, [0.25, 0.5]);
+  }));
+
+test("the worker's progress poster sends a stage's reports at most every PROGRESS_EVERY_MS, but every new stage and the end at once", () => {
+  const sent: { id: number; progress: { fraction: number; stage: string } }[] = [];
+  let t = 1000;
+  const told = progressPoster(5, (m) => sent.push(m), () => t);
+  told(0.1, "walls", 0, 10); // first: sent
+  t += PROGRESS_EVERY_MS - 1;
+  told(0.13, "walls", 1, 10); // 99 ms later, same stage: dropped
+  t += 1;
+  told(0.16, "walls", 2, 10); // 100 ms after the last sent: sent
+  t += 1;
+  told(0.4, "infill", 1, 1); // a new stage: sent at once
+  told(0.95, "file", 0, 1); // and another
+  told(1, "file", 1, 1); // the end, 0 ms later: sent
+  assert.deepEqual(
+    sent.map((m) => [m.id, m.progress.stage, m.progress.fraction]),
+    [
+      [5, "walls", 0.1],
+      [5, "walls", 0.16],
+      [5, "infill", 0.4],
+      [5, "file", 0.95],
+      [5, "file", 1],
+    ],
+  );
+});

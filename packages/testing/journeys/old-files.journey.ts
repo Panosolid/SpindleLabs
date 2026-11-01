@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { projectFromJson, projectToJson } from "@fission/core";
-import { BodyCache, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
+import { BodyCache, builtBody, designWorkspace, insertPreset, moveMarker, rebuildTimeline, readDesignDocument, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 const DIR = new URL("../old-files/", import.meta.url);
@@ -236,13 +236,15 @@ const open = (t: string) => projectFromJson(t, [designWorkspace]);
 async function built(doc: DesignDocument): Promise<Record<string, Want>> {
   const cache = new BodyCache(kernel);
   try {
-    const { order, results } = await rebuildTimeline(doc, cache, kernel);
+    const build = await rebuildTimeline(doc, cache, kernel);
+    const { order, results } = build;
     const out: Record<string, Want> = {};
     for (const id of order) {
       const r = results[id];
-      if (r.status === "built" && r.body === undefined) out[id] = "sketch";
+      const b = builtBody(build, id);
+      if (r.status === "built" && b === undefined) out[id] = "sketch";
       else if (r.status === "built") {
-        const view = await cache.view(r.body!);
+        const view = await cache.view(b!.handle);
         const cap = (role: string) => view.face_centroids[view.face_roles.findIndex((x) => x !== null && "role" in x && x.role === role)];
         const isExtrude = view.face_roles.some((x) => x !== null && "role" in x && x.role === "end");
         out[id] = { volume: view.volume, ...(isExtrude ? { caps: [cap("start"), cap("end")] as [number[], number[]] } : {}), ...(r.warning ? { warning: r.warning.cause } : {}) };
@@ -320,11 +322,15 @@ test("every old file is as its SpindleLabs saved it: the outer format 2 and Desi
   }
 });
 
-test("every old file opens through today's reader, upgraded to version 4 with its items, flags, marker and counter as worked out", () => {
+test("every old file opens through today's reader, upgraded to version 6 with its items, flags, marker and counter as worked out", () => {
   for (const file of files()) {
     const want = CORPUS[file];
     const doc = open(text(file)).workspaces.design as DesignDocument;
-    assert.equal(doc.version, 4, file);
+    assert.equal(doc.version, 6, file);
+    // Each solid item's body numbered once, 1 to n, the next n + 1 (35e; which body gets which: workspaces/design/test/body-numbers.test.ts).
+    const solids = want.items.filter(([, type]) => type !== "sketch" && type !== "move").length;
+    assert.deepEqual(doc.bodies!.map((b) => b.number).sort((x, y) => x - y), Array.from({ length: solids }, (_, i) => i + 1), file);
+    assert.equal(doc.nextBody, solids + 1, file);
     assert.deepEqual(doc.timeline.features.map((f) => [f.id, f.intent.type, f.suppressed]), want.items, file);
     assert.equal(doc.nextId, want.nextId, file);
     assert.equal(doc.timeline.marker, want.marker, file);

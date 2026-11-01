@@ -1,0 +1,28 @@
+{
+  "$comment": "Mutation testing of Design's names after joins, cuts and Combine on the kernel's history (step 35ed3, boolean-names.ts): the hand-worked cases, the seeded Combines against the naming model, and 12 of the kernel-form sessions on the real kernel (about 20 s a mutant). Runs in place (inPlace): the tests reach the naming model and the node kernel by relative paths, which a sandbox two folders deeper would break.",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "BOOLEAN_KERNEL_SESSIONS=12 BOOLEAN_NAMES_SEEDS=50 node --experimental-strip-types --no-warnings --test --test-concurrency=1 test/boolean-names-survivors.test.ts test/boolean-names.test.ts test/boolean-edge-names.test.ts test/boolean-sessions.test.ts"
+  },
+  "mutate": [
+    "src/boolean-names.ts"
+  ],
+  "inPlace": true,
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "../../node_modules/.cache/stryker/combine.json"
+  },
+  "clearTextReporter": {
+    "allowColor": false,
+    "logTests": false,
+    "reportMutants": false
+  },
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [
+    "node_modules"
+  ],
+  "timeoutMS": 120000
+}

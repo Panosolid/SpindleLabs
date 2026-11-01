@@ -385,6 +385,35 @@ class Checks(unittest.TestCase):
         # A soak file that isn't JSON (cut off) is no kind and no crash: the red job is filed as before.
         self.assertEqual(kinds({"journeys/soak.json": "{"}, {"journeys": "failure"}, set()), [red("journeys")])
 
+    def test_issue_199_legs_that_passed_are_not_silent(self):
+        # The 2026-10-30 night (run 41118705351): the design and viewport legs found survivors, the six others
+        # finished clean and still uploaded their folders. Issue #199 was reopened, calling the clean legs silent.
+        clean = {f"ts-mutants-{t}/{t}.txt": f"{t}: 10 survivors, all explained: true\n" for t in ["ai", "core", "model", "naming", "storage", "svg"]}
+        reports = {**clean,
+                   "ts-mutants-design/design.txt": "design: 48 survivors, all explained: false\n"
+                   "UNEXPLAINED survivor at workspaces/design/src/document.ts:518: ArrayDeclaration\n1 problem(s): kill each survivor\n",
+                   "ts-mutants-viewport/viewport.txt": "viewport: 36 survivors, all explained: false\n"
+                   "UNEXPLAINED survivor at packages/viewport/src/pane.ts:52: ArrowFunction\n1 problem(s): kill each survivor\n"}
+        present = sorted({p.split("/")[0] for p in reports})
+        kinds = [k for k, _ in check_kinds(reports, {"ts-mutants": "failure"}, set(), present)]
+        # By hand: one kind per file with survivors (document.ts, pane.ts), and the red job is explained by them,
+        # since every other leg's own summary line says it finished with nothing unexplained.
+        self.assertEqual(kinds, ["check TypeScript mutants: survivors no test kills in workspaces/design/src/document.ts",
+                                 "check TypeScript mutants: survivors no test kills in packages/viewport/src/pane.ts"])
+        red = "check the ts-mutants job failed with nothing more specific reported"
+        # A leg that crashed before its summary (an empty report, or none at all) is still silent and filed.
+        for crashed in [{"ts-mutants-core/core.txt": ""}, {}]:
+            got = check_kinds({**reports, **crashed} if crashed else {k: v for k, v in reports.items() if "core" not in k},
+                              {"ts-mutants": "failure"}, set(), present)
+            self.assertEqual(got[-1], (red, "job ts-mutants: failure (no kind from ts-mutants-core)"))
+        # A clean summary must be the leg's own: "all explained: false" with no survivor lines is not clean.
+        odd = {**reports, "ts-mutants-core/core.txt": "core: 10 survivors, all explained: false\n"}
+        self.assertEqual(check_kinds(odd, {"ts-mutants": "failure"}, set(), present)[-1][0], red)
+        # Whole-kernel mutants: a shard whose exit code is fine is clean too, beside a shard that found something.
+        shards = {"mutants-0/exit-code.txt": "0\n", "mutants-1/exit-code.txt": "4\n"}
+        self.assertEqual([k for k, _ in check_kinds(shards, {"mutants": "failure"}, set(), ["mutants-0", "mutants-1"])],
+                         ["check whole-kernel mutants: the unmutated tests failed"])
+
     def test_check_texts_and_the_whole_run(self):
         kind = "check the golden job failed with nothing more specific reported"
         title, body = texts("create", kind, [("run", "job golden: failure")], "u", "c", "main")

@@ -11,7 +11,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
 import {
+  builtBody,
   addFaceSketch,
+  bodyIdOf,
   BodyCache,
   deleteItem,
   drawRectangle,
@@ -50,8 +52,8 @@ async function built(doc: DesignDocument): Promise<{ results: Record<string, Fea
   try {
     const build = await rebuildTimeline(doc, cache, kernel);
     const views = new Map<string, BodyView>();
-    for (const [id, r] of Object.entries(build.results)) if (r.status === "built" && r.body !== undefined) views.set(id, (await cache.view(r.body))!);
-    return { results: build.results, views };
+    for (const id of build.order) { const b = builtBody(build, id); if (b !== undefined) views.set(id, (await cache.view(b.handle))!); }
+    return { results: build.results, bodies: build.bodies, views };
   } finally {
     await cache.close();
   }
@@ -62,35 +64,35 @@ const BOX = () => partDocument("box", 40, 30, 20);
 
 test("a box moved 10 mm, turned 90°, and both, by hand", async () => {
   // Moved (10, 0, 0): x 10..50, the rest as built.
-  near(await boundsOf(insertMove(BOX(), ["feature-1"], v({ x: 10 })).doc, "feature-1"), [[10, 0, 0], [50, 30, 20]], "moved 10 in x");
+  near(await boundsOf(insertMove(BOX(), ["body:feature-1"], v({ x: 10 })).doc, "feature-1"), [[10, 0, 0], [50, 30, 20]], "moved 10 in x");
   // Turned 90° about Z through the origin, (x, y) → (−y, x): x −30..0, y 0..40.
-  near(await boundsOf(insertMove(BOX(), ["feature-1"], v({ turnZ: 90 })).doc, "feature-1"), [[-30, 0, 0], [0, 40, 20]], "turned 90° about Z");
+  near(await boundsOf(insertMove(BOX(), ["body:feature-1"], v({ turnZ: 90 })).doc, "feature-1"), [[-30, 0, 0], [0, 40, 20]], "turned 90° about Z");
   // Turned 90° about X through the box's middle (20, 15, 10), (y, z) → (−(z − 10), y − 15) about it:
   // y 15 − 10..15 + 10 = 5..25, z 10 − 15..10 + 15 = −5..25.
-  near(await boundsOf(insertMove(BOX(), ["feature-1"], v({ turnX: 90, pivotX: 20, pivotY: 15, pivotZ: 10 })).doc, "feature-1"), [[0, 5, -5], [40, 25, 25]], "turned about X through its middle");
+  near(await boundsOf(insertMove(BOX(), ["body:feature-1"], v({ turnX: 90, pivotX: 20, pivotY: 15, pivotZ: 10 })).doc, "feature-1"), [[0, 5, -5], [40, 25, 25]], "turned about X through its middle");
   // One Move, turned then shifted: turned 90° about Z (x −30..0, y 0..40), then (100, 0, 5): x 70..100, z 5..25.
-  near(await boundsOf(insertMove(BOX(), ["feature-1"], v({ turnZ: 90, x: 100, z: 5 })).doc, "feature-1"), [[70, 0, 5], [100, 40, 25]], "turned then shifted");
+  near(await boundsOf(insertMove(BOX(), ["body:feature-1"], v({ turnZ: 90, x: 100, z: 5 })).doc, "feature-1"), [[70, 0, 5], [100, 40, 25]], "turned then shifted");
   // Two Moves one after the other: (10, 0, 0) gives x 10..50, then 90° about Z: (x, y) → (−y, x), x −30..0, y 10..50.
-  const two = insertMove(insertMove(BOX(), ["feature-1"], v({ x: 10 })).doc, ["feature-1"], v({ turnZ: 90 })).doc;
+  const two = insertMove(insertMove(BOX(), ["body:feature-1"], v({ x: 10 })).doc, ["body:feature-1"], v({ turnZ: 90 })).doc;
   near(await boundsOf(two, "feature-1"), [[-30, 10, 0], [0, 50, 20]], "two moves");
 });
 
 test("a moved body keeps its volume, area and every face's name", async () => {
   const still = (await built(BOX())).views.get("feature-1")!;
-  const doc = insertMove(BOX(), ["feature-1"], v({ turnX: 33, turnY: -71, turnZ: 12, x: -500, y: 3, z: 77 })).doc;
-  const { results, views } = await built(doc);
+  const doc = insertMove(BOX(), ["body:feature-1"], v({ turnX: 33, turnY: -71, turnZ: 12, x: -500, y: 3, z: 77 })).doc;
+  const { results, bodies, views } = await built(doc);
   const moved = views.get("feature-1")!;
   // 40 · 30 · 20 = 24,000 mm³ and 2(1200 + 800 + 600) = 5,200 mm², wherever it is.
   assert.ok(Math.abs(moved.volume - 24000) <= 1e-9 * 24000 && Math.abs(moved.area - 5200) <= 1e-9 * 5200, `${moved.volume} ${moved.area}`);
-  const r = results["feature-1"];
-  assert.ok(r.status === "built" && r.spec !== undefined);
+  const r = builtBody({ results, bodies }, "feature-1");
+  assert.ok(r !== undefined && r.spec !== undefined);
   const names = (view: BodyView, spec = { box: { width: 40, depth: 30, height: 20 } } as never) => featureNames("feature-1", { spec }, view).faces;
   assert.deepEqual(featureNames("feature-1", { spec: r.spec }, moved).faces, names(still), "the same names, face by face");
 });
 
 test("two bodies moved at once, the one not picked left alone", async () => {
   const d = insertPreset(insertPreset(BOX(), "cylinder", 10, 10, 5).doc, "box", 1, 1, 1).doc;
-  const { views } = await built(insertMove(d, ["feature-1", "feature-2"], v({ y: -7 })).doc);
+  const { views } = await built(insertMove(d, ["body:feature-1", "body:feature-2"], v({ y: -7 })).doc);
   near(views.get("feature-1")!.bounds, [[0, -7, 0], [40, 23, 20]], "the box");
   // The cylinder ⌀10 stands on the origin: x, y −5..5, so y −12..−2.
   near(views.get("feature-2")!.bounds, [[-5, -12, 0], [5, -2, 5]], "the cylinder");
@@ -98,7 +100,7 @@ test("two bodies moved at once, the one not picked left alone", async () => {
 });
 
 test("a Move suppressed, behind the marker, greyed, or moving a deleted body leaves bodies where they were built", async () => {
-  const { doc, id } = insertMove(BOX(), ["feature-1"], v({ x: 10 }));
+  const { doc, id } = insertMove(BOX(), ["body:feature-1"], v({ x: 10 }));
   near(await boundsOf(suppressItem(doc, id, true), "feature-1"), [[0, 0, 0], [40, 30, 20]], "the Move suppressed");
   near(await boundsOf(moveMarker(doc, "feature-1"), "feature-1"), [[0, 0, 0], [40, 30, 20]], "the marker before the Move");
   const greyed = (await built(suppressItem(doc, "feature-1", true))).results[id];
@@ -111,7 +113,7 @@ test("a Move suppressed, behind the marker, greyed, or moving a deleted body lea
 test("a move past the edge of model space fails with the kernel's words and moves nothing", async () => {
   // Two bodies: the box would end 200 km out (the kernel's model space reaches 100 km, 1e8 mm), so neither moves.
   const d = insertPreset(BOX(), "box", 1, 1, 1).doc;
-  const { results, views } = await built(insertMove(d, ["feature-2", "feature-1"], v({ x: 2e8 })).doc);
+  const { results, views } = await built(insertMove(d, ["body:feature-2", "body:feature-1"], v({ x: 2e8 })).doc);
   const r = results["feature-3"];
   assert.ok(r.status === "failed" && r.cause === "error" && /limit is 1e8 mm/.test(r.message), JSON.stringify(r));
   near(views.get("feature-1")!.bounds, [[0, 0, 0], [40, 30, 20]], "the box");
@@ -120,7 +122,7 @@ test("a move past the edge of model space fails with the kernel's words and move
 
 test("a sketch on the moved box's top lies on the top where the Move put it", async () => {
   // Box moved up 5: its top at z = 25. A 10 × 10 square drawn on the top and extruded 10 spans z 25..35.
-  const moved = insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc;
+  const moved = insertMove(BOX(), ["body:feature-1"], v({ z: 5 })).doc;
   const s = addFaceSketch(moved, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1, body: { origin: [0, 0, 5], xAxis: [1, 0, 0], normal: [0, 0, 1] } });
   const drawn = drawRectangle(s.doc, s.id, [5, 5], [15, 15]).doc;
   const e = extrudeSketch(drawn, s.id, 10);
@@ -149,7 +151,7 @@ async function squareOnTop(doc: DesignDocument, feature: string, a: [number, num
 
 test("35e2h: a sketch on a moved face slides and turns with it when the Move is edited (picked as the app picks it)", async () => {
   // Drawn on the top after a Move of 5 up: the square spans x, y 5..15 (rule 8: the top's coordinates are the world's).
-  const { doc, extrude } = await squareOnTop(insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc, "feature-1", [5, 5], [15, 15], 10);
+  const { doc, extrude } = await squareOnTop(insertMove(BOX(), ["body:feature-1"], v({ z: 5 })).doc, "feature-1", [5, 5], [15, 15], 10);
   near((await built(doc)).views.get(extrude)!.bounds, [[5, 5, 25], [15, 15, 35]], "as drawn");
   // The Move edited to slide 20 along x too: the face slides 20, and the square with it, x 25..35 (before 35e2h it stayed at 5..15).
   near((await built(changedMove(doc, "feature-2", v({ x: 20, z: 5 })))).views.get(extrude)!.bounds, [[25, 5, 25], [35, 15, 35]], "slid with its face");
@@ -162,7 +164,7 @@ test("35e2h: a sketch on a moved face slides and turns with it when the Move is 
 
   // A sketch from a file made before 35e2h keeps no body frame: where its body was when drawn isn't known, so it isn't
   // carried (a guess would move it on opening), and slides as it always did: not at all, x 5..15.
-  const old = addFaceSketch(insertMove(BOX(), ["feature-1"], v({ z: 5 })).doc, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
+  const old = addFaceSketch(insertMove(BOX(), ["body:feature-1"], v({ z: 5 })).doc, { plane: "face:feature-1/top", feature: "feature-1" }, { plane: { origin: [0, 0, 25], xAxis: [1, 0, 0], normal: [0, 0, 1] }, side: 1 });
   const oldExtrude = extrudeSketch(drawRectangle(old.doc, old.id, [5, 5], [15, 15]).doc, old.id, 10);
   near((await built(changedMove(oldExtrude.doc, "feature-2", v({ x: 20, z: 5 })))).views.get(oldExtrude.id)!.bounds, [[5, 5, 25], [15, 15, 35]], "an old file's sketch stays");
 });
@@ -183,7 +185,7 @@ test("35e2h seeded: sketches drawn on a box's top after a random slide and turn 
     const mid = at([w / 2, d / 2, 20]);
     const a: [number, number] = [mid[0] - 3, mid[1] - 3];
     const h = between(1, 10);
-    const { doc, extrude } = await squareOnTop(insertMove(box, ["feature-1"], first).doc, "feature-1", a, [a[0] + 6, a[1] + 6], h);
+    const { doc, extrude } = await squareOnTop(insertMove(box, ["body:feature-1"], first).doc, "feature-1", a, [a[0] + 6, a[1] + 6], h);
     // The model: the prism's corners back on the unmoved box (the first Move undone), then through the edited Move.
     const edit = anyMove();
     const corners = [0, 1].flatMap((dx) => [0, 1].flatMap((dy) => [0, 1].map((dz) => unmovedPoint([a[0] + 6 * dx, a[1] + 6 * dy, mid[2] + h * dz], first)))).map((p) => movedPoint(p, edit));
@@ -232,7 +234,7 @@ test("seeded: random moves of random boxes put every corner where plain arithmet
       });
       if (values.turnX || values.turnY || values.turnZ) kinds.turned++;
       if (values.x || values.y || values.z) kinds.shifted++;
-      doc = insertMove(doc, ["feature-1"], values).doc;
+      doc = insertMove(doc, ["body:feature-1"], values).doc;
       const p = [values.pivotX, values.pivotY, values.pivotZ];
       corners = corners.map((q) => turn(turn(turn(q, 0, values.turnX, p), 1, values.turnY, p), 2, values.turnZ, p).map((x, k) => x + [values.x, values.y, values.z][k]));
     }
@@ -270,8 +272,8 @@ test("the Move panel's preview (35e2b) draws the picked bodies where the kernel 
     const angle = () => (pick(3) === 0 ? 0 : pick(2) === 0 ? 90 * (pick(7) - 3) : Math.round((r.next() * 720 - 360) * 10) / 10);
     const values = v({ x: pick(401) - 200, y: pick(401) - 200, z: pick(401) - 200, turnX: angle(), turnY: angle(), turnZ: angle(), pivotX: pick(100) - 50, pivotY: pick(100) - 50, pivotZ: pick(100) - 50 });
     const what = `seed ${seed} case ${n} (${picked.join(" and ")}, ${JSON.stringify(values)}; FISSION_SEED=${seed} to replay)`;
-    const preview = movedMesh(await sceneOf(d), picked, values);
-    const kernel = (await sceneOf(insertMove(d, picked, values).doc)).mesh;
+    const preview = movedMesh(await sceneOf(d), picked.map(bodyIdOf), values);
+    const kernel = (await sceneOf(insertMove(d, picked.map(bodyIdOf), values).doc)).mesh;
     // The same triangles in the same order: every point within LINEAR of the kernel's, every normal within 1e-6 of it.
     assert.equal(preview.positions.length, kernel.positions.length, what);
     assert.deepEqual(preview.indices, kernel.indices, what);
@@ -284,9 +286,9 @@ test("the Move panel's preview (35e2b) draws the picked bodies where the kernel 
 
 test("the Move panel's OK asks the kernel first (35e2b): a move out past model space is refused with its words; one inside is not", async () => {
   const { refusedMove } = await import("@fission/design");
-  const far = insertMove(BOX(), ["feature-1"], v({ x: 2e8 }));
+  const far = insertMove(BOX(), ["body:feature-1"], v({ x: 2e8 }));
   assert.match((await refusedMove(nodeKernel(), far.doc, far.id)) ?? "", /limit is 1e8 mm/);
-  const near10 = insertMove(BOX(), ["feature-1"], v({ x: 10, turnZ: 45 }));
+  const near10 = insertMove(BOX(), ["body:feature-1"], v({ x: 10, turnZ: 45 }));
   assert.equal(await refusedMove(nodeKernel(), near10.doc, near10.id), null);
   // Behind the marker it builds nothing, so it is not refused (it waits there, as any item does).
   const behind = moveMarker(far.doc, "feature-1");
@@ -304,7 +306,7 @@ test("regression (35e2b's browser check): a moved body downloads as STL, and is 
   designWorkspace.registerRepresentations!(representations, kernel);
   // The box moved up 5 and along X 10, then a second Move turning it 90° about Z through the origin:
   // up 5 gives z 5..25, x 10..50; turned, (x, y) → (−y, x): x −30..0, y 10..50.
-  const doc = insertMove(insertMove(BOX(), ["feature-1"], v({ x: 10, z: 5 })).doc, ["feature-1"], v({ turnZ: 90 })).doc;
+  const doc = insertMove(insertMove(BOX(), ["body:feature-1"], v({ x: 10, z: 5 })).doc, ["body:feature-1"], v({ turnZ: 90 })).doc;
   const want: Box3 = [[-30, 10, 5], [0, 50, 25]];
   const project = emptyProject("Moved");
   project.workspaces.design = doc;
@@ -340,9 +342,9 @@ test("an edited Move's preview (35e2c) draws the bodies where the kernel puts th
   for (let n = 0; n < 20; n++) {
     // A box and a cylinder, Move 1 of some, and half the time Move 2 of some after it; Move 1 edited.
     let d = insertPreset(partDocument("box", 1 + pick(60), 1 + pick(60), 1 + pick(60)), "cylinder", 2 + pick(40), 2 + pick(40), 1 + pick(40)).doc;
-    const first = insertMove(d, bodies(), values());
+    const first = insertMove(d, bodies().map(bodyIdOf), values());
     d = first.doc;
-    if (pick(2) === 0) d = insertMove(d, bodies(), values()).doc;
+    if (pick(2) === 0) d = insertMove(d, bodies().map(bodyIdOf), values()).doc;
     const to = values();
     const what = `seed ${seed} case ${n} (Move 1 to ${JSON.stringify(to)}; FISSION_SEED=${seed} to replay)`;
     const preview = editedMoveMesh(await sceneOf(d), d, (await built(d)).results, first.id, to);
@@ -370,7 +372,7 @@ test("Move's handles in the app (35e2c): a drag fills the boxes in whole mm and 
   // No handles until a body is picked.
   await a.key("move-tool");
   assert.equal(a.moveHandlesShown(), null, "nothing picked: no handles");
-  a.selection.set([bodyReference("feature-1")]);
+  a.selection.set([bodyReference("body:feature-1")]);
   await a.settle();
   // The box 40 × 30 × 20 from `before`: the handles at its middle.
   const middle = [0, 1, 2].map((k) => (before[0][k] + before[1][k]) / 2);
@@ -408,7 +410,7 @@ test("Move's handles in the app (35e2c): a drag fills the boxes in whole mm and 
 
 test("an edited Move previews in the app (35e2c): its handles at its pivot moved, a drag moves the body before OK, Cancel puts it back", async () => {
   const { app } = await import("./design-app.ts");
-  const moved = insertMove(BOX(), ["feature-1"], v({ x: 10 }));
+  const moved = insertMove(BOX(), ["body:feature-1"], v({ x: 10 }));
   const a = await app(moved.doc);
   const built = meshBox(a.mesh()!.positions);
   await a.doubleClick(moved.id);
@@ -433,14 +435,14 @@ test("35e2i: an edited Move's bodies changed on the real kernel, by hand: Cylind
   const { changedMove } = await import("@fission/design");
   // Box 1 40 × 30 × 20 at the origin, Cylinder 1 ⌀10 × 5 standing on it; Move 1 shifts Box 1 10 mm along X, Move 2 lifts Cylinder 1 3 mm.
   const d = insertPreset(BOX(), "cylinder", 10, 10, 5).doc;
-  const first = insertMove(d, ["feature-1"], v({ x: 10 }));
-  const doc = insertMove(first.doc, ["feature-2"], v({ z: 3 })).doc;
+  const first = insertMove(d, ["body:feature-1"], v({ x: 10 }));
+  const doc = insertMove(first.doc, ["body:feature-2"], v({ z: 3 })).doc;
   // Move 1 moving both: the box x 10..50; the cylinder x −5..5 → 5..15, then up 3: z 3..8.
-  const both = (await built(changedMove(doc, first.id, v({ x: 10 }), ["feature-1", "feature-2"]))).views;
+  const both = (await built(changedMove(doc, first.id, v({ x: 10 }), ["body:feature-1", "body:feature-2"]))).views;
   near(both.get("feature-1")!.bounds, [[10, 0, 0], [50, 30, 20]], "Box 1 still moved");
   near(both.get("feature-2")!.bounds, [[5, -5, 3], [15, 5, 8]], "Cylinder 1 moved by Move 1, then Move 2");
   // Move 1 moving the cylinder alone: the box back where it was made.
-  const swapped = (await built(changedMove(doc, first.id, v({ x: 10 }), ["feature-2"]))).views;
+  const swapped = (await built(changedMove(doc, first.id, v({ x: 10 }), ["body:feature-2"]))).views;
   near(swapped.get("feature-1")!.bounds, [[0, 0, 0], [40, 30, 20]], "Box 1 taken out: as made");
   near(swapped.get("feature-2")!.bounds, [[5, -5, 3], [15, 5, 8]], "Cylinder 1 put in");
 });
@@ -449,14 +451,14 @@ test("35e2i: an edited Move's bodies changed in the app: a pick puts one in, ano
   const { app } = await import("./design-app.ts");
   const { bodyReference, madeAfter } = await import("@fission/design");
   // Box 1 40 × 30 × 20, Cylinder 1 ⌀10 × 5, Move 1 (Box 1, 10 mm along X), then Box 2 1 × 1 × 1 made after it.
-  const first = insertMove(insertPreset(BOX(), "cylinder", 10, 10, 5).doc, ["feature-1"], v({ x: 10 }));
+  const first = insertMove(insertPreset(BOX(), "cylinder", 10, 10, 5).doc, ["body:feature-1"], v({ x: 10 }));
   const a = await app(insertPreset(first.doc, "box", 1, 1, 1).doc);
   const bodiesLine = () => a.$("#move-bodies")!.textContent;
   await a.doubleClick(first.id);
   assert.equal(bodiesLine(), "Body: Box 1", "the edit opens on Move 1's own body");
-  assert.deepEqual(a.selection.items.map((r) => r.id), [bodyReference("feature-1").id], "its body picked, lit as a new Move's are");
+  assert.deepEqual(a.selection.items.map((r) => r.id), [bodyReference("body:feature-1").id], "its body picked, lit as a new Move's are");
   // Cylinder 1's row clicked in the browser: put in, drawn 10 mm along X before OK.
-  a.selection.toggle(bodyReference("feature-2"));
+  a.selection.toggle(bodyReference("body:feature-2"));
   await a.settle();
   assert.equal(bodiesLine(), "Bodies: Box 1, Cylinder 1");
   // Box 1 clicked in the view (its first face, joined face 0): taken out, drawn where it was made.
@@ -466,7 +468,7 @@ test("35e2i: an edited Move's bodies changed in the app: a pick puts one in, ano
   await a.pick({ face: 9 });
   assert.equal(a.$("#move-error")!.textContent, madeAfter("Box 2", "Move 1"));
   assert.equal(bodiesLine(), "Body: Cylinder 1", "Box 2 let go");
-  assert.deepEqual(a.selection.items.map((r) => r.id), [bodyReference("feature-2").id]);
+  assert.deepEqual(a.selection.items.map((r) => r.id), [bodyReference("body:feature-2").id]);
   const preview = a.mesh()!.positions.slice();
   (a.$("#move-ok") as HTMLButtonElement).click();
   await a.settle();
@@ -489,7 +491,7 @@ test("35e2i: an edited Move's bodies changed in the app: a pick puts one in, ano
 
 test("35e2i: every body taken out of an edited Move asks for one again, and OK says to pick one; Cancel keeps the Move as it was", async () => {
   const { app } = await import("./design-app.ts");
-  const moved = insertMove(BOX(), ["feature-1"], v({ x: 10 }));
+  const moved = insertMove(BOX(), ["body:feature-1"], v({ x: 10 }));
   const a = await app(moved.doc);
   await a.doubleClick(moved.id);
   await a.pick({ face: 0 });
@@ -508,7 +510,7 @@ test("an empty Move box (Ben, 2026-10-28) counts as 0 while empty, keeps the pre
   const { app } = await import("./design-app.ts");
   const { bodyReference } = await import("@fission/design");
   const a = await app(BOX());
-  a.selection.set([bodyReference("feature-1")]);
+  a.selection.set([bodyReference("body:feature-1")]);
   await a.key("move-tool");
   const x = a.$("#move-x") as HTMLInputElement;
   const typeIn = (value: string) => {

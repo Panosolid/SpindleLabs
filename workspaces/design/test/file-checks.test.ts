@@ -29,21 +29,25 @@ test("hand-worked: a box the user names 'Feature 1 (box)' keeps that name after 
   assert.equal(label(trip(once)), "Feature 1 (box)");
 });
 
-test("the version tells old from new: the same data says version 3 and is renamed, says version 4 and is not", () => {
+test("the version tells old from new: the same data says version 3 and is renamed, says version 4, 5 or 6 and is not", () => {
   // The break that shows the check reads the version: one word changed in an otherwise identical file.
   const doc = partDocument("box", 40, 30, 20);
-  assert.equal(doc.version, 4);
+  assert.equal(doc.version, 6);
   const r = renameItem(doc, "feature-1", "Feature 1 (box)");
   assert.ok("doc" in r);
   const data = JSON.parse(JSON.stringify(r.doc));
-  assert.equal(label(readDesignDocument({ ...data, version: 3 })), "Box 1");
-  assert.equal(readDesignDocument({ ...data, version: 3 }).version, 4);
+  // Older data has no bodies' numbers (version 5 brought them, 35e): the same data without them.
+  const { bodies: _, nextBody: __, ...older } = data;
+  assert.equal(label(readDesignDocument({ ...older, version: 3 })), "Box 1");
+  assert.equal(readDesignDocument({ ...older, version: 3 }).version, 6);
+  assert.equal(label(readDesignDocument({ ...older, version: 4 })), "Feature 1 (box)");
   assert.equal(label(readDesignDocument(data)), "Feature 1 (box)");
+  assert.equal(label(readDesignDocument({ ...data, version: 5 })), "Feature 1 (box)");
 });
 
-test("data newer than version 4 is refused, naming the versions this SpindleLabs reads", () => {
-  const data = { ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version: 5 };
-  assert.throws(() => readDesignDocument(data), /Design data version 5 is not one this SpindleLabs reads \(1, 2, 3 or 4\)/);
+test("data newer than version 6 is refused, naming the versions this SpindleLabs reads", () => {
+  const data = { ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version: 7 };
+  assert.throws(() => readDesignDocument(data), /Design data version 7 is not one this SpindleLabs reads \(1, 2, 3, 4, 5 or 6\)/);
 });
 
 /** partDocument's box as file data, broken by `mutate`. */
@@ -76,7 +80,7 @@ test("a timeline item with no provenance, no name of its own, or no 'from' list 
 // item pushed the counter past it, and the autosaved project no longer opened. The reader now refuses a counter
 // above MAX_NEXT_ID, leaving room for more ids than any design can use. (4) An item depending on itself or on a later
 // item opened, the graph refused it, and the design showed nothing with no message: refused on open, naming it. (5)
-// Data newer than version 4 is refused as a NewerFormatError, so the unsaved-changes journal keeps it (storage).
+// Data newer than version 6 is refused as a NewerFormatError, so the unsaved-changes journal keeps it (storage).
 
 test("hand-worked: the counter may be 2^52 = 4,503,599,627,370,496 but not one more, and a project that opens still opens after an edit", async () => {
   const { MAX_NEXT_ID, insertPreset } = await import("../src/document.ts");
@@ -100,7 +104,7 @@ test("every edit that takes an id refuses at the top of the counter, so a saved 
   const { addSketch, drawLine } = await import("../src/sketch.ts");
   const top = (doc: ReturnType<typeof readDesignDocument>) => readDesignDocument({ ...JSON.parse(JSON.stringify(doc)), nextId: MAX_NEXT_ID });
   const box = readDesignDocument(JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))));
-  assert.throws(() => insertMove(top(box), ["feature-1"], { ...NO_MOVE, x: 5 }), /every id it can hold/);
+  assert.throws(() => insertMove(top(box), ["body:feature-1"], { ...NO_MOVE, x: 5 }), /every id it can hold/);
   assert.throws(() => addSketch(top(box), "XY"), /every id it can hold/);
   // A sketch with one line: drawing another, or extruding it, at the top is refused too.
   let { doc, id } = addSketch(box, "XY");
@@ -124,10 +128,10 @@ test("an item depending on itself, or on an item after it, is refused on open na
   assert.equal(readDesignDocument(right).timeline.features.length, 2);
 });
 
-test("design data newer than version 4 is refused as a NewerFormatError; text '5' or 4.5 is not newer, only wrong", async () => {
+test("design data newer than version 6 is refused as a NewerFormatError; text '7' or 6.5 is not newer, only wrong", async () => {
   const { NewerFormatError } = await import("@fission/core");
   const data = (version: unknown) => ({ ...JSON.parse(JSON.stringify(partDocument("box", 40, 30, 20))), version });
-  assert.throws(() => readDesignDocument(data(5)), (e) => e instanceof NewerFormatError);
-  assert.throws(() => projectFromJson(projectToJson({ ...emptyProject("P"), workspaces: { design: data(5) } }), [designWorkspace]), (e) => e instanceof NewerFormatError && /design workspace's data: Design data version 5/.test(e.message));
-  for (const v of ["5", 4.5]) assert.throws(() => readDesignDocument(data(v)), (e) => e instanceof Error && !(e instanceof NewerFormatError));
+  assert.throws(() => readDesignDocument(data(7)), (e) => e instanceof NewerFormatError);
+  assert.throws(() => projectFromJson(projectToJson({ ...emptyProject("P"), workspaces: { design: data(7) } }), [designWorkspace]), (e) => e instanceof NewerFormatError && /design workspace's data: Design data version 7/.test(e.message));
+  for (const v of ["7", 6.5]) assert.throws(() => readDesignDocument(data(v)), (e) => e instanceof Error && !(e instanceof NewerFormatError));
 });

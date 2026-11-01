@@ -5,12 +5,12 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
 import { featureEditPanel } from "./feature-edit-panel.ts";
-import { changedMove, insertMove, MOVE_STEP, moveKindOf, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
+import { changedMove, insertMove, MOVE_STEP, moveKindOf, movedBodies, moveValues, NO_MOVE, ROTATE_STEP, type MoveValues } from "./move.ts";
 import { draggedValues, editedBodies, editedMoveMesh, handlesCentre, MOVE_BOX_WORDS, movedMesh, pickedBodies, previewable, readMoveBoxes, refusedMove, startPivot } from "./move-tool.ts";
 import { movePanel } from "./move-panel.ts";
 import { snapEnds, snappedValues, snapPart, type SnapPart } from "./move-snap.ts";
@@ -28,7 +28,8 @@ import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.t
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
-import { gcodeName, P1S_KIND, printFileName, printFileOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint } from "./slice-print.ts";
+import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, type BuildArea } from "./build-area.ts";
+import { gcodeName, gcodeOfPackage, P1S_KIND, printFileName, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
 import { renameBox } from "./rename-box.ts";
@@ -36,7 +37,7 @@ import { hideRow, itemName, renameItem, TIMELINE_STEPS, usedSketchHidden } from 
 import { chooseBarAction, chooseEntry, menuEntries, openAction, renameEntry, type MenuHost } from "./timeline-menu.ts";
 import { pickChange } from "./picking.ts";
 import { DESIGN_SHORTCUTS, designShortcut, sketchToolKey, typedSizeKey } from "./shortcuts.ts";
-import { BodyCache, followedDoc, rebuildTimeline, settleKept, type TimelineBuild } from "./rebuild.ts";
+import { BodyCache, followedDoc, rebuildTimeline, settleKept, SlowItems, tookTooLong, type TimelineBuild } from "./rebuild.ts";
 import { isFaceSketch } from "./face-sketch.ts";
 import { droppedNote, highlightOf, panelFocus, selectionRows, survivors } from "./selection.ts";
 import { bodyOf, joinBodies, sceneHit, shownBodies, type Scene, type ShownBody } from "./scene.ts";
@@ -217,6 +218,31 @@ const folding = new Map<string, boolean>();
 const isOpen = (n: { id: string; startsFolded?: boolean }) => folding.get(n.id) ?? !n.startsFolded;
 
 /** Lights the browser rows whose geometry is selected (aria-current), and only those; `failed`, the last rebuild's failed ids, select nothing. */
+/**
+ * A Timeline row's Retry (35d4): shown, after its words, while its item
+ * took the kernel too long; its title says so. A click tries it again.
+ */
+function retryOn(row: HTMLElement, slow: boolean, retry: (id: string) => void) {
+  const line = row.parentElement;
+  const id = row.dataset.node!;
+  const had = line?.querySelector<HTMLButtonElement>(":scope > .retry-row");
+  if (!slow) {
+    had?.remove();
+    if (row.title.startsWith("Took too long: ")) row.title = row.dataset.tip ?? "";
+    return;
+  }
+  row.title = `Took too long: ${row.dataset.label ?? id} was stopped, so it has no body. Retry tries it again.`;
+  if (had || !line) return;
+  const button = row.ownerDocument.createElement("button");
+  button.type = "button";
+  button.className = "retry-row";
+  button.dataset.retry = id; // read by the e2e test
+  button.textContent = "Retry";
+  button.title = `Try ${row.dataset.label ?? id} again`;
+  button.addEventListener("click", () => retry(id));
+  row.after(button);
+}
+
 function lightRows(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, items: readonly GeometryReference[]) {
   const refOf = rowReferences(doc, failed);
   for (const row of slot.querySelectorAll<HTMLElement>(".tree-row")) {
@@ -238,7 +264,7 @@ function lightRows(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<s
  * Timeline rows select nothing. Rebuilt on every edit and after every
  * rebuild that changes `failed`; folding is kept by id.
  */
-function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, onSelect: (ref: GeometryReference, shift: boolean) => void, onMenu: (node: string, at: { x: number; y: number }) => void, onOpen: (node: string) => void, onEye: (node: string) => void) {
+function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, onSelect: (ref: GeometryReference, shift: boolean) => void, onMenu: (node: string, at: { x: number; y: number }) => void, onOpen: (node: string) => void, onEye: (node: string) => void, buildAreaShown = false) {
   // Rows with the timeline's item menu (24f3): every Timeline row by its item's id, and each sketch's row in Sketches.
   const items = new Set(doc.timeline.features.map((f) => f.id));
   const refOf = rowReferences(doc, failed);
@@ -346,7 +372,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
   });
   const title = document.createElement("summary");
   title.textContent = "Browser";
-  fold.append(title, list(browserTree(doc, failed)));
+  fold.append(title, list(browserTree(doc, failed, buildAreaShown)));
   slot.replaceChildren(fold);
 }
 
@@ -400,28 +426,35 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const fresh = startFresh(ctx.toolbar, { current: () => designDoc(), confirm: () => void clearDesign() });
   // File ▾ > Slice for printing (H2a, W6c): every body shown, as Export STL takes them, sliced and saved as the P1S's print file (.gcode.3mf) or plain G-code.
   const printing = slicePrint(ctx.toolbar, {
-    async slice(choices, file) {
+    async slice(choices, file, alive) {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
       const save = async (print: PrintFacts, suggestedName: string, kind: SaveKind, bytes: Uint8Array<ArrayBuffer>) => {
+        if (!alive()) throw new SliceDropped();
         const r = await saveFile(ctx.toolbar.ownerDocument, { suggestedName, kind, bytes });
         if (r.status === "failed") throw new Error(r.message);
         return { print, saved: r.status === "saved", name: r.status === "saved" ? r.name : suggestedName };
       };
       if (file.format === "p1s") {
-        const print = await printFileOf(kernel, doc!, features, choices, file.plate);
-        return save(print, printFileName(choices, file.plate), P1S_KIND, print.package);
+        const print = await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle);
+        return save(print, printFileName(choices, file.plate, file.nozzle, ctx.project.name), P1S_KIND, print.package);
       }
       const print = await sliceBodies(kernel, doc!, features, choices);
-      return save(print, gcodeName(choices), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
+      return save(print, gcodeName(choices, ctx.project.name), GCODE_KIND, new TextEncoder().encode(print.gcode) as Uint8Array<ArrayBuffer>);
     },
     // Preview (H2b, H2c): the same slice, played through the replayer and shown in 3D with its time-lapse.
-    async preview(choices) {
+    async preview(choices, file, alive) {
       const doc = designDoc();
       const features = doc ? shownBodyRefs(doc, failedNow).flatMap((r) => shownBodyFeature(r, doc, failedNow) ?? []) : [];
-      const print = await sliceBodies(kernel, doc!, features, choices);
+      // The file Slice and download would save: the P1S's own G-code (its time, filament and start routine), else the plain slice.
+      const p1s = file.format === "p1s" ? await printFileOf(kernel, doc!, features, choices, file.plate, file.nozzle) : null;
+      const gcode = p1s ? printMovesOf(gcodeOfPackage(p1s.package) ?? "") : null;
+      const print = p1s && gcode !== null ? { ...p1s, gcode } : await sliceBodies(kernel, doc!, features, choices);
+      if (!alive()) throw new SliceDropped();
       openPrintPreview(ctx.toolbar, playback(print.gcode), printWords(print), (host, p) => printView(host, p));
     },
+    // The bar follows the engine's own reports (Ben, 2026-11-01).
+    onProgress: (listener) => kernel.onProgress?.(listener) ?? (() => {}),
   });
   const deleting = deleteAsk(ctx.toolbar);
   const renaming = renameBox(ctx.toolbar);
@@ -452,15 +485,49 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Draws the browser for `doc` with the last rebuild's failed items (no Body row for them). */
   function drawBrowser(doc: DesignDocument) {
     rowsFailed = failedNow;
-    browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden);
+    browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden, buildAreaOn);
+    showBuildAreaWords();
   }
 
   /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
   function showOrigin(doc: DesignDocument) {
+    area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh]) : null;
     viewport.showOrigin({
       axes: [originDrawn(doc, ORIGIN_AXES[0]), originDrawn(doc, ORIGIN_AXES[1]), originDrawn(doc, ORIGIN_AXES[2])],
       planes: EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })),
+      ...(area && { buildArea: { lo: area.lo, hi: area.hi, strip: area.strip, corner: area.corner, outside: area.outside !== null } }),
     });
+    showBuildAreaWords();
+  }
+
+  /**
+   * The build area (Ben, 2026-11-01: a part could be "outside the area" when sliced with no way to see it): its eye in
+   * Origin, kept as a view setting of this browser; the box under the bodies shown (build-area.ts), and while they go
+   * outside it, why, on a note in the view and on its row.
+   */
+  const storage = (() => {
+    try {
+      return ctx.toolbar.ownerDocument.defaultView?.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  let buildAreaOn = buildAreaShownIn(storage);
+  let area: BuildArea | null = null;
+  const areaNote = ctx.viewport.element.ownerDocument.createElement("div");
+  areaNote.className = "build-area";
+  areaNote.setAttribute("role", "status");
+  areaNote.hidden = true;
+  ctx.viewport.element.append(areaNote);
+  function showBuildAreaWords() {
+    const words = shown ? (area?.outside ?? null) : null;
+    areaNote.hidden = words === null;
+    areaNote.textContent = words ?? "";
+    const row = ctx.browser.querySelector<HTMLElement>(`[data-node="${BUILD_AREA_ROW}"]`);
+    if (row) {
+      row.title = words ?? BUILD_AREA_TITLE;
+      row.classList.toggle("build-area-row", words !== null);
+    }
   }
 
   /**
@@ -470,6 +537,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function toggleHidden(node: string) {
     const doc = designDoc();
+    // The build area's eye is a view setting, not a design change: no undo step.
+    if (node === BUILD_AREA_ROW) {
+      buildAreaOn = !buildAreaOn;
+      keepBuildAreaShown(storage, buildAreaOn);
+      drawBrowser(doc);
+      showOrigin(doc);
+      // Shown: framed with the part, as a slicer shows its plate (the camera is the user's again at once).
+      if (buildAreaOn && area) viewport.fit();
+      return;
+    }
     const flat = (nodes: readonly BrowserNode[]): BrowserNode[] => nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
     const n = flat(browserTree(doc, failedNow)).find((r) => r.id === node);
     const id = eyeId(doc, node, failedNow);
@@ -541,6 +618,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   // Settling an edit (26c, 26g) places its face sketches on these bodies too, reusing what is built: a body is never
   // held twice, and the ones a settle builds that no rebuild keeps are freed once it ends (BodyCache.using).
   const bodies = new BodyCache(kernel);
+  /** The items that took the kernel too long (35d4): failed with "took too long" and not tried again until Retry on their row. */
+  const slow = new SlowItems();
   // A kernel that trapped is replaced by a fresh one (kernel-client.ts): its bodies are gone, so the design is built
   // again on the new one, and every item the trap turned red comes back (Ben's phone project, 2026-10-28). A restart
   // while that build runs (memory still tight, another call trapping) builds once more when it ends, or the design
@@ -601,16 +680,27 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   async function buildPart(doc: DesignDocument) {
     const feature = partFeature(doc);
-    const build = await rebuildTimeline(doc, bodies, kernel);
+    const build = await rebuildTimeline(doc, bodies, kernel, slow);
+    // 35d4: a body whose view took too long is failed as its build would be, and not tried again until Retry.
+    const drawn = await shownBodies(doc, build, bodies, (id) => {
+      const f = doc.timeline.features.find((x) => x.id === id)!;
+      slow.note(doc, f);
+      build.results[id] = { status: "failed", cause: "timed-out", message: tookTooLong(f.provenance.self.label) };
+    });
+    // The kernel keeps a display mesh only for the bodies on screen (35d2's store): the rest are hidden there.
+    await bodies.showOnly(drawn.flatMap((b) => {
+      const r = build.bodies[b.body];
+      return r !== undefined ? [r.handle] : [];
+    }));
     failedNow = new Set(Object.keys(build.results).filter((id) => build.results[id].status === "failed"));
+    slowNow = new Set(Object.keys(build.results).filter((id) => { const r = build.results[id]; return r.status === "failed" && r.cause === "timed-out"; }));
     resultsNow = build.results;
     // Where each sketch on a face was placed (26c), so it is drawn there.
     placedNow = new Map(Object.entries(build.results).flatMap(([id, r]) => (r.status === "built" && r.placement ? [[id, r.placement.plane] as const] : [])));
     const result = feature && build.results[feature.id];
     let failure: string | undefined;
     if (result?.status === "failed") failure = result.message;
-    else if (feature && result && (result.status !== "built" || result.body === undefined || result.spec === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
-    const drawn = await shownBodies(doc, build, bodies);
+    else if (feature && result && (result.status !== "built" || build.bodies[bodyIdOf(feature.id)] === undefined)) failure = `${feature.provenance.self.label} is ${result.status}`;
     return { scene: joinBodies(drawn), warnings: warningsOf(doc, build), failure, followed: followedDoc(doc, build) };
   }
   /**
@@ -810,6 +900,13 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   const lostSketches = () => new Set(warningsNow.flatMap((w) => (w.lost ? [w.item] : [])));
   /** The items the last rebuild failed (24f3: red in the bar and the browser's Timeline rows); the data's own failures are added by `timelineBarItems`. */
   let failedNow: ReadonlySet<string> = new Set();
+  /** Those of them that took the kernel too long (35d4): each with a Retry on its row. */
+  let slowNow: ReadonlySet<string> = new Set();
+  /** Retry on a row (35d4): the item that took too long is tried once more, and the design built again with it. */
+  function retry(id: string) {
+    if (!slow.retry(id)) return;
+    void show(designDoc(), shape);
+  }
   /** Where the last rebuild placed each sketch on a face (26c), by sketch id: drawn and looked at there. */
   let placedNow: ReadonlyMap<string, Plane> = new Map();
   /** What the last rebuild made of each item (built, failed, greyed…): an edited Move's preview starts from it (35e2c). */
@@ -841,6 +938,8 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (!ctx.timeline) return;
     showTimelineBar(ctx.timeline, doc, {
       failed: failedNow,
+      slow: slowNow,
+      onRetry: retry,
       warnings: warnedRows(),
       picked,
       onPick: (id) => {
@@ -889,6 +988,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       row.classList.toggle("timeline-menu-greyed", by !== undefined);
       if (by !== undefined) row.title = `Greyed: ${by} is suppressed`;
       else if (row.title.startsWith("Greyed: ")) row.title = row.dataset.tip ?? "";
+      retryOn(row, slowNow.has(id), retry);
     }
   }
 
@@ -1081,6 +1181,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
       const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines);
       lastScene = scene;
+      if (buildAreaOn) showOrigin(doc);
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
       if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
@@ -1868,7 +1969,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       previewMove();
     },
   });
-  /** The bodies the Move panel moves (feature ids): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
+  /** The bodies the Move panel moves (body ids, 35eb): the selection's, and an edited Move's hidden or unbuilt ones it still holds (35e2i). */
   let moveBodies: string[] = [];
   /** Whether the Move panel is picking its bodies: a new Move's, or since 35e2i an edited one's (a click adds a body or takes it out). */
   const picksBodies = () => moveBox.shown;
@@ -1893,12 +1994,14 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     moveHint.hidden = !(shown && moveBox.shown && (snapping !== null || (picksBodies() && moveBodies.length === 0)));
     viewport.element.dataset.moveSnap = snapping ? (snapping.from === null ? "from" : "to") : ""; // read by the e2e test
   }
-  const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === id)!));
+  /** The names of bodies `ids` (body ids, 35eb) as their items are named. */
+  const bodyLabels = (ids: readonly string[]) => ids.map((id) => itemName(designDoc().timeline.features.find((f) => f.id === bodyItem(id))!));
   /** An edited Move's bodies' names: a body deleted since keeps the name the Move knew it by. */
   const heldLabels = (ids: readonly string[]) => {
     const doc = designDoc();
     const move = moveBox.editing === null ? undefined : doc.timeline.features.find((f) => f.id === moveBox.editing);
-    return ids.map((id) => {
+    return ids.map((body) => {
+      const id = bodyItem(body) ?? body;
       const f = doc.timeline.features.find((x) => x.id === id);
       return f ? itemName(f) : (move?.provenance.from.find((r) => r.id === id)?.label ?? id);
     });
@@ -1980,11 +2083,11 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const doc = designDoc();
     if (id !== null) {
       const f = doc.timeline.features.find((x) => x.id === id)!;
-      moveBodies = [...f.dependsOn];
+      moveBodies = movedBodies(f);
       moveBox.show({ id, kind: moveKindOf(f), name: itemName(f), bodies: f.dependsOn.map((b) => doc.timeline.features.find((x) => x.id === b)?.provenance.self.label ?? f.provenance.from.find((r) => r.id === b)?.label ?? b), values: moveValues(f) });
       // Its bodies picked as a new Move's are (35e2i), so a click adds one or takes one out; this comes back through pickMoveBodies.
-      const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.feature));
-      ctx.selection.set(f.dependsOn.filter((b) => shownNow.has(b)).map(bodyReference));
+      const shownNow = new Set((lastScene?.bodies ?? []).map((b) => b.body));
+      ctx.selection.set(moveBodies.filter((b) => shownNow.has(b)).map(bodyReference));
       return pickMoveBodies();
     }
     moveBodies = pickedBodies(ctx.selection.items, lastScene);
@@ -2098,10 +2201,10 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     const body = lastScene.bodies[hit.body];
     const got = snapPart(body.view, at.kind, hit.index);
     if ("refused" in got) return moveBox.showError(got.refused);
-    const moving = moveBodies.includes(body.feature);
+    const moving = moveBodies.includes(body.body);
     if (snapping.from === null) {
       if (!moving) return moveBox.showError(SNAP_NOT_MOVING);
-      snapping.from = { body: body.feature, part: got.part };
+      snapping.from = { body: body.body, part: got.part };
       moveBox.showError("");
       return showMoveHint();
     }
@@ -2439,7 +2542,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     if (moveBox.shown) {
       const c = pickChange({ ...pick, shift: true }, lastScene);
       const b = c.change === "toggle" && lastScene ? bodyOf(lastScene, c.item) : -1;
-      if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].feature));
+      if (picksBodies() && b >= 0) ctx.selection.toggle(bodyReference(lastScene!.bodies[b].body));
       return;
     }
     const c = pickChange(pick, lastScene);
@@ -2488,6 +2591,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sleep() {
     if (!shown) return;
     shown = false;
+    showBuildAreaWords();
     viewport.onPick = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
@@ -2618,6 +2722,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       shown = true;
       listen();
       showStart();
+      showBuildAreaWords();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;
@@ -2636,6 +2741,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       sleep();
       stopHealing?.();
       void bodies.close();
+      areaNote.remove();
       viewport.showSketches([]);
       viewport.showOrigin(ORIGIN_AT_FIRST);
       typed.element.remove();

@@ -192,8 +192,11 @@ export function editFile(text, edit, at) {
  * their suppressed and rolled-back marks, and the Bodies group's rows. A
  * solid builds when it is not suppressed, not after the marker, and, for a
  * sketch extrude, its sketch builds, or the sketch is gone and its last
- * shape was kept. Each one is "Body n", n its place among those; one the
- * kernel refused (`failed`, the ids the timeline bar marks failed, which
+ * shape was kept. Each one is "Body n", n its own number (35e): the one the
+ * file gives it, else (a body the file has no number for: a version 4
+ * file, or one edited here) the next after the file's counter and every
+ * number it gives, the bodies that build first and then the rest, each in
+ * timeline order; one the kernel refused (`failed`, the ids the timeline bar marks failed, which
  * the per-step check holds to `kernelVerdict` where that can tell) has no
  * row (bug hunt 2026-10-19, finding 5).
  */
@@ -212,13 +215,38 @@ export function expectedView(design, failed = new Set()) {
     return active(s.i);
   };
   const solids = features.filter((f, i) => f.intent.type !== "sketch" && builds(f, i));
-  const rows = solids.flatMap((f, i) => (failed.has(f.id) ? [] : [{ row: `body-${i + 1}`, place: i + 1, id: f.id }]));
+  const made = features.filter((f) => f.intent.type !== "sketch" && f.intent.type !== "move");
+  const given = new Map((design.bodies ?? []).filter((b) => made.some((f) => `body:${f.id}` === b.id)).map((b) => [b.id.slice(5), b.number]));
+  let next = Math.max(design.nextBody ?? 1, ...[...given.values()].map((n) => n + 1));
+  for (const f of [...solids, ...made.filter((f) => !solids.includes(f))]) if (!given.has(f.id)) given.set(f.id, next++);
+  // The numbers as the app keeps them: the file's (gone items' dropped) in its order, then each new one as given.
+  const numbered = { bodies: [...given].map(([id, number]) => ({ id: `body:${id}`, number })), nextBody: next };
+  const rows = solids.flatMap((f) => (failed.has(f.id) ? [] : [{ row: `body-${given.get(f.id)}`, place: given.get(f.id), id: f.id }]));
   return {
     items: features.map((f, i) => ({ id: f.id, suppressed: f.suppressed === true, rolledBack: i >= stop })),
     solids: solids.map((f) => f.id),
     bodies: rows.length,
     rows,
+    numbered,
   };
+}
+
+/**
+ * A file's text as the app opens it (35e): its Design bodies settled as
+ * an edit would settle them (`expectedView`'s `numbered`), everything else
+ * as written. The text as it is when it is no project with Design data,
+ * or one the model can't read (the app refuses those anyway).
+ */
+export function settledText(text) {
+  try {
+    const file = JSON.parse(text);
+    const design = file?.workspaces?.design;
+    if (!design || design.version !== 6 || !Array.isArray(design.timeline?.features)) return text;
+    Object.assign(design, expectedView(design).numbered);
+    return JSON.stringify(file);
+  } catch {
+    return text;
+  }
 }
 
 /**
@@ -425,6 +453,30 @@ export async function shrink(list, fails, budget = 200) {
     }
   }
   return { list: current, tries };
+}
+
+/**
+ * A failed session's actions made short, when they can be (issue #248). The
+ * whole list is replayed once first: a session that does not fail the same
+ * way again (`fails` false) failed on timing (a slow runner, a race), and
+ * shrinking it would only spend replays that pass; its whole list is kept
+ * (`replayed` false). Shrinking stops at `deadline` (a time from `now`):
+ * the list found so far is kept and `outOfTime` says so, so a slow failure
+ * can never use up the job's hours before its actions are saved.
+ */
+export async function shrinkFailure(list, fails, { budget = 200, deadline = Infinity, now = Date.now } = {}) {
+  if (!(await fails(list))) return { list, tries: 1, replayed: false, outOfTime: false };
+  let tries = 1; // the replays really run: the whole list, then each candidate tried before the deadline
+  let outOfTime = false;
+  const shrunk = await shrink(list, async (candidate) => {
+    if (now() >= deadline) {
+      outOfTime = true;
+      return false;
+    }
+    tries++;
+    return fails(candidate);
+  }, budget);
+  return { list: shrunk.list, tries, replayed: true, outOfTime };
 }
 
 /** A failure's kind, for the shrinker: the check's name and its message with numbers and ids blurred. */

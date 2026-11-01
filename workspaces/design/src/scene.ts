@@ -5,18 +5,19 @@
 // the kernel's index there, and so to its stable name (naming.ts), which
 // already carries the feature that built it.
 
-import type { BodyView, DisplayMesh, GeometryReference, Plane } from "@fission/core";
+import type { BodyView, DisplayMesh, Feature, GeometryReference, KernelError, Plane } from "@fission/core";
 import { bodyFrame } from "./face-sketch.ts";
 import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, type DesignDocument } from "./document.ts";
 import { featureNames, type BodyNames } from "./naming.ts";
 import type { BodyCache, TimelineBuild } from "./rebuild.ts";
 import { designReference, readDesignReference, resolveReference, sharedBy } from "./references.ts";
 
-/** One built body: the feature that built it, the kernel's view of it, and its faces' and edges' names. */
+/** One built body: its id (35eb: "body:<item>", `bodyIdOf`), the feature that built it, the kernel's view of it, and its faces' and edges' names. */
 export interface ShownBody {
+  body: string;
   feature: string;
-  /** Its browser row's number, n in "Body n": its place among `bodyFeatures`, counting ones that did not build. */
+  /** Its browser row's number, n in "Body n": the body's own (35e, `bodyNumbers`), given when it first appeared. */
   place: number;
   view: BodyView;
   names: BodyNames;
@@ -38,29 +39,42 @@ export interface Scene {
  * builds (`bodyFeatures`, the browser's Body rows, in build order) and the
  * rebuild built, with its view from `cache` and its names. A feature the
  * kernel refused has no body, so none is shown for it; nor is a body the
- * browser's eye hides (U0f3), which keeps its place number.
+ * browser's eye hides (U0f3), which keeps its place number. A body whose
+ * view took the kernel too long (35d4: meshing it again, hidden before) is
+ * not shown and goes to `slow`, when given; else that error is thrown.
  */
-export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cache: BodyCache): Promise<ShownBody[]> {
+export async function shownBodies(doc: DesignDocument, build: TimelineBuild, cache: BodyCache, slow?: (feature: string) => void): Promise<ShownBody[]> {
   const shown: ShownBody[] = [];
   const features = bodyFeatures(doc);
   // Every view asked at once, before the loop waits on one (security audit S2: one round trip each took minutes on a big file).
+  const built = (f: Feature) => (build.results[f.id]?.status === "built" ? build.bodies[bodyIdOf(f.id)] : undefined);
   for (const f of features) {
-    const r = build.results[f.id];
-    if (r?.status !== "built" || r.body === undefined || r.spec === undefined || bodyHidden(doc, f.id)) continue;
+    const b = built(f);
+    if (b === undefined || bodyHidden(doc, bodyIdOf(f.id))) continue;
     try {
-      cache.view(r.body).catch(() => {}); // a refusal is read in the loop below
+      cache.view(b.handle).catch(() => {}); // a refusal is read in the loop below
     } catch {
       // not in the cache: the loop below says so
     }
   }
-  for (const [i, f] of features.entries()) {
-    if (bodyHidden(doc, f.id)) continue;
-    const r = build.results[f.id];
-    if (r?.status !== "built" || r.body === undefined || r.spec === undefined) continue;
-    const spec = r.spec;
-    const view = await cache.view(r.body);
+  const numbers = bodyNumbers(doc);
+  for (const f of features) {
+    const id = bodyIdOf(f.id);
+    if (bodyHidden(doc, id)) continue;
+    const b = built(f);
+    if (b === undefined) continue;
+    const spec = b.spec;
+    let view: BodyView;
+    try {
+      view = await cache.view(b.handle);
+    } catch (e) {
+      // Its kind, never its words (a KernelError's; read without importing the class, so this file stands alone: refind-planted.test.ts).
+      if (!slow || (e as Partial<KernelError> | null)?.kind !== "timed-out") throw e;
+      slow(f.id);
+      continue;
+    }
     const frame = bodyFrame(spec);
-    shown.push({ feature: f.id, place: i + 1, view, names: featureNames(f.id, { spec, curves: r.curves }, view), ...(frame ? { frame } : {}) });
+    shown.push({ body: id, feature: f.id, place: numbers.get(id)!, view, names: featureNames(f.id, { spec, curves: b.curves }, view), ...(frame ? { frame } : {}) });
   }
   return shown;
 }
@@ -127,11 +141,11 @@ export function sceneReference(kind: "face" | "edge", scene: Scene, index: numbe
   return hit === null ? null : designReference(kind, scene.bodies[hit.body].names, hit.index);
 }
 
-/** The shown body a reference is on (by the feature its name holds), or -1. */
+/** The shown body a reference is on (a body reference by its body id, a face's or edge's by the feature its name holds), or -1. */
 export function bodyOf(scene: Scene, ref: GeometryReference): number {
   const r = readDesignReference(ref);
   if (r === null) return -1;
-  return scene.bodies.findIndex((b) => (r.kind === "body" ? b.feature === r.featureId : b.names.feature === r.featureId));
+  return scene.bodies.findIndex((b) => (r.kind === "body" ? b.body === ref.id : b.names.feature === r.featureId));
 }
 
 /**

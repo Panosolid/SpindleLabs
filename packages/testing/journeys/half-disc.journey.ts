@@ -14,6 +14,7 @@ import {
   addFaceSketch,
   addSketch,
   BodyCache,
+  builtBody,
   drawArc,
   drawCircle,
   drawLine,
@@ -340,7 +341,7 @@ async function checkCase(shape: Shape, on: (typeof FACES)[number] | null, d: num
     const slack = 1e-9 * Math.max(1, ...seen.map(Math.abs)) + 1e-9 * scale;
     for (const p of at) assert.ok(Math.abs(p.x - seen[0]) <= slack && Math.abs(p.y - seen[1]) <= slack, `${name} names (${p.x}, ${p.y}) but the vertex is over (${seen})`);
   });
-  const spec = (build.results[c.extrude] as { spec: { extrude: { profile: { outer: { path: Parameters<typeof twiceArea>[0] } } } } }).spec;
+  const spec = builtBody(build, c.extrude)!.spec as { extrude: { profile: { outer: { path: Parameters<typeof twiceArea>[0] } } } };
   return twiceArea(spec.extrude.profile.outer.path) > 0 === flip;
 }
 

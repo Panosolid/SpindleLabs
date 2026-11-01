@@ -5,13 +5,13 @@
 // The Chromium checks are apps/fission/e2e/slice-print.mjs and print-preview.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { SlicedPrint } from "@fission/core";
+import { playback, type SlicedPrint, type SliceProgress } from "@fission/core";
 import { nodeKernel } from "../../../packages/testing/src/node-kernel.ts";
 import { bodyFeatures } from "../src/browser.ts";
-import { insertPreset, partDocument } from "../src/document.ts";
+import { bodyIdOf, insertPreset, partDocument } from "../src/document.ts";
 import { insertMove, NO_MOVE } from "../src/move.ts";
 import { createHash } from "node:crypto";
-import { FILE_DEFAULTS, gcodeName, PRINT_DEFAULTS, printFileName, printFileOf, printWords, sliceBodies, slicePrint, stackStl, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
+import { FILE_DEFAULTS, gcodeName, progressWords, gcodeOfPackage, NOZZLE_KEY, printMovesOf, refusalWords, rememberedNozzle, rememberedWarmUp, WARM_UP_KEY, SliceDropped, PRINT_DEFAULTS, printFileName, printFileOf, levelNote, printWords, sliceBodies, slicePrint, stackStl, stlLowestZ, timeWords, unprintedWords, type FileChoices, type PrintChoices, type PrintFacts } from "../src/slice-print.ts";
 
 const print = (over: Partial<SlicedPrint> = {}): SlicedPrint => ({ gcode: "G1 X1\n", layers: 100, filamentMm: 1730, filamentG: 5.16, retractions: 0, unprintedVolume: 0, printTimeS: 257, preview: [], ...over });
 
@@ -28,12 +28,12 @@ test("a slice in words, worked by hand", () => {
   assert.equal(printWords(print({ layers: 1, filamentG: 12.6, filamentMm: 4220, printTimeS: 3900 })), "1 layer, 13 g of PLA (4.22 m of filament), about 1 h 5 min of printing (plus heating and levelling).");
   // An engine fault (not a number) shows no time rather than a wrong one.
   assert.equal(printWords(print({ printTimeS: Number.NaN })), "100 layers, 5.2 g of PLA (1.73 m of filament).");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off" }), "spindlelabs-0.16mm-3w-20pc.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "off", warmUp: true }), "spindlelabs-0.16mm-3w-20pc.gcode");
   // Supports on gets its own name, so the same part with and without never overwrite each other.
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal" }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
-  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree" }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true }), "spindlelabs-0.16mm-3w-20pc-supports.gcode");
+  assert.equal(gcodeName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "tree", warmUp: true }), "spindlelabs-0.16mm-3w-20pc-tree-supports.gcode");
   // The P1S's defaults, the engine's own: 0.2 mm layers, 2 walls, 15 %, no supports.
-  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off" });
+  assert.deepEqual(PRINT_DEFAULTS, { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true });
 });
 
 test("print time in words rounds to the nearest minute, worked by hand", () => {
@@ -63,9 +63,9 @@ test("plastic left out is warned about from half a hundredth of a mm³ (it round
 const { Window } = await import("happy-dom");
 
 /** The name a stand-in saves under: the one the workspace offers. */
-const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate) : gcodeName(c));
+const nameFor = (c: PrintChoices, f: FileChoices) => (f.format === "p1s" ? printFileName(c, f.plate, f.nozzle) : gcodeName(c));
 
-function dialog(slice: (c: PrintChoices, f: FileChoices) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices) => Promise<void> = async () => {}) {
+function dialog(slice: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<{ print: PrintFacts; saved: boolean; name?: string }>, preview: (c: PrintChoices, f: FileChoices, alive: () => boolean) => Promise<void> = async () => {}) {
   const window = new Window();
   const doc = window.document as unknown as Document;
   const slot = doc.createElement("div");
@@ -75,13 +75,13 @@ function dialog(slice: (c: PrintChoices, f: FileChoices) => Promise<{ print: Pri
   const asked: PrintChoices[] = [];
   const files: FileChoices[] = [];
   const d = slicePrint(slot, {
-    slice: async (c, f) => {
+    slice: async (c, f, alive) => {
       asked.push(c);
       files.push(f);
-      const r = await slice(c, f);
+      const r = await slice(c, f, alive);
       return { ...r, name: r.name ?? nameFor(c, f) };
     },
-    preview: (c) => (asked.push(c), preview(c)),
+    preview: (c, f, alive) => (asked.push(c), files.push(f), preview(c, f, alive)),
   });
   const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
   const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -107,19 +107,19 @@ test("the dialog slices with the choices picked, then says what the slice came t
   t.$<HTMLSelectElement>("slice-print-format").dispatchEvent(new t.window.Event("change") as unknown as Event);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: "off" }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.16, walls: 3, infill: 40, supports: "off", warmUp: true }]);
   assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.16mm-3w-40pc.gcode: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
   // Normal supports picked: the next slice asks for them, and the file's name says so; then trees, likewise.
   t.$<HTMLSelectElement>("slice-print-supports").value = "normal";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: "normal" });
+  assert.deepEqual(t.asked[1], { layerHeight: 0.16, walls: 3, infill: 40, supports: "normal", warmUp: true });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-supports\.gcode: /);
   t.$<HTMLSelectElement>("slice-print-supports").value = "tree";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.asked[2], { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree" });
+  assert.deepEqual(t.asked[2], { layerHeight: 0.16, walls: 3, infill: 40, supports: "tree", warmUp: true });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.16mm-3w-40pc-tree-supports\.gcode: /);
   t.$("slice-print-close").click();
   assert.equal(t.d.open, false);
@@ -132,19 +132,19 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   const format = t.$<HTMLSelectElement>("slice-print-format");
   const plate = t.$<HTMLSelectElement>("slice-print-plate");
   // The owner's printer and plate: the P1S file on the textured PEI plate.
-  assert.deepEqual(FILE_DEFAULTS, { format: "p1s", plate: "textured" });
+  assert.deepEqual(FILE_DEFAULTS, { format: "p1s", plate: "textured", nozzle: "standard" });
   assert.equal(format.value, "p1s");
   assert.equal(plate.value, "textured");
   assert.equal(plate.disabled, false);
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured" }]);
+  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured", nozzle: "standard" }]);
   // The name by hand: the plain file's spindlelabs-0.2mm-2w-15pc, then the plate, then the P1S's ending.
   assert.equal(t.$("slice-print-status").textContent, "Saved spindlelabs-0.2mm-2w-15pc-textured.gcode.3mf: 100 layers, 5.2 g of PLA (1.73 m of filament), about 4 min of printing (plus heating and levelling).");
   plate.value = "smooth";
   t.$("slice-print-go").click();
   await t.settle();
-  assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth" });
+  assert.deepEqual(t.files[1], { format: "p1s", plate: "smooth", nozzle: "standard" });
   assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-smooth\.gcode\.3mf: /);
   // Plain G-code: the plate box greys out, and the file is .gcode.
   format.value = "gcode";
@@ -160,8 +160,40 @@ test("the dialog saves the P1S's print file by default, for the plate picked; th
   format.dispatchEvent(new t.window.Event("change") as unknown as Event);
   assert.equal(plate.disabled, false);
   // Names by hand, with supports and the other plate.
-  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal" }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
+  assert.equal(printFileName({ layerHeight: 0.16, walls: 3, infill: 20, supports: "normal", warmUp: true }, "smooth"), "spindlelabs-0.16mm-3w-20pc-supports-smooth.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "high-flow"), "spindlelabs-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
   await t.window.happyDOM.close();
+});
+
+test("the nozzle: Standard by default, High Flow when picked, remembered for next time, P1S file only", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.window.localStorage.clear();
+  t.d.ask();
+  const nozzle = t.$<HTMLSelectElement>("slice-print-nozzle");
+  const format = t.$<HTMLSelectElement>("slice-print-format");
+  // Bambu Studio refuses to send a file made for the other nozzle (Ben's 10-31 send: his P1S has High Flow, the file said Standard).
+  assert.equal(nozzle.value, "standard");
+  assert.deepEqual([...nozzle.options].map((o) => o.textContent), ["0.4 mm Standard", "0.4 mm High Flow"]);
+  nozzle.value = "high-flow";
+  nozzle.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.deepEqual(t.files[0], { format: "p1s", plate: "textured", nozzle: "high-flow" });
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-textured-high-flow\.gcode\.3mf: /);
+  // Kept for next time: a printer's nozzle rarely changes.
+  assert.equal(t.window.localStorage.getItem(NOZZLE_KEY), "high-flow");
+  // Plain G-code: the nozzle box greys out, as the plate's does.
+  format.value = "gcode";
+  format.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(nozzle.disabled, true);
+  await t.window.happyDOM.close();
+  // What is read back: ours, or the default for anything else or blocked storage.
+  const kept = (v: string | null) => ({ getItem: () => v });
+  assert.equal(rememberedNozzle(kept("high-flow")), "high-flow");
+  assert.equal(rememberedNozzle(kept("standard")), "standard");
+  for (const v of [null, "", "High Flow", "hardened"]) assert.equal(rememberedNozzle(kept(v)), "standard", String(v));
+  assert.equal(rememberedNozzle(null), "standard");
+  assert.equal(rememberedNozzle({ getItem: () => { throw new Error("blocked"); } }), "standard");
 });
 
 test("the dialog says a refusal in the engine's words, warns about plastic left out, and keeps its keys", async () => {
@@ -172,7 +204,7 @@ test("the dialog says a refusal in the engine's words, warns about plastic left 
   t.d.ask();
   t.$("slice-print-go").click();
   await t.settle();
-  assert.equal(t.$("slice-print-status").textContent, "the part is bigger than the printer's bed");
+  assert.equal(t.$("slice-print-status").textContent, "The part is bigger than the printer's bed", "a message kept, but starting with a capital");
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), true);
   answer = async () => ({ print: print({ unprintedVolume: 2 }), saved: false });
   t.$("slice-print-go").click();
@@ -206,7 +238,7 @@ test("Preview slices with the choices picked and closes the dialog; a refusal ke
   t.$<HTMLSelectElement>("slice-print-infill").value = "25";
   t.$("slice-print-preview").click();
   await t.settle();
-  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: "off" }]);
+  assert.deepEqual(t.asked, [{ layerHeight: 0.2, walls: 2, infill: 25, supports: "off", warmUp: true }]);
   assert.equal(t.d.open, false);
   const bad = dialog(async () => ({ print: print(), saved: true }), async () => {
     throw new Error("There is no body to slice: make or show one first.");
@@ -221,6 +253,91 @@ test("Preview slices with the choices picked and closes the dialog; a refusal ke
   await bad.window.happyDOM.close();
 });
 
+test("the warm-up loop: ticked by default, unticked when turned off, remembered for next time, in both files' names", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.window.localStorage.clear();
+  t.d.ask();
+  const box = t.$<HTMLInputElement>("slice-print-warm-up");
+  // Ben 11-01: the first 10–30 s of a first layer did not stick; the loop takes that plastic instead of the part.
+  assert.equal(box.type, "checkbox");
+  assert.equal(box.checked, true);
+  assert.equal(box.closest("label")!.textContent, "Warm-up loop");
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(t.asked[0].warmUp, true);
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-textured\.gcode\.3mf: /);
+  // Turned off: the slice is asked without it, the name says so, the last result is cleared, and it is kept.
+  box.checked = false;
+  box.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(t.$("slice-print-status").textContent, "");
+  assert.equal(t.window.localStorage.getItem(WARM_UP_KEY), "off");
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(t.asked[1].warmUp, false);
+  assert.match(t.$("slice-print-status").textContent!, /^Saved spindlelabs-0\.2mm-2w-15pc-no-warm-up-textured\.gcode\.3mf: /);
+  // Preview is given it too.
+  t.$("slice-print-preview").click();
+  await t.settle();
+  assert.equal(t.asked[2].warmUp, false);
+  await t.window.happyDOM.close();
+  // What is read back: off only for our "off"; on for anything else, nothing kept, or blocked storage.
+  const kept = (v: string | null) => ({ getItem: () => v });
+  assert.equal(rememberedWarmUp(kept("off")), false);
+  for (const v of [null, "", "on", "OFF", "false"]) assert.equal(rememberedWarmUp(kept(v)), true, String(v));
+  assert.equal(rememberedWarmUp(null), true);
+  assert.equal(rememberedWarmUp({ getItem: () => { throw new Error("blocked"); } }), true);
+  // Names: off adds "-no-warm-up" before the plate (the default, on, keeps the names files had).
+  const off = { ...PRINT_DEFAULTS, warmUp: false };
+  assert.equal(gcodeName(off), "spindlelabs-0.2mm-2w-15pc-no-warm-up.gcode");
+  assert.equal(printFileName(off, "smooth", "high-flow"), "spindlelabs-0.2mm-2w-15pc-no-warm-up-smooth-high-flow.gcode.3mf");
+});
+
+test("a dialog opened where the warm-up loop was turned off opens unticked", async () => {
+  // happy-dom keeps one storage per window: the setting is put in before the dialog is made.
+  const window = new Window();
+  window.localStorage.setItem(WARM_UP_KEY, "off");
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  const asked: PrintChoices[] = [];
+  const d = slicePrint(slot, { slice: async (c) => (asked.push(c), { print: print(), saved: true, name: "x" }), preview: async () => {} });
+  d.ask();
+  const box = doc.getElementById("slice-print-warm-up") as HTMLInputElement;
+  assert.equal(box.checked, false);
+  box.checked = true;
+  box.dispatchEvent(new window.Event("change") as unknown as Event);
+  assert.equal(window.localStorage.getItem(WARM_UP_KEY), "on");
+  (doc.getElementById("slice-print-go") as HTMLButtonElement).click();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(asked[0].warmUp, true);
+  await window.happyDOM.close();
+});
+
+test("the warm-up loop on the shipped build: the 20 mm cube's first layer starts with its two loops, 3.25 and 3.71 mm out, worked by hand", async () => {
+  const kernel = nodeKernel();
+  const doc = partDocument("box", 20, 20, 20);
+  const on = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
+  const roles = on.preview[0].paths.map((x) => x.role);
+  assert.deepEqual(roles.slice(0, 2), ["skirt", "skirt"]);
+  assert.notEqual(roles[2], "skirt");
+  assert.ok(on.preview.slice(1).every((l) => l.paths.every((x) => x.role !== "skirt")));
+  // The cube is centred, 118–138 mm; loop k's centre is 3 mm + 0.25 (half the 0.5 mm line) + k × 0.457 (the beads'
+  // spacing, 0.5 − 0.2 × (1 − π/4)) out: the outer one first, its least x 118 − 3.707 = 114.293, then 118 − 3.25 = 114.75.
+  const least = (k: number) => Math.min(...on.preview[0].paths[k].points.filter((_, i) => i % 2 === 0));
+  assert.ok(Math.abs(least(0) - 114.2929204) < 1e-5, `${least(0)}`);
+  assert.ok(Math.abs(least(1) - 114.75) < 1e-5, `${least(1)}`);
+  assert.match(on.gcode, /^;TYPE:Skirt$/m);
+  // Off: none, and 80 + 2π·3.25 + 80 + 2π·3.707 = 203.71 mm less of a 0.0914 mm² bead, 7.74 mm less filament.
+  const off = await sliceBodies(kernel, doc, bodyFeatures(doc), { ...PRINT_DEFAULTS, warmUp: false });
+  assert.ok(off.preview[0].paths.every((x) => x.role !== "skirt"));
+  assert.doesNotMatch(off.gcode, /;TYPE:Skirt/);
+  const less = on.filamentMm - off.filamentMm;
+  assert.ok(less > 7.741 && less < 7.744, `${less}`);
+  // The P1S's file too.
+  const file = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured");
+  assert.match(gcodeOfPackage(file.package)!, /^;TYPE:Skirt$/m);
+});
+
 test("a 20 mm cube, sliced on the shipped build: 100 layers of 0.2 mm, G-code a printer reads", async () => {
   const kernel = nodeKernel();
   const doc = partDocument("box", 20, 20, 20);
@@ -231,8 +348,11 @@ test("a 20 mm cube, sliced on the shipped build: 100 layers of 0.2 mm, G-code a 
   assert.ok(Math.abs(p.preview[99].zTop - 20) < 1e-9, `top ${p.preview[99].zTop}`);
   assert.match(p.gcode, /^G1 /m);
   assert.equal(p.unprintedVolume, 0);
-  // The engine's moves-only time for this cube at the defaults is 257 s (the engine's own tests check it against its moves); here, that it reaches the app.
-  assert.equal(timeWords(p.printTimeS), "4 min", `time ${p.printTimeS}`);
+  // Each layer now takes at least the engine's 8 s minimum layer time (Generic PLA), so the moves take at least
+  // 100 × 8 = 800 s; the engine's own tests time it at about 877 s, 15 min (861 s, 14 min, until the nozzle
+  // lifted over finished tops to stop scratching them, kernel 0.33.21). Here, that it reaches the app.
+  assert.ok(p.printTimeS >= 800, `time ${p.printTimeS}`);
+  assert.equal(timeWords(p.printTimeS), "15 min", `time ${p.printTimeS}`);
   // Weight from length: 1.75 mm filament, π × 0.875² mm² × length × 1.24 g/cm³ (self-consistency, not a hand-worked figure).
   assert.ok(Math.abs(p.filamentG - (Math.PI * 0.875 ** 2 * p.filamentMm * 1.24) / 1000) < 1e-6 * p.filamentG);
   // Two walls: layer 50 starts with one outer and one inner wall.
@@ -259,7 +379,7 @@ test("supports on the shipped build: a plate on a column gets them, normal or tr
   const kernel = nodeKernel();
   // A 30 × 30 × 2 mm plate moved up onto a 10 × 10 × 10 mm column (both centred), made as the app makes them.
   const plate = insertPreset(partDocument("box", 10, 10, 10), "box", 30, 30, 2);
-  const doc = insertMove(plate.doc, [plate.id], { ...NO_MOVE, z: 10 }).doc;
+  const doc = insertMove(plate.doc, [bodyIdOf(plate.id)], { ...NO_MOVE, z: 10 }).doc;
   const bodies = bodyFeatures(doc);
   const supportLayers = (p: SlicedPrint) => p.preview.filter((l) => l.paths.some((x) => x.role === "support")).length;
   const on = await sliceBodies(kernel, doc, bodies, { ...PRINT_DEFAULTS, supports: "normal" });
@@ -356,4 +476,246 @@ test("the cube's P1S print file on the shipped build: a package the printer chec
   // A plate the engine doesn't know is the app's bug, refused as a bad request.
   await assert.rejects(printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "glass" as never), (e: Error & { kind?: string }) => e.kind === "bad-request" && /bad plate/.test(e.message));
   await assert.rejects(printFileOf(kernel, doc, [], PRINT_DEFAULTS, "textured"), /no body to slice/);
+  // The nozzle: named where Bambu Studio's send window reads it, and its G-code dialect named, so its time reads our speed limits in mm/s (Ben's 10-31 file showed 1h32m for this cube without it).
+  const settings = (p: Uint8Array) => new TextDecoder().decode(storedZip(p).get("Metadata/project_settings.config"));
+  assert.match(settings(f.package), /"nozzle_volume_type": \["Standard"\]/);
+  assert.match(settings(f.package), /"gcode_flavor": "marlin"/);
+  const hf = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured", "high-flow");
+  assert.match(settings(hf.package), /"nozzle_volume_type": \["High Flow"\]/);
+  assert.match(new TextDecoder().decode(storedZip(hf.package).get("Metadata/slice_info.config")), /key="nozzle_volume_type" value="1"/);
+  // Only what the file says changes, not one move.
+  assert.deepEqual(layerMoves(new TextDecoder().decode(storedZip(hf.package).get("Metadata/plate_1.gcode"))), layerMoves(gcode));
+  await assert.rejects(printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured", "hardened" as never), (e: Error & { kind?: string }) => e.kind === "bad-request" && /bad nozzle/.test(e.message));
+});
+
+// ---- Slicer hunt 2026-10-31: the dialog's follow-ups ----
+
+test("a refusal is put in words a beginner can act on, worked by hand", () => {
+  // Runs from x = -22 to 278: 278 - (-22) = 300 mm; y 118 to 138: 20 mm. The wider is 300, along x: "wide".
+  assert.equal(refusalWords("the part, placed at (128, 128), runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"), "The part is 300 mm wide, and the P1S's plate takes 256 × 256 mm. Make it smaller or split it into pieces.");
+  // Deeper than wide: y 0 to 300.5, x 0 to 10: 300.5 deep.
+  assert.equal(refusalWords("the part, placed at (128, 128), runs from (0, 0) to (10, 300.5), off the 256 × 256 mm bed"), "The part is 300.5 mm deep, and the P1S's plate takes 256 × 256 mm. Make it smaller or split it into pieces.");
+  assert.equal(refusalWords("layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"), "The part is about 256.2 mm tall, and the P1S prints up to 256 mm. Make it shorter or split it into pieces.");
+  // Anything else is kept.
+  assert.equal(refusalWords("something else broke"), "Something else broke");
+});
+
+test("closing the dialog drops a slice still running: nothing is saved; reopened, it still says Slicing… and the buttons stay off", async () => {
+  let finish!: () => void;
+  let savedAfterClose = false;
+  const t = dialog(
+    (_c, _f, alive) =>
+      new Promise((_, reject) => {
+        finish = () => {
+          if (alive()) savedAfterClose = true;
+          reject(new SliceDropped());
+        };
+      }),
+  );
+  t.d.ask();
+  t.$("slice-print-go").click();
+  assert.equal(t.$<HTMLButtonElement>("slice-print-preview").disabled, true, "Preview is off while Slice and download runs");
+  t.$("slice-print-close").click();
+  t.d.ask();
+  assert.equal(t.$("slice-print-status").textContent, "Slicing…", "reopened mid-slice it still says so");
+  assert.equal(t.$<HTMLButtonElement>("slice-print-go").disabled, true);
+  finish();
+  await t.settle();
+  assert.equal(savedAfterClose, false, "the dialog was closed since the click: alive() is false");
+  assert.equal(t.$("slice-print-status").textContent, "", "a dropped slice says nothing");
+  assert.equal(t.$<HTMLButtonElement>("slice-print-go").disabled, false);
+  assert.equal(t.$<HTMLButtonElement>("slice-print-preview").disabled, false);
+  await t.window.happyDOM.close();
+});
+
+test("a slice with the dialog left open is alive when it ends (the other side of the check)", async () => {
+  let aliveAtEnd: boolean | null = null;
+  const t = dialog(async (_c, _f, alive) => ((aliveAtEnd = alive()), { print: print(), saved: true }));
+  t.d.ask();
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.equal(aliveAtEnd, true);
+  await t.window.happyDOM.close();
+});
+
+test("changing a choice clears the last result, which no longer matches", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.d.ask();
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.match(t.$("slice-print-status").textContent!, /^Saved /);
+  const infill = t.$<HTMLSelectElement>("slice-print-infill");
+  infill.value = "25";
+  infill.dispatchEvent(new t.window.Event("change") as unknown as Event);
+  assert.equal(t.$("slice-print-status").textContent, "");
+  await t.window.happyDOM.close();
+});
+
+test("Preview is given the file choices, so it can slice the file that is downloaded", async () => {
+  const t = dialog(async () => ({ print: print(), saved: true }));
+  t.d.ask();
+  t.$("slice-print-preview").click();
+  await t.settle();
+  assert.deepEqual(t.files, [{ format: "p1s", plate: "textured", nozzle: "standard" }]);
+  await t.window.happyDOM.close();
+});
+
+test("the G-code inside a P1S print file is the plate's, read back from the package; bytes that are no such package give null", async () => {
+  const doc = partDocument("box", 20, 20, 20);
+  const f = await printFileOf(nodeKernel(), doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured");
+  const gcode = gcodeOfPackage(f.package)!;
+  assert.ok(gcode, "found");
+  // By hand: the file marks each of 20 mm / 0.2 mm = 100 layers; the md5 beside it is that text's.
+  assert.equal((gcode.match(/^;LAYER_CHANGE$/gm) ?? []).length, 100);
+  const md5 = createHash("md5").update(gcode).digest("hex").toUpperCase();
+  assert.ok(new TextDecoder().decode(f.package).includes(md5), "the md5 file in the package is this text's");
+  assert.equal(gcodeOfPackage(new Uint8Array([1, 2, 3])), null);
+  assert.equal(gcodeOfPackage(new Uint8Array(0)), null);
+  assert.equal(gcodeOfPackage(f.package.subarray(0, 200)), null, "cut short");
+});
+
+test("the preview reads a P1S file's layer moves only: 100 layers for the 20 mm cube, as the plain slice, where the whole file reads 99", async () => {
+  const doc = partDocument("box", 20, 20, 20);
+  const kernel = nodeKernel();
+  const f = await printFileOf(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS, "textured");
+  const whole = gcodeOfPackage(f.package)!;
+  const moves = printMovesOf(whole)!;
+  // By hand: 20 mm / 0.2 mm = 100 layers, the same as the plain slice's replay.
+  assert.equal(playback(moves).layers.length, 100);
+  // By hand: the first layer is 0.2 mm up and the last 20 mm; the lift before layer 1 is kept (else layer 1 reads 0.00 mm).
+  assert.equal(playback(moves).layers[0].z, 0.2);
+  assert.equal(playback(moves).layers[99].z, 20);
+  assert.equal(playback(moves).layers.length, playback((await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS)).gcode).layers.length);
+  assert.equal(playback(whole).layers.length, 99, "the start routine's own plastic confuses the layers (why it is cut off)");
+  assert.ok(!moves.includes(";===== end"), "the end routine is cut off");
+  assert.equal(printMovesOf("no layers here"), null);
+});
+
+test("a file's name starts with the project's name, so files of two projects differ on the printer's list; an unnamed project keeps 'spindlelabs'", () => {
+  // By hand: name, then the layer height, walls and infill, then the plate and the ending.
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "standard", "Bracket"), "Bracket-0.2mm-2w-15pc-textured.gcode.3mf");
+  assert.equal(printFileName(PRINT_DEFAULTS, "textured", "high-flow", "Bracket"), "Bracket-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
+  assert.equal(gcodeName({ ...PRINT_DEFAULTS, supports: "tree" }, "Bracket"), "Bracket-0.2mm-2w-15pc-tree-supports.gcode");
+  for (const unnamed of [undefined, "", "   ", "Untitled", "untitled"]) assert.equal(printFileName(PRINT_DEFAULTS, "smooth", "standard", unnamed), "spindlelabs-0.2mm-2w-15pc-smooth.gcode.3mf", String(unnamed));
+  assert.notEqual(printFileName(PRINT_DEFAULTS, "textured", "standard", "A"), printFileName(PRINT_DEFAULTS, "textured", "standard", "B"));
+});
+
+/** A binary STL of triangles given by their corners' z (the x and y are 0: only z is read). */
+const stlOfZ = (triangles: number[][]): Uint8Array => {
+  const out = new Uint8Array(84 + 50 * triangles.length);
+  const view = new DataView(out.buffer);
+  view.setUint32(80, triangles.length, true);
+  triangles.forEach((t, i) => t.forEach((z, c) => view.setFloat32(84 + i * 50 + 12 + c * 12 + 8, z, true)));
+  return out;
+};
+
+test("the lowest z of a binary STL, worked by hand; no triangle gives NaN", () => {
+  // Corners' z: (5, 3, 4) and (7, -2, 9): the smallest of all six is -2.
+  assert.equal(stlLowestZ(stlOfZ([[5, 3, 4], [7, -2, 9]])), -2);
+  assert.ok(Number.isNaN(stlLowestZ(stlOfZ([]))));
+  assert.ok(Number.isNaN(stlLowestZ(new Uint8Array(10)))); // shorter than a header
+  // A count larger than the bytes held reads only the triangles there are (one of them), never past the end.
+  const lying = stlOfZ([[1, 2, 3]]);
+  new DataView(lying.buffer).setUint32(80, 1_000_000, true);
+  assert.equal(stlLowestZ(lying), 1);
+});
+
+test("bodies at different heights get one sentence naming the first one above the lowest; level ones, one body, or nothing known get none", () => {
+  // Lowest points 0, 20 and -3: the floor is -3, so the first above it by more than 0.01 is body 1 (0 - (-3) = 3 mm).
+  assert.equal(levelNote([0, 20, -3]), "Body 1 starts 3 mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.");
+  // 0 and 20: the floor is 0, body 2 is 20 mm above.
+  assert.match(levelNote([0, 20]), /^Body 2 starts 20 mm above the lowest body\./);
+  // 0.9× and 1.1× of the 0.01 mm tolerance: 0.009 is level, 0.011 is not.
+  assert.equal(levelNote([0, 0.009]), "");
+  assert.match(levelNote([0, 0.011]), /^Body 2 starts 0 mm above/);
+  assert.equal(levelNote([5]), "");
+  assert.equal(levelNote([]), "");
+  assert.equal(levelNote([0, Number.NaN]), "");
+});
+
+test("on the real kernel: a cube beside one 20 mm up is noted, two on the floor are not", async () => {
+  const kernel = nodeKernel();
+  const cube = (z: number) => kernel.call("export_stl", { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [0, 0, z] }] } }, "body");
+  const low = stlLowestZ((await cube(0)).bytes);
+  const up = stlLowestZ((await cube(20)).bytes);
+  assert.equal(low, 0);
+  assert.equal(up, 20);
+  assert.match(levelNote([low, up]), /^Body 2 starts 20 mm above/);
+  assert.equal(levelNote([low, low]), "");
+});
+
+test("the dialog adds the heights note after the result and marks it as a warning; without it the result is plain", async () => {
+  let note = "Body 2 starts 20 mm above the lowest body.";
+  const t = dialog(async () => ({ print: { ...print(), levelNote: note }, saved: true }));
+  t.d.ask();
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.match(t.$("slice-print-status").textContent ?? "", /plus heating and levelling\)\. Body 2 starts 20 mm above the lowest body\.$/);
+  assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), true);
+  note = "";
+  t.$("slice-print-go").click();
+  await t.settle();
+  assert.doesNotMatch(t.$("slice-print-status").textContent ?? "", /Body 2/);
+  assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
+});
+
+test("a body floating above the plate is refused with advice when supports are off, and sliced with supports on (real kernel)", async () => {
+  const kernel = nodeKernel();
+  const cube = (x: number, z: number) => kernel.call("export_stl", { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [x, 0, z] }] } }, "body");
+  // One cube on the plate at x 0, one 20 mm up at x 30: its centre is (35, 5) once the lowest point is on the plate.
+  const stl = stackStl([(await cube(0, 0)).bytes, (await cube(30, 20)).bytes]);
+  const words = (m: string) => refusalWords(m);
+  await assert.rejects(kernel.call("slice_stl", stl, 0.2, 2, 15, "off"), (e: Error) => {
+    assert.equal(words(e.message), "Part of the model hangs in the air 20 mm above the plate, around (35, 5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+    return true;
+  });
+  assert.ok((await kernel.call("slice_stl", stl, 0.2, 2, 15, "normal")).layers > 0);
+  // The wording by hand, for a message of the same shape.
+  assert.equal(refusalWords("part of the model starts in mid-air at z = 3.5 mm, around (-2, 7.5), with nothing under it: turn on supports"), "Part of the model hangs in the air 3.5 mm above the plate, around (-2, 7.5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+});
+
+test("progress words: the stage, with the layer when it goes layer by layer; nothing before the first report", () => {
+  assert.equal(progressWords(null), "");
+  assert.equal(progressWords({ fraction: 0.05, stage: "layers", done: 0, total: 1 }), "Cutting the bodies into layers…");
+  assert.equal(progressWords({ fraction: 0.325, stage: "walls", done: 120, total: 254 }), "Walls: layer 120 of 254");
+  assert.equal(progressWords({ fraction: 0.5, stage: "infill", done: 1, total: 1 }), "Infill and solid layers…");
+  assert.equal(progressWords({ fraction: 0.6, stage: "supports", done: 50, total: 254 }), "Supports: layer 50 of 254");
+  assert.equal(progressWords({ fraction: 0.8, stage: "paths", done: 7, total: 254 }), "Putting the paths in order: layer 7 of 254");
+  assert.equal(progressWords({ fraction: 0.95, stage: "file", done: 0, total: 1 }), "Writing the file…");
+});
+
+test("the progress bar follows the engine's reports while a slice runs, only forward, and goes when it ends", async () => {
+  const window = new Window();
+  const doc = window.document as unknown as Document;
+  const slot = doc.createElement("div");
+  doc.body.append(slot);
+  let tell: ((p: SliceProgress) => void) | null = null;
+  let stopped = 0;
+  let finish!: () => void;
+  const d = slicePrint(slot, {
+    slice: () => new Promise((r) => (finish = () => r({ print: print(), saved: true, name: "part.gcode.3mf" }))),
+    preview: async () => {},
+    onProgress: (l) => ((tell = l), () => void (stopped++, (tell = null))),
+  });
+  const $ = <T extends HTMLElement>(id: string) => doc.getElementById(id) as T;
+  const meter = $<HTMLProgressElement>("slice-print-meter");
+  assert.equal($("slice-print-progress").hidden, true, "no bar before a slice");
+  d.ask();
+  $("slice-print-go").click();
+  assert.equal($("slice-print-progress").hidden, false, "the bar shows as the slice starts");
+  assert.equal(meter.hasAttribute("value"), false, "no value (a moving bar) before the first report");
+  assert.equal($("slice-print-status").textContent, "Slicing…");
+  tell!({ fraction: 0.325, stage: "walls", done: 120, total: 254 });
+  assert.equal(meter.value, 0.325);
+  assert.equal($("slice-print-stage").textContent, "Walls: layer 120 of 254");
+  // A report behind the last (a second engine call starting from 0) never moves the bar back.
+  tell!({ fraction: 0.1, stage: "layers", done: 0, total: 1 });
+  assert.equal(meter.value, 0.325);
+  assert.equal($("slice-print-stage").textContent, "Walls: layer 120 of 254");
+  finish();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal($("slice-print-progress").hidden, true, "the bar goes when the slice ends");
+  assert.equal(stopped, 1, "and stops listening");
+  assert.equal(tell, null);
+  await window.happyDOM.close();
 });

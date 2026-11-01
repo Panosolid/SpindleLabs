@@ -6,6 +6,8 @@
 //   - a width typed, then reloaded at once (1280 px, and 375 px with taps);
 //   - the hunt's own steps: Box, Sketch 1 (a square), Extrude 1, Go to the
 //     start, reloaded at once: all three items and the marker come back;
+//   - a file opened says Saving… until it is kept, and once it says Saved a
+//     reload brings the file back, not the last project (issue #247);
 //   - a burst of widths, then the tab closed (its beforeunload run): no
 //     question asked, and a new tab opens the last width;
 //   - localStorage refusing the journal (as when it is full): a saved page
@@ -184,6 +186,38 @@ try {
     for (let i = 0; i < 50 && (await width()) !== 50; i++) await page.waitForTimeout(100);
     assert.equal(await width(), 50, "the old project holds its last width");
     assert.deepEqual(await journal(page), [], "no journal entry left");
+    await context.close();
+  });
+
+  await check("a file opened says Saving… until it is kept, and reloaded once it says Saved, the file comes back (issue #247)", async () => {
+    const { context, page } = await fresh(1280);
+    // A file of the box made 70 wide, from Save: V = 70 · 30 · 20 = 42,000 mm³ (the box is 40 · 30 · 20 = 24,000).
+    const [download] = await Promise.all([page.waitForEvent("download"), page.click("#save")]);
+    const file = JSON.parse(await download.path().then((p) => import("node:fs").then((fs) => fs.readFileSync(p, "utf8"))));
+    file.workspaces.design.timeline.features[0].intent.parameters.width = 70;
+    // A slow store (the nightly monkey's, holding hundreds of projects on a busy runner): the list of kept projects,
+    // which opening a file looks through for a copy of it, answers 1.5 s late, so the file shows well before it is kept.
+    await page.evaluate(() => {
+      const list = IDBObjectStore.prototype.getAllKeys;
+      IDBObjectStore.prototype.getAllKeys = function (...args) {
+        const request = list.apply(this, args);
+        let held = true;
+        request.addEventListener("success", (e) => {
+          if (!held) return;
+          e.stopImmediatePropagation(); // the store's own onsuccess waits
+          setTimeout(() => ((held = false), request.dispatchEvent(new Event("success"))), 1500);
+        });
+        return request;
+      };
+    });
+    await page.setInputFiles("#open-file", { name: "seventy.spindle", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
+    await volume(page, "42,000 mm³");
+    // Shown, not yet kept: the mark said "Saved" here (the last project's), and a reload brought the 24,000 mm³ box back.
+    assert.equal(await status(page), "saving", "the opened file is not kept yet, so the mark says Saving…");
+    await until(page, () => document.querySelector("#save-status").dataset.state === "saved", null, "the file stored");
+    await page.reload(); // the store as it is again
+    await volume(page, "42,000 mm³");
+    assert.equal(await status(page), "saved");
     await context.close();
   });
 

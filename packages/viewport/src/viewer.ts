@@ -968,6 +968,8 @@ export const BODY_FADE = { faces: 0.3, edges: 0.35 };
 const GROUND_ORDER = -2;
 /** The origin planes offered for a sketch: over the ground grid, under everything else (showPlanes). */
 const PLANE_ORDER = -1.5;
+/** The build area's colours: a quiet blue when the bodies fit, red when they go outside, grey for the floor kept clear. */
+const BUILD_AREA_COLOURS = { fits: 0x6fa8ff, outside: 0xff4d4d, keptClear: 0x9aa3b2 };
 const FINISHED_SKETCH_ORDER = -1;
 /** A finished sketch whose plane is lost (26e): after the body, so its red shows on the edges it lies on. */
 const LOST_SKETCH_ORDER = 0.5;
@@ -1013,6 +1015,10 @@ export class Viewer implements SharedViewport {
   private axes = new THREE.Group();
   /** The origin's planes the browser's eyes show (showOrigin): faint squares, none at first. */
   private originPlanes = new THREE.Group();
+  /** The printer's build area when its eye is open (showOrigin): its box's edges, its floor and the floor's kept-clear parts. */
+  private buildArea = new THREE.Group();
+  /** The build area's box corners while it is drawn: Fit and the standard views frame it with the part (as a slicer shows its plate). */
+  private areaCorners: number[][] = [];
   /** The edited sketch's grid and axes (redrawn when the main view's camera moves), what it was drawn for, and its minor lines' material (faded by zoom). */
   private sketchGridGroup = new THREE.Group();
   private gridFor: { plane: Plane; step: number | null } | null = null;
@@ -1067,7 +1073,7 @@ export class Viewer implements SharedViewport {
     key.position.set(1, -2, 3);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
     fill.position.set(-2, 1, -1);
-    this.scene.add(grid, this.axes, this.originPlanes, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
+    this.scene.add(grid, this.axes, this.originPlanes, this.buildArea, new THREE.AmbientLight(0xffffff, 0.5), key, fill, this.body, this.sketches, this.sketchGridGroup, this.planes, this.extrude.group, this.moveLayer.group);
 
     this.host = {
       scene: this.scene,
@@ -1331,7 +1337,7 @@ export class Viewer implements SharedViewport {
       }
       if (d.editing.snap) segments(d.editing.snap.marks, SKETCH_COLOURS.snap, 7);
     }
-    this.grid.visible = this.axes.visible = this.originPlanes.visible = this.editedPlane === null;
+    this.grid.visible = this.axes.visible = this.originPlanes.visible = this.buildArea.visible = this.editedPlane === null;
     this.gridCamera = this.gridKey = ""; // drawn again on the next frame, for this sketch
     if (!this.gridFor) this.drawGrid(null);
     this.fadeBody();
@@ -1505,6 +1511,45 @@ export class Viewer implements SharedViewport {
     }
     const names = ["x", "y", "z"].filter((_, k) => shown.axes[k]);
     this.element.dataset.origin = [...names, ...shown.planes.map((p) => p.id)].join(" "); // read by the e2e test
+    this.drawBuildArea(shown.buildArea);
+  }
+
+  /**
+   * The printer's build area (Ben, 2026-11-01): the printable box's twelve edges, a faint floor with its front strip
+   * and front-left corner shaded (kept clear for the printer's own moves), all red when the bodies go outside it. The
+   * body hides what is behind it; the floor sits just under the part's lowest face (a polygon offset), never over it.
+   */
+  private drawBuildArea(area: OriginShown["buildArea"]) {
+    clearGroup(this.buildArea);
+    this.areaCorners = area ? [[...area.lo], [...area.hi]] : [];
+    if (!area) {
+      delete this.element.dataset.buildArea;
+      return;
+    }
+    const colour = area.outside ? BUILD_AREA_COLOURS.outside : BUILD_AREA_COLOURS.fits;
+    const [x0, y0, z0] = area.lo;
+    const [x1, y1, z1] = area.hi;
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => [i & 1 ? x1 : x0, i & 2 ? y1 : y0, i & 4 ? z1 : z0]);
+    const edges = [0, 1, 1, 3, 3, 2, 2, 0, 4, 5, 5, 7, 7, 6, 6, 4, 0, 4, 1, 5, 2, 6, 3, 7];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(edges.flatMap((k) => corners[k]), 3));
+    const box = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: area.outside ? 0.95 : 0.6, depthWrite: false }));
+    const rect = ([a, b, c, d]: readonly number[], fill: number, opacity: number) => {
+      const r = new THREE.BufferGeometry();
+      r.setAttribute("position", new THREE.Float32BufferAttribute([a, b, z0, c, b, z0, c, d, z0, a, d, z0], 3));
+      r.setIndex([0, 1, 2, 0, 2, 3]);
+      const m = new THREE.Mesh(r, new THREE.MeshBasicMaterial({ color: fill, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      m.renderOrder = PLANE_ORDER;
+      return m;
+    };
+    box.renderOrder = PLANE_ORDER;
+    this.buildArea.add(
+      rect([x0, y0, x1, y1], colour, area.outside ? 0.1 : 0.05),
+      rect(area.strip, BUILD_AREA_COLOURS.keptClear, 0.22),
+      rect(area.corner, BUILD_AREA_COLOURS.keptClear, 0.22),
+      box,
+    );
+    this.element.dataset.buildArea = area.outside ? "outside" : "fits"; // read by the e2e test
   }
 
   /** The offered plane under the pointer drawn brighter (PLANE_OPACITY.hover); said on the element for the e2e test. */
@@ -1582,7 +1627,7 @@ export class Viewer implements SharedViewport {
    * a sketch never moves the camera.
    */
   fitFraming(): Framing {
-    return partFraming([...this.bodyCorners(), ...this.finishedWorld]);
+    return partFraming([...this.bodyCorners(), ...this.finishedWorld, ...this.areaCorners]);
   }
 
   private bodyCorners(): number[][] {

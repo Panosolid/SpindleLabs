@@ -7,7 +7,7 @@
 import { outlineToSvg, type Action, type ActionOutcome, type ActionRegistry, type ActionTarget, type Feature, type GeometryReference, type OverlayMark, type RepresentationKind, type Selected, type StlFile, type WorkspaceContext } from "@fission/core";
 import { saveFile, STL_KIND } from "@fission/ui";
 import { bodyFeatures } from "./browser.ts";
-import { bodyHidden, partFeature, shapeOf, type DesignDocument } from "./document.ts";
+import { bodyHidden, bodyIdOf, bodyNumbers, partFeature, shapeOf, type DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 import { bodyReference, readDesignReference, readProfileReference } from "./references.ts";
 import { designObjects } from "./representations.ts";
@@ -58,7 +58,7 @@ const NONE_FAILED: ReadonlySet<string> = new Set();
 export function shownBodyFeature(ref: Selected, doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Feature | null {
   if (ref.kind !== "body") return null;
   const r = readDesignReference(ref as GeometryReference);
-  if (r === null || r.kind !== "body" || failed.has(r.featureId) || bodyHidden(doc, r.featureId)) return null;
+  if (r === null || r.kind !== "body" || failed.has(r.featureId) || bodyHidden(doc, ref.id)) return null;
   return bodyFeatures(doc).find((f) => f.id === r.featureId) ?? null;
 }
 
@@ -93,12 +93,12 @@ export const noBodyWords = (doc: DesignDocument, failed: ReadonlySet<string> = N
 /** The reference to the part's body (the last solid feature that builds); null for a design with no body (24f4). */
 export function partBody(doc: DesignDocument): Selected | null {
   const part = partFeature(doc);
-  return part === null ? null : bodyReference(part.id);
+  return part === null ? null : bodyReference(bodyIdOf(part.id));
 }
 
 /** Every body shown, for "the whole design" (the toolbar's STL button, the AI's export_stl; 25c1), in build order; none for a design with no body. */
 export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): Selected[] {
-  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) || bodyHidden(doc, f.id) ? [] : [bodyReference(f.id)]));
+  return bodyFeatures(doc).flatMap((f) => (failed.has(f.id) || bodyHidden(doc, bodyIdOf(f.id)) ? [] : [bodyReference(bodyIdOf(f.id))]));
 }
 
 /**
@@ -108,11 +108,21 @@ export function shownBodyRefs(doc: DesignDocument, failed: ReadonlySet<string> =
  * play-test 2026-10-28). Empty when none is hidden.
  */
 export function hiddenStlNote(doc: DesignDocument, failed: ReadonlySet<string> = NONE_FAILED): string {
-  const hidden = bodyFeatures(doc).flatMap((f, i) => (!failed.has(f.id) && bodyHidden(doc, f.id) ? [i + 1] : []));
+  const numbers = bodyNumbers(doc);
+  const hidden = bodyFeatures(doc).flatMap((f) => (!failed.has(f.id) && bodyHidden(doc, bodyIdOf(f.id)) ? [numbers.get(bodyIdOf(f.id))!] : [])).sort((a, b) => a - b);
   if (hidden.length === 0) return "";
   if (hidden.length === 1) return `Body ${hidden[0]} is hidden, so it is not in the STL: show it with its eye in the browser to include it.`;
   const list = `${hidden.slice(0, -1).join(", ")} and ${hidden.at(-1)}`;
   return `Bodies ${list} are hidden, so they are not in the STL: show them with their eyes in the browser to include them.`;
+}
+
+/**
+ * What the whole design's STL says when it holds more than one body: they are separate shells in one file, and two that
+ * touch or overlap make a file that some slicers (our own too) refuse (slicer hunt 2026-10-31, L12). Empty for one body.
+ */
+export function manyBodiesStlNote(count: number): string {
+  if (count < 2) return "";
+  return `The ${count} bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.`;
 }
 
 const STL_HEADER = 80;
@@ -207,10 +217,11 @@ export function designActions(save: SaveFile = download, copy: CopySvg = copyToC
         if (warned.length > 0)
           ctx.viewport.setOverlay({ id: STL_OVERLAY, label: "Too big for an accurate STL", detail: files.flatMap((f) => (f.warning ? [f.warning] : [])).join("\n"), marks: warnedMarks(warned.map((f) => f.id), ctx.scene) });
         else ctx.viewport.clearOverlay(STL_OVERLAY);
-        // Which body, when there are several: its browser row's number.
-        const place = (f: Feature) => `Body ${order.indexOf(f) + 1}`;
+        // Which body, when there are several: its browser row's number (35e: the body's own).
+        const numbers = bodyNumbers(doc);
+        const place = (f: Feature) => `Body ${numbers.get(bodyIdOf(f.id))}`;
         const warnings = features.flatMap((f, i) => (files[i].warning ? [one ? files[i].warning! : `${place(f)}: ${files[i].warning}`] : []));
-        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, ...warnings].join(" "); // the person sees that it happened, and what the file is called
+        const message = [`Exported ${typeof saved === "string" && saved !== "" ? saved : file}.`, ...warnings, manyBodiesStlNote(features.length)].filter(Boolean).join(" "); // the person sees that it happened, and what the file is called
         return { message, bad: warned.length > 0 };
       } catch (e) {
         return { message: e instanceof Error ? e.message : String(e), bad: true };

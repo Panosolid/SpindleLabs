@@ -13,6 +13,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView } from "@fission/core";
 import {
+  builtBody,
+  bodyIdOf,
   BodyCache,
   bodyReference,
   insertMove,
@@ -43,7 +45,7 @@ async function views(doc: DesignDocument): Promise<Map<string, BodyView>> {
   try {
     const build = await rebuildTimeline(doc, cache, kernel);
     const out = new Map<string, BodyView>();
-    for (const [id, r] of Object.entries(build.results)) if (r.status === "built" && r.body !== undefined) out.set(id, (await cache.view(r.body))!);
+    for (const id of build.order) { const b = builtBody(build, id); if (b !== undefined) out.set(id, (await cache.view(b.handle))!); }
     return out;
   } finally {
     await cache.close();
@@ -74,7 +76,7 @@ test("by hand in the app: Snap lays the cube's bottom on the box's top, centred;
   const scene = await sceneOf(doc);
   const [big, small] = [0, 1].map((b) => scene.bodies.findIndex((s) => s.feature === (b === 0 ? "feature-1" : cube)));
   const a = await app(doc);
-  a.selection.set([bodyReference(cube)]);
+  a.selection.set([bodyReference(bodyIdOf(cube))]);
   await a.key("move-tool");
   const snap = a.$("#move-snap") as HTMLButtonElement;
   assert.equal(snap.disabled, false);
@@ -121,7 +123,7 @@ test("by hand in the app: top onto top turns the cube over (180° about X); Esca
   const big = scene.bodies.findIndex((s) => s.feature === "feature-1");
   const small = scene.bodies.findIndex((s) => s.feature === cube);
   const a = await app(doc);
-  a.selection.set([bodyReference(cube)]);
+  a.selection.set([bodyReference(bodyIdOf(cube))]);
   await a.key("move-tool");
   (a.$("#move-snap") as HTMLButtonElement).click();
   await a.pick({ face: scene.faceStart[small] + faceWith(scene.bodies[small].view, "top") });
@@ -145,10 +147,10 @@ test("by hand in the app: top onto top turns the cube over (180° about X); Esca
 test("an edited Move snapped through a later Move: the cube ends where the box's top is seen", async () => {
   const { app } = await import("./design-app.ts");
   let { doc, cube } = twoBoxes();
-  const first = insertMove(doc, [cube], v({ x: 100 }));
-  doc = insertMove(first.doc, [cube], v({ y: 50 })).doc;
+  const first = insertMove(doc, [bodyIdOf(cube)], v({ x: 100 }));
+  doc = insertMove(first.doc, [bodyIdOf(cube)], v({ y: 50 })).doc;
   // The box moved too, by a third Move, so its top is seen at (20, 15 + 7, 20 + 3).
-  doc = insertMove(doc, ["feature-1"], v({ y: 7, z: 3 })).doc;
+  doc = insertMove(doc, ["body:feature-1"], v({ y: 7, z: 3 })).doc;
   const scene = await sceneOf(doc);
   const big = scene.bodies.findIndex((s) => s.feature === "feature-1");
   const small = scene.bodies.findIndex((s) => s.feature === cube);
@@ -167,12 +169,12 @@ test("a snap onto a tilted face keeps its angles' every digit: the faces lie fla
   const { app } = await import("./design-app.ts");
   // The box tilted 33.3° about X and 17.7° about Z: the angles that lay the cube on its top are not round numbers.
   let { doc, cube } = twoBoxes();
-  doc = insertMove(doc, ["feature-1"], v({ turnX: 33.3, turnZ: 17.7 })).doc;
+  doc = insertMove(doc, ["body:feature-1"], v({ turnX: 33.3, turnZ: 17.7 })).doc;
   const scene = await sceneOf(doc);
   const big = scene.bodies.findIndex((s) => s.feature === "feature-1");
   const small = scene.bodies.findIndex((s) => s.feature === cube);
   const a = await app(doc);
-  a.selection.set([bodyReference(cube)]);
+  a.selection.set([bodyReference(bodyIdOf(cube))]);
   await a.key("move-tool");
   (a.$("#move-snap") as HTMLButtonElement).click();
   await a.pick({ face: scene.faceStart[small] + faceWith(scene.bodies[small].view, "bottom") });
@@ -195,7 +197,7 @@ test("35e2k by hand in the app: a slot's round end laid along a cylinder lying o
   // so its rims' centres (0, 0, 0) and (0, 0, 20) go to (0, 0, 0) and (20, 0, 0), and lifted 30: its axis runs along
   // X from (0, 0, 30) to (20, 0, 30), middle (10, 0, 30). The 30 × 10 × 5 slot's right end is round about (25, 5),
   // 5 high: axis +Z, middle (25, 5, 2.5) as made. Snapped, the end's axis must run along X through (10, 0, 30).
-  let doc = insertMove(partDocument("cylinder", 20, 20, 20), ["feature-1"], v({ turnY: 90, z: 30 })).doc;
+  let doc = insertMove(partDocument("cylinder", 20, 20, 20), ["body:feature-1"], v({ turnY: 90, z: 30 })).doc;
   const placed = insertPreset(doc, "slot", 30, 10, 5);
   doc = placed.doc;
   const scene = await sceneOf(doc);
@@ -204,7 +206,7 @@ test("35e2k by hand in the app: a slot's round end laid along a cylinder lying o
   const end = scene.bodies[slot].view.face_roles.findIndex((r) => r?.role === "side" && r.piece === 1);
   assert.equal(scene.bodies[slot].view.face_types[end], "cylinder", "the slot's piece 1 is its round end");
   const a = await app(doc);
-  a.selection.set([bodyReference(placed.id)]);
+  a.selection.set([bodyReference(bodyIdOf(placed.id))]);
   await a.key("move-tool");
   (a.$("#move-snap") as HTMLButtonElement).click();
   await a.pick({ face: scene.faceStart[slot] + end });
@@ -225,13 +227,13 @@ test("35e2k by hand in the app: a ⌀10 ball dropped centre on centre into a ⌀
   const { app } = await import("./design-app.ts");
   // The ⌀40 sphere sits on the floor, centre (0, 0, 20), moved 50 along X: centre (50, 0, 20). The ⌀10 ball, centred
   // on its equator's centre wherever it was placed, lands there: from (45, −5, 15) to (55, 5, 25), not turned.
-  let doc = insertMove(partDocument("sphere", 40, 40, 40), ["feature-1"], v({ x: 50 })).doc;
+  let doc = insertMove(partDocument("sphere", 40, 40, 40), ["body:feature-1"], v({ x: 50 })).doc;
   const placed = insertPreset(doc, "sphere", 10, 10, 10);
   doc = insertPreset(placed.doc, "box", 10, 10, 10).doc;
   const scene = await sceneOf(doc);
   const [big, ball, box] = ["feature-1", placed.id, doc.timeline.features.at(-1)!.id].map((id) => scene.bodies.findIndex((s) => s.feature === id));
   const a = await app(doc);
-  a.selection.set([bodyReference(placed.id)]);
+  a.selection.set([bodyReference(bodyIdOf(placed.id))]);
   await a.key("move-tool");
   (a.$("#move-snap") as HTMLButtonElement).click();
   await a.pick({ face: scene.faceStart[ball] + 1 });
@@ -265,7 +267,7 @@ test("seeded: random faces and edges of random bodies snapped, the Move built by
     };
     let doc = partDocument(kinds[0], ...size());
     const placed = insertPreset(doc, kinds[1], ...size());
-    doc = insertMove(placed.doc, ["feature-1"], v({ turnX: 15 * (pick(25) - 12), turnZ: 15 * (pick(25) - 12), x: pick(200) - 100, pivotZ: pick(50) })).doc;
+    doc = insertMove(placed.doc, ["body:feature-1"], v({ turnX: 15 * (pick(25) - 12), turnZ: 15 * (pick(25) - 12), x: pick(200) - 100, pivotZ: pick(50) })).doc;
     const moved = placed.id;
     const seen = await views(doc);
     const [target, body] = [seen.get("feature-1")!, seen.get(moved)!];
@@ -284,7 +286,7 @@ test("seeded: random faces and edges of random bodies snapped, the Move built by
     if (start.turnX || start.turnY || start.turnZ) reached.turned++;
     const got = snappedValues(start, from.p.part, to.p.part);
     assert.ok("values" in got, JSON.stringify(got));
-    const after = (await views(insertMove(doc, [moved], got.values).doc)).get(moved)!;
+    const after = (await views(insertMove(doc, [bodyIdOf(moved)], got.values).doc)).get(moved)!;
     const landed = snapPart(after, faces ? "face" : "edge", from.index);
     assert.ok("part" in landed);
     const what = `seed ${seed} case ${n} (${kinds.join(" under ")}, ${kind} ${from.index} on ${to.index}; FISSION_SEED=${seed} to replay)`;

@@ -13,7 +13,7 @@
 // before an item it is built from, or after one built from it.
 
 import type { Feature } from "@fission/core";
-import { EYE_ROWS, isHidden, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_ROWS, eyeOrder, isHidden, isPiece, isMoveItem, isSketchItem, makesBody, NAME_LIMIT, numberBodies, ORIGIN_PLANES, nameKey, relabelled, shown, takenNames, type DesignDocument } from "./document.ts";
 import { faceFeature, isFacePlane } from "./face-sketch.ts";
 
 /** The undo step each timeline edit is recorded as, from the item's name ("Delete Sketch 1"). */
@@ -59,6 +59,11 @@ function withTimeline(doc: DesignDocument, features: Feature[], marker: string |
  * confirmed delete.
  */
 export function deleteItem(doc: DesignDocument, id: string): DesignDocument {
+  return numberBodies(deletedItem(doc, id));
+}
+
+/** `deleteItem` before its body's number goes. */
+function deletedItem(doc: DesignDocument, id: string): DesignDocument {
   const item = itemIn(doc, id);
   const all = doc.timeline.features;
   const k = all.indexOf(item);
@@ -68,42 +73,47 @@ export function deleteItem(doc: DesignDocument, id: string): DesignDocument {
   const used = new Set(features.flatMap((f) => f.dependsOn));
   const profiles = doc.profiles.filter((p) => !item.dependsOn.includes(p.id) || used.has(p.id));
   const sketches = isSketchItem(item) ? doc.sketches.filter((s) => s.id !== id) : doc.sketches;
-  const left = withoutHidden(next, id);
+  const left = withoutHidden(next, id, bodyIdOf(id));
   const { kept: old, ...rest } = left;
   if (old === undefined || !Object.hasOwn(old, id)) return { ...left, profiles, sketches };
   const { [id]: _, ...kept } = old;
   return Object.keys(kept).length === 0 ? { ...rest, profiles, sketches } : { ...rest, profiles, sketches, kept };
 }
 
-/** The document with feature `id` no longer hidden; `hidden` left out once it lists none. */
-function withoutHidden(doc: DesignDocument, id: string): DesignDocument {
-  if (!isHidden(doc, id)) return doc;
+/** The document with `ids` (an item's, a body's) no longer hidden; `hidden` left out once it lists none. */
+function withoutHidden(doc: DesignDocument, ...ids: string[]): DesignDocument {
+  if (!ids.some((id) => isHidden(doc, id))) return doc;
   const { hidden, ...rest } = doc;
-  const left = hidden!.filter((h) => h !== id);
+  const left = hidden!.filter((h) => !ids.includes(h));
   return left.length === 0 ? rest : { ...rest, hidden: left };
 }
 
 /**
- * The browser's eye (U0f3): solid feature `id`'s body hidden (`hide`) or
- * shown again. A hidden body is still built (what is built on it still
- * is), but not drawn, picked or exported as one of the bodies shown. The
- * list is put in timeline order as it grows (a later reorder may leave it
- * in another; any order reads). The same document back when nothing
- * changes; a sketch or an id not in the timeline is refused.
+ * The browser's eye (U0f3): body `bodyId` ("body:feature-3", 35eb) hidden
+ * (`hide`) or shown again. A hidden body is still built (what is built on
+ * it still is), but not drawn, picked or exported as one of the bodies
+ * shown. `hidden` lists it by its body id (Design data version 6, 35ec),
+ * put in `eyeOrder` as it grows (a later reorder may leave it in another;
+ * any order reads). The same document back when nothing changes; an id
+ * that is no body id, a sketch's, a Move's or one not in the timeline is
+ * refused, and so is a piece (`isPiece`) the design does not number.
  */
-export function hideBody(doc: DesignDocument, id: string, hide: boolean): DesignDocument {
+export function hideBody(doc: DesignDocument, bodyId: string, hide: boolean): DesignDocument {
+  const id = bodyItem(bodyId);
+  if (id === null) throw new Error(`${JSON.stringify(bodyId)} is not a body id`);
   const item = itemIn(doc, id);
-  if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
-  if (!makesBody(item)) throw new Error(`${itemName(item)} is a move, which has no body of its own to hide`);
-  if (isHidden(doc, id) === hide) return doc;
-  if (!hide) return withoutHidden(doc, id);
-  const now = new Set([...(doc.hidden ?? []), id]);
-  return { ...doc, hidden: [...doc.timeline.features.flatMap((f) => (now.has(f.id) ? [f.id] : [])), ...EYE_ROWS.filter((r) => now.has(r))] };
+  if (isPiece(bodyId)) {
+    if (!(doc.bodies ?? []).some((b) => b.id === bodyId)) throw new Error(`${itemName(item)} left no body ${JSON.stringify(bodyId)}`);
+  } else if (isSketchItem(item)) throw new Error(`${itemName(item)} is a sketch, which has no body to hide`);
+  else if (!makesBody(item)) throw new Error(`${itemName(item)} is a move, which has no body of its own to hide`);
+  if (isHidden(doc, bodyId) === hide) return doc;
+  if (!hide) return withoutHidden(doc, bodyId);
+  return { ...doc, hidden: eyeOrder(doc, new Set([...(doc.hidden ?? []), bodyId])) };
 }
 
 /**
  * Any eye in the browser (Ben, 2026-10-29: an eye on everything, as in
- * Fusion): `id` shut (`hide`) or opened. A solid feature's body as
+ * Fusion): `id` shut (`hide`) or opened. A body, by its body id or (a solid feature) its item's id, as
  * `hideBody`; a sketch by its item's id, not drawn but built as ever
  * (and drawn while it is edited); an origin axis ("origin-x") or a
  * folder (EYE_FOLDERS) listed in `hidden` after the items; an origin
@@ -121,14 +131,14 @@ export function hideRow(doc: DesignDocument, id: string, hide: boolean): DesignD
     const list = ORIGIN_PLANES.filter((p) => next.has(p));
     return list.length === 0 ? rest : { ...rest, shownPlanes: list };
   }
+  if (bodyItem(id) !== null) return hideBody(doc, id, hide);
   if (!EYE_ROWS.includes(id)) {
     const item = itemIn(doc, id);
-    if (!isSketchItem(item)) return hideBody(doc, id, hide);
+    if (!isSketchItem(item)) return hideBody(doc, bodyIdOf(id), hide);
   }
   if (isHidden(doc, id) === hide) return doc;
   if (!hide) return withoutHidden(doc, id);
-  const now = new Set([...(doc.hidden ?? []), id]);
-  return { ...doc, hidden: [...doc.timeline.features.flatMap((f) => (now.has(f.id) ? [f.id] : [])), ...EYE_ROWS.filter((r) => now.has(r))] };
+  return { ...doc, hidden: eyeOrder(doc, new Set([...(doc.hidden ?? []), id])) };
 }
 
 /**

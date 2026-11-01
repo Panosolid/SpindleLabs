@@ -9,15 +9,16 @@
 // nothing, never to another face. Nothing else builds ids.
 
 import type { GeometryReference, OutlineReference, StableId } from "@fission/core";
+import { bodyItem } from "./document.ts";
 import { indexOf, type BodyNames } from "./naming.ts";
 
 /** Says what every face and edge id is, for the properties panel. */
 export const NAME_NOTE = "Stable name: the feature, the face's role in it and its sketch curve (an edge: the two faces it joins)";
 
-/** The reference for the body `featureId` built. Bad input throws: an empty feature id, or one with ":" or "/". */
-export function bodyReference(featureId: string): GeometryReference {
-  if (featureId.length === 0 || /[:/]/.test(featureId)) throw new Error(`invalid feature id ${JSON.stringify(featureId)}`);
-  return { kind: "body", id: `body:${featureId}` as StableId };
+/** The reference for body `bodyId` (35eb: "body:feature-3", `bodyIdOf`). Bad input throws: anything `bodyIdOf` never makes (no item, or one with ":" or "/"). */
+export function bodyReference(bodyId: string): GeometryReference {
+  if (bodyItem(bodyId) === null) throw new Error(`invalid body id ${JSON.stringify(bodyId)}`);
+  return { kind: "body", id: bodyId as StableId };
 }
 
 /**
@@ -90,4 +91,18 @@ export function profileReference(profileId: string): OutlineReference {
 export function readProfileReference(ref: { kind: string; id: string }): string | null {
   const m = /^outline:([^:/]+)$/.exec(ref.id);
   return ref.kind === "outline" && m ? m[1] : null;
+}
+
+/**
+ * The two faces an old edge reference names (rule 6, step 35ec3):
+ * "edge:feature-7/side:line-4+start" (or "…/side:line-4>side:arc-6") is
+ * the edge between "face:feature-7/side:line-4" and "face:feature-7/start",
+ * as it is found on a boolean's result (boolean-names.ts `resolveOldEdge`);
+ * null for anything that is not an old edge reference.
+ */
+export function oldEdgeFaces(ref: GeometryReference): [string, string] | null {
+  const r = readDesignReference(ref);
+  if (r === null || r.kind !== "edge") return null;
+  const [a, b] = r.part!.split(/[+>]/);
+  return [`face:${r.featureId}/${a}`, `face:${r.featureId}/${b}`];
 }

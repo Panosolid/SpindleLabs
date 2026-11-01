@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ActionRegistry, emptyProject, outlineToSvg, RepresentationRegistry, type AnalysisOverlay, type KernelCalls, type Selected, type WorkspaceContext } from "@fission/core";
 import {
+  bodyIdOf,
   addSketch,
   askOutline,
   BodyCache,
@@ -82,7 +83,7 @@ test("hand-worked: a box and an extruded rectangle download as one STL of 24 tri
   // The toolbar's STL: every body shown, Body 1 then Body 2.
   const bodies = shownBodyRefs(doc);
   assert.deepEqual(bodies.map((b) => b.id), ["body:feature-1", `body:${extrude}`]);
-  assert.deepEqual(await a.run(DOWNLOAD_STL, bodies), { message: "Exported spindlelabs-2-bodies.stl.", bad: false });
+  assert.deepEqual(await a.run(DOWNLOAD_STL, bodies), { message: "Exported spindlelabs-2-bodies.stl. The 2 bodies are separate shells in one STL file. If two of them touch or overlap, some slicers refuse the file: Slice for printing sends them one by one, which is safe.", bad: false });
   assert.equal(a.saved.length, 1);
   const [file] = a.saved;
   assert.equal(file.name, "spindlelabs-2-bodies.stl");
@@ -135,7 +136,7 @@ test("seeded: on random timelines, the verbs, the toolbar's STL, the copies and 
     reached.failed += failed.size > 0 ? 1 : 0;
     const a = app(doc);
     const verbs = (refs: Selected[]) => a.actions.actionsFor(targetsOf(refs, doc, failed)).map((x) => x.label);
-    for (const f of solids) assert.deepEqual(verbs([bodyReference(f.id)]), shown.includes(f.id) ? ["Download STL"] : [], `${where}: ${f.id}`);
+    for (const f of solids) assert.deepEqual(verbs([bodyReference(bodyIdOf(f.id))]), shown.includes(f.id) ? ["Download STL"] : [], `${where}: ${f.id}`);
     assert.deepEqual(shownBodyRefs(doc, failed).map((b) => b.id), shown.map((id) => `body:${id}`), where);
     // A scene of what was shown, for the links (they read only which features it holds).
     const scene = { bodies: shown.map((feature) => ({ feature })), faceStart: [], edgeStart: [] } as unknown as Scene;
@@ -147,7 +148,7 @@ test("seeded: on random timelines, the verbs, the toolbar's STL, the copies and 
       assert.equal(all.bad, false, `${where}: ${all.message}`);
       const alone = [];
       for (const id of shown) {
-        await a.run(DOWNLOAD_STL, [bodyReference(id)]);
+        await a.run(DOWNLOAD_STL, [bodyReference(bodyIdOf(id))]);
         alone.push(a.saved.at(-1)!.bytes);
       }
       const joined = a.saved[0].bytes;

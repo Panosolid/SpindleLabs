@@ -516,14 +516,14 @@ test("recoverUnsaved: an entry from a newer SpindleLabs is kept, through this bu
 });
 
 test("recoverUnsaved: a kept newer entry is put back by a build that reads it, and a workspace's newer data is kept too", async () => {
-  // A Design reader that refuses its data as newer (as this build's would version 5), then one that reads it.
+  // A Design reader that refuses its data as newer (as this build's would version 7), then one that reads it.
   const journal = fakeStorage();
   journal.setItem(unsavedKey("p"), `@5000\n${projectToJson(part(31))}`);
   const store = projectStore(memoryKeyValue(), [], () => new Date(1000));
   await store.save("p", part(10));
-  const refuses = [{ id: "design" as const, readData: () => { throw new NewerFormatError("Design data version 5 is from a newer SpindleLabs"); } }];
+  const refuses = [{ id: "design" as const, readData: () => { throw new NewerFormatError("Design data version 7 is from a newer SpindleLabs"); } }];
   const said = await recoverUnsaved(store, journal, refuses);
-  assert.match(said[0], /newer SpindleLabs.*Design data version 5/);
+  assert.match(said[0], /newer SpindleLabs.*Design data version 7/);
   assert.equal(journal.items.has(unsavedKey("p")), false);
   assert.equal(journal.items.has(NEWER_PREFIX + "p"), true);
   assert.deepEqual(await recoverUnsaved(store, journal, []), [], "the newer build reads it");

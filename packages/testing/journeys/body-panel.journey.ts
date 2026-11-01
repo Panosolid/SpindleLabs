@@ -21,6 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GeometryReference } from "@fission/core";
 import {
+  bodyIdOf,
   addSketch,
   BodyCache,
   bodyReference,
@@ -61,7 +62,7 @@ type Point = readonly [number, number, number];
 
 /** What the design says each Body row is, worked out apart from Design's code. */
 interface Expected {
-  /** n in "Body n": its place among the solid features that build. */
+  /** n in "Body n": the body's own number, given when it was made (35e): its place among the solid features made. */
   place: number;
   feature: string;
   /** null when the feature fails to build (no body). */
@@ -120,7 +121,7 @@ function problems(doc: DesignDocument, scene: Scene, failed: ReadonlySet<string>
       const ref = fns.rowReference(node, doc, failed, scene);
       if (ref !== null) out.push(`${name} did not build, yet row ${node} selects ${ref.id}`);
     }
-    const ref = bodyReference(e.feature);
+    const ref = bodyReference(bodyIdOf(e.feature));
     const lit = fns.highlightOf([ref], scene).faces;
     if (lit.length > 0) out.push(`${name} did not build but lights faces ${lit}`);
     const panel = fns.panelFocus([ref], scene, doc);
@@ -132,7 +133,7 @@ function problems(doc: DesignDocument, scene: Scene, failed: ReadonlySet<string>
     const name = `Body ${e.place}`;
     if (row.label !== name || row.id !== `body-${e.place}`) out.push(`row ${row.id} says ${row.label}, it is ${name}`);
     const ref = fns.rowReference(row.id, doc, failed, scene);
-    if (ref?.id !== bodyReference(e.feature).id) {
+    if (ref?.id !== bodyReference(bodyIdOf(e.feature)).id) {
       out.push(`${name}'s row selects ${ref?.id}, not ${e.feature}`);
       continue;
     }
@@ -171,7 +172,7 @@ function problems(doc: DesignDocument, scene: Scene, failed: ReadonlySet<string>
         out.push(`triangle ${t} is in no body's region, or its face has no name`);
         continue;
       }
-      const panel = fns.panelFocus([bodyReference(other.feature), face], scene, doc)?.body;
+      const panel = fns.panelFocus([bodyReference(bodyIdOf(other.feature)), face], scene, doc)?.body;
       if (panel?.feature !== owner.feature) out.push(`Body ${other.place} then a face of Body ${owner.place} picked, the panel shows ${panel?.feature}`);
       if (bodyOf(scene, face) < 0) out.push(`a face of Body ${owner.place} is on no shown body`);
     }
@@ -210,7 +211,7 @@ test("Ben's design by hand: each Body row selects, lights, lists and shows its o
     assert.deepEqual([...failed], [], "every body builds");
     for (const e of expected) {
       const ref = rowReference(`body-${e.place}`, doc, failed)!;
-      assert.equal(ref.id, bodyReference(e.feature).id);
+      assert.equal(ref.id, bodyReference(bodyIdOf(e.feature)).id);
       const lit = new Set(highlightOf([ref], scene).faces);
       assert.equal(lit.size, e.faces, `Body ${e.place}'s faces`);
       for (let t = 0; t < scene.mesh.triangle_faces.length; t++) {
@@ -227,7 +228,7 @@ test("Ben's design by hand: each Body row selects, lights, lists and shows its o
       [2, 3],
       [3, 2],
     ]) {
-      const lit = new Set(highlightOf([bodyReference(expected[b - 1].feature)], scene).faces);
+      const lit = new Set(highlightOf([bodyReference(bodyIdOf(expected[b - 1].feature))], scene).faces);
       const up = scene.mesh.triangle_faces.flatMap((f, t) => (corners(scene, t).every(smallTop) && expected[other - 1].inside(corners(scene, t)[0]) ? [f] : []));
       assert.ok(up.length > 0 && up.every((f) => !lit.has(f)), `Body ${b} lights none of Body ${other}'s top`);
     }
@@ -253,12 +254,12 @@ test("finding 5 by hand: the box fails, Extrude 1 builds; Body 1 has no row and,
     assert.equal(rowReference("feature-1", doc, failed), null);
     // Body 2's row: Extrude 1, 1,000 mm³.
     const ref = rowReference("body-2", doc, failed)!;
-    assert.equal(ref.id, bodyReference(e.id).id);
+    assert.equal(ref.id, bodyReference(bodyIdOf(e.id)).id);
     const panel = panelFocus([ref], scene, doc)!;
     assert.equal(panel.feature.id, e.id);
     assert.ok(close(panel.body!.view.volume, 1000), `${panel.body!.view.volume} against 1000`);
     // The box still selected from before it failed: the box, with no body, not Extrude 1's 1,000 mm³.
-    const box = panelFocus([bodyReference("feature-1")], scene, doc)!;
+    const box = panelFocus([bodyReference("body:feature-1")], scene, doc)!;
     assert.equal(box.feature.id, "feature-1");
     assert.equal(box.body, null);
   });
@@ -306,11 +307,11 @@ function randomDesign(random: SeededRandom): { doc: DesignDocument; expected: Ex
       doc = e.doc;
       expected.push({ feature: e.id, volume: Math.PI * radius ** 2 * dist, faces: 3, inside: inCylinder(cx, cy, radius, dist) });
     }
-    // Suppressed: no row at all, so the bodies after it move up a number.
+    // Suppressed: no row at all; the bodies after it keep their numbers (35e: given once, when each was made).
     if (!lastOne && random.next() < 0.2) suppressed.push(expected[expected.length - 1].feature);
   }
   for (const id of suppressed) doc = suppressItem(doc, id, true);
-  const rows = expected.filter((e) => !suppressed.includes(e.feature)).map((e, i) => ({ ...e, place: i + 1 }));
+  const rows = expected.map((e, i) => ({ ...e, place: i + 1 })).filter((e) => !suppressed.includes(e.feature));
   return { doc, expected: rows };
 }
 
@@ -367,7 +368,7 @@ const PLANTED: Record<string, Partial<Under>> = {
     },
   },
   // Row n selects the n-th body drawn, not the n-th that should build.
-  "row-by-scene-order": { rowReference: (node, _doc, _failed, scene) => ((m) => (m && scene.bodies[Number(m[1]) - 1] ? bodyReference(scene.bodies[Number(m[1]) - 1].feature) : null))(/^body-(\d+)$/.exec(node)) },
+  "row-by-scene-order": { rowReference: (node, _doc, _failed, scene) => ((m) => (m && scene.bodies[Number(m[1]) - 1] ? bodyReference(scene.bodies[Number(m[1]) - 1].body) : null))(/^body-(\d+)$/.exec(node)) },
 };
 
 for (const [name, plant] of Object.entries(PLANTED)) {

@@ -132,8 +132,7 @@ export async function measureGolden(doc: DesignDocument, calls: KernelCalls, opt
     if (!options.steps) return { got, ms };
     const steps: GoldenStep[] = [];
     for (const [i, s] of shown.entries()) {
-      const r = build.results[s.feature];
-      const handle = r?.status === "built" ? r.body : undefined;
+      const handle = build.results[s.feature]?.status === "built" ? build.bodies[s.body]?.handle : undefined;
       let step: string | null = null;
       let refused: string | null = handle === undefined ? "no body in the kernel for this row" : null;
       if (handle !== undefined) {

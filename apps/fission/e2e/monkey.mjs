@@ -26,14 +26,17 @@
 // dialog and a sketch can always be finished, leaving Create sketch ready.
 //
 // Every run is seeded. A failure prints the seed and the actions; the
-// shrinker (delta debugging) replays shorter lists in fresh pages until it
-// has a short list that still fails the same way, written to
-// e2e/monkey-results/. Kept in e2e/regressions/monkey-*.json, a list
+// whole list is written to e2e/monkey-results/ at once; then it is
+// replayed, and if it fails the same way again the shrinker (delta
+// debugging) replays shorter lists in fresh pages until it has a short list
+// that still fails the same way, written over it (a list that does not fail
+// again is a timing failure and stays whole, issue #248). Kept in e2e/regressions/monkey-*.json, a list
 // replays on every run and must pass.
 //
 // Environment: FISSION_SEED (one seed) or MONKEY_SEEDS ("1-40" or "3,7"),
 // default 1-3; MONKEY_STEPS, default 60; MONKEY_REPLAY=<file> replays one
-// action list; MONKEY_SHRINK=0 skips shrinking; MONKEY_KNOWN=0 fails on the
+// action list; MONKEY_SHRINK=0 skips shrinking; MONKEY_SHRINK_MINUTES
+// (default 60) stops it, keeping the shortest list found so far; MONKEY_KNOWN=0 fails on the
 // known bugs too (KNOWN_BUGS); MONKEY_FOCUS=edit picks item menus and
 // double-clicks four times as often (hunts on editing early items, 25a5);
 // MONKEY_PORT (default 4210);
@@ -43,7 +46,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { preview } from "vite";
 import { launch } from "./browser.mjs";
 import { switchTo } from "./start.mjs";
-import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, shrink, signature } from "./monkey-core.mjs";
+import { documentRules, editFile, editLeaks, expectedView, kernelVerdict, modelVolume, nextAction, reusedIds, rng, settledText, shrinkFailure, signature } from "./monkey-core.mjs";
 
 const PORT = Number(process.env.MONKEY_PORT || 4210);
 const STEPS = Number(process.env.MONKEY_STEPS || 60);
@@ -150,6 +153,9 @@ function shown() {
     dialogs: [...document.querySelectorAll("dialog[open]")].map((d) => d.id || "a dialog"),
     sideways: document.documentElement.scrollWidth - innerWidth,
     extruding: document.getElementById("extrude-panel") !== null && document.getElementById("extrude-panel").getClientRects().length > 0,
+    // Move or Rotate open: a body row's click adds that body to the ones moved, as Fusion's selection box does (35e2b, issue #221).
+    // Its own hidden flag, not whether it is drawn: on a phone an open panel can wait in the shut sheet.
+    moving: document.getElementById("move-panel")?.hidden === false,
   };
 }
 
@@ -367,7 +373,7 @@ async function act(s, a) {
       // Opened, the file's data is shown as it was (a valid edit); refused, the project is as before.
       const valid = (() => {
         try {
-          return canonical(text);
+          return canonical(settledText(text)); // its bodies' numbers settled as the app settles them (35e)
         } catch {
           return null;
         }
@@ -379,6 +385,8 @@ async function act(s, a) {
     case "reload": {
       const before = await save(s);
       await page.waitForTimeout(800); // the store writes after a change; a user closing the tab at once is another matter
+      // A file just opened is kept once it has shown (a busy runner took over 800 ms, issue #247): the top bar says Saved then.
+      await page.waitForFunction(() => document.getElementById("save-status")?.dataset.state !== "saving", null, { timeout: 20000 }).catch(() => fail("a reload brings the project back", "the top bar still said Saving… 20 s after the last action"));
       await page.reload(); // to the workspace on screen (its #link), so the timeline may not be there
       // Ready means the last project is open again, not just the kernel: Save before that writes a file without the design (a bug of its own, found by seed 124 under load, reproduced with the CPU slowed 8×).
       // An empty design has no timeline rows to wait for (seed 32 reloaded one and waited forever), only the bar.
@@ -419,15 +427,16 @@ async function act(s, a) {
     case "select-bodies": {
       // Each body in turn, by its Bodies row: the selection, the Feature panel, the Body panel's volume and the highlighted faces must all be that body's.
       const view = await settle(page);
-      if (!view.design || view.sketching || view.dialogs.length || view.extruding || !s.saved) return false;
+      if (!view.design || view.sketching || view.dialogs.length || view.extruding || view.moving || !s.saved) return false;
       const design = JSON.parse(s.saved).workspaces.design;
       const { rows } = expectedView(design, new Set(view.failed));
       if (rows.length !== view.bodies) return false; // the per-step check reports that
       const blocks = [];
       const wrong = []; // every disagreement, so the message shows the whole pattern
       // A body hidden by its eye is not drawn, so its row selects nothing (browser.ts rowReferences) and the bodies in view are the rest (issue #42).
+      // Listed by body id since Design data version 6 (35ec).
       const hidden = new Set(design.hidden ?? []);
-      const inView = rows.filter((r) => !hidden.has(r.id)).length;
+      const inView = rows.filter((r) => !hidden.has(`body:${r.id}`)).length;
       for (const { row, place, id } of rows) {
         await page.evaluate((row) => document.querySelector(`#browser .tree-row[data-node="${row}"]`).click(), row);
         await settle(page);
@@ -441,7 +450,7 @@ async function act(s, a) {
         }));
         const f = design.timeline.features.find((x) => x.id === id);
         const name = `Body ${place} (${f.intent.summary})`;
-        if (hidden.has(id)) {
+        if (hidden.has(`body:${id}`)) {
           if (got.selection !== "") wrong.push(`clicking hidden ${name} selected "${got.selection}"`);
           blocks.push([]);
           continue;
@@ -545,21 +554,28 @@ async function main() {
     if (!out.failure) return console.log(`${name}: pass (${out.actions.length} actions${known})`);
     failed++;
     console.log(`${name}: FAIL at action ${out.actions.length}: ${out.failure.check}: ${out.failure.message}`);
-    let list = out.actions;
-    if (process.env.MONKEY_SHRINK !== "0" && out.failure.check !== "the tester itself") {
-      const want = signature(out.failure);
-      const shrunk = await shrink(out.actions, async (candidate) => {
-        const again = await run(browser, { actions: candidate });
-        return again.failure !== null && signature(again.failure) === want;
-      });
-      list = shrunk.list;
-      console.log(`  shrunk to ${list.length} actions in ${shrunk.tries} replays:`);
-      for (const a of list) console.log(`    ${JSON.stringify(a)}`);
-    }
     mkdirSync(results, { recursive: true });
     writeFileSync(new URL("./.gitignore", results), "*\n"); // results are for the person running it; a kept case goes in regressions/
     const file = new URL(`./${name.replace(/[^\w.-]+/g, "-")}.json`, results);
-    writeFileSync(file, JSON.stringify({ seed, failure: out.failure, actions: list }, null, 2) + "\n");
+    const keep = (actions, how) => writeFileSync(file, JSON.stringify({ seed, failure: out.failure, ...how, actions }, null, 2) + "\n");
+    // The whole list first, so a job that runs out of time while shrinking still leaves the actions (issue #248: none were kept).
+    keep(out.actions, { shrunk: false });
+    if (process.env.MONKEY_SHRINK !== "0" && out.failure.check !== "the tester itself") {
+      const want = signature(out.failure);
+      const minutes = Number(process.env.MONKEY_SHRINK_MINUTES || 60);
+      const shrunk = await shrinkFailure(out.actions, async (candidate) => {
+        const again = await run(browser, { actions: candidate });
+        return again.failure !== null && signature(again.failure) === want;
+      }, { deadline: Date.now() + minutes * 60_000 });
+      if (!shrunk.replayed) {
+        console.log("  did not fail again when its actions were replayed: a timing failure (a slow runner or a race); the whole list is kept");
+        keep(out.actions, { shrunk: false, replayed: false });
+      } else {
+        console.log(`  shrunk to ${shrunk.list.length} actions in ${shrunk.tries} replays${shrunk.outOfTime ? ` (stopped after ${minutes} min: the shortest list found so far)` : ""}:`);
+        for (const a of shrunk.list) console.log(`    ${JSON.stringify(a)}`);
+        keep(shrunk.list, { shrunk: true, replayed: true, ...(shrunk.outOfTime ? { outOfTime: true } : {}) });
+      }
+    }
     console.log(`  saved to ${file.pathname}`);
   };
   try {

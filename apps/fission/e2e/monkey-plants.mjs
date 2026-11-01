@@ -62,12 +62,12 @@ export const MONKEY_PLANTS = {
     expect: "selection agrees",
     // Since #192 (no Body rows for failed features) the first seed to catch it at 120 steps is 31 (then 36, 38; 1-40 hunted 2026-10-19).
     seeds: 40,
-    edits: [{ file: "workspaces/design/src/browser.ts", find: "  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, r.feature.id] as const])));", replace: "  const rows = new Map(bodyRows(doc, failed).flatMap((r, i, all) => (bodyHidden(doc, r.feature.id) ? [] : [[r.id, all[(i + 1) % all.length].feature.id] as const])));" }],
+    edits: [{ file: "workspaces/design/src/browser.ts", find: "  const rows = new Map(bodyRows(doc, failed).flatMap((r) => (bodyHidden(doc, bodyIdOf(r.feature.id)) ? [] : [[r.id, bodyIdOf(r.feature.id)] as const])));", replace: "  const rows = new Map(bodyRows(doc, failed).flatMap((r, i, all) => (bodyHidden(doc, bodyIdOf(r.feature.id)) ? [] : [[r.id, bodyIdOf(all[(i + 1) % all.length].feature.id)] as const])));" }],
   },
   "failed-body-rows": {
     what: "a feature the kernel refused still gets a Body row (bug hunt 2026-10-19, finding 5)",
     expect: "Bodies group matches the file",
-    edits: [{ file: "workspaces/design/src/browser.ts", find: "(failed.has(f.id) ? [] :", replace: "(false ? [] :" }],
+    edits: [{ file: "workspaces/design/src/browser.ts", find: "return failed.has(f.id) ? [] :", replace: "return false ? [] :" }],
   },
   "top-bar-spills-on-phone": {
     what: "at phone width the top bar is wider than the window",

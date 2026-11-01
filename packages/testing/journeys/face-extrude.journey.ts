@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { BodyView, OfferedProfile } from "@fission/core";
-import { addSketch, BodyCache, changePreset, drawRectangle, FACE_WITH_HOLES, featureSpec, NO_SKETCH, partDocument, PICK_PROFILE_STATUS, rebuildTimeline, type DesignDocument } from "@fission/design";
+import { addSketch, BodyCache, builtBody, changePreset, drawRectangle, FACE_WITH_HOLES, featureSpec, NO_SKETCH, partDocument, PICK_PROFILE_STATUS, rebuildTimeline, type DesignDocument } from "@fission/design";
 import { app, kernel } from "./design-app.ts";
 
 type App = Awaited<ReturnType<typeof app>>;
@@ -42,8 +42,9 @@ async function built(doc: DesignDocument): Promise<Record<string, { volume: numb
     const out: Record<string, { volume: number; bounds: number[][] }> = {};
     for (const [id, r] of Object.entries(build.results)) {
       assert.ok(r.status !== "failed", `${id} builds: ${JSON.stringify(r)}`);
-      if (r.status === "built" && r.body !== undefined) {
-        const v = (await cache.view(r.body))!;
+      const b = builtBody(build, id);
+      if (b !== undefined) {
+        const v = (await cache.view(b.handle))!;
         out[id] = { volume: v.volume, bounds: v.bounds as number[][] };
       }
     }
@@ -247,7 +248,7 @@ test("regression: Extrude opened before the body is drawn (a slow kernel after a
 });
 
 test("with nothing to extrude the panel says so: an empty design, and a sphere alone (no flat face, no sketch)", async () => {
-  const empty: DesignDocument = { version: 4, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
+  const empty: DesignDocument = { version: 5, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } };
   const a = await app(empty);
   await openExtrude(a);
   assert.equal(a.$("#extrude-status")!.textContent, NO_SKETCH);

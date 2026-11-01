@@ -63,7 +63,7 @@ DOCS_NAME = "CLAUDE.md"
 # fails once a Coming soon tool's step is ticked, so a pull request that only
 # ticks one must run npm test. test_ci_mode.py scans the repo's code for
 # quoted docs/ paths, so a new reader fails there until it is listed here.
-READ_BY_CODE = ("docs/roadmap.md", "docs/progress/cad.md")
+READ_BY_CODE = ("docs/roadmap.md", "docs/progress/cad.md", "docs/project-format.md")
 
 
 def is_docs(path):

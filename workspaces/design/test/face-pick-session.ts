@@ -114,7 +114,7 @@ function sceneOf(bodies: readonly SessionBody[]): Scene {
   const shown = bodies.map((b, i) => {
     faceStart.push(f);
     f += b.view.faces;
-    return { feature: b.feature, place: i + 1, view: b.view, names: Naming.nameBody(b.feature, b.view, (_, piece) => b.curves[piece] ?? null) };
+    return { feature: b.feature, body: `body:${b.feature}`, place: i + 1, view: b.view, names: Naming.nameBody(b.feature, b.view, (_, piece) => b.curves[piece] ?? null) };
   });
   return { bodies: shown, mesh: { positions: [], normals: [], indices: [], triangle_faces: [], edge_lines: [], edge_line_edges: [] }, faceStart, edgeStart: bodies.map(() => 0) };
 }

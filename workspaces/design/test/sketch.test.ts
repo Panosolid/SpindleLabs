@@ -184,25 +184,25 @@ test("drawing a line changes the sketch in the graph, not the part", () => {
 
 const REAL_V1 = readFileSync(new URL("./files/v1-bracket.fission.json", import.meta.url), "utf8");
 
-test("a real version 1 file (saved by the SpindleLabs before 21b) opens as version 4, and saves and reopens unchanged", () => {
+test("a real version 1 file (saved by the SpindleLabs before 21b) opens as version 6, and saves and reopens unchanged", () => {
   // v1-bracket.fission.json was saved by main before this step: an
   // L-bracket 40 × 30 extruded 20. Its ids are profile-1 and feature-1, so
   // the counter starts at 2; there are no sketches; its one solid feature
   // is not suppressed by the step to version 3; its old name "Feature 1
   // (extrude)" becomes the first L-bracket's short name, "L-bracket 1", on
-  // the step to version 4 (U0e);
-  // nothing else changes.
+  // the step to version 4 (U0e); its one body is Body 1 on the step to
+  // version 5 (35e), the counter at 2; nothing else changes.
   const v1 = JSON.parse(REAL_V1).workspaces.design;
   assert.equal(v1.version, 1);
   assert.equal(v1.timeline.features[0].provenance.self.label, "Feature 1 (extrude)");
   const p = projectFromJson(REAL_V1, DESIGN);
   const doc = p.workspaces.design as DesignDocument;
   v1.timeline.features[0].provenance.self.label = "L-bracket 1";
-  assert.deepEqual(doc, { ...v1, version: 4, nextId: 2, sketches: [] });
+  assert.deepEqual(doc, { ...v1, version: 6, nextId: 2, sketches: [], bodies: [{ id: "body:feature-1", number: 1 }], nextBody: 2 });
   assert.deepEqual(partOf(doc), { shape: "l-bracket", sizes: { width: 40, depth: 30, height: 20 } });
-  // Saved, it is version 4; opened and saved again, byte-identical.
+  // Saved, it is version 6; opened and saved again, byte-identical.
   const saved = projectToJson(p);
-  assert.equal(JSON.parse(saved).workspaces.design.version, 4);
+  assert.equal(JSON.parse(saved).workspaces.design.version, 6);
   assert.equal(projectToJson(projectFromJson(saved, DESIGN)), saved);
 });
 
@@ -246,7 +246,7 @@ test("a file with sketches that breaks a rule is refused when it is opened, each
   ];
   for (const [edit, message] of cases) assert.throws(broken(edit), message);
   // Every item a sketch is no longer refused (24f4): a design with no body, opened as one.
-  const sketchesOnly = broken((d) => d.timeline.features.shift())();
+  const sketchesOnly = broken((d) => (d.timeline.features.shift(), (d.bodies = [])))();
   assert.deepEqual(sketchesOnly.timeline.features.map((f) => f.id), ["sketch-2"]);
   assert.equal(partOf(sketchesOnly), null);
 });

@@ -38,7 +38,7 @@ function meshFor(faces: number, edges: number): DisplayMesh {
 
 const shown = (feature: string, place: number, view: BodyView, volume: number): ShownBody => {
   const v = { ...view, volume, mesh: meshFor(view.faces, view.edges) };
-  return { feature, place, view: v, names: nameBody(feature, v, () => null) };
+  return { feature, body: `body:${feature}`, place, view: v, names: nameBody(feature, v, () => null) };
 };
 
 // Ben's design: the cylinder preset ⌀40 × 20 (feature-1): π · 20² · 20 =
@@ -62,7 +62,7 @@ const solid = (id: string, summary: string, suppressed = false): Feature => ({
   suppressed,
 });
 const doc: DesignDocument = {
-  version: 4,
+  version: 5,
   nextId: 100,
   sketches: [],
   profiles: [],
@@ -74,25 +74,25 @@ const focusOf = (items: Parameters<typeof panelFocus>[0], s: typeof scene | null
 
 test("the panel describes the selected body, not always the last one", () => {
   // Body 1 selected: the big cylinder's 8000π, not the last body's.
-  assert.equal(panelFocus([bodyReference("feature-1")], scene, doc)?.body?.view.volume, 8000 * Math.PI);
-  assert.equal(panelFocus([bodyReference("feature-1")], scene, doc)?.feature, featureOf("feature-1"));
-  assert.equal(panelFocus([bodyReference("feature-5")], scene, doc)?.body?.place, 2);
-  assert.equal(panelFocus([bodyReference("feature-12")], scene, doc)?.body?.view.volume, 3600);
+  assert.equal(panelFocus([bodyReference("body:feature-1")], scene, doc)?.body?.view.volume, 8000 * Math.PI);
+  assert.equal(panelFocus([bodyReference("body:feature-1")], scene, doc)?.feature, featureOf("feature-1"));
+  assert.equal(panelFocus([bodyReference("body:feature-5")], scene, doc)?.body?.place, 2);
+  assert.equal(panelFocus([bodyReference("body:feature-12")], scene, doc)?.body?.view.volume, 3600);
   // A face or an edge selected: the body it is on (the small cylinder's top, the block's edge 0).
   assert.deepEqual(focusOf([designReference("face", small.names, 1)!], scene), ["feature-5", 2]);
   assert.deepEqual(focusOf([designReference("edge", block.names, 0)!], scene), ["feature-12", 3]);
   // Several selected: the newest item's body (Body 1 then the small top → Body 2; the other way → Body 1).
-  assert.deepEqual(focusOf([bodyReference("feature-1"), designReference("face", small.names, 1)!], scene), ["feature-5", 2]);
-  assert.deepEqual(focusOf([designReference("face", small.names, 1)!, bodyReference("feature-1")], scene), ["feature-1", 1]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-1"), designReference("face", small.names, 1)!], scene), ["feature-5", 2]);
+  assert.deepEqual(focusOf([designReference("face", small.names, 1)!, bodyReference("body:feature-1")], scene), ["feature-1", 1]);
   // A feature the design no longer has, or a profile, after it: passed over, the newest item naming one of its features counts.
-  assert.deepEqual(focusOf([bodyReference("feature-5"), bodyReference("feature-404"), profileReference("profile-1")], scene), ["feature-5", 2]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-5"), bodyReference("body:feature-404"), profileReference("profile-1")], scene), ["feature-5", 2]);
 });
 
 test("with nothing naming a feature selected, the panel describes the part, as before", () => {
   // The part is the last solid feature that builds: feature-12, Body 3.
   assert.deepEqual(focusOf([], scene), ["feature-12", 3]);
   assert.deepEqual(focusOf([profileReference("profile-1")], scene), ["feature-12", 3]);
-  assert.deepEqual(focusOf([bodyReference("feature-404")], scene), ["feature-12", 3]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-404")], scene), ["feature-12", 3]);
   // Before any rebuild has drawn it: the part, with no body yet.
   assert.deepEqual(focusOf([], null), ["feature-12", null]);
   // Nothing builds (every solid suppressed): nothing to describe.
@@ -107,7 +107,7 @@ test("the selection, the highlight and the panel agree on each body", () => {
     [small, [3, 4, 5]],
     [block, [6, 7, 8, 9, 10, 11]],
   ] as const) {
-    const items = [bodyReference(b.feature)];
+    const items = [bodyReference(b.body)];
     assert.deepEqual(highlightOf(items, scene).faces, faces);
     assert.equal(selectionRows(items, scene)[0].name, `Body ${b.place}`);
     assert.equal(panelFocus(items, scene, doc)?.body, scene.bodies[b.place - 1]);
@@ -117,10 +117,10 @@ test("the selection, the highlight and the panel agree on each body", () => {
 test("a body is named by the browser's number for it, even when one before it did not build", () => {
   // Body 2 (feature-5) failed: the scene shows Body 1 and Body 3, so the block is the scene's second body but still Body 3.
   const gap = joinBodies([big, block]);
-  assert.deepEqual(selectionRows([bodyReference("feature-12")], gap), [{ name: "Body 3", type: "solid", id: "body:feature-12" }]);
-  assert.deepEqual(focusOf([bodyReference("feature-12")], gap), ["feature-12", 3]);
+  assert.deepEqual(selectionRows([bodyReference("body:feature-12")], gap), [{ name: "Body 3", type: "solid", id: "body:feature-12" }]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-12")], gap), ["feature-12", 3]);
   assert.deepEqual(focusOf([], gap), ["feature-12", 3]);
-  assert.deepEqual(highlightOf([bodyReference("feature-12")], gap).faces, [3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(highlightOf([bodyReference("body:feature-12")], gap).faces, [3, 4, 5, 6, 7, 8]);
 });
 
 test("finding 5: a feature that failed has no Body row, and its Timeline row selects nothing", () => {
@@ -157,14 +157,14 @@ test("finding 5: a selected body that did not build is described as having none,
   // The bug hunt's case: the box (Body 1) failed, Extrude 1 (Body 2) built; Body 1 selected.
   // Before the fix the panel described the last body shown, Extrude 1, with its 1,000 mm³.
   const onlySecond = joinBodies([small]);
-  assert.deepEqual(focusOf([bodyReference("feature-1")], onlySecond), ["feature-1", null]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-1")], onlySecond), ["feature-1", null]);
   // A face of it, kept in the selection from before it failed: the same.
   assert.deepEqual(focusOf([designReference("face", big.names, 0)!], onlySecond), ["feature-1", null]);
   // Selected after a body that is shown: the newest item counts, even when it has no body.
-  assert.deepEqual(focusOf([bodyReference("feature-5"), bodyReference("feature-1")], onlySecond), ["feature-1", null]);
-  assert.deepEqual(focusOf([bodyReference("feature-1"), bodyReference("feature-5")], onlySecond), ["feature-5", 2]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-5"), bodyReference("body:feature-1")], onlySecond), ["feature-1", null]);
+  assert.deepEqual(focusOf([bodyReference("body:feature-1"), bodyReference("body:feature-5")], onlySecond), ["feature-5", 2]);
   // The part failed (feature-12 has no body shown): with nothing selected the panel describes the part, with no body, not Body 2.
   assert.deepEqual(focusOf([], onlySecond), ["feature-12", null]);
   // And the selection list says the failed body is not on the current bodies.
-  assert.deepEqual(selectionRows([bodyReference("feature-1")], onlySecond), [{ name: "Body", type: "not on the current body", id: "body:feature-1" }]);
+  assert.deepEqual(selectionRows([bodyReference("body:feature-1")], onlySecond), [{ name: "Body", type: "not on the current body", id: "body:feature-1" }]);
 });

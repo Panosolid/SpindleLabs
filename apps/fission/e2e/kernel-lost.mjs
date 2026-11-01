@@ -9,10 +9,14 @@
 // the browser reopens with it.
 // The faults are planted in the real worker (Playwright's worker handle):
 // its next body build is never answered (stuck), closes the worker (gone),
-// or throws outside any call (crashed). The kernel's deadline is cut from a
-// minute to 3 s (?kernel-deadline, main.ts). A stuck kernel that sticks
-// again in every fresh worker (the page drops what it sends) is healed at
-// most three times, then the design says so in words and stays editable.
+// or throws outside any call (crashed). The floor of each call's time limit
+// is cut from 10 s to 3 s (?kernel-deadline, main.ts; a box's own limit is
+// under it). From 35d4 a build stuck past its limit fails its item with
+// "took too long" and a Retry on its row (retry-row.mjs) rather than being
+// asked again of the fresh kernel (a worker the browser closed fires no
+// event, so it is past its limit too, and waits for Retry the same way): a build that sticks in every fresh
+// worker (the page drops what it sends) stops one kernel, not four, the
+// design says so in words and stays editable.
 // 1280 px; run with `npm run e2e` (after `npm run build`).
 import assert from "node:assert/strict";
 import { launch, untilBodies } from "./browser.mjs";
@@ -21,7 +25,7 @@ import { pinProperties } from "./properties.mjs";
 import { startWithBox } from "./start.mjs";
 
 const DEADLINE_MS = 3000;
-const NOT_ANSWERING = "The geometry kernel stopped answering, so it was started again."; // packages/core/src/kernel/kernel-client.ts
+const TOOK_TOO_LONG = "This took the geometry kernel too long, so it was stopped and started again."; // packages/core/src/kernel/kernel-client.ts
 const site = await liveSite(4247);
 const browser = await launch();
 let failed = false;
@@ -103,6 +107,15 @@ for (const mode of ["stuck", "gone", "crashed"]) {
     await plant(p, mode);
     // The 40 × 30 × 20 box made 50 wide: 50 · 30 · 20 = 30,000 mm³ (it was 24,000).
     await p.fill("#width", "50");
+    if (mode !== "crashed") {
+      // 35d4: a call never answered (stuck, or a worker the browser closed: no event, so it looks the same) is past its
+      // limit: Box 1 fails with "took too long" and is not asked again by itself; its Retry builds it on the fresh kernel.
+      await until(p, () => document.querySelector('#browser .retry-row[data-retry="feature-1"]') !== null);
+      await rebuilt(p);
+      assert.deepEqual(await red(p), ["feature-1"]);
+      await p.click('#browser details[data-node="timeline"] > summary'); // the Timeline folder starts folded
+      await p.click('#browser .retry-row[data-retry="feature-1"]');
+    }
     await until(p, () => document.querySelector("#volume")?.textContent === "30,000 mm³");
     await rebuilt(p);
     assert.equal(p.workers.length, made + 1, "one fresh kernel");
@@ -123,17 +136,18 @@ for (const mode of ["stuck", "gone", "crashed"]) {
   });
 }
 
-await check("a kernel that sticks on the same build in every fresh kernel is healed at most three times, then says so; the design stays editable", async () => {
+await check("a build that sticks in every fresh kernel stops one kernel, not every fresh one in turn, then says so; the design stays editable", async () => {
   // Only the 50 wide box sticks: 50 · 30 · 20.
   const p = await page((r) => r.op === "body_build" && r.args[0]?.box?.width === 50);
   await p.fill("#width", "50");
-  // The edit's own try and three heals, each a deadline: then the words, not "rebuilding" for good.
-  await until(p, () => window.stuckWorkers === 4, null, DEADLINE_MS * 8);
+  // The edit's own try, one deadline: then the words, not "rebuilding" for good, and no heal asks for it again (35d4).
+  await until(p, () => window.stuckWorkers === 1, null, DEADLINE_MS * 4);
   await rebuilt(p);
-  await p.waitForTimeout(DEADLINE_MS * 1.5); // no fifth try starts by itself
-  assert.equal(await p.evaluate(() => window.stuckWorkers), 4, "healed three times, then left");
+  await p.waitForTimeout(DEADLINE_MS * 1.5); // no second try starts by itself
+  assert.equal(await p.evaluate(() => window.stuckWorkers), 1, "one kernel stopped, the fresh one never asked for it");
+  assert.deepEqual(await red(p), ["feature-1"]);
   const words = await panel(p);
-  assert.ok(words.includes(NOT_ANSWERING), `the panel says what happened: ${words.slice(-300)}`);
+  assert.ok(words.includes(`Box 1 took too long: ${TOOK_TOO_LONG}`), `the panel says what happened: ${words.slice(-300)}`);
   // An edit that doesn't stick builds on the fresh kernel: 45 · 30 · 20 = 27,000 mm³.
   await p.fill("#width", "45");
   await until(p, () => document.querySelector("#volume")?.textContent === "27,000 mm³", null, 5000);

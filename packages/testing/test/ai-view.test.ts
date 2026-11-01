@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Command } from "@fission/core";
-import { designAIView, documentFor, partDocument, SHAPES, type DesignDocument } from "@fission/design";
+import { designAIView, documentFor, numberBodies, partDocument, SHAPES, type DesignDocument } from "@fission/design";
 import { buildModel, timelineEdits } from "../src/project-fuzz.ts";
 import { seeded } from "../src/index.ts";
 
@@ -33,7 +33,7 @@ function suppressedUnder(d: DesignDocument, id: string): string | null {
 }
 
 test("seeded: on 300 random timelines the AI is told each item's state, and set_part does what it is told it does", () => {
-  const reached = { change: 0, addStart: 0, addMiddle: 0, addEnd: 0, noBody: 0, suppressed: 0, afterMarker: 0, failed: 0, greyed: 0, greyedSketch: 0, kept: 0, sketch: 0 };
+  const reached = { change: 0, addStart: 0, addMiddle: 0, addEnd: 0, noBody: 0, suppressed: 0, afterMarker: 0, failed: 0, greyed: 0, greyedSketch: 0, kept: 0, sketch: 0, renumbered: 0 };
   for (let seed = 1n; seed <= 300n; seed++) {
     const r = seeded(seed);
     const doc = timelineEdits(r, partDocument("box", 40, 30, 20));
@@ -50,7 +50,10 @@ test("seeded: on 300 random timelines the AI is told each item's state, and set_
     assert.equal(view.setup.length, adds ? 0 : 1, where);
     // Each item: its number, its summary, then its state from the model.
     assert.equal(view.notes[0], "The design's timeline, in build order:", where);
-    let body = 0;
+    // Each body is called by the number the document gives it (35ea: given by the edit that made it, never reused),
+    // the one its browser row shows; until 35eb this counted the bodies that build, which a delete or suppress shifts.
+    const numbers = new Map(numberBodies(doc).bodies!.map((b) => [b.id, b.number]));
+    let nth = 0;
     for (const [i, f] of items.entries()) {
       const line = view.notes[i + 1];
       const head = `${i + 1}. ${f.intent.summary}. `;
@@ -65,7 +68,8 @@ test("seeded: on 300 random timelines the AI is told each item's state, and set_
         else (reached.sketch++, assert.equal(state, "A sketch: builds no body.", where));
       }
       else if (building.has(f.id)) {
-        body++;
+        const body = numbers.get(`body:${f.id}`);
+        if (body !== ++nth) reached.renumbered++; // a body whose number is not its place: what a count by place gets wrong
         const kept = doc.kept !== undefined && Object.hasOwn(doc.kept, f.id);
         reached.kept += kept ? 1 : 0;
         const part = f.id === model.part && !adds;

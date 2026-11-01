@@ -36,7 +36,7 @@ const shifted = (v: BodyView, d: [number, number, number]): BodyView => {
 /** Two bodies shown, in build order. */
 const twoBodies = (a: BodyView, an: BodyNames, b: BodyView, bn: BodyNames): Scene => {
   const one = onlyBody(a, an);
-  return { ...one, bodies: [...one.bodies, { feature: bn.feature, place: 2, view: b, names: bn }], faceStart: [0, a.face_roles.length], edgeStart: [0, a.edge_faces.length] };
+  return { ...one, bodies: [...one.bodies, { feature: bn.feature, body: `body:${bn.feature}`, place: 2, view: b, names: bn }], faceStart: [0, a.face_roles.length], edgeStart: [0, a.edge_faces.length] };
 };
 
 test("hand-worked: a point in the sketch is its offset from the frame's origin along x and along normal × x", () => {

@@ -53,7 +53,7 @@ const workspaces: WorkspacePlugin[] = [
 
 // The browser test of a kernel lost mid-call (e2e/kernel-lost.mjs) shortens its deadline with ?test-hooks&kernel-deadline=<ms>.
 const hooks = new URLSearchParams(location.search);
-const kernel = new KernelClient({ answerWithinMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
+const kernel = new KernelClient({ floorMs: (hooks.has("test-hooks") && Number(hooks.get("kernel-deadline"))) || undefined });
 // The kernel's files missing (a deploy since this page loaded, or the network): say which, and recover (kernel-lost.ts).
 watchKernel(kernel);
 // Opened on a build a deploy has replaced (kept by the browser): open the new one before the user starts (kernel-lost.ts).
@@ -559,7 +559,10 @@ function askBeforeLeaving(e: BeforeUnloadEvent) {
   e.preventDefault();
   e.returnValue = ""; // older browsers ask only when this is set
 }
+/** What the save mark says now: put back when an opened file is abandoned before it was kept (issue #247). */
+let shownStatus: AutosaveStatus = { state: "saved" };
 const saveStatus = (s: AutosaveStatus) => {
+  shownStatus = s;
   const el = $("save-status");
   el.dataset.state = s.state; // read by the e2e test
   el.textContent = s.state === "saving" ? "Saving…" : s.state === "saved" ? "Saved" : `Not saved: ${s.message}`;
@@ -683,9 +686,14 @@ function openProject(text: string, fileName = "") {
   fileStatus("");
   replaceProject(project);
   openedName = fileName.replace(/(\.spindlelabs)?\.json$/i, ""); // Save's own ending (.spindle) it takes off itself
+  // Not kept until it has shown: until then the mark says "Saving…" and leaving asks first. It said "Saved" (the last
+  // project's mark), and a reload in that moment quietly brought the last project back instead (issue #247).
+  statusBeforeOpening ??= shownStatus; // a file opened while another was still opening: the mark from before both
+  if (canKeep) saveStatus({ state: "saving" });
   const ticket = whileOpening(OPENING_FILE, () =>
     void copy.then((found) => {
       if (ticket !== openings) return; // another opening, or Start fresh, since
+      statusBeforeOpening = null;
       // Its first save writes it (so it is the project a reload opens), checking no other tab changed the copy since.
       openedFile = true;
       keep(found?.id ?? newId(), false, found?.modified ?? null);
@@ -702,6 +710,8 @@ function openProject(text: string, fileName = "") {
 const OFFER_MS = 1500;
 const OPENING_LAST = "Opening the last project…";
 const OPENING_FILE = "Opening the project…";
+/** The save mark from before a file began opening, while one is opening and not yet kept (null otherwise). */
+let statusBeforeOpening: AutosaveStatus | null = null;
 /** Counts openings: Start fresh, or another opening, ends the wait for the one before. */
 let openings = 0;
 /** What is being opened while the offer stands. */
@@ -740,6 +750,9 @@ $("opening-fresh").addEventListener("click", () => {
   guard.finished(); // the last project didn't freeze the tab: the next visit opens it as before
   keepOnFirstChange(); // first: the last project's autosave must not store the new one over it
   replaceProject(emptyProject());
+  // The file is never kept: the mark says again what it said for the last project, kept as it was.
+  if (statusBeforeOpening !== null) saveStatus(statusBeforeOpening);
+  statusBeforeOpening = null;
   fileStatus(
     was === OPENING_LAST
       ? "Started a new project instead. The last one is still kept in this browser: reload the page, before changing anything, to try it again."

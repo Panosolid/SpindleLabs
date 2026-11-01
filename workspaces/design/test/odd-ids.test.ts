@@ -16,7 +16,7 @@ import { BodyCache, rebuildTimeline } from "../src/rebuild.ts";
 function design(boxId: string, sketchId = "sketch-1"): DesignDocument {
   const item = (id: string, type: string, parameters: Record<string, unknown>) => ({ id, intent: { type, parameters, summary: type }, provenance: { self: { workspace: "design" as const, id, label: type }, from: [] }, dependsOn: [], suppressed: false });
   return {
-    version: 4,
+    version: 5,
     nextId: 10,
     profiles: [],
     sketches: [{ id: sketchId, points: [], curves: [], constraints: [] }],
@@ -61,7 +61,9 @@ test("an id that got past the reader is still an entry in the rebuild's results,
   const build = await rebuildTimeline(design("__proto__"), cache, kernel);
   assert.deepEqual(build.order, ["sketch-1", "__proto__"]);
   assert.ok(Object.hasOwn(build.results, "__proto__"), "an own entry, not the prototype");
-  assert.deepEqual(build.results["__proto__"], { status: "built", body: 1, spec: { box: { width: 1, depth: 2, height: 3 } } });
+  assert.deepEqual(build.results["__proto__"], { status: "built", bodies: ["body:__proto__"] });
+  assert.ok(Object.hasOwn(build.bodies, "body:__proto__"));
+  assert.deepEqual(build.bodies["body:__proto__"], { feature: "__proto__", handle: 1, spec: { box: { width: 1, depth: 2, height: 3 } } });
   assert.deepEqual(Object.keys(build.results), ["sketch-1", "__proto__"]);
   assert.deepEqual(freed, [], "the box's body is kept, not freed as unused");
   assert.equal(cache.size, 1);

@@ -12,16 +12,17 @@ import { inSketch } from "../src/face-edges.ts";
 import { documentFor } from "../src/commands.ts";
 import { extrudeSketch } from "../src/extrude.ts";
 import { insertPreset, partDocument, type DesignDocument } from "../src/document.ts";
-import { moveMarker, suppressItem } from "../src/timeline-edits.ts";
+import { deleteItem, moveMarker, suppressItem } from "../src/timeline-edits.ts";
+import { bodyRows } from "../src/browser.ts";
 
 /**
  * The seven-item timeline of timeline-verbs.test.ts, by Design's own edits:
  *   1 feature-1   Box 40 × 30 × 20                Body 1
  *   2 sketch-2    Sketch 1: a 40 × 30 rectangle
  *   3 feature-11  Extrude 1: Sketch 1 by 10       Body 2
- *   4 feature-12  Cylinder ⌀20 × 5, suppressed
+ *   4 feature-12  Cylinder ⌀20 × 5, suppressed   (Body 3, kept while suppressed)
  *   5 sketch-13   Sketch 2: one line
- *   6 feature-17  Slot 60 × 20 by 5               Body 3, the marker on it
+ *   6 feature-17  Slot 60 × 20 by 5               Body 4, the marker on it
  *   7 feature-19  Sphere ⌀10, after the marker
  */
 function timeline(): DesignDocument {
@@ -68,7 +69,8 @@ test("hand-worked: the marker on a preset, so set_part changes it in place, and 
     `${EXTRUDE1} Builds Body 2.`,
     `${CYLINDER} Suppressed: builds nothing.`,
     `${SKETCH2} A sketch: builds no body.`,
-    `${SLOT} Builds Body 3. This is the part set_part changes.`,
+    // Body 4, as its browser row says: the suppressed cylinder keeps number 3 (35ea; until 35eb this said Body 3, its place among the bodies that build).
+    `${SLOT} Builds Body 4. This is the part set_part changes.`,
     `${SPHERE} After the timeline marker: not built.`,
     "The timeline marker is after item 6: items after it are not built.",
     "set_part changes the part in place, unless extrude_sketch comes before it in the same answer: the extruded body is then the part, so set_part adds a new body after it.",
@@ -135,8 +137,8 @@ test("hand-worked: a suppressed sketch greys its extrude from the data (26e), an
   const suppressed = designAIView(suppressItem(doc, "sketch-2", true), NONE, sizes);
   assert.equal(suppressed.notes[2], `${SKETCH1} Suppressed: builds nothing.`);
   assert.equal(suppressed.notes[3], `${EXTRUDE1} Greyed: builds nothing while Sketch 1, which it is built on, is suppressed.`);
-  // Bodies keep counting only what builds: the slot is Body 2 now.
-  assert.equal(suppressed.notes[6], `${SLOT} Builds Body 2. This is the part set_part changes.`);
+  // The slot keeps its own number, 4, as its browser row does (35ea; until 35eb this said Body 2, counting only what builds).
+  assert.equal(suppressed.notes[6], `${SLOT} Builds Body 4. This is the part set_part changes.`);
   // Sketch 1 deleted with its shape kept (24d2): Extrude 1 still builds, from the kept shape. Items renumber.
   const sketch = doc.sketches.find((x) => x.id === "sketch-2")!;
   const lost: DesignDocument = {
@@ -292,4 +294,21 @@ test("hand-worked: rename_item is offered, naming the items only when there are 
   assert.deepEqual([long.values.length, long.values[0], long.values.at(-1)], [AI_TIMELINE_ITEMS, "Sketch 4", `Sketch ${AI_TIMELINE_ITEMS + 3}`]);
   assert.ok(view.notes.includes(RENAME_NOTE));
   assert.ok(designAIView(undefined, new Set(), { width: 40, depth: 30, height: 20 }).notes.includes(RENAME_NOTE));
+});
+
+test("regression (35eb check): each body is called by the number its browser row shows, never by its place among the bodies", () => {
+  // Three boxes, numbered by the edits that made them: Box 1 → Body 1, Box 2 → Body 2, Box 3 → Body 3 (35ea).
+  // Deleting Box 1 never gives its number again, so the browser now shows "Body 2" and "Body 3"; counting
+  // the bodies by place would call them Body 1 and Body 2, and "move Body 2" would mean the wrong box.
+  const three = insertPreset(insertPreset(partDocument("box", 40, 30, 20), "box", 10, 10, 10).doc, "box", 5, 5, 5).doc;
+  const gone = deleteItem(three, "feature-1");
+  assert.deepEqual(bodyRows(gone, NONE).map((r) => r.id), ["body-2", "body-3"], "the browser's numbers");
+  const v = designAIView(gone, NONE, { width: 5, depth: 5, height: 5 });
+  assert.equal(v.notes[1], "1. Box: 10 × 10 × 10 mm. Builds Body 2.");
+  assert.equal(v.notes[2], "2. Box: 5 × 5 × 5 mm. Builds Body 3. This is the part set_part changes.");
+  // A suppressed body keeps its number too (its row is greyed, not renumbered): the slot of `timeline()` is
+  // made fourth (box, Extrude 1, cylinder, slot), so it is Body 4 with Sketch 1 suppressed as without.
+  const suppressed = designAIView(suppressItem(doc, "sketch-2", true), NONE, sizes);
+  assert.equal(suppressed.notes[6], `${SLOT} Builds Body 4. This is the part set_part changes.`);
+  assert.deepEqual(bodyRows(suppressItem(doc, "sketch-2", true), NONE).map((r) => r.id), ["body-1", "body-4"]);
 });

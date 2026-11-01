@@ -7,7 +7,9 @@
 // Plain G-code for another printer saves the same layers. Other choices
 // change the file's name and its layers (0.16 mm: the first layer 0.2 mm,
 // then (20 − 0.2) / 0.16 = 123.75, so 124 more: 125). At a desktop width
-// with clicks and a phone's with taps.
+// with clicks and a phone's with taps. The warm-up loop's tick box: on by
+// default (the loop on the first layer, before the part), off saves a file
+// without it, named so, and is remembered.
 // Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -33,8 +35,8 @@ async function check(name, fn) {
   }
 }
 
-async function fresh(width, tap) {
-  const context = await browser.newContext({ viewport: { width, height: tap ? 667 : 800 }, hasTouch: tap, isMobile: tap, acceptDownloads: true });
+async function fresh(width, tap, height = tap ? 667 : 800) {
+  const context = await browser.newContext({ viewport: { width, height }, hasTouch: tap, isMobile: tap, acceptDownloads: true });
   const page = await context.newPage();
   await page.addInitScript(() => indexedDB.deleteDatabase("fission"));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -73,7 +75,7 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     try {
       await chooseFile(page, "file-slice-print", tap);
       await page.waitForSelector("#slice-print-dialog[open]");
-      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "0.2", "2", "15", "off"], "the P1S's file and defaults");
+      assert.deepEqual(await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => s.value)), ["p1s", "textured", "standard", "0.2", "2", "15", "off"], "the P1S's file and defaults (the stock Standard nozzle)");
       assert.match(await page.textContent("#slice-print-untested"), /haven't been test-printed yet/);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-open.png` });
       // On the screen at phone width too.
@@ -88,13 +90,66 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       assert.equal(files.get("Metadata/plate_1.gcode.md5").toString("utf8"), createHash("md5").update(plate).digest("hex").toUpperCase(), "the MD5 the printer checks");
       assert.equal(layersIn(plate.toString("utf8")), 100, "20 mm / 0.2 mm");
       assert.match(files.get("Metadata/plate_1.json").toString("utf8"), /"bed_type":"textured_plate"/);
+      // Bambu Studio loads the settings (and so opens the file) only when the
+      // model names Bambu Studio and a version; Ben's 10-31 file was refused.
+      assert.match(files.get("3D/3dmodel.model").toString("utf8"), /<metadata name="Application">BambuStudio-\d+\.\d+\.\d+\.\d+<\/metadata>/, "the model names the maker Bambu Studio checks");
+      assert.match(files.get("Metadata/project_settings.config").toString("utf8"), /"printer_settings_id": "Bambu Lab P1S 0\.4 nozzle"/, "Bambu Studio's own P1S preset");
       await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
       assert.match(await page.textContent("#slice-print-status"), /^Saved spindlelabs-0\.2mm-2w-15pc-textured\.gcode\.3mf: 100 layers, /);
       if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-p1s.png` });
 
+      // The warm-up loop (G2, Ben 11-01: the first 10–30 s of the first layer didn't stick): ticked by default, so
+      // the P1S's file lays it first; the settings block Bambu Studio reads says two loops. Unticked, the file has none,
+      // its name says so, and the choice is kept for next time.
+      assert.equal(await page.$eval("#slice-print-warm-up", (c) => c.checked), true, "on by default");
+      // The box sits right beside its words (a stretched box once left them across the dialog).
+      const gap = await page.$eval("#slice-print-warm-up", (c) => {
+        const r = document.createRange();
+        r.selectNodeContents(c.parentElement.lastChild);
+        const box = c.getBoundingClientRect();
+        return { gap: r.getBoundingClientRect().left - box.right, width: box.width };
+      });
+      assert.ok(gap.width <= 20 && gap.gap >= 0 && gap.gap < 16, `the box ${gap.width} px wide, ${gap.gap} px from its words`);
+      const firstLayer = (g) => g.slice(g.indexOf(";LAYER_CHANGE"), g.indexOf(";LAYER_CHANGE", g.indexOf(";LAYER_CHANGE") + 1));
+      const onGcode = plate.toString("utf8");
+      assert.match(firstLayer(onGcode), /^;TYPE:Skirt$/m, "the loop on the first layer");
+      assert.ok(firstLayer(onGcode).indexOf(";TYPE:Skirt") < firstLayer(onGcode).search(/^;TYPE:(Outer|Inner) wall$/m), "before the part");
+      // Each loop is its own path with its own type line: two in the first layer, none after it.
+      assert.equal((firstLayer(onGcode).match(/^;TYPE:Skirt$/gm) ?? []).length, 2, "two loops");
+      assert.equal((onGcode.match(/^;TYPE:Skirt$/gm) ?? []).length, 2, "first layer only");
+      assert.match(onGcode, /^; skirt_loops = 2$/m, "the settings block Bambu Studio reads");
+      await press("#slice-print-warm-up");
+      assert.equal(await page.$eval("#slice-print-warm-up", (c) => c.checked), false);
+      const [bare] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      assert.equal(bare.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-no-warm-up-textured.gcode.3mf");
+      const bareFiles = storedZip(readFileSync(await bare.path()));
+      assert.doesNotMatch(bareFiles.get("Metadata/plate_1.gcode").toString("utf8"), /;TYPE:Skirt/, "no loop when unticked");
+      assert.match(bareFiles.get("Metadata/plate_1.gcode").toString("utf8"), /^; skirt_loops = 0$/m);
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.warm-up")), "off", "remembered");
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-no-warm-up.png` });
+      await press("#slice-print-warm-up");
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.warm-up")), "on");
+
+      // A High Flow nozzle (Ben's P1S): the file names it where Bambu Studio's send window reads it, and the
+      // G-code dialect, so its time reads the speed limits in mm/s; the name says so too.
+      await page.selectOption("#slice-print-nozzle", "high-flow");
+      const [hf] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
+      assert.equal(hf.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc-textured-high-flow.gcode.3mf");
+      const hfFiles = storedZip(readFileSync(await hf.path()));
+      const hfSettings = hfFiles.get("Metadata/project_settings.config").toString("utf8");
+      assert.match(hfSettings, /"nozzle_volume_type": \["High Flow"\]/);
+      assert.match(hfSettings, /"gcode_flavor": "marlin"/);
+      assert.match(files.get("Metadata/project_settings.config").toString("utf8"), /"nozzle_volume_type": \["Standard"\]/, "the first file was for the Standard nozzle");
+      await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved spindlelabs-0.2mm-2w-15pc-textured-high-flow"));
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-${width}-high-flow.png` });
+      // Remembered: a printer's nozzle rarely changes.
+      assert.equal(await page.evaluate(() => localStorage.getItem("spindlelabs.slice.nozzle")), "high-flow");
+      await page.selectOption("#slice-print-nozzle", "standard");
+
       // Plain G-code for another printer: the plate greys out.
       await page.selectOption("#slice-print-format", "gcode");
       assert.equal(await page.$eval("#slice-print-plate", (s) => s.disabled), true);
+      assert.equal(await page.$eval("#slice-print-nozzle", (s) => s.disabled), true, "the nozzle matters to the P1S's file only");
       const [file] = await Promise.all([page.waitForEvent("download"), press("#slice-print-go")]);
       assert.equal(file.suggestedFilename(), "spindlelabs-0.2mm-2w-15pc.gcode");
       const gcode = readFileSync(await file.path(), "utf8");
@@ -117,6 +172,71 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
     }
   });
 }
+
+// The dialog fits (Ben 10-31: on a laptop Supports was cut off and could not be reached; 470 px high, where the
+// old one-column dialog cut it, is the regression case). On a laptop-height
+// window every choice and button is on screen without scrolling; on a phone the buttons stay in view and
+// every choice can be scrolled to inside the dialog.
+for (const [width, height, tap] of [[1280, 650, false], [1366, 600, false], [1280, 470, false], [375, 667, true], [393, 852, true]]) {
+  await check(`${width} × ${height}${tap ? ", taps" : ""}: every choice of Slice for printing can be reached, the buttons always on screen`, async () => {
+    const page = await fresh(width, tap, height);
+    try {
+      await chooseFile(page, "file-slice-print", tap);
+      await page.waitForSelector("#slice-print-dialog[open]");
+      const ids = ["slice-print-format", "slice-print-plate", "slice-print-nozzle", "slice-print-quality", "slice-print-walls", "slice-print-infill", "slice-print-supports", "slice-print-warm-up", "slice-print-close", "slice-print-preview", "slice-print-go"];
+      /** Each control's box against the window and the dialog's visible area: the ids not wholly inside both. */
+      const hidden = () =>
+        page.evaluate((ids) => {
+          const d = document.getElementById("slice-print-dialog").getBoundingClientRect();
+          return ids.filter((id) => {
+            const r = document.getElementById(id).getBoundingClientRect();
+            return !(r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5 && r.left >= 0 && r.right <= innerWidth);
+          });
+        }, ids);
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-fit-${width}x${height}.png` });
+      // No list squashed to fit (the old dialog shrank Supports' list until its words were cut): all six the same height.
+      const heights = await page.$$eval("#slice-print-dialog select", (ss) => ss.map((s) => Math.round(s.getBoundingClientRect().height)));
+      assert.ok(heights.every((h) => Math.abs(h - heights[0]) <= 1), `list heights ${heights}`);
+      if (!tap) {
+        assert.deepEqual(await hidden(), [], "all on screen without scrolling");
+      } else {
+        // The buttons are always in view; each choice comes into view when the dialog scrolls to it.
+        for (const id of ids.slice(0, -3)) {
+          await page.$eval(`#${id}`, (e) => e.scrollIntoView({ block: "nearest" }));
+          const out = await hidden();
+          assert.ok(!out.includes(id), `${id} reachable: ${out}`);
+          assert.ok(!out.some((x) => x.startsWith("slice-print-") && ["slice-print-close", "slice-print-preview", "slice-print-go"].includes(x)), `buttons in view: ${out}`);
+        }
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
+// A window too short even for the compact dialog: the mouse wheel over it scrolls it until Supports is in view, the buttons staying put.
+await check("1280 × 420: the wheel scrolls the dialog to Supports, the buttons always on screen", async () => {
+  const page = await fresh(1280, false, 420);
+  try {
+    await chooseFile(page, "file-slice-print", false);
+    await page.waitForSelector("#slice-print-dialog[open]");
+    const box = await page.$eval("#slice-print-dialog", (d) => d.getBoundingClientRect().toJSON());
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 10; i++) await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(300);
+    const fits = (id) =>
+      page.$eval(`#${id}`, (e) => {
+        const r = e.getBoundingClientRect();
+        const d = e.closest("dialog").getBoundingClientRect();
+        return r.top >= Math.max(0, d.top) - 0.5 && r.bottom <= Math.min(innerHeight, d.bottom) + 0.5;
+      });
+    assert.ok(await fits("slice-print-supports"), "Supports scrolled into view");
+    assert.ok(await fits("slice-print-go"), "Slice and download still in view");
+    if (shots) await page.screenshot({ path: `${shots}/slice-print-fit-1280x420-scrolled.png` });
+  } finally {
+    await page.context().close();
+  }
+});
 
 await browser.close();
 await server.close();
