@@ -14,7 +14,8 @@
 // Styles: src/styles/delete-ask.css.
 
 import type { KernelCalls } from "@fission/core";
-import { isSketchExtrude, isSketchItem, type DesignDocument } from "./document.ts";
+import { bodyItem, isMoveItem, isSketchExtrude, isSketchItem, type DesignDocument } from "./document.ts";
+import { movedBodies } from "./move.ts";
 import { faceFeature, isFaceSketch } from "./face-sketch.ts";
 import { settleKept, type BodyCache } from "./rebuild.ts";
 import { deleteItem, itemName } from "./timeline-edits.ts";
@@ -64,13 +65,26 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
   const held = pins && projects ? "snapped points and projected edges" : projects ? "projected edges" : "snapped points";
   // 26e (Q1): what is built from a sketch that stays stays with it, saying its source is lost.
   const built = before.timeline.features.filter((f) => isSketchExtrude(f) && staying.some((s) => f.dependsOn.includes(s.id))).map(itemName);
-  const fails = users.map(itemName).filter((n) => !keeps.includes(n) && !stays.includes(n) && !holds.includes(n));
+  // A Move has no shape of its own: it fails, and moves all its bodies or none, so the others it moves go back (hunt 11-01).
+  const moving = users.filter(isMoveItem);
+  const moves = moving.map((m) => {
+    const others = [...new Set(movedBodies(m).map((b) => bodyItem(b)).filter((f) => f !== undefined && f !== id))].flatMap((f) => {
+      const other = before.timeline.features.find((x) => x.id === f);
+      return other ? [itemName(other)] : [];
+    });
+    return others.length === 0
+      ? `${itemName(m)} has nothing left to move and fails`
+      : `${itemName(m)} fails, so ${listWords(others)} ${others.length === 1 ? "goes" : "go"} back to where ${others.length === 1 ? "it was" : "they were"} before it`;
+  });
+  const movers = moving.map(itemName);
+  const fails = users.map(itemName).filter((n) => !keeps.includes(n) && !stays.includes(n) && !holds.includes(n) && !movers.includes(n));
   const one = (n: readonly unknown[]) => n.length === 1;
   const what = [
     ...(keeps.length > 0 ? [`${listWords(keeps)} ${one(keeps) ? "keeps its last shape and shows a warning" : "keep their last shapes and show a warning"}`] : []),
     ...(stays.length > 0 ? [`${listWords(stays)} ${one(stays) ? "stays where it is and shows its plane is lost" : "stay where they are and show their planes are lost"}`] : []),
     ...(built.length > 0 ? [`what is built from ${one(stays) ? "it" : "them"}, ${listWords(built)}, ${one(built) ? "stays where it is and shows its source is lost" : "stay where they are and show their sources are lost"}`] : []),
     ...(holds.length > 0 ? [`${listWords(holds)} ${one(holds) ? `keeps its ${held} where they are and shows they are lost` : `keep their ${held} where they are and show they are lost`}`] : []),
+    ...moves,
     ...(fails.length > 0 ? [`${listWords(fails)} ${one(fails) ? "has no shape to keep and fails" : "have no shapes to keep and fail"}`] : []),
   ].join(", and ");
   const on =
@@ -78,7 +92,11 @@ export function deleteWords(before: DesignDocument, after: DesignDocument, id: s
       ? one(users)
         ? "is drawn on a face of"
         : "are drawn on faces of"
-      : holds.length === users.length
+      : movers.length === users.length
+        ? one(users)
+          ? "is a move of"
+          : "are moves of"
+        : holds.length === users.length
         ? one(users)
           ? projects && !pins
             ? "projects an edge of"

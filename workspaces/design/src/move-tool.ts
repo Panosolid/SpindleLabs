@@ -44,6 +44,29 @@ export function startPivot(bodies: readonly string[], scene: Scene | null): Poin
   return boxCentre(boxes);
 }
 
+/**
+ * Where each of `bodies` (body ids) was just before Move `id`, for an
+ * edited Move's Centre of the bodies (hunt 11-01: the scene's bounds had
+ * this Move and every later one in them, so the pivot was where the bodies
+ * ended up and OK put them somewhere else): the body as the first built
+ * Move from `id` on that moves it holds it (a built Move holds its bodies
+ * as they were before it, rebuild.ts `moveBodies`, in its own order), else
+ * `null`, nothing from there on moves it, so the scene shows it as it was.
+ */
+export function heldBefore<H>(doc: DesignDocument, results: Readonly<Record<string, { status: string; holds?: readonly H[] }>>, id: string, bodies: readonly string[]): (H | null)[] {
+  const features = doc.timeline.features;
+  const at = features.findIndex((f) => f.id === id);
+  const moves = at < 0 ? [] : features.slice(at).filter((f) => isMoveItem(f) && results[f.id]?.status === "built");
+  return bodies.map((body) => {
+    for (const m of moves) {
+      const n = movedBodies(m).indexOf(body);
+      const held = results[m.id].holds?.[n];
+      if (n >= 0 && held !== undefined) return held;
+    }
+    return null;
+  });
+}
+
 const DEGREES = Math.PI / 180;
 
 /** `q` (relative to the pivot) turned `deg` degrees about axis `k`, counter-clockwise looking down it: about X y goes towards z, about Y z towards x, about Z x towards y. */
@@ -177,8 +200,9 @@ export function editedMoveMesh(scene: Scene, doc: DesignDocument, results: Reado
 
 /**
  * An edited Move's bodies as the picks change (35e2i): the bodies it holds
- * that `scene` doesn't show stay (a hidden, failed or deleted body can't be
- * clicked off), the shown ones are those `picked`, in timeline order. A
+ * that `scene` doesn't show stay (a hidden or failed body can't be clicked
+ * off) unless deleted (hunt 11-01: a deleted one, kept, failed every OK, so
+ * the Move could never build again), the shown ones are those `picked`, in timeline order. A
  * pick made after the Move can't be moved by it: it is left out and
  * `refused` says so (the first such pick), so the caller can let it go.
  */
@@ -190,7 +214,7 @@ export function editedBodies(doc: DesignDocument, id: string, held: readonly str
   const shownNow = new Set((scene?.bodies ?? []).map((b) => b.body));
   const place = (b: string) => features.findIndex((f) => f.id === bodyItem(b));
   const later = picked.filter((b) => place(b) > at);
-  const bodies = [...new Set([...held.filter((b) => !shownNow.has(b)), ...picked.filter((b) => !later.includes(b))])];
+  const bodies = [...new Set([...held.filter((b) => !shownNow.has(b) && place(b) >= 0), ...picked.filter((b) => !later.includes(b))])];
   bodies.sort((a, b) => place(a) - place(b));
   return { bodies, refused: later.length === 0 ? null : madeAfter(itemName(features[place(later[0])]), itemName(move)) };
 }
