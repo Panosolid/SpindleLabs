@@ -221,3 +221,13 @@ test("hiding a piece of an item that isn't there is refused by the hidden check,
   d.bodies[2].id = "body:feature-7/piece:1";
   refused(d, "Design data hides body:feature-7/piece:1, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
 });
+
+test("upgrading version 5: only solids' item ids become body ids; a hidden entry naming no item stays as written (catches the non-solid branch's [] made a list of one text)", () => {
+  const d = asV5(movedBox());
+  // The upgrade turns a hidden entry into a body id only when it is a solid item's id. The file holds a Move (feature-3),
+  // which is not a solid, so the non-solid branch runs; a mutant puts the text "Stryker was here" into the solids for it.
+  // Worked by hand: "Stryker was here" names no item, so the real upgrade keeps it as written and the hidden check
+  // refuses that text; the mutant would turn it into "body:Stryker was here" and refuse that instead.
+  d.hidden = ["Stryker was here"];
+  refused(d, "Design data hides Stryker was here, which is not a body (by its body id), a sketch in the timeline, an origin axis or a folder");
+});

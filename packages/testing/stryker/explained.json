@@ -991,13 +991,6 @@
     "mutator": "ArrayDeclaration",
     "original": "[]",
     "replacement": "[\"Stryker was here\"]",
-    "why": "migrateDesignV5's solids (issue #220): a sketch or Move adds the stand-in text to solids instead of nothing; a hidden entry is mapped only when it is in solids, and no item id or eye row is that text, so a real file maps the same entries."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[]",
-    "replacement": "[\"Stryker was here\"]",
     "why": "migrateDesignV5's hidden check (issue #220): data with no hidden list loops over the stand-in text instead of nothing; it is not a body id (bodyItem gives null), so nothing is refused, and the hidden list itself is left out as before."
   },
   {
