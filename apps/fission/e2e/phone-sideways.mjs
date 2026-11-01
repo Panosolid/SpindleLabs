@@ -16,7 +16,7 @@
 // 3. On a touch screen held sideways the Properties boxes' text is 16 px
 //    (smaller makes iOS Safari zoom in), and a new Move leaves the focus
 //    alone (no keyboard over the view).
-// 4. Slice for printing's Close is inside the dialog at 320 and 340 px.
+// 4. Slice for printing's Close is inside the dialog at 320, 340 and 375 px, its buttons within the status's scroll margin.
 // 5. At 393 × 852 the timeline's buttons, items and marker take a tap the
 //    row's whole height (40 px), buttons and items a little wider than they
 //    look; sideways they stay close to their width, since timeline.mjs needs
@@ -180,19 +180,25 @@ for (const [width, height] of [[852, 393], [667, 375]]) {
 }
 console.log("checked - sideways print preview: the Show card clear of the play bar, every choice tappable");
 
-// 4. Slice for printing at 320 and 340 px: every button inside the dialog's box.
-for (const width of [320, 340]) {
+// 4. Slice for printing at 320, 340 and 375 px: every button inside the dialog's box, and the sticky row of buttons no
+// taller than the status's scroll margin, so advice scrolled into view is never under them (the buttons wrapped onto two
+// rows, 122 px, under a 76 px margin: slice-print-fixes.mjs's floating part at 375 px, merge queue 11-01).
+for (const width of [320, 340, 375]) {
   const { page, context } = await open(width, 640);
   await chooseFile(page, "file-slice-print", true);
   await page.waitForSelector("#slice-print-dialog[open]");
-  const out = await page.$eval("#slice-print-dialog", (d) => {
+  const { out, bar, margin } = await page.$eval("#slice-print-dialog", (d) => {
     const box = d.getBoundingClientRect();
-    return [...d.querySelectorAll(".slice-print-actions button")].filter((b) => { const r = b.getBoundingClientRect(); return r.left < box.left || r.right > box.right; }).map((b) => b.id);
+    const out = [...d.querySelectorAll(".slice-print-actions button")].filter((b) => { const r = b.getBoundingClientRect(); return r.left < box.left || r.right > box.right; }).map((b) => b.id);
+    const bar = d.querySelector(".slice-print-actions").getBoundingClientRect().height;
+    const margin = parseFloat(getComputedStyle(d.querySelector("#slice-print-status")).scrollMarginBottom);
+    return { out, bar, margin };
   });
   check(out.length === 0, `${width} px: Slice for printing's buttons out of the dialog: ${out.join(", ")}`);
+  check(bar <= margin, `${width} px: Slice for printing's buttons ${bar} px tall, over the status's ${margin} px scroll margin`);
   await context.close();
 }
-console.log("checked - 320 and 340 px: Slice for printing's Close inside the dialog");
+console.log("checked - 320, 340 and 375 px: Slice for printing's Close inside the dialog, its buttons within the status's scroll margin");
 
 // 5 and 6. Upright: the timeline's tap areas, and pinch-proof bars.
 {
