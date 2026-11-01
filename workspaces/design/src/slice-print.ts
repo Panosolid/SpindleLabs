@@ -14,16 +14,21 @@ import type { SaveKind } from "@fission/ui";
 import type { DesignDocument } from "./document.ts";
 import { endSpec } from "./move-tool.ts";
 
-/** The beginner's choices: layer height (mm), walls, infill (%), and supports under overhangs (off, normal or tree). */
+/**
+ * The beginner's choices: layer height (mm), walls, infill (%), supports under overhangs (off, normal or tree), and the
+ * warm-up loop: two loops round the first layer, printed before the part, so the nozzle's first uneven plastic goes on
+ * a line peeled off afterwards instead of on the part (Ben 11-01: the first 10–30 s of a first layer did not stick).
+ */
 export interface PrintChoices {
   layerHeight: number;
   walls: number;
   infill: number;
   supports: SupportStyle;
+  warmUp: boolean;
 }
 
-/** The P1S's defaults for a 0.4 mm nozzle and PLA, as the engine's own (0.2 mm layers, 2 walls, 15 % infill, no supports). */
-export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: "off" };
+/** The P1S's defaults for a 0.4 mm nozzle and PLA, as the engine's own (0.2 mm layers, 2 walls, 15 % infill, no supports), with the warm-up loop on. */
+export const PRINT_DEFAULTS: PrintChoices = { layerHeight: 0.2, walls: 2, infill: 15, supports: "off", warmUp: true };
 
 /** Each choice's options, as the dialog lists them. */
 export const QUALITY_OPTIONS: readonly { label: string; value: number }[] = [
@@ -86,6 +91,18 @@ export function rememberedNozzle(storage: Pick<Storage, "getItem"> | null): Nozz
   }
 }
 
+/** Where the dialog keeps the warm-up loop's last setting (this browser only): turned off once, it stays off. */
+export const WARM_UP_KEY = "spindlelabs.slice.warm-up";
+
+/** The warm-up loop's last setting, or on (the default) when none was kept, the value is not ours, or storage is blocked. */
+export function rememberedWarmUp(storage: Pick<Storage, "getItem"> | null): boolean {
+  try {
+    return storage?.getItem(WARM_UP_KEY) !== "off";
+  } catch {
+    return PRINT_DEFAULTS.warmUp;
+  }
+}
+
 /** The P1S's print file, as the save box names it. */
 export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
 
@@ -118,13 +135,13 @@ async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: rea
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
 export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint> {
   const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports);
+  return kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, choices.warmUp);
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
 export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile> {
   const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle);
+  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle, choices.warmUp);
 }
 
 /**
@@ -187,7 +204,7 @@ export function refusalWords(message: string): string {
   return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
-/** The plain file's name: the layer height, the walls and infill and its supports, so two slices of one part never share a name. */
+/** The plain file's name: the layer height, the walls and infill, its supports and "no-warm-up" without the loop, so two slices of one part never share a name. */
 export function gcodeName(choices: PrintChoices, project?: string): string {
   return `${baseName(choices, project)}.gcode`;
 }
@@ -209,7 +226,7 @@ export const nameLead = (project?: string): string => {
   return name === "" || /^untitled$/i.test(name) ? "spindlelabs" : name;
 };
 
-const baseName = (choices: PrintChoices, project?: string) => `${nameLead(project)}-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}`;
+const baseName = (choices: PrintChoices, project?: string) => `${nameLead(project)}-${choices.layerHeight}mm-${choices.walls}w-${choices.infill}pc${SUPPORT_SUFFIX[choices.supports]}${choices.warmUp ? "" : "-no-warm-up"}`;
 
 /** Normal supports keep the name they had when supports were on or off. */
 const SUPPORT_SUFFIX: Record<SupportStyle, string> = { off: "", normal: "-supports", tree: "-tree-supports" };
@@ -328,6 +345,22 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   })();
   const nozzle = choice("slice-print-nozzle", "Nozzle", NOZZLE_OPTIONS, rememberedNozzle(storage));
   nozzle.wrap.title = "The nozzle on your P1S. Bambu Studio won't send a file made for the other kind (Standard is the one it comes with; High Flow is Bambu's faster hotend). Your choice is remembered.";
+  // The warm-up loop: a tick box, on unless turned off here before (remembered like the nozzle).
+  const warmUpWrap = document.createElement("label");
+  warmUpWrap.className = "slice-print-choice slice-print-check";
+  const warmUp = el("input", "slice-print-warm-up");
+  warmUp.type = "checkbox";
+  warmUp.checked = rememberedWarmUp(storage);
+  warmUpWrap.append(warmUp, document.createTextNode("Warm-up loop"));
+  warmUpWrap.title =
+    "Prints two loops round the part's first layer before the part, so the nozzle's first, uneven plastic goes on a line you peel off afterwards instead of on the part. Helps when the start of the first layer doesn't stick. Your choice is remembered.";
+  warmUp.addEventListener("change", () => {
+    try {
+      storage?.setItem(WARM_UP_KEY, warmUp.checked ? "on" : "off");
+    } catch {
+      // Storage blocked: the choice still holds for this dialog.
+    }
+  });
   nozzle.select.addEventListener("change", () => {
     try {
       storage?.setItem(NOZZLE_KEY, nozzle.select.value);
@@ -357,7 +390,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   // The choices in one block: two columns where there is room, so the dialog fits a laptop's height (Ben 10-31: Supports was cut off).
   const choices6 = document.createElement("div");
   choices6.className = "slice-print-choices";
-  choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap);
+  choices6.append(format.wrap, plate.wrap, nozzle.wrap, quality.wrap, walls.wrap, infill.wrap, supports.wrap, warmUpWrap);
   dialog.append(heading, printer, untested, choices6, status, actions);
   slot.append(dialog);
 
@@ -365,7 +398,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     status.textContent = text;
     status.classList.toggle("slice-print-bad", bad);
   };
-  const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value) });
+  const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value), warmUp: warmUp.checked });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });
   let busy = false;
   // Closing the dialog drops a slice still running: its file is not saved and its preview not opened (slicer hunt 2026-10-31).
@@ -376,7 +409,7 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     return () => mine === generation && dialog.open;
   };
   // A result stays displayed next to choices it no longer matches: any change clears it.
-  for (const c of [quality, walls, infill, supports, format, plate, nozzle]) c.select.addEventListener("change", () => !busy && say("", false));
+  for (const c of [quality, walls, infill, supports, format, plate, nozzle, { select: warmUp }]) c.select.addEventListener("change", () => !busy && say("", false));
   go.addEventListener("click", async () => {
     if (busy) return;
     busy = true;

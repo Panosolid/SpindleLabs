@@ -185,8 +185,8 @@ export interface StlFile {
   warning: string | null;
 }
 
-/** What one path of a slice prints. */
-export type PrintRole = "outer-wall" | "inner-wall" | "solid-infill" | "sparse-infill";
+/** What one path of a slice prints ("skirt": the warm-up loop round the first layer, printed before the part). */
+export type PrintRole = "outer-wall" | "inner-wall" | "solid-infill" | "sparse-infill" | "support" | "skirt";
 
 /** One path of a slice's preview: on the bed, mm, its points flattened x, y, x, y, … */
 export interface PrintPath {

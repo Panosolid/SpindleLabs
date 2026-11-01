@@ -48,7 +48,7 @@ export const KIND_NAMES: Record<PrintKind, string> = {
   "solid-infill": "Solid infill",
   "sparse-infill": "Sparse infill",
   support: "Support",
-  prime: "Prime line",
+  prime: "Prime line and warm-up loop",
   other: "Other",
 };
 
