@@ -45,6 +45,8 @@ export interface SketchPanel {
   showStatus(text: string): void;
   /** A message under the grid size: a grid the kernel refused, or a point it could not place; while a plane is picked, why a face can't be sketched on. Empty hides it. */
   showError(message: string): void;
+  /** Puts `grid` (as typed) back in the grid box: the last size taken, after a refused one. */
+  showGrid(grid: string): void;
   hide(): void;
 }
 
@@ -73,6 +75,7 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
   let status: HTMLElement | null = null;
   let gridError: HTMLElement | null = null;
   let help: HTMLElement | null = null;
+  let gridBox: HTMLInputElement | null = null;
   const showTool = (kind: ToolKind) => {
     if (help) help.textContent = TOOL_HELP[kind];
   };
@@ -93,7 +96,7 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
         refused,
         button("Cancel", "sketch-cancel", () => on.cancel()),
       );
-      status = help = null;
+      status = help = gridBox = null;
       gridError = refused;
       box.hidden = false;
     },
@@ -102,6 +105,7 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
       const input = el("input", { id: "sketch-grid" });
       Object.assign(input, { type: "number", step: "any", min: "0", value: grid });
       input.addEventListener("change", () => on.grid(input.value));
+      gridBox = input;
       const label = el("label", { className: "sketch-grid" });
       label.append("Grid ", input, " mm");
       const snapBox = el("input", { id: "sketch-grid-snap" });
@@ -128,6 +132,9 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
       box.lastElementChild!.append(button("Finish sketch", "sketch-finish", () => on.finish(), "sketch-finish"), button("Extrude", "sketch-extrude", () => on.extrude(), "sketch-finish"));
       box.hidden = false;
     },
+    showGrid(grid) {
+      if (gridBox) gridBox.value = grid;
+    },
     showStatus(text) {
       if (status) status.textContent = text;
     },
@@ -141,7 +148,7 @@ export function sketchPanel(slot: HTMLElement, on: SketchPanelEvents): SketchPan
       // holding the panel as hovered, and then in memory once a new design replaces it (e2e/closed-panels.mjs).
       box.replaceChildren();
       box.hidden = true;
-      status = gridError = help = null;
+      status = gridError = help = gridBox = null;
     },
   };
 }
