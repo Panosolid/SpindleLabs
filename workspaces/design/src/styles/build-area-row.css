@@ -1,0 +1,3 @@
+/* The build area's Origin row while the bodies shown go outside it (workspace.ts, showBuildAreaWords): red, its
+   hover words saying why. */
+.build-area-row { color: #ff8a8a; }

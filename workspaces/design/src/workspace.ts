@@ -5,7 +5,7 @@
 import { latestOnly, NO_HIGHLIGHT, playback, ORIGIN_AT_FIRST, type BodySpec, type MoveKind, type BodyView, type ExtrudeArrow, type OfferedProfile, type SketchPointer, type SketchXY, type Command, type Framing, type Plane, type GeometryReference, type MountedWorkspace, type Selected, type SharedViewport, type WorkspaceContext, type WorkspaceId, type WorkspacePlugin } from "@fission/core";
 import { needsRefit, printView, snapDistance } from "@fission/viewport";
 import type { ShapeKind } from "./profiles.ts";
-import { bodyIdOf, bodyItem, insertAt, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
+import { bodyIdOf, bodyItem, EYE_FOLDERS, insertAt, isHidden, isMoveItem, isSketchItem, ORIGIN_AXES, ORIGIN_PLANES as EYE_PLANES, originDrawn, partFeature, partOf, readDesignDocument, SKETCH_PLANES, type DesignDocument, type MoveParam, type PartKind } from "./document.ts";
 import { arrowOf, DEFAULT_DISTANCE, DISTANCE_STEP, extrudeSketch, NO_SKETCH, NO_USABLE_SKETCH, PICK_PROFILE_STATUS, extrudeStep, featureSpec, previewSpec, setExtrudeDistance, signedDistance, ZERO_OK } from "./extrude.ts";
 import { extrudePanel } from "./extrude-panel.ts";
 import { CHANGED_WHILE_CHECKING, editableFeature, editFeature, editStep, readTyped, refusedSizes } from "./feature-edit.ts";
@@ -28,6 +28,7 @@ import { callOffDrag, showTimelineBar, timelineBarItems } from "./timeline-bar.t
 import { DEFAULT_SIZES, parameterRows, propertiesPanel, revertedNote, SIZE_KEYS, type SizeKey } from "./properties.ts";
 import { FOLDED_AT_START, propertiesFold, readPinned, type FoldState, type PropertiesFold } from "./properties-fold.ts";
 import { freshDesign, START_FRESH_STEP, startFresh } from "./start-fresh.ts";
+import { BUILD_AREA_ROW, BUILD_AREA_TITLE, buildArea, buildAreaShownIn, keepBuildAreaShown, type BuildArea } from "./build-area.ts";
 import { gcodeName, gcodeOfPackage, P1S_KIND, printFileName, printFileOf, printMovesOf, printWords, SLICE_PRINT_TITLE, sliceBodies, slicePrint, SliceDropped } from "./slice-print.ts";
 import { openPrintPreview } from "./print-preview.ts";
 import { deleteAsk } from "./delete-ask.ts";
@@ -263,7 +264,7 @@ function lightRows(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<s
  * Timeline rows select nothing. Rebuilt on every edit and after every
  * rebuild that changes `failed`; folding is kept by id.
  */
-function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, onSelect: (ref: GeometryReference, shift: boolean) => void, onMenu: (node: string, at: { x: number; y: number }) => void, onOpen: (node: string) => void, onEye: (node: string) => void) {
+function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<string>, onSelect: (ref: GeometryReference, shift: boolean) => void, onMenu: (node: string, at: { x: number; y: number }) => void, onOpen: (node: string) => void, onEye: (node: string) => void, buildAreaShown = false) {
   // Rows with the timeline's item menu (24f3): every Timeline row by its item's id, and each sketch's row in Sketches.
   const items = new Set(doc.timeline.features.map((f) => f.id));
   const refOf = rowReferences(doc, failed);
@@ -371,7 +372,7 @@ function browser(slot: HTMLElement, doc: DesignDocument, failed: ReadonlySet<str
   });
   const title = document.createElement("summary");
   title.textContent = "Browser";
-  fold.append(title, list(browserTree(doc, failed)));
+  fold.append(title, list(browserTree(doc, failed, buildAreaShown)));
   slot.replaceChildren(fold);
 }
 
@@ -484,15 +485,49 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   /** Draws the browser for `doc` with the last rebuild's failed items (no Body row for them). */
   function drawBrowser(doc: DesignDocument) {
     rowsFailed = failedNow;
-    browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden);
+    browser(ctx.browser, doc, failedNow, selectRow, openRowMenu, (node) => openItem(itemOfRow(node)), toggleHidden, buildAreaOn);
+    showBuildAreaWords();
   }
 
   /** The origin's axes and planes as their eyes say (Ben, 2026-10-29): every axis and no plane until an eye is pressed. */
   function showOrigin(doc: DesignDocument) {
+    area = buildAreaOn && !isHidden(doc, EYE_FOLDERS.origin) && lastScene !== null ? buildArea([lastScene.mesh]) : null;
     viewport.showOrigin({
       axes: [originDrawn(doc, ORIGIN_AXES[0]), originDrawn(doc, ORIGIN_AXES[1]), originDrawn(doc, ORIGIN_AXES[2])],
       planes: EYE_PLANES.filter((id) => originDrawn(doc, id)).map((id) => ({ id, plane: planeOf(id.slice("origin-".length).toUpperCase() as SketchPlane) })),
+      ...(area && { buildArea: { lo: area.lo, hi: area.hi, strip: area.strip, corner: area.corner, outside: area.outside !== null } }),
     });
+    showBuildAreaWords();
+  }
+
+  /**
+   * The build area (Ben, 2026-11-01: a part could be "outside the area" when sliced with no way to see it): its eye in
+   * Origin, kept as a view setting of this browser; the box under the bodies shown (build-area.ts), and while they go
+   * outside it, why, on a note in the view and on its row.
+   */
+  const storage = (() => {
+    try {
+      return ctx.toolbar.ownerDocument.defaultView?.localStorage ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  let buildAreaOn = buildAreaShownIn(storage);
+  let area: BuildArea | null = null;
+  const areaNote = ctx.viewport.element.ownerDocument.createElement("div");
+  areaNote.className = "build-area";
+  areaNote.setAttribute("role", "status");
+  areaNote.hidden = true;
+  ctx.viewport.element.append(areaNote);
+  function showBuildAreaWords() {
+    const words = shown ? (area?.outside ?? null) : null;
+    areaNote.hidden = words === null;
+    areaNote.textContent = words ?? "";
+    const row = ctx.browser.querySelector<HTMLElement>(`[data-node="${BUILD_AREA_ROW}"]`);
+    if (row) {
+      row.title = words ?? BUILD_AREA_TITLE;
+      row.classList.toggle("build-area-row", words !== null);
+    }
   }
 
   /**
@@ -502,6 +537,16 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
    */
   function toggleHidden(node: string) {
     const doc = designDoc();
+    // The build area's eye is a view setting, not a design change: no undo step.
+    if (node === BUILD_AREA_ROW) {
+      buildAreaOn = !buildAreaOn;
+      keepBuildAreaShown(storage, buildAreaOn);
+      drawBrowser(doc);
+      showOrigin(doc);
+      // Shown: framed with the part, as a slicer shows its plate (the camera is the user's again at once).
+      if (buildAreaOn && area) viewport.fit();
+      return;
+    }
     const flat = (nodes: readonly BrowserNode[]): BrowserNode[] => nodes.flatMap((n) => [n, ...flat(n.children ?? [])]);
     const n = flat(browserTree(doc, failedNow)).find((r) => r.id === node);
     const id = eyeId(doc, node, failedNow);
@@ -1136,6 +1181,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       const outlines = [...doc.profiles.map((p) => p.id), ...doc.sketches.flatMap((s) => (s.curves.length > 0 ? [s.id] : []))];
       const { kept, dropped, shared } = survivors(ctx.selection.items, scene, outlines);
       lastScene = scene;
+      if (buildAreaOn) showOrigin(doc);
       // A snap's "from" was read off the bodies as they were: picked again on these (35e2d).
       if (snapping) (snapping.from = null), showMoveHint();
       // A new Move's preview drawn again on the bodies as now built (a body it picked that no longer shows is let go); an edited one's too (35e2c).
@@ -2545,6 +2591,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
   function sleep() {
     if (!shown) return;
     shown = false;
+    showBuildAreaWords();
     viewport.onPick = null;
     viewport.onSketchPointer = null;
     viewport.onExtrudePointer = null;
@@ -2675,6 +2722,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       shown = true;
       listen();
       showStart();
+      showBuildAreaWords();
       // A build that finished while asleep was not drawn: show the document again
       // (never rebuilt from the size boxes, which would add a box to a design with
       // no body; hunt 2026-10-21). Otherwise the body is still in the viewport;
@@ -2693,6 +2741,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
       sleep();
       stopHealing?.();
       void bodies.close();
+      areaNote.remove();
       viewport.showSketches([]);
       viewport.showOrigin(ORIGIN_AT_FIRST);
       typed.element.remove();

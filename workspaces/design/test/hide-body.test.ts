@@ -124,7 +124,7 @@ test("hand-listed: every row's icon, and the eye on each Body, sketch and origin
     ["Sketches", "folder", [["Sketch 1", "sketch"]]],
     ["Profiles", "folder", []],
     ["Bodies", "folder", [["Body 1", "body"], ["Body 2", "body"]]],
-    ["Origin", "origin", [["XY plane", "plane"], ["XZ plane", "plane"], ["YZ plane", "plane"], ["X axis", "axis"], ["Y axis", "axis"], ["Z axis", "axis"]]],
+    ["Origin", "origin", [["XY plane", "plane"], ["XZ plane", "plane"], ["YZ plane", "plane"], ["X axis", "axis"], ["Y axis", "axis"], ["Z axis", "axis"], ["Build area (P1S)", "box"]]],
   ]);
   // `hidden` is set (false or true) on the rows that draw something and their folders (Ben, 2026-10-29: an eye on everything), the origin's planes hidden at
   // first as in Fusion; left out on the Timeline and its rows and the Profiles (drawn by nothing of their own).
@@ -142,6 +142,8 @@ test("hand-listed: every row's icon, and the eye on each Body, sketch and origin
     ["origin-x", false],
     ["origin-y", false],
     ["origin-z", false],
+    // The build area (a view setting, not the design's): shut until its eye is opened.
+    ["origin-build-area", true],
   ]);
   // A preset's own shape has its own icon (the slot's); a feature type with none has the plain feature icon.
   const slot = flat(browserTree(partDocument("slot", 60, 20, 5)));
