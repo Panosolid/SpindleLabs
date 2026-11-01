@@ -1,7 +1,8 @@
 // Projects kept in this browser (19b): list, open, save, remove, written
 // over a KeyValue. Each project is two entries:
 //   project/<id>  the exact text of its .spindlelabs.json file (projectToJson)
-//   summary/<id>  {"name", "modified", "order"} for the list, so listing never reads whole projects
+//   summary/<id>  {"name", "modified", "order", "writer"} for the list, so listing never reads whole projects
+//                 ("writer": the autosave that made the save, when it named itself, own-save.test.ts)
 // and one entry for them all:
 //   order         the number of the last save, counted up by each one: the summary's "order" puts the list in the
 //                 order the saves happened, whatever the device's clock said (real-use hunt B5)
@@ -17,6 +18,11 @@ export interface ProjectSummary {
   modified: Date;
   /** The save's number, counted up across every project (0 for one saved before saves were counted). */
   order: number;
+  /**
+   * The autosave that made the last save, when it named itself (`save`'s `writer`): recovery knows a journal entry by
+   * that same writer has no other tab's work under it (unsaved.ts, own-save.test.ts). Left out otherwise.
+   */
+  writer?: string;
   /** Set when this entry's summary can't be read; the project may still open. */
   problem?: string;
 }
@@ -37,9 +43,11 @@ export interface ProjectStore {
    * overwrites newer work. `behind` lists it after every project saved
    * in order (save number 0, the count left as it was): a stale tab's change
    * kept as a separate project (unsaved.ts), so the project the user last
-   * saw stored is still the one the app opens (real-use hunt S1).
+   * saw stored is still the one the app opens (real-use hunt S1). `writer`
+   * names the autosave saving (`ProjectSummary.writer`; one that isn't a
+   * `writerId` is left out).
    */
-  save(id: string, project: Project, read?: Date, unchangedSince?: Date, behind?: boolean): Promise<void>;
+  save(id: string, project: Project, read?: Date, unchangedSince?: Date, behind?: boolean, writer?: string): Promise<void>;
   /** Forgets a stored project; refuses an id that is not stored. */
   remove(id: string): Promise<void>;
 }
@@ -61,6 +69,9 @@ const count = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) 
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** A writer id a summary and a journal entry's head can hold: 1 to 64 letters, digits, "-" or "_" (a random UUID fits). */
+export const writerId = (w: unknown): string | null => (typeof w === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(w) ? w : null);
+
 function checkId(id: unknown): string {
   if (typeof id !== "string" || id.length === 0) throw new Error("a stored project needs a non-empty id");
   return id;
@@ -71,11 +82,12 @@ function readSummary(id: string, text: string | undefined): ProjectSummary {
   try {
     const s: unknown = JSON.parse(text ?? "");
     if (typeof s !== "object" || s === null) throw new Error("not an object");
-    const { name, modified, order } = s as Record<string, unknown>;
+    const { name, modified, order, writer } = s as Record<string, unknown>;
     const when = typeof modified === "string" ? new Date(modified) : new Date(NaN);
     if (typeof name !== "string") throw new Error("no name");
     if (Number.isNaN(when.getTime())) throw new Error("no save time");
-    return { id, name, modified: when, order: count(order) };
+    const by = writerId(writer);
+    return by === null ? { id, name, modified: when, order: count(order) } : { id, name, modified: when, order: count(order), writer: by };
   } catch (e) {
     return { id, name: id, modified: new Date(0), order: 0, problem: `this project's summary can't be read (${message(e)})` };
   }
@@ -104,7 +116,7 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
         throw new Error(`can't open the stored project "${id}": ${message(e)}`);
       }
     },
-    async save(id, project, read, unchangedSince, behind = false) {
+    async save(id, project, read, unchangedSince, behind = false, writer) {
       checkId(id);
       const text = projectToJson(project); // refuses NaN and the like before anything is written
       // The save time is when the state was read, never when the writes finish: a journal entry written while
@@ -112,6 +124,8 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
       const when = read ?? now();
       if (Number.isNaN(when.getTime())) throw new Error("a stored project needs a valid save time");
       const modified = when.toISOString();
+      const by = writerId(writer);
+      const summaryOf = (order: number) => JSON.stringify(by === null ? { name: project.name, modified, order } : { name: project.name, modified, order, writer: by });
       // The check and both writes in one step (KeyValue.update): no other tab's save lands between them, and a tab
       // killed mid-save leaves both entries or neither (real-use hunt B6, B7).
       await kv.update([SUMMARY + id, ORDER], ([summary, last]) => {
@@ -121,9 +135,9 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
           const holds = readSummary(id, summary);
           if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
         }
-        if (behind) return { [PROJECT + id]: text, [SUMMARY + id]: JSON.stringify({ name: project.name, modified, order: 0 }) };
+        if (behind) return { [PROJECT + id]: text, [SUMMARY + id]: summaryOf(0) };
         const order = count(last === undefined ? undefined : Number(last)) + 1;
-        return { [PROJECT + id]: text, [SUMMARY + id]: JSON.stringify({ name: project.name, modified, order }), [ORDER]: String(order) };
+        return { [PROJECT + id]: text, [SUMMARY + id]: summaryOf(order), [ORDER]: String(order) };
       });
     },
     async remove(id) {

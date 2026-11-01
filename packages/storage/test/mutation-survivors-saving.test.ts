@@ -173,7 +173,7 @@ test("after one save of a project opened from its kept entry, the entry it journ
   auto.changed();
   assert.equal(auto.leaving(), true);
   const entry = journal.items.get(unsavedKey("p"))!;
-  assert.match(entry, /^@\d+~1000\n/, "no ! after the time (then the save time it was made from, real-use hunt S1)");
+  assert.match(entry, /^@\d+~1000#[\w-]+\n/, "no ! after the time (then the save time it was made from, real-use hunt S1, and the writer)");
   assert.equal(readJournalEntry(entry).kept, false);
   await settle();
 });

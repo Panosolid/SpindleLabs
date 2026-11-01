@@ -87,7 +87,7 @@ test("B5b: with the clock set back, a closed tab's stale journal entry is not pu
   const tabB = startAutosave(store, "p", () => b, () => {}, { timers: { setTimeout: (fn) => ((fire = fn), 2), clearTimeout: () => {} }, journal, stored: true, storedAt, now });
   t = 100; // the clock is set back
   tabA.leaving();
-  assert.ok(journal.items.get(unsavedKey("p"))!.startsWith("@5000~5000\n"), "A's entry stamped 5000, made from the state saved at 5000");
+  assert.match(journal.items.get(unsavedKey("p"))!, /^@5000~5000#[\w-]+\n/, "A's entry stamped 5000, made from the state saved at 5000, then A's writer id");
   b = part("P", 70);
   tabB.changed();
   t = 1200;

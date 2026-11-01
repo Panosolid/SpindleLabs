@@ -24,10 +24,17 @@
 // of the stored state it was made from ("~<ms>" after the time), and is put
 // back only over that state; over any other, it is kept as a separate
 // project ("<name> (from another tab)"), so neither tab's work is lost.
+//
+// A tab's own save landing after its page has gone (merge-queue CI, 2026-11-01): a page reloaded while "Saving…"
+// journals its change, naming the state before that save, and the browser finishes the save after the page has gone,
+// so the entry's base never moves on to it. So an entry also names the autosave that wrote it ("#<writer>" after the
+// base), as each of its saves does in the store (store.ts): over a store whose last save is the same writer's, the
+// entry goes back (or just goes, when that save is newer than it), since no other tab's work is there. And an entry
+// holding exactly what the store holds just goes, whoever saved it.
 
-import { NewerFormatError, projectFromJson, type DataReader } from "@fission/core";
+import { NewerFormatError, projectFromJson, projectToJson, type DataReader, type Project } from "@fission/core";
 import type { MarkStorage } from "./reopen.ts";
-import { ProjectChangedError, type ProjectStore } from "./store.ts";
+import { ProjectChangedError, writerId, type ProjectStore } from "./store.ts";
 
 /** Every entry's key starts with this, followed by the project's stored id. */
 export const UNSAVED_PREFIX = "panoshape.unsaved/";
@@ -54,19 +61,22 @@ const headTime = (d: Date | null | undefined) => (d != null && Number.isSafeInte
  * The journal entry holding `text`, the file text of the project as it was at `written`. `kept` marks one the last
  * visit's recovery couldn't store ("@<ms>!"): it is put back whatever the store holds, and no tab saves over it.
  * `base` is the save time of the stored state the change was made from ("~<ms>"; left out when the tab knew none):
- * the entry is put back only over that state, and kept as a separate project otherwise.
+ * the entry is put back only over that state, and kept as a separate project otherwise. `writer` names the autosave
+ * writing it ("#<writer>"; left out when it isn't a `writerId`): over a store whose last save is that writer's own, the
+ * entry is put back whatever its base (own-save.test.ts).
  */
-export function journalEntry(text: string, written: Date, kept = false, base: Date | null = null): string {
+export function journalEntry(text: string, written: Date, kept = false, base: Date | null = null, writer: string | null = null): string {
   const from = headTime(base);
-  return `@${written.getTime()}${kept ? "!" : ""}${from === null ? "" : `~${from}`}\n${text}`;
+  const by = writerId(writer);
+  return `@${written.getTime()}${kept ? "!" : ""}${from === null ? "" : `~${from}`}${by === null ? "" : `#${by}`}\n${text}`;
 }
 
-/** An entry's file text, the time it was written and the save time it was made from (null for an entry without one). */
-export function readJournalEntry(entry: string): { text: string; written: Date | null; kept: boolean; base: Date | null } {
-  const head = /^@(\d{1,15})(!?)(?:~(\d{1,15}))?\n/.exec(entry); // 15 digits: every time a Date can hold until the year 33658
-  return head
-    ? { text: entry.slice(head[0].length), written: new Date(Number(head[1])), kept: head[2] === "!", base: head[3] === undefined ? null : new Date(Number(head[3])) }
-    : { text: entry, written: null, kept: false, base: null };
+/** An entry's file text, the time it was written, the save time it was made from (null for an entry without one) and its writer (left out without one). */
+export function readJournalEntry(entry: string): { text: string; written: Date | null; kept: boolean; base: Date | null; writer?: string } {
+  const head = /^@(\d{1,15})(!?)(?:~(\d{1,15}))?(?:#([A-Za-z0-9_-]{1,64}))?\n/.exec(entry); // 15 digits: every time a Date can hold until the year 33658
+  if (!head) return { text: entry, written: null, kept: false, base: null };
+  const read = { text: entry.slice(head[0].length), written: new Date(Number(head[1])), kept: head[2] === "!", base: head[3] === undefined ? null : new Date(Number(head[3])) };
+  return head[4] === undefined ? read : { ...read, writer: head[4] };
 }
 
 /** What a stale tab's change is called when it is kept beside the newer work (real-use hunt S1). */
@@ -102,8 +112,13 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
   }
   if (keys.length === 0) return problems;
   const modified = new Map<string, Date>();
+  const writers = new Map<string, string>();
   try {
-    for (const s of await store.list()) if (!s.problem) modified.set(s.id, s.modified);
+    for (const s of await store.list())
+      if (!s.problem) {
+        modified.set(s.id, s.modified);
+        if (s.writer !== undefined) writers.set(s.id, s.writer);
+      }
   } catch {
     // the store can't list: every entry is put back, as one it doesn't hold would be
   }
@@ -125,6 +140,17 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     if (!entry.kept && entry.base === null && entry.written !== null && holds !== undefined && entry.written.getTime() < holds.getTime()) {
       remove(journal, k);
       continue;
+    }
+    // The store's last save is this entry's own writer's, landed after the entry was written (the page went before it
+    // heard): no other tab's work is there. Newer than the entry, it holds every change the entry does; otherwise the
+    // entry goes back over it, as over the state it was made from.
+    let over = entry.kept ? undefined : (entry.base ?? undefined);
+    if (over !== undefined && holds !== undefined && entry.writer !== undefined && writers.get(id) === entry.writer) {
+      if (entry.written !== null && entry.written.getTime() < holds.getTime()) {
+        remove(journal, k);
+        continue;
+      }
+      over = holds;
     }
     text = entry.text;
     let project;
@@ -148,9 +174,13 @@ export async function recoverUnsaved(store: ProjectStore, journal: JournalStorag
     }
     try {
       // The state as of when the entry was written; over the state it was made from only, when it names one.
-      await store.save(id, project, entry.written ?? undefined, entry.kept ? undefined : (entry.base ?? undefined));
+      await store.save(id, project, entry.written ?? undefined, over);
     } catch (e) {
       if (e instanceof ProjectChangedError) {
+        if (await holdsExactly(store, id, project)) {
+          remove(journal, k); // the store holds this very state already: nothing to keep apart
+          continue;
+        }
         const name = fromAnotherTab(project.name);
         try {
           await store.save(newId(), { ...project, name }, entry.written ?? undefined, undefined, true); // behind: the newer work still opens
@@ -189,6 +219,15 @@ export function keptEntry(journal: JournalStorage | null, id: string): string | 
     return read.kept ? read.text : null;
   } catch {
     return null;
+  }
+}
+
+/** The store's project `id` is exactly `project`, compared as read (false when it can't be read). */
+async function holdsExactly(store: ProjectStore, id: string, project: Project): Promise<boolean> {
+  try {
+    return projectToJson(await store.open(id)) === projectToJson(project);
+  } catch {
+    return false;
   }
 }
 
