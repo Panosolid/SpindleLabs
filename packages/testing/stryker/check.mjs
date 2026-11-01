@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
-const dirs = { core: "packages/core", design: "workspaces/design", storage: "packages/storage", model: "packages/core", svg: "packages/core", viewport: "packages/viewport", ai: "packages/ai", naming: "packages/testing" };
+const dirs = { core: "packages/core", design: "workspaces/design", storage: "packages/storage", model: "packages/core", svg: "packages/core", viewport: "packages/viewport", ai: "packages/ai", naming: "packages/testing", combine: "workspaces/design" };
 const key = (m) => `${m.file} | ${m.mutator} | ${m.original} => ${m.replacement}`;
 
 /** The text between two Stryker locations (lines and columns count from 1). */

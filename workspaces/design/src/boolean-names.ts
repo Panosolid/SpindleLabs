@@ -186,9 +186,12 @@ export function combineNames(feature: string, op: BooleanOp, target: NamedBody, 
 
 /**
  * The piece of a union holding the target: the one with a face from it;
- * when a tool swallowed it whole (no face of it left), the smallest piece
- * whose box holds the target's box, as the pieces are apart solids and
- * the target lies inside one of them.
+ * when a tool swallowed it whole (no face of it left), the piece whose
+ * solid holds a corner of the target (the target's surface lies inside
+ * the piece, as no face of it is left and faces lying on each other are
+ * refused until 36a). Only pieces whose box holds the target's box are
+ * tried, smallest box first; a box alone cannot tell (a ring round a bar
+ * holding the target, review 35ed3).
  */
 function holderOf(target: NamedBody, result: BooleanResult, views: readonly BodyView[]): number {
   const withFace = result.history.findIndex((h) => h.faces.some((f) => f.body === target.handle));
@@ -197,7 +200,42 @@ function holderOf(target: NamedBody, result: BooleanResult, views: readonly Body
   const holds = (p: number) => [0, 1, 2].every((i) => views[p].bounds[0][i] <= lo[i] + SAME_CORNER && views[p].bounds[1][i] >= hi[i] - SAME_CORNER);
   const size = (p: number) => [0, 1, 2].reduce((v, i) => v * (views[p].bounds[1][i] - views[p].bounds[0][i]), 1);
   const candidates = [...views.keys()].filter(holds).sort((p, q) => size(p) - size(q));
-  return candidates[0] ?? 0;
+  const corner = target.view.vertex_points[0];
+  return (corner === undefined ? undefined : candidates.find((p) => solidHolds(views[p], corner))) ?? candidates[0] ?? 0;
+}
+
+/** A ray direction no axis-aligned face or edge of a flat body is likely to graze (its parts are irrational-looking and unequal). */
+const RAY = [0.5390427, 0.3307021, 0.7745967];
+
+/**
+ * Whether point `p`, not on the body's surface, lies inside the body: a
+ * ray from it crosses the display mesh's triangles an odd number of times
+ * (Möller and Trumbore's ray-triangle test). Flat faces are triangulated
+ * exactly, so the mesh is the body's surface.
+ */
+export function solidHolds(view: BodyView, p: readonly number[]): boolean {
+  const { positions, indices } = view.mesh;
+  const pt = (i: number) => [positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]];
+  const sub = (a: readonly number[], b: readonly number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a: readonly number[], b: readonly number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  let crossings = 0;
+  for (let t = 0; 3 * t < indices.length; t++) {
+    const a = pt(indices[3 * t]);
+    const e1 = sub(pt(indices[3 * t + 1]), a);
+    const e2 = sub(pt(indices[3 * t + 2]), a);
+    const h = cross(RAY, e2);
+    const det = dot(e1, h);
+    if (det === 0) continue; // the ray runs along the triangle's plane
+    const s = sub(p, a);
+    const u = dot(s, h) / det;
+    if (u < 0 || u > 1) continue;
+    const q = cross(s, e1);
+    const v = dot(RAY, q) / det;
+    if (v < 0 || u + v > 1) continue;
+    if (dot(e2, q) / det > 0) crossings++;
+  }
+  return crossings % 2 === 1;
 }
 
 /** Every face of the design in one list, with what rules 3 and 5 read off it: its neighbours' shown names and the faces carrying each name. */
