@@ -8,13 +8,6 @@
   },
   "workspaces": {
     "design": {
-      "bodies": [
-        {
-          "id": "body:feature-1",
-          "number": 1
-        }
-      ],
-      "nextBody": 2,
       "nextId": 2,
       "profiles": [],
       "sketches": [],
@@ -44,7 +37,7 @@
           }
         ]
       },
-      "version": 7
+      "version": 4
     }
   }
 }
