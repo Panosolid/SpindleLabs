@@ -15,7 +15,7 @@ export function jg9yot(p0: any, p1: any, p2: any): any;
 
 export function jgu9kn(p0: number, p1: string): any;
 
-export function k7vbqz(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: string, p6: any, p7: any, p8: Function | null): any;
+export function k7vbqz(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: string, p6: any, p7: any, p8: any, p9: Function | null): any;
 
 export function ld2gsx(p0: any, p1: number): any;
 
@@ -31,7 +31,7 @@ export function rk7wq2(p0: number, p1: any, p2: any): any;
 
 export function u3qr1f(p0: number, p1: number, p2: number): any;
 
-export function uq4cun(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: any, p6: Function | null): any;
+export function uq4cun(p0: Uint8Array, p1: number, p2: number, p3: number, p4: any, p5: any, p6: any, p7: Function | null): any;
 
 export function urxw0w(): number;
 
@@ -53,7 +53,7 @@ export interface InitOutput {
     readonly irk2fy: (a: number, b: number, c: number) => [number, number, number];
     readonly jg9yot: (a: any, b: any, c: any) => [number, number, number];
     readonly jgu9kn: (a: number, b: number, c: number) => [number, number, number];
-    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number, i: any, j: any, k: number) => [number, number, number];
+    readonly k7vbqz: (a: number, b: number, c: number, d: number, e: number, f: any, g: number, h: number, i: any, j: any, k: any, l: number) => [number, number, number];
     readonly ld2gsx: (a: any, b: number) => [number, number, number];
     readonly nwekzr: (a: number) => [number, number, number];
     readonly p6rou1: (a: number) => [number, number, number];
@@ -61,7 +61,7 @@ export interface InitOutput {
     readonly qmdw4c: () => [number, number];
     readonly rk7wq2: (a: number, b: any, c: any) => [number, number, number];
     readonly u3qr1f: (a: number, b: number, c: number) => [number, number, number];
-    readonly uq4cun: (a: number, b: number, c: number, d: number, e: number, f: any, g: any, h: number) => [number, number, number];
+    readonly uq4cun: (a: number, b: number, c: number, d: number, e: number, f: any, g: any, h: any, i: number) => [number, number, number];
     readonly urxw0w: () => number;
     readonly uxyfpl: (a: number, b: number, c: number) => [number, number, number];
     readonly vicdld: (a: number) => [number, number];
