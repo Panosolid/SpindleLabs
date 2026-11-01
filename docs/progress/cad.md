@@ -232,3 +232,98 @@ Write this plan into the area's first substep before any feature code, and land 
 5. Join the existing harnesses the same day: the kernel's stateful harness, history-fuzz (undo/redo), project-fuzz (save and open), the journeys on the real kernel, and the mixed-tool journey (the new tool mixed with every existing one).
 6. Browser: the tool at 1280 and 375 px with taps, in Chromium, Firefox and WebKit; pixel probes for anything it draws; the long sketch session extended with it.
 7. Area-specific: the constraint solver gets Ben's three (a fixed-size rectangle lands exactly; under- and over-constrained sketches detected and coloured, never solved into nonsense; a fuzzer of random shapes and constraints that either satisfies every one within tolerance or names the conflict) plus "solving twice gives the same answer" and "a small drag moves things a little". The timeline gets rebuild determinism, edit-an-early-feature-and-rebuild sessions, and the naming success rate in `tests/baseline.json`. Booleans follow the boolean test plan in kernel/CLAUDE.md.
+
+## Day-sized plan (2026-11-01, Ben's ask: "split up/merge together steps so we can aim for each one taking a day")
+
+Done steps keep their numbers. From here on, each line below is one chunk of about one day (16 to 24 hours of elapsed time, review rounds and bug fixes included). A chunk keeps the substep label it came from: a split adds a digit (36a1, 36a2), a merge joins the labels with "+" (36b+36c2). The substeps' full text stays where it was (the kernel repo's booleans plan and this file); this list only sets the sizes and the grouping.
+
+How the hours were estimated, from the measured pace of steps 1 to 35 (first to last commit of each step): app and interface steps took 1 to 15 hours (26: 15 h, 27: 12 h, 34: 7 h); kernel substeps that extend existing machinery took 2 to 9 hours (35a to 35d); kernel substeps with new geometry took about 30 hours each, mostly in review rounds and fixes (32a, 32b and 32c together 97 hours; 33: 21 hours); a hunt or test-only substep took about 14 hours (31d). New geometry is sized at 20 to 24 hours and split where it would go past that; small pieces are merged until a chunk reaches about 16 hours. On top, 15% is kept for the step that blows up the way 25 and 32 did, since that is the price of fixing what reviews and random testing find instead of hiding it.
+
+Order unchanged (Ben, 2026-11-01): finish 35e3, stop, the bug-hunt wave, then Ben decides whether 36a or 35f comes first. The list shows 35f first only to have an order to count in; the total is the same either way.
+
+Combine (35f, 35g)
+1. 35f1. Hidden Combine button, panel and timeline feature: 16 h
+2. 35f2a+35f3. The safety net on every result, and the "Report this problem" design: 10 h
+3. 35f4+35f2. Fusion hand tests with Ben, and the Fusion 360 Gallery replay (replaces L1): 18 h
+4. 35g+L3. Combine bug hunt, and the second outside oracle on cases with nothing touching: 22 h
+- 35f5 (public Combine) is a gate, not a chunk: it waits on 36a, 36c2, a long clean streak of nightlies and Ben's yes.
+
+Faces on faces (36)
+5. 36a1. Faces lying on each other: each face's outline marked on the other: 20 h
+6. 36a2. Faces lying on each other: the overlapping pieces matched, kept or dropped, with tests: 20 h
+7. 36b+36c2. Results that are not a clean solid refused: edges used four times, too-thin faces, too-short edges: 20 h
+8. 36c1. Tidying: neighbouring faces on one surface merged, and the history of which face came from which: 18 h
+9. 36d. Design side: merged faces keep their names, refusals shown on the Combine row, journeys: 14 h
+10. 36e. Bug hunt with 100,000 seeded cases and the scale sweep: 18 h
+
+Curved booleans, first part (C1–C2, 37, 38a)
+11. C1+C2. The two new referees for curved results, before any curved boolean: 22 h
+12. 37a1. One set of questions every surface and curve answers: 14 h
+13. 37a2. Edges stored in each curved face's own coordinates: 16 h
+14. 37b. The ellipse curve: 12 h
+15. 37c. Inside or outside a face on a cylinder, and splitting it: 24 h
+16. 37d1. Plane–cylinder crossings: the facts about corners and edges: 16 h
+17. 37d2. Plane–cylinder crossings: the crossing curves and which pieces to keep: 16 h
+18. 37e. Tests and hunt for drilled holes: 16 h
+19. 38a1. One general way to draw every face: 16 h
+20. 38a2. Cylinders sharing an axis or side by side: 14 h
+21. 38a3+38a4. Sphere crossings, and the tests to the standard for 38a: 22 h
+
+Extrude modes and naming (39, 40)
+22. 39a. Extrude join, cut, intersect and new body in Design: 14 h
+23. 39b. The naming cases for cuts on Design for real: 14 h
+24. 39c. Bug hunt: 14 h
+25. 40a1. Names through edits that change how faces split: matching on rebuild: 20 h
+26. 40a2. The same through suppress, delete and reorder: 16 h
+27. 40b. The split-face rule with real sketches and pins: 16 h
+28. 40c. Naming hunt: 16 h
+
+Curved booleans in general position (41, 42, 43)
+29. 41a. The crossing curve of two cylinders (or a cylinder and a sphere): 20 h
+30. 41b. A small pipe through a big one, any angle: 24 h
+31. 41c. The equal-radius tee and nearly equal radii: 20 h
+32. 41d1. Tangent cases: a cylinder or sphere just touching: 22 h
+33. 41d2. Comparison with OpenCascade over all of 38 and 41, and a hunt: 16 h
+34. 42a+42b. Cones and tori: the surfaces, their checks, drawing and volumes: 22 h
+35. 42c+42d. Cones and tori crossing planes, cylinders and spheres, with tests: 24 h
+36. 43a. The general crossing finder: starting points and following the curve: 24 h
+37. 43b. The general crossing finder: clean refusals and limits: 14 h
+38. 43c. Booleans through the general crossing finder, with hand-worked tests: 20 h
+
+Chamfer and fillets (44, 45, 46)
+39. 44a. Chamfer along a straight edge between two flat faces: 16 h
+40. 44b. Chamfer round a circular edge (a hole's mouth, a cylinder's rim): 12 h
+41. 44c. Chamfer chains and the Design chamfer tool: 20 h
+42. 45a. Fillet along a straight edge between two flat faces: 16 h
+43. 45b. Fillet between a flat face and a cylinder along a straight or round edge: 14 h
+44. 45c. The Design fillet tool: 14 h
+45. 46a. Fillets round circular edges (a boss's base, a cylinder's rim): 20 h
+46. 46b1. Fillet chains (a slot's outline all round): 16 h
+47. 46b2. Corners where three fillets meet: 22 h
+48. 46c. Fillet, then cut through it: 20 h
+49. 46d. The fillet hunt (major step): 20 h
+- 46e (the free-form fillet surface) only if Ben wants fillets complete before 47: 46e1 and 46e2, 22 h each.
+
+Fillets done: 49 chunks, about 880 hours, plus 15% for blow-ups, about 57 days from the start of chunk 1.
+
+After fillets (rougher; resized when 46 is done)
+- 47a. Solver test harness and hand-worked sketches, before any solver code: 16 h
+- 47b. Solver core: coincident, horizontal, vertical: 20 h
+- 47c. Thousands of seeded random sketches against the SolveSpace oracle: 18 h
+- 47d. Planted solver bugs the tests must catch, and drag tests in the browser: 16 h
+- 48. Profile detection: 16 h
+- 49. Parallel, perpendicular, equal, tangent: 18 h
+- 50+51. Editable dimensions and constraint status colours: 20 h
+- 52a. Trim, extend and mirror: 16 h
+- 52b. Offset: 20 h
+- 53a. Extrude symmetric and to-face: 14 h
+- 53b. Extrude taper: 16 h
+- 54. Hole feature: 16 h
+- 55+57. User parameters and expressions, and per-feature errors on the timeline: 20 h
+- 56a. Revolve in the kernel: 20 h
+- 56b. Revolve in Design: 14 h
+- 58a and 58b. Cached feature results and incremental rebuild: 20 h each
+- 59 to 66: about one chunk each (61 and 62 two each), sized when 58 is done.
+- 67 onward (NURBS, sweep, loft, STEP) and 78 onward (components: at least three chunks, the per-component ids first) are too far off to size well yet.
+
+The slicer and the bug-fix threads run alongside on their own plans and are not counted here.
