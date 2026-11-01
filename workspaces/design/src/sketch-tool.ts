@@ -22,11 +22,62 @@
 
 import type { Feature, Plane, SketchArc, SketchDrawing, SketchXY, OriginPlane, ViewName } from "@fission/core";
 import { greyedItems, sketchHidden, type DesignDocument, type Sketch, type SketchArcCurve, type SketchLineCurve, type SketchPlane } from "./document.ts";
-import { arcThere, centreClick, centreHover, centrePreview, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
+import { arcThere, centreClick, centreHover, centrePreview, MIN_CHORD, SAME_ARC, type CentreArcTool } from "./centre-arc.ts";
 import { SAME_PLACE } from "./snap.ts";
 import { curvesOf, drawArc, drawCircle, drawLine, drawRectangle, flat, planeFor, planeOf, pointAt, pointNear, SKETCH_STEPS, type LineEnd } from "./sketch.ts";
 
 export { pointAt };
+
+/** The modeller's smallest piece, 0.001 mm (centre-arc.ts MIN_CHORD): no line shorter, no circle's radius smaller. */
+export const MIN_SIZE = MIN_CHORD;
+export const SHORT_LINE = `A line must be at least ${MIN_SIZE} mm long, the smallest piece the modeller keeps: click its end further away.`;
+export const SMALL_RECTANGLE = `A rectangle must be at least ${MIN_SIZE} mm wide and high, the smallest piece the modeller keeps: click its opposite corner further away.`;
+export const SMALL_CIRCLE = `A circle's radius must be at least ${MIN_SIZE} mm, the smallest piece the modeller keeps: click further from its centre.`;
+/**
+ * How near (mm) a point already there must be to an arc's worked-out
+ * centre to be that centre (`centreFor`): half of SAME_PLACE, so the
+ * shared centre is still within SAME_PLACE of the line midway between the
+ * ends (the kernel's check_arcs) with room to spare for the rounding of
+ * the worked-out one, a few doubles off it.
+ */
+export const SHARED_CENTRE = SAME_PLACE / 2;
+
+/**
+ * The point an arc's worked-out centre `c` goes on (3-point and tangent
+ * arcs; hunt 2026-11-01): a point of the sketch exactly there, else the
+ * nearest within SHARED_CENTRE (the first listed of any as near), else a
+ * new point at `c`. Worked out in doubles, the centre of an arc drawn round
+ * a circle's centre comes out a rounding off it, (−2, −2.0000000000000004)
+ * for (−2, −2): a second point on top of the first, which the snap then
+ * took for a click on the first (a line or circle 4e-16 mm long). Never
+ * one of the arc's own ends (`ends`), which no arc can be round.
+ */
+function centreFor(sketch: Sketch, c: SketchXY, ends: readonly LineEnd[]): LineEnd {
+  const exact = pointAt(sketch, c);
+  if (exact !== null) return exact;
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const p of sketch.points) {
+    if (ends.includes(p.id)) continue;
+    const d = Math.sqrt((p.x - c[0]) ** 2 + (p.y - c[1]) ** 2);
+    if (d <= SHARED_CENTRE && d < bestD) [best, bestD] = [p.id, d];
+  }
+  return best ?? [c[0], c[1]];
+}
+
+/**
+ * Whether a line or radius `length` mm long, measured between points no
+ * further than `scale` from the origin in x or y, is under the smallest
+ * piece (MIN_SIZE). A line's length gets the rounding of its ends'
+ * coordinates: each is a double within half a unit in the last place of
+ * the decimal meant, so the length can come out up to about 2εM short of
+ * the decimals' (1.001 − 1 is 0.0009999999999998899), and 4εM is allowed,
+ * as the kernel allows a line. A circle's radius gets none (`rounded`
+ * false): the kernel refuses one a rounding under, so the tool does.
+ */
+export function underMin(length: number, scale: number, rounded: boolean): boolean {
+  return length < MIN_SIZE - (rounded ? 4 * Number.EPSILON * Math.max(scale, length) : 0);
+}
 
 /** The line tool on one sketch: where the next line starts (a point id, or a first click not yet a point), or null between chains. */
 export interface LineTool {
@@ -208,19 +259,23 @@ function lineClick(doc: DesignDocument, tool: LineTool, at: SketchXY): { doc: De
   const [fx, fy] = whereIs(sketch, tool.from);
   if ((fx === at[0] && fy === at[1]) || there === tool.from) return { doc, tool, drew: false };
   const from = tool.from;
+  if (underMin(distance([fx, fy], at), Math.max(Math.abs(fx), Math.abs(fy), Math.abs(at[0]), Math.abs(at[1])), true)) return { doc, tool, drew: false, note: SHORT_LINE };
   if (there !== null && sketch.curves.some((c) => c.kind === "line" && ((c.start === from && c.end === there) || (c.start === there && c.end === from)))) return { doc, tool, drew: false, note: SAME_LINE };
   const drawn = drawLine(doc, tool.sketch, tool.from, end);
   const line = sketchOf(drawn.doc, tool.sketch).curves.find((c) => c.id === drawn.id) as SketchLineCurve;
   return { doc: drawn.doc, tool: { ...tool, from: there ? null : line.end }, drew: true };
 }
 
-/** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column draws nothing. */
+/** A rectangle's two clicks, the second at the opposite corner, sharing points; `note` says why a second click on the first corner's row or column, or one making it under MIN_SIZE wide or high (`SMALL_RECTANGLE`), draws nothing. */
 const SAME_ROW = "A rectangle needs a width and a height: click the opposite corner off the first corner's row and column.";
 
 function rectangleClick(doc: DesignDocument, tool: RectangleTool, at: SketchXY): { doc: DesignDocument; tool: RectangleTool; drew: boolean; note?: string } {
   sketchOf(doc, tool.sketch);
   if (tool.corner === null) return { doc, tool: { ...tool, corner: [at[0], at[1]] }, drew: false };
   if (flat(tool.corner, at)) return { doc, tool, drew: false, note: SAME_ROW };
+  // Each side is a line, so each must be MIN_SIZE long, with a line's allowance for rounding (`underMin`), as the kernel judges them.
+  const scale = Math.max(Math.abs(tool.corner[0]), Math.abs(tool.corner[1]), Math.abs(at[0]), Math.abs(at[1]));
+  if (underMin(Math.abs(at[0] - tool.corner[0]), scale, true) || underMin(Math.abs(at[1] - tool.corner[1]), scale, true)) return { doc, tool, drew: false, note: SMALL_RECTANGLE };
   const drawn = drawRectangle(doc, tool.sketch, tool.corner, at).doc;
   // Every side a line already there (the same rectangle twice): nothing drawn, as the line tool says for one side.
   if (drawn === doc) return { doc, tool: { ...tool, corner: null }, drew: false, note: SAME_LINE };
@@ -261,6 +316,7 @@ function circleClick(doc: DesignDocument, tool: CircleTool, at: SketchXY): { doc
   if (tool.centre === null) return { doc, tool: { ...tool, centre: [at[0], at[1]] }, drew: false };
   const radius = distance(tool.centre, at);
   if (radius === 0) return { doc, tool, drew: false, note: NO_RADIUS };
+  if (underMin(radius, 0, false)) return { doc, tool, drew: false, note: SMALL_CIRCLE };
   const centre: LineEnd = pointAt(sketch, tool.centre) ?? tool.centre;
   if (typeof centre === "string" && sketch.curves.some((c) => c.kind === "circle" && c.centre === centre && Math.abs(c.radius - radius) <= SAME_PLACE)) return { doc, tool, drew: false, note: SAME_CIRCLE };
   return { doc: drawCircle(doc, tool.sketch, centre, radius).doc, tool: { ...tool, centre: null }, drew: true };
@@ -348,7 +404,8 @@ function arcClick(doc: DesignDocument, tool: ArcTool, at: SketchXY): { doc: Desi
   const arc = arcThrough(tool.start, tool.end, at);
   if (!arc) return { doc, tool, drew: false, note: ONE_LINE };
   const share = (p: SketchXY): LineEnd => pointAt(sketch, p) ?? p;
-  const ends = [share(arc.start), share(arc.end), share(arc.centre)] as const;
+  const [start, end] = [share(arc.start), share(arc.end)];
+  const ends = [start, end, centreFor(sketch, arc.centre, [start, end])] as const;
   if (arcThere(sketch, ...ends)) return { doc, tool, drew: false, note: SAME_ARC };
   const drawn = drawArc(doc, tool.sketch, ...ends);
   return { doc: drawn.doc, tool: { ...tool, start: null, end: null }, drew: true };
@@ -449,7 +506,7 @@ function tangentClick(doc: DesignDocument, tool: TangentTool, at: SketchXY): { d
   if (!arc) return { doc, tool, drew: false, note: NO_TURN };
   const there = pointAt(sketch, at);
   const end: LineEnd = there ?? [at[0], at[1]];
-  const centre: LineEnd = pointAt(sketch, arc.centre) ?? arc.centre;
+  const centre: LineEnd = centreFor(sketch, arc.centre, [tool.from!, end]);
   const left = arc.start[0] === start.s[0] && arc.start[1] === start.s[1];
   const drawn = left ? drawArc(doc, tool.sketch, tool.from!, end, centre) : drawArc(doc, tool.sketch, end, tool.from!, centre);
   const made = sketchOf(drawn.doc, tool.sketch).curves.find((c) => c.id === drawn.id) as SketchArcCurve;

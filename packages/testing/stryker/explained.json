@@ -1115,9 +1115,9 @@
   {
     "file": "workspaces/design/src/document.ts",
     "mutator": "ConditionalExpression",
-    "original": "v3.version === 5 || v3.version === 6",
+    "original": "v3.version === 5 || v3.version === 6 || v3.version === 7",
     "replacement": "true",
-    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5 or 6 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 6) before unnumbered is read."
+    "why": "readDesignDocument (issues #220, #246): unnumbered then also holds for data of a version other than 5, 6 or 7 leaving the numbers out; versions 1 to 4 are unnumbered already (old or version 4), and any other is refused by the version check (d.version !== 7) before unnumbered is read."
   },
   {
     "file": "packages/storage/src/autosave.ts",

@@ -42,11 +42,10 @@
 
 import type { BodyView, Plane, SketchXY, StableId } from "@fission/core";
 import type { DesignDocument, Sketch, SketchCurve, SketchPoint } from "./document.ts";
-import { inSketch, partName, unordered, vertexNames } from "./face-edges.ts";
-import { faceReference, isFacePlane } from "./face-sketch.ts";
+import { faceHeld, inSketch, partName, unordered, vertexNames } from "./face-edges.ts";
 import type { BodyNames } from "./naming.ts";
 import { sharedBy } from "./references.ts";
-import { findInScene, sceneHit, type Scene } from "./scene.ts";
+import { sceneHit, type Scene } from "./scene.ts";
 import type { EdgeToProject } from "./sketch.ts";
 import { SAME_PLACE, type EdgeCurve } from "./snap.ts";
 
@@ -430,8 +429,7 @@ export function projectPick(doc: DesignDocument, sketchId: string, scene: Scene 
   const at = features.findIndex((f) => f.id === sketchId);
   const item = features[at];
   if (scene === null || plane === undefined || item === undefined) return { edges: [], note: PROJECT_NOTHING };
-  const facePlane = item.intent.parameters.plane;
-  if (isFacePlane(facePlane) && findInScene(faceReference(facePlane), scene).status !== "found") return { edges: [], note: PROJECT_HELD };
+  if (faceHeld(doc, sketchId, scene)) return { edges: [], note: PROJECT_HELD };
   const kind = under.edge != null ? "edge" : under.face != null ? "face" : null;
   const hit = kind === null ? null : sceneHit(scene, kind, (kind === "edge" ? under.edge : under.face)!);
   if (hit === null) return { edges: [], note: PROJECT_NOTHING };
@@ -468,9 +466,8 @@ export function projectPick(doc: DesignDocument, sketchId: string, scene: Scene 
 export function sketchEdgeCurves(doc: DesignDocument, sketchId: string, scene: Scene | null, plane: Plane | undefined): EdgeCurve[] {
   const features = doc.timeline.features;
   const at = features.findIndex((f) => f.id === sketchId);
-  const facePlane = features[at]?.intent.parameters.plane;
   if (scene === null || plane === undefined || at < 0) return [];
-  if (isFacePlane(facePlane) && findInScene(faceReference(facePlane), scene).status !== "found") return [];
+  if (faceHeld(doc, sketchId, scene)) return [];
   const before = new Set(features.slice(0, at).map((f) => f.id));
   const out: EdgeCurve[] = [];
   for (const b of scene.bodies) {

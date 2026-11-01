@@ -14,6 +14,7 @@ import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fi
 import { freshName, insertAt, insertItem, isSketchExtrude, numberBodies, takenNames, partFeature, shown, specOf, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
+import { lengthRefused } from "./typed-entry.ts";
 
 /**
  * How far a new extrude goes until the user drags the arrow or types a
@@ -133,6 +134,20 @@ export async function featureBuild(kernel: KernelCalls, doc: DesignDocument, fea
 // typed or its arrow dragged, before OK records anything. A distance is
 // signed there: negative goes the other way from the sketch's plane, which
 // is how OK records it (`extrudeSketch` with |d| and Flip).
+
+/**
+ * Why a signed distance can't be previewed or recorded, in the words OK
+ * uses (`lengthRefused` on its size: under 0.001 mm or over 1 km), or null.
+ * The preview asked the kernel first and showed its 330-character refusal
+ * for 1e-320 (extrude hunt 2026-11-01). 0 is not refused here: it is
+ * where Extrude starts, building nothing but standing the arrow on the
+ * profile, and OK says `ZERO_OK` for it.
+ */
+export function distanceRefused(signed: number): string | null {
+  if (signed === 0) return null;
+  const refused = lengthRefused(Math.abs(signed));
+  return refused === null ? null : `The distance${refused.slice("A length".length)}`;
+}
 
 /** A typed distance as the signed mm it means, or null for one that isn't a number or is 0 (which builds nothing). */
 export function signedDistance(typed: string): number | null {

@@ -112,8 +112,13 @@ test("a point within reach beats an edge, an edge beats lining up, and an edge p
   assert.deepEqual(snapPointer([39.6, 0.5], [39.6, 0.5], t, 0.1), { kind: "endpoint", at: [40, 0] });
   // (13, 0.5): on the edge at (13, 0), though the column x = 13.5 is in reach too.
   assert.deepEqual(snapPointer([13, 0.5], [13, 0.5], t, 0.1), { kind: "on", at: [13, 0] });
-  // The tool's first click at (13, 0): landing there draws nothing, so the edge doesn't offer it; the column does.
-  assert.deepEqual(snapPointer([13, 0.5], [13, 0.5], { ...t, own: [[13, 0]] }, 0.1), { kind: "aligned", at: [13.5, 0.5], column: [13.5, 50], row: null });
+  // The tool's first click at (13, 0), 0.5 from the pointer, in reach: landed on exactly (a second click there draws
+  // nothing; hunt 2026-11-01), before the edge.
+  assert.deepEqual(snapPointer([13, 0.5], [13, 0.5], { ...t, own: [[13, 0]] }, 0.1), { kind: "grid", at: [13, 0] });
+  // From (13.45, 0.95), √(0.45² + 0.95²) ≈ 1.05 from it, out of reach, with grid snap's (13, 1): the edge is 0.95 away, in
+  // reach, but its point at the grid point's foot is (13, 0), the tool's own click, so the edge doesn't offer it; the
+  // column x = 13.5 (0.05 off) does, at the grid's y.
+  assert.deepEqual(snapPointer([13.45, 0.95], [13, 1], { ...t, own: [[13, 0]] }, 0.1), { kind: "aligned", at: [13.5, 1], column: [13.5, 50], row: null });
 });
 
 test("on an edge the point is the rounded point's foot, so a free click reads as rounded along the edge", () => {

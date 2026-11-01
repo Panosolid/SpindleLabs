@@ -9,9 +9,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectFromJson, projectToJson, type BodyView, type Plane, type SketchXY } from "@fission/core";
-import { partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
+import { bodyIdOf, insertPreset, partDocument, readDesignDocument, type DesignDocument, type Sketch } from "../src/document.ts";
+import { sketchEdgeTargets } from "../src/face-edges.ts";
+import { deleteItem, hideBody } from "../src/timeline-edits.ts";
 import { addFaceSketch, addSketch, deleteCurve, drawLine, drawRectangle, movePoint, pinNewPoints, PROJECTED_POINT, projectEdges, sketchCurves, unproject, type EdgeToProject } from "../src/sketch.ts";
-import { cornerOrder, edgeNamed, edgeShape, MIN_LENGTH, placesOf, profileCurves, PROJECTED_OPEN, projectedOpen, PROJECT_HELD, PROJECT_NOTHING, PROJECT_UNNAMED, projectAfter, projectionWords, projectPick, REFUSED, type EdgeShape } from "../src/projection.ts";
+import { cornerOrder, edgeNamed, edgeShape, MIN_LENGTH, placesOf, profileCurves, PROJECTED_OPEN, projectedOpen, PROJECT_HELD, PROJECT_NOTHING, PROJECT_UNNAMED, projectAfter, projectionWords, projectPick, REFUSED, sketchEdgeCurves, type EdgeShape } from "../src/projection.ts";
 import { drawnFrame, facePlane } from "../src/face-sketch.ts";
 import { followedSketch } from "../src/rebuild.ts";
 import { nameBody, type BodyNames } from "../src/naming.ts";
@@ -360,6 +362,39 @@ test("a face's edges that can't be projected are left out, and the note says how
   const { view: bv, names: bn } = box();
   const held = addFaceSketch(partDocument("box", 40, 30, 20), { plane: facePlane("feature-1", "side:line-9"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
   assert.deepEqual(projectPick(held.doc, held.id, onlyBody(bv, bn), XY, { edge: 4 }), { edges: [], note: PROJECT_HELD });
+});
+
+test("regression (face hunt 11-01): a sketch on a hidden body's face still projects and snaps to the bodies shown; its face held, it doesn't", () => {
+  // Box 1 with a sketch on its top (z = 20), a cylinder of radius 5 and height 10 inserted before the sketch, Box 1 hidden by
+  // its eye. The scene is what the app shows: the cylinder only. The box is hidden, not gone: the rebuild still finds the top
+  // (the settled sketch holds no plane), so the sketch is not lost. Before the fix all three said it was: the top wasn't in
+  // the scene shown.
+  const cyl = insertPreset(partDocument("box", 40, 30, 20), "cylinder", 10, 10, 10);
+  const made = addFaceSketch(cyl.doc, { plane: facePlane("feature-1", "top"), feature: "feature-1" }, drawnFrame([0, 0, 1], [20, 15, 20]));
+  const doc = hideBody(made.doc, bodyIdOf("feature-1"), true);
+  const view = cylinder();
+  const scene = onlyBody(view, nameBody(cyl.id, view, () => null));
+  const top = plane([0, 0, 20], [1, 0, 0], [0, 0, 1]);
+  // The cylinder's top face (1) has one edge, its top rim: centre (0, 0, 10), radius 5, parallel to the sketch, so seen
+  // along z it is the same circle, centre (0, 0) in the sketch (its frame is the world's XY lifted to z = 20), radius 5.
+  const pick = projectPick(doc, made.id, scene, top, { face: 1 });
+  assert.equal(pick.note, null);
+  assert.deepEqual(pick.edges.map((e) => [e.feature, e.shape]), [[cyl.id, { kind: "circle", centre: [0, 0], radius: 5 }]]);
+  // On-edge snaps: both rims, each the circle of radius 5 round (0, 0). Point snaps: each rim's centre, (0, 0, 10) and
+  // (0, 0, 0), both (0, 0) in the sketch, the top's first (10 from the plane against 20); a whole circle's one vertex is
+  // only its seam, no corner, so neither rim offers one.
+  assert.deepEqual(sketchEdgeCurves(doc, made.id, scene, top), [{ kind: "circle", centre: [0, 0], radius: 5 }, { kind: "circle", centre: [0, 0], radius: 5 }]);
+  assert.deepEqual(sketchEdgeTargets(doc, made.id, scene, top).map((t) => `${t.kind} ${t.at}`), ["centre 0,0", "centre 0,0"]);
+  // Its face really lost while the box is hidden (the settled document holds where it was): nothing, as before.
+  const sketch = doc.sketches.find((s) => s.id === made.id)!;
+  const held = { ...doc, sketches: doc.sketches.map((s) => (s === sketch ? { ...s, face: { ...s.face!, held: top } } : s)) };
+  assert.deepEqual(projectPick(held, made.id, scene, top, { face: 1 }), { edges: [], note: PROJECT_HELD });
+  assert.deepEqual(sketchEdgeCurves(held, made.id, scene, top), []);
+  assert.deepEqual(sketchEdgeTargets(held, made.id, scene, top), []);
+  // The box deleted, not hidden: its body is in no scene, so the sketch's face is gone, as before.
+  const gone = deleteItem(made.doc, "feature-1");
+  assert.deepEqual(projectPick(gone, made.id, scene, top, { face: 1 }), { edges: [], note: PROJECT_HELD });
+  assert.deepEqual(sketchEdgeTargets(gone, made.id, scene, top), []);
 });
 
 // ---------------------------------------------------------------- followed, and held
