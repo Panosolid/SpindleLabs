@@ -90,7 +90,7 @@ export function rememberedNozzle(storage: Pick<Storage, "getItem"> | null): Nozz
 export const P1S_KIND: SaveKind = { description: "Bambu Lab P1S print file", mime: "model/3mf", extension: ".gcode.3mf" };
 
 /** What the dialog says of any slice, plain or packed. */
-export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume">;
+export type PrintFacts = Pick<SlicedPrint, "layers" | "filamentMm" | "filamentG" | "printTimeS" | "unprintedVolume"> & { levelNote?: string };
 
 /**
  * The bodies' STL files back to back, one file per body, as the engine
@@ -107,24 +107,51 @@ export function stackStl(files: readonly Uint8Array[]): Uint8Array<ArrayBuffer> 
   return out;
 }
 
-/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back. */
-async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<Uint8Array<ArrayBuffer>> {
+/** The lowest z in a binary STL (80-byte header, a count, then 50 bytes a triangle: normal, three corners, 2 spare); NaN when it holds no triangle. */
+export function stlLowestZ(stl: Uint8Array): number {
+  const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength);
+  const count = stl.length >= 84 ? Math.min(view.getUint32(80, true), Math.floor((stl.length - 84) / 50)) : 0;
+  let low = Infinity;
+  for (let t = 0; t < count; t++) {
+    for (let c = 0; c < 3; c++) low = Math.min(low, view.getFloat32(84 + t * 50 + 12 + c * 12 + 8, true));
+  }
+  return count > 0 ? low : NaN;
+}
+
+/**
+ * What the engine does when bodies sit at different heights (slicer hunt 2026-10-31, finding 3): it puts the lowest point
+ * of all of them on the plate, so a body above the lowest one hangs in the air (it needs supports) and a body sunk
+ * below the floor lifts the others off it. One sentence naming the first such body, or "" when they all start at the
+ * same height (within 0.01 mm) or fewer than two.
+ */
+export function levelNote(lowest: readonly number[]): string {
+  const known = lowest.filter(Number.isFinite);
+  if (known.length < 2) return "";
+  const floor = Math.min(...known);
+  const at = lowest.findIndex((z) => Number.isFinite(z) && z - floor > 0.01);
+  if (at < 0) return "";
+  const gap = Math.round((lowest[at] - floor) * 10) / 10;
+  return `Body ${at + 1} starts ${gap} mm above the lowest body. The lowest point goes on the plate, so it hangs in the air and only prints with supports on: set the bodies on one level to print them together.`;
+}
+
+/** The bodies shown as the engine reads them: each body's STL from the kernel, back to back, and the note on their heights. */
+async function bodiesStl(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[]): Promise<{ stl: Uint8Array<ArrayBuffer>; note: string }> {
   if (features.length === 0) throw new Error("There is no body to slice: make or show one first.");
   const files: StlFile[] = [];
   for (const f of features) files.push(await kernel.call("export_stl", await endSpec(kernel, doc, f), "body"));
-  return stackStl(files.map((f) => f.bytes));
+  return { stl: stackStl(files.map((f) => f.bytes)), note: levelNote(files.map((f) => stlLowestZ(f.bytes))) };
 }
 
 /** Slices `features` (bodies, in build order) as they are shown: each body's STL from the kernel, then the engine. */
-export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint> {
-  const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports);
+export async function sliceBodies(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices): Promise<SlicedPrint & { levelNote: string }> {
+  const { stl, note } = await bodiesStl(kernel, doc, features);
+  return { ...(await kernel.call("slice_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports)), levelNote: note };
 }
 
 /** The same slice as the P1S's print file for `plate` and the `nozzle` fitted. */
-export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile> {
-  const stl = await bodiesStl(kernel, doc, features);
-  return kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle);
+export async function printFileOf(kernel: KernelCalls, doc: DesignDocument, features: readonly Feature[], choices: PrintChoices, plate: BuildPlate, nozzle: NozzleType = FILE_DEFAULTS.nozzle): Promise<P1sPrintFile & { levelNote: string }> {
+  const { stl, note } = await bodiesStl(kernel, doc, features);
+  return { ...(await kernel.call("print_file_stl", stl, choices.layerHeight, choices.walls, choices.infill, choices.supports, plate, nozzle)), levelNote: note };
 }
 
 /**
@@ -384,8 +411,8 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
     say("Slicing…", false);
     try {
       const { print, saved, name } = await events.slice(choices(), file(), alive());
-      const warning = unprintedWords(print);
-      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...(warning ? [warning] : [])].join(" "), warning !== null);
+      const warnings = [unprintedWords(print), print.levelNote || null].filter((w): w is string => w !== null);
+      say([saved ? `Saved ${name}:` : "Sliced, but not saved:", printWords(print), ...warnings].join(" "), warnings.length > 0);
     } catch (e) {
       if (e instanceof SliceDropped) say("", false);
       else say(refusalWords(e instanceof Error ? e.message : String(e)), true);
