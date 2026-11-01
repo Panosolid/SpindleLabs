@@ -11,7 +11,9 @@
 // anything the tool could not, and it shows a disabled OK as disabled. What
 // the tool's panel says is wrong (its error, or why OK is off) is shown on
 // the bar in words too, since the sheet holding it is closed and a button's
-// title never shows on touch (weak-spot hunt 10-29). When a tool ends, the
+// title never shows on touch (weak-spot hunt 10-29). While a line, rectangle
+// or arc is part drawn it also holds Type size, which puts the keys in the
+// typed-size boxes: at phone width they take no taps themselves. When a tool ends, the
 // Properties sheet is put away too, leaving the whole view.
 // Wider screens never show the bar (styles/phone-float.css).
 import "./styles/phone-float.css";
@@ -98,7 +100,8 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     const okButton = state?.kind === "end" ? workspace.querySelector<HTMLButtonElement>(state.ender.ok) : null;
     // The key: what is shown and whether OK is on, so the bar is rebuilt only when that changes.
     const why = state?.kind === "end" ? floatWhy(workspace, state.ender, okButton?.disabled ?? false) : "";
-    const key = state === null ? "" : state.kind === "pick" ? "pick" : `${state.ender.kind}:${okButton?.disabled ? "off" : "on"}:${why}`;
+    const sizes = state?.kind === "end" && state.ender.kind === "sketch" && shown(viewport.querySelector("#typed-entry"));
+    const key = state === null ? "" : state.kind === "pick" ? "pick" : `${state.ender.kind}:${okButton?.disabled ? "off" : "on"}:${why}:${sizes ? "sizes" : ""}`;
     if (key === last) return;
     last = key;
     // A tool ended (Finish, OK, Cancel, Escape, Undo): the Properties sheet goes too, so the whole view is back.
@@ -117,6 +120,16 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     if (finish.disabled) finish.title = why || "Not yet: the panel in Properties says why";
     bar.replaceChildren(finish);
     if (state.ender.cancel) bar.append(proxy("float-cancel", "Cancel", state.ender.cancel));
+    // The typed sizes by the finger (typed-boxes.ts) take no taps at phone width, so a tap meant for the sketch never opens
+    // the keyboard instead (sketch hunt 2026-11-01): this button puts the keys in their first box.
+    if (sizes) {
+      const type = Object.assign(document.createElement("button"), { type: "button", id: "float-type", textContent: "Type size" });
+      type.addEventListener("click", (e) => {
+        if (e.detail !== 0 && !pressOnBar) return;
+        viewport.querySelector<HTMLInputElement>("#typed-entry input")?.focus();
+      });
+      bar.append(type);
+    }
     if (why) {
       const words = Object.assign(document.createElement("span"), { id: "float-why", className: "phone-float-words phone-float-why", textContent: why });
       words.setAttribute("role", "status");
@@ -124,5 +137,7 @@ export function startPhoneFloat(workspace: HTMLElement, viewport: HTMLElement, c
     }
   };
   new MutationObserver(update).observe(workspace, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "disabled"], characterData: true });
+  // The typed sizes live in the view, not the workspace: their showing and hiding changes the bar too.
+  new MutationObserver(update).observe(viewport, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden"] });
   update();
 }

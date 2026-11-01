@@ -9,7 +9,9 @@
 // nothing, and Enter on it places nothing; Escape in a box empties it without ending the line, and a
 // second Escape ends it; letters typed in a box never reach the tool keys.
 // The rectangle's Width and Height the same way. At 375 px with taps: the
-// boxes whole on screen, a line typed by length and angle. Screenshots
+// boxes whole on screen, a line typed by length and angle after Type size
+// on the bar over the view (the boxes take no taps there, so a tap on
+// them draws the next point instead of opening the keyboard). Screenshots
 // at 1280 and 375 px go to E2E_SHOTS when set. The arcs too: the hint by
 // the pointer at each click ("Specify next point", "Place point on arc"),
 // a 3-point arc's end typed by length and angle with no boxes for its
@@ -254,7 +256,9 @@ await check("375 px with taps: the boxes on screen, a line typed by length and a
   assert.ok(b.y >= v.y && b.y + b.height <= v.y + v.height + 1, "boxes inside the view");
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth);
   assert.ok(scroll <= 375, `no sideways scroll (${scroll} px)`);
-  await page.locator("#typed-length").tap();
+  // At phone width the boxes take no taps until typed in: the bar over the view's Type size puts the keys in Length.
+  await page.tap("#float-type");
+  assert.equal(await focused(page), "typed-length", "Type size puts the keys in Length");
   await page.keyboard.type("25");
   await page.locator("#typed-angle").tap();
   await page.keyboard.type("90");
@@ -264,12 +268,27 @@ await check("375 px with taps: the boxes on screen, a line typed by length and a
   await page.close();
 });
 
+await check("375 px with taps: a tap where the boxes stand draws the next point, it never opens the keyboard (sketch hunt 2026-11-01)", async () => {
+  // Found in the hunt: the boxes stand under the finger's last point, so the next tap of a line drawn down landed
+  // on Length and opened the keyboard instead of placing the corner.
+  const page = await fresh(375, true);
+  await sketch(page, true);
+  await clickPlane(page, [20, 15], TOP, true);
+  await points(page, "20,15");
+  const b = await page.locator("#typed-length").boundingBox();
+  await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+  await until(page, () => (document.querySelector("#viewport").dataset.sketchPoints ?? "").split(" ").length === 2, null, "a second point from the tap on the boxes");
+  assert.notEqual(await focused(page), "typed-length", "the tap did not put the keys in Length");
+  assert.equal(await boxesShown(page), true, "the boxes still show for the next side");
+  await page.close();
+});
+
 await check("375 × 667 with taps, then turned sideways to 667 × 375 and back: the boxes stay on screen beside the line's point", async () => {
   const page = await fresh(375, true, 667);
   await sketch(page, true);
   await clickPlane(page, [20, 15], TOP, true);
   await points(page, "20,15");
-  await page.locator("#typed-length").tap();
+  await page.tap("#float-type");
   await page.keyboard.type("12");
   const canvas0 = await page.locator("#viewport canvas").boundingBox();
   const point0 = screenPoint(canvas0, [20, 15, 0], TOP);
@@ -396,7 +415,7 @@ await check("375 px with taps: an arc's end typed, the boxes and hint on screen"
   const t = await page.locator("#typed-entry").boundingBox();
   const h = await page.locator("#sketch-hint").boundingBox();
   assert.ok(h.y + h.height <= t.y || t.y + t.height <= h.y, "the hint and the boxes don't overlap");
-  await page.locator("#typed-length").tap();
+  await page.tap("#float-type");
   await page.keyboard.type("20");
   await page.locator("#typed-angle").tap();
   await page.keyboard.type("0");
