@@ -6,7 +6,9 @@
 //  4. closing the dialog mid-slice drops the file (nothing downloads); the dialog reopened says Slicing… and the buttons stay off;
 //  5. a result is cleared when a choice changes; an engine refusal reads as advice;
 //  6. closing the preview puts keyboard focus on File ▾;
-//  7. at phone width the preview still says how long and how much plastic.
+//  7. at phone width the preview still says how long and how much plastic;
+//  8. a part floating above the plate (a 10 mm cube on the plate, another 20 mm up, sent to the real engine in place of the
+//     design's own file) is refused with advice that fits the dialog, readable at both widths; supports on slice it.
 // At a desktop width with clicks and a phone's with taps. Run with `npm run e2e` (after `npm run build`); SHOTS=dir saves screenshots.
 import assert from "node:assert/strict";
 import { preview } from "vite";
@@ -47,7 +49,23 @@ async function fresh(width, tap) {
     };
     // Hold the kernel's slice calls for window.kernelDelay ms.
     const send = Worker.prototype.postMessage;
+    // Two 10 mm cubes as a binary STL (12 triangles each): one on the plate at x 0..10, one 20 mm up at x 30..40.
+    const cubes = () => {
+      const faces = [[0, 1, 3], [0, 3, 2], [4, 6, 7], [4, 7, 5], [0, 4, 5], [0, 5, 1], [2, 3, 7], [2, 7, 6], [0, 2, 6], [0, 6, 4], [1, 5, 7], [1, 7, 3]];
+      const out = new DataView(new ArrayBuffer(84 + 50 * 24));
+      out.setUint32(80, 24, true);
+      let t = 0;
+      for (const [x, z] of [[0, 0], [30, 20]]) {
+        const corner = (i) => [x + (i & 1) * 10, ((i >> 1) & 1) * 10, z + ((i >> 2) & 1) * 10];
+        for (const f of faces) {
+          [f[0], f[2], f[1]].forEach((i, c) => corner(i).forEach((v, k) => out.setFloat32(84 + t * 50 + 12 + c * 12 + k * 4, v, true)));
+          t++;
+        }
+      }
+      return new Uint8Array(out.buffer);
+    };
     Worker.prototype.postMessage = function (m, ...rest) {
+      if (window.floatingParts && m && (m.op === "slice_stl" || m.op === "print_file_stl")) m = { ...m, args: [cubes(), ...m.args.slice(1)] };
       const wait = window.kernelDelay ?? 0;
       if (wait > 0 && m && (m.op === "slice_stl" || m.op === "print_file_stl")) return void setTimeout(() => send.call(this, m, ...rest), wait);
       return send.call(this, m, ...rest);
@@ -163,6 +181,34 @@ for (const [width, tap] of [[1280, false], [375, true]]) {
       await page.waitForFunction(() => document.getElementById("slice-print-status")?.textContent.startsWith("Saved"));
       await page.selectOption("#slice-print-infill", "25");
       assert.equal(await page.textContent("#slice-print-status"), "", "the old result is gone");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  await check(`${at}: a part floating above the plate is refused with advice, readable; supports on slice it`, async () => {
+    const page = await fresh(width, tap);
+    const press = (sel) => (tap ? page.tap(sel) : page.click(sel));
+    try {
+      await open(page, tap);
+      await page.evaluate(() => (window.floatingParts = true));
+      await page.selectOption("#slice-print-supports", "off");
+      await press("#slice-print-go");
+      await page.waitForFunction(() => /hangs in the air/.test(document.getElementById("slice-print-status")?.textContent ?? ""), null, { timeout: 20000 }).catch(async () => assert.fail("status: " + (await page.textContent("#slice-print-status"))));
+      assert.equal(await page.textContent("#slice-print-status"), "Part of the model hangs in the air 20 mm above the plate, around (35, 5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+      assert.equal(await page.$eval("#slice-print-status", (e) => e.classList.contains("slice-print-bad")), true);
+      const fits = await page.$eval("#slice-print-status", (e) => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && e.scrollWidth <= e.clientWidth + 1 && r.height > 0; });
+      assert.equal(fits, true, "the advice fits the dialog");
+      const seen = await page.evaluate(() => {
+        const s = document.getElementById("slice-print-status").getBoundingClientRect();
+        const a = document.querySelector(".slice-print-actions").getBoundingClientRect();
+        return s.bottom <= a.top + 1 && s.top >= 0;
+      });
+      assert.equal(seen, true, "the advice is in view, not under the buttons");
+      if (shots) await page.screenshot({ path: `${shots}/slice-print-fixes-${width}-floating.png` });
+      await page.selectOption("#slice-print-supports", "normal");
+      await press("#slice-print-go");
+      await page.waitForSelector(".save-name input", { timeout: 60000 });
     } finally {
       await page.context().close();
     }
