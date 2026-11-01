@@ -960,13 +960,6 @@
   },
   {
     "file": "workspaces/design/src/document.ts",
-    "mutator": "ConditionalExpression",
-    "original": "typeof id !== \"string\"",
-    "replacement": "false",
-    "why": "A hidden entry that is not a string is refused anyway, with the same message: byId's keys are the timeline's ids, all strings, and Map.get never matches a string key with a number, object or null, so !at is true for it."
-  },
-  {
-    "file": "workspaces/design/src/document.ts",
     "mutator": "ArrayDeclaration",
     "original": "[]",
     "replacement": "[\"Stryker was here\"]",
@@ -992,6 +985,20 @@
     "original": "[]",
     "replacement": "[\"Stryker was here\"]",
     "why": "withShortNames (issue #220): an entry renaming nothing gives a text item instead of nothing; split(r.old) with r.old undefined splits nowhere, so the summary is unchanged, and the copies of from are made the same way either way: the item read back is equal."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "migrateDesignV5's solids (issue #220): a sketch or Move adds the stand-in text to solids instead of nothing; a hidden entry is mapped only when it is in solids, and no item id or eye row is that text, so a real file maps the same entries."
+  },
+  {
+    "file": "workspaces/design/src/document.ts",
+    "mutator": "ArrayDeclaration",
+    "original": "[]",
+    "replacement": "[\"Stryker was here\"]",
+    "why": "migrateDesignV5's hidden check (issue #220): data with no hidden list loops over the stand-in text instead of nothing; it is not a body id (bodyItem gives null), so nothing is refused, and the hidden list itself is left out as before."
   },
   {
     "file": "workspaces/design/src/document.ts",
