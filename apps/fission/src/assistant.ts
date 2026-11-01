@@ -408,7 +408,7 @@ export function createAssistant(el: HTMLElement, host: AssistantHost, status: HT
         : cut
           ? `You're offline: ${info!.title} needs an internet connection. Everything else in SpindleLabs works offline.`
           : offline && s.kind === "in-browser"
-            ? "You're offline: the in-browser model works only if it was downloaded here before."
+            ? "You're offline: the in-browser model works only if it was used here before (after an update that changed it, it needs one use online again)."
             : "";
     const features = workspace === "community" ? [] : AI_FEATURES[workspace];
     const title = workspaceTitle;

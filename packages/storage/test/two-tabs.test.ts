@@ -10,7 +10,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyProject, projectToJson, type Project } from "@fission/core";
 import {
+  journalEntry,
   memoryKeyValue,
+  readJournalEntry,
   projectStore,
   recoverUnsaved,
   startAutosave,
@@ -255,4 +257,161 @@ test("a stale tab finishing (another project opened) stores nothing and leaves n
   assert.equal(journal.items.size, 0);
   assert.deepEqual(await recoverUnsaved(store, journal, []), []);
   assert.equal(widthOf(await store.open("p")), 45);
+});
+
+// Real-use hunt S1 / B1b (2026-11-01): tab B, stale, journals its change when its page is hidden, before its save
+// finds that tab A stored newer work. The entry was newer than the store's state, so the next visit put B's stale
+// state back over A's saved edit. Each entry now also names the stored state it was made from (the save time the
+// tab expected); recovery puts it back only over that state, and otherwise keeps it as a separate project.
+
+test("a stale tab hidden before its save is refused: the next visit keeps A's work and B's as a separate project (worked by hand)", async () => {
+  // Stored 40 at t = 0, both tabs expecting save time 0. A changes to 45; its save at t = 1000 stores 45 (save time
+  // 1000). B, still on 40, changes to 25 at t = 1100 and is hidden at t = 1300: leaving() journals 25, written at
+  // 1300 (newer than 1000) but made from the state saved at 0. Its save expects 0, finds 1000 and is refused. Next
+  // visit: the store's 1000 is not the entry's 0, so 25 must not go over 45: "p" keeps 45, and 25 is kept as a new
+  // project "Box (from another tab)", with a message naming it, and the entry goes.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let a = part(40);
+  let b = part(40);
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(store, "p", () => a, () => {}, opts);
+  const tabB = startAutosave(store, "p", () => b, () => {}, opts);
+  a = part(45);
+  tabA.changed();
+  await clock.advance(1100);
+  b = part(25);
+  tabB.changed();
+  await clock.advance(200);
+  assert.equal(tabB.leaving(), true, "B didn't know yet, so it journalled its change");
+  await settle();
+  await settle();
+  assert.equal(widthOf(await store.open("p")), 45, "B's save was refused");
+  const problems = await recoverUnsaved(store, journal, [], () => "copy-1");
+  assert.equal(widthOf(await store.open("p")), 45, "A's saved edit is not overwritten");
+  assert.equal(widthOf(await store.open("copy-1")), 25, "B's change is kept as a separate project");
+  assert.equal((await store.open("copy-1")).name, "Box (from another tab)");
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]!, /"Box \(from another tab\)"/);
+  assert.equal(journal.items.size, 0, "the entry goes once its copy is stored");
+  // The project the user last saw stored opens next, not the copy: the copy is listed behind every other project.
+  assert.deepEqual((await store.list()).map((x) => x.id), ["p", "copy-1"]);
+  await store.save("q", part(1));
+  assert.deepEqual((await store.list()).map((x) => x.id), ["q", "p", "copy-1"], "and stays behind later saves");
+});
+
+test("A saving again later doesn't silently remove the stale tab's entry: it still becomes a separate project", async () => {
+  // As above, then A changes to 50 at t = 1400 and stores it at t = 2400. B's entry (written 1300) is older than that,
+  // which used to let A's save remove it; but it was made from save time 0, not the 1000 A's save replaced, so it is
+  // a change A never saw, and it is left for the next visit, which keeps it as a copy.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let a = part(40);
+  let b = part(40);
+  const opts = { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now };
+  const tabA = startAutosave(store, "p", () => a, () => {}, opts);
+  const tabB = startAutosave(store, "p", () => b, () => {}, opts);
+  a = part(45);
+  tabA.changed();
+  await clock.advance(1100);
+  b = part(25);
+  tabB.changed();
+  await clock.advance(200);
+  tabB.leaving();
+  await clock.advance(100);
+  a = part(50);
+  tabA.changed();
+  await clock.advance(1000);
+  assert.equal(widthOf(await store.open("p")), 50);
+  assert.equal(journal.items.size, 1, "B's entry is still here");
+  await recoverUnsaved(store, journal, [], () => "copy-1");
+  assert.equal(widthOf(await store.open("p")), 50);
+  assert.equal(widthOf(await store.open("copy-1")), 25);
+});
+
+test("a tab's entry written while its own save was in flight is still put back over that save, not copied", async () => {
+  // One tab. Stored 40 at t = 0 (expected 0). It changes to 45; its save starts at t = 1000 and lands only later. At
+  // t = 1100 it changes to 46 and is hidden: 46 is journalled, made from save time 0 as the tab knew it then. The
+  // save of 45 lands (save time 1000) and the page dies before 46 is stored. The store's 1000 is this tab's own
+  // save, so the entry's base moved with it: the next visit puts 46 back over 45, with no copy.
+  const clock = fakeClock();
+  const store = projectStore(memoryKeyValue(), [], clock.now);
+  const journal = fakeStorage();
+  await store.save("p", part(40));
+  let land: () => void = () => {};
+  let calls = 0;
+  const slow: ProjectStore = {
+    ...store,
+    save: (...args) => {
+      calls++;
+      if (calls > 1) return new Promise<void>(() => {}); // the page has gone
+      return new Promise<void>((done) => (land = () => void store.save(...args).then(done)));
+    },
+  };
+  let p = part(40);
+  const tab = startAutosave(slow, "p", () => p, () => {}, { timers: clock.timers, journal, stored: true, storedAt: new Date(0), now: clock.now });
+  p = part(45);
+  tab.changed();
+  await clock.advance(1100);
+  p = part(46);
+  tab.changed();
+  assert.equal(tab.leaving(), true);
+  land();
+  await settle();
+  await settle();
+  await settle();
+  assert.equal(widthOf(await store.open("p")), 45, "the first save landed");
+  assert.deepEqual(await recoverUnsaved(store, journal, [], () => "copy-1"), []);
+  assert.equal(widthOf(await store.open("p")), 46, "put back over its own save");
+  assert.equal((await store.list()).length, 1, "no copy");
+});
+
+test("an entry names the save time it was made from after its own time; one that can't be written is left out (worked by hand)", () => {
+  // Written at 1300 from the state saved at 0: "@1300~0", then the text. Kept and made from 5000: "@7!~5000". A base
+  // before 1970 (-1 ms) or past 15 digits can't be read back, so it is left out rather than spoil the entry.
+  assert.equal(journalEntry("X", new Date(1300), false, new Date(0)), "@1300~0\nX");
+  assert.equal(journalEntry("X", new Date(7), true, new Date(5000)), "@7!~5000\nX");
+  assert.equal(journalEntry("X", new Date(7), false, new Date(-1)), "@7\nX");
+  assert.equal(journalEntry("X", new Date(7), false, new Date(1e15)), "@7\nX");
+  assert.equal(journalEntry("X", new Date(7), false, new Date(1e15 - 1)), "@7~999999999999999\nX");
+  assert.deepEqual(readJournalEntry("@1300~0\nX"), { text: "X", written: new Date(1300), kept: false, base: new Date(0) });
+  assert.equal(readJournalEntry("@7!~5000\nX").base?.getTime(), 5000);
+  assert.equal(readJournalEntry("@7~\nX").written, null, "a ~ with no time is not a head");
+});
+
+test("a stale entry whose copy can't be stored stays in the journal, and the project keeps the newer work", async () => {
+  // Stored 45 at t = 1000; the entry (25, made from save time 0) can't go over it, and the store refuses the copy
+  // too (full): the entry stays for the next visit, "p" keeps 45, and the message says so.
+  let t = 1000;
+  const store = projectStore(memoryKeyValue(), [], () => new Date(t));
+  await store.save("p", part(45));
+  const journal = fakeStorage();
+  journal.setItem(unsavedKey("p"), journalEntry(projectToJson(part(25)), new Date(1300), false, new Date(0)));
+  const full: ProjectStore = { ...store, save: (id, ...rest) => (id === "p" ? store.save(id, ...rest) : Promise.reject(new Error("storage is full"))) };
+  t = 2000;
+  const problems = await recoverUnsaved(full, journal, [], () => "copy-1");
+  assert.equal(widthOf(await store.open("p")), 45);
+  assert.equal(journal.items.size, 1, "kept for the next visit");
+  assert.match(problems[0]!, /couldn't be kept as a separate project \(storage is full\)/);
+  assert.equal((await store.list()).length, 1);
+});
+
+test("an entry made from the state the store still holds is put back over it, with no copy", async () => {
+  // Stored 40 at t = 500. The entry (46, written 900, made from 500) goes over it; one made from 499 or 501 would not.
+  for (const [base, want, copies] of [[500, 46, 0], [499, 40, 1], [501, 40, 1]] as const) {
+    let t = 500;
+    const store = projectStore(memoryKeyValue(), [], () => new Date(t));
+    await store.save("p", part(40));
+    t = 1000;
+    const journal = fakeStorage();
+    journal.setItem(unsavedKey("p"), journalEntry(projectToJson(part(46)), new Date(900), false, new Date(base)));
+    await recoverUnsaved(store, journal, [], () => "copy-1");
+    assert.equal(widthOf(await store.open("p")), want, `made from ${base}`);
+    assert.equal((await store.list()).length, 1 + copies, `made from ${base}`);
+    assert.equal(journal.items.size, 0);
+  }
 });

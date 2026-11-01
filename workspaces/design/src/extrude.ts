@@ -11,7 +11,7 @@
 // them: it is added to the timeline at the marker and replaces nothing.
 
 import type { BodySpec, BodyView, ExtrudeArrow, Feature, KernelCalls } from "@fission/core";
-import { freshName, insertAt, insertItem, isSketchExtrude, takenNames, partFeature, shown, specOf, type DesignDocument } from "./document.ts";
+import { counted, freshName, insertAt, insertItem, isSketchExtrude, takenNames, partFeature, shown, specOf, type DesignDocument } from "./document.ts";
 import { extrudeSpec, type CurveIds } from "./rebuild.ts";
 import { sketchItem } from "./sketch.ts";
 
@@ -73,7 +73,7 @@ export function extrudeSketch(doc: DesignDocument, sketchId: string, distance: n
     dependsOn: [sketchId],
     suppressed: false,
   };
-  return { id, doc: { ...doc, nextId: doc.nextId + 1, timeline: insertItem(doc, feature) } };
+  return { id, doc: { ...doc, nextId: counted(doc.nextId + 1), timeline: insertItem(doc, feature) } };
 }
 
 /** The document with an extrude of a sketch (the part, `partFeature`, unless `id` names another) going `distance` mm instead. */

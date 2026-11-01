@@ -65,6 +65,17 @@ const MIGRATIONS: Record<number, (old: Json) => Json> = {
 };
 
 /**
+ * A project, or a workspace's part of one, saved by a newer SpindleLabs: not wrong, only unreadable here, so what
+ * holds it (the unsaved-changes journal) keeps it for a build that reads it (real-use hunt S2).
+ */
+export class NewerFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NewerFormatError";
+  }
+}
+
+/**
  * Reads a saved project (already parsed from JSON), upgrading older
  * versions step by step. A file from a newer SpindleLabs, or one that is not a
  * project, is refused with a clear message rather than half-read.
@@ -74,7 +85,7 @@ export function readProject(data: unknown): Project {
   let p = data as Json;
   const v = p.formatVersion;
   if (typeof v !== "number" || !Number.isInteger(v) || v < 1) throw new Error("not a SpindleLabs project: no format version");
-  if (v > FORMAT_VERSION) throw new Error(`this project was saved by a newer SpindleLabs (format ${v}; this one reads up to ${FORMAT_VERSION})`);
+  if (v > FORMAT_VERSION) throw new NewerFormatError(`this project was saved by a newer SpindleLabs (format ${v}; this one reads up to ${FORMAT_VERSION})`);
   for (let n = v; n < FORMAT_VERSION; n++) p = MIGRATIONS[n](p);
   for (const key of ["name", "units", "materials", "links", "workspaces"])
     if (!(key in p)) throw new Error(`not a SpindleLabs project: "${key}" is missing`);
@@ -83,6 +94,9 @@ export function readProject(data: unknown): Project {
   if (!Array.isArray(p.materials)) throw new Error('not a SpindleLabs project: "materials" must be a list');
   if (!Array.isArray(p.links)) throw new Error('not a SpindleLabs project: "links" must be a list');
   if (!isObject(p.workspaces)) throw new Error('not a SpindleLabs project: "workspaces" must be an object');
+  // Each entry an object (real-use hunt S7: materials [null] opened, then whatever read a material's name threw).
+  for (const key of ["materials", "links"] as const)
+    for (const [i, x] of (p[key] as unknown[]).entries()) if (!isObject(x)) throw new Error(`not a SpindleLabs project: ${key}[${i}] is not an object`);
   return p as unknown as Project;
 }
 
@@ -158,7 +172,8 @@ export function projectFromJson(text: string, readers: readonly DataReader[]): P
       // Defined, not assigned, so even an id "__proto__" stays a key.
       Object.defineProperty(workspaces, id, { value: reader ? reader(part) : part, enumerable: true, writable: true, configurable: true });
     } catch (e) {
-      throw new Error(`can't open the ${id} workspace's data: ${e instanceof Error ? e.message : String(e)}`);
+      const said = `can't open the ${id} workspace's data: ${e instanceof Error ? e.message : String(e)}`;
+      throw e instanceof NewerFormatError ? new NewerFormatError(said) : new Error(said);
     }
   }
   return { ...project, workspaces };

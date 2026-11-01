@@ -34,9 +34,12 @@ export interface ProjectStore {
    * `unchangedSince`, the save time of the stored project as this tab last
    * read or wrote it, the save is refused with a ProjectChangedError when
    * the store's is another (another tab saved since), so a stale tab never
-   * overwrites newer work.
+   * overwrites newer work. `behind` lists it after every project saved
+   * in order (save number 0, the count left as it was): a stale tab's change
+   * kept as a separate project (unsaved.ts), so the project the user last
+   * saw stored is still the one the app opens (real-use hunt S1).
    */
-  save(id: string, project: Project, read?: Date, unchangedSince?: Date): Promise<void>;
+  save(id: string, project: Project, read?: Date, unchangedSince?: Date, behind?: boolean): Promise<void>;
   /** Forgets a stored project; refuses an id that is not stored. */
   remove(id: string): Promise<void>;
 }
@@ -101,7 +104,7 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
         throw new Error(`can't open the stored project "${id}": ${message(e)}`);
       }
     },
-    async save(id, project, read, unchangedSince) {
+    async save(id, project, read, unchangedSince, behind = false) {
       checkId(id);
       const text = projectToJson(project); // refuses NaN and the like before anything is written
       // The save time is when the state was read, never when the writes finish: a journal entry written while
@@ -118,6 +121,7 @@ export function projectStore(kv: KeyValue, readers: readonly DataReader[], now: 
           const holds = readSummary(id, summary);
           if (holds.problem !== undefined || holds.modified.getTime() !== unchangedSince.getTime()) throw new ProjectChangedError();
         }
+        if (behind) return { [PROJECT + id]: text, [SUMMARY + id]: JSON.stringify({ name: project.name, modified, order: 0 }) };
         const order = count(last === undefined ? undefined : Number(last)) + 1;
         return { [PROJECT + id]: text, [SUMMARY + id]: JSON.stringify({ name: project.name, modified, order }), [ORDER]: String(order) };
       });

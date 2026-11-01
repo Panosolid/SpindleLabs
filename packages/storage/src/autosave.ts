@@ -197,13 +197,30 @@ export function startAutosave(
         if (journalVersion > v) return;
       } else {
         const entry = at === null ? null : journal?.getItem(key);
-        const written = entry == null ? null : readJournalEntry(entry).written;
-        if (written === null || written.getTime() >= at!.getTime()) return;
+        const read = entry == null ? null : readJournalEntry(entry);
+        // One that names the state it was made from is a change this tab never saw: the next visit keeps it (unsaved.ts).
+        if (read === null || read.written === null || read.base !== null || read.written.getTime() >= at!.getTime()) return;
       }
       journal?.removeItem(key);
       journalVersion = null;
     } catch {
       // left in place: recovered over the same state next visit, or skipped there as older, which changes nothing
+    }
+  };
+
+  /**
+   * This tab's own entry, journalled while a save was in flight, holds a newer state made from what that save has
+   * now stored (save time `at`): it names `at` as the state it goes over, so the next visit puts it back there.
+   */
+  const rebase = (at: Date) => {
+    if (journalVersion === null) return;
+    try {
+      const entry = journal?.getItem(key);
+      if (entry == null) return;
+      const read = readJournalEntry(entry);
+      if (read.written !== null) journal?.setItem(key, journalEntry(read.text, read.written, read.kept, at));
+    } catch {
+      // left naming the older state: the next visit keeps it as a separate project, so nothing is lost
     }
   };
 
@@ -253,6 +270,7 @@ export function startAutosave(
       base = at;
       owner = false; // the store holds this tab's state now: the entry, if still here, is an ordinary one
       stored(v, at);
+      rebase(at);
     } catch (e) {
       if (e instanceof ProjectChangedError) conflicted = true;
       failure = message(e);
@@ -303,7 +321,7 @@ export function startAutosave(
       let kept = journalVersion === version;
       if (!kept && journal) {
         try {
-          journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner));
+          journal.setItem(key, journalEntry(projectToJson(project()), stamp(), owner, base));
           journalVersion = version;
           kept = true;
         } catch {
@@ -337,7 +355,7 @@ export function startAutosave(
       if (text === written && !inFlight) return stored(v, writtenAt);
       if (journal) {
         try {
-          journal.setItem(key, journalEntry(text, at, owner)); // kept now, should the page go before the store's save
+          journal.setItem(key, journalEntry(text, at, owner, base)); // kept now, should the page go before the store's save
           journalVersion = v;
         } catch {
           // storage full: the store's save below is all there is
@@ -351,6 +369,7 @@ export function startAutosave(
           writtenAt = at;
           owner = false;
           stored(v, at);
+          rebase(at);
         } catch (e) {
           // Kept in the journal (when it could be written), put back on the next visit; unless another tab saved
           // since, when putting it back would overwrite that tab's work.

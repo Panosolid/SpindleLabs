@@ -245,7 +245,7 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
         undo: document.getElementById("undo").title,
       }));
     const ALREADY = "New: nothing to clear, the design is already empty.";
-    const ON = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back.";
+    const ON = "New: clear the whole design and start again from an empty one. It asks first, and Undo brings it back until the page is reloaded or closed.";
     // A new design is already empty (U0c): File ▾'s New is off and says why.
     assert.deepEqual(await fileItem(page, "start-fresh"), [true, ALREADY]);
     await startWithBox(page, tap);
@@ -263,7 +263,7 @@ for (const { width, tap, square, distance, volume, centre, radius: want, top2 } 
     await ask();
     assert.equal(
       await page.textContent("#start-fresh-words"),
-      "This clears everything in the design (1 sketch and 2 features) and starts again from an empty design, as a new project opens. Undo brings it all back.",
+      "This clears everything in the design (1 sketch and 2 features) and starts again from an empty design, as a new project opens. Undo brings it all back until you reload or close this page, so use Save first to keep it as a file.",
     );
     assert.equal(await page.evaluate(() => document.activeElement?.id), "start-fresh-cancel", "Cancel has the focus");
     const box = await page.locator("#start-fresh-dialog").boundingBox();

@@ -13,7 +13,8 @@
 .slice-print #slice-print-supports { width: 20px; height: 20px; margin: 0; accent-color: var(--look-accent); }
 .slice-print #slice-print-status:empty { display: none; }
 .slice-print #slice-print-status.slice-print-bad { color: #f0a35e; }
-.slice-print .slice-print-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Close, Preview and Slice and download wrap onto a second line rather than run out of the dialog's left side (Close was cut off at 320 and 340 px: phone hunt 11-01). */
+.slice-print .slice-print-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .slice-print #slice-print-go:not(#none) { font-weight: 600; }
 @media (max-width: 640px) {
   .slice-print button:not(#none), .slice-print select { min-height: 44px; }

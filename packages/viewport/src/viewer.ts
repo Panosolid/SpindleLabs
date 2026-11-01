@@ -5,7 +5,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { NO_HIGHLIGHT, triangleColours, type AnalysisOverlay, type DisplayMesh, type ExtrudePointer, type ExtrudeShow, type Framing, type MoveHandle, type MoveHandlesShow, type MovePointer, type ImageRep, type OriginPlane, type OriginShown, type Plane, type SharedViewport, type SketchDrawing, type SketchPointer, type SketchXY, type ViewportHighlight, type ViewportPick } from "@fission/core";
 import { clientToNdc, edgeOfSegment, faceOfTriangle, isClick, ndcToClient, planeOrFace, segmentsNear, unhidden } from "./picking.ts";
-import { fitDistance, orbitSafeOffset, planeViewBasis, viewBasis, type ViewName } from "./views.ts";
+import { fitDistance, orbitSafeOffset, planeViewBasis, refitScale, viewBasis, type ViewName } from "./views.ts";
 import { ViewCube } from "./viewcube.ts";
 import { releaseShared } from "./release.ts";
 import { lookAtFraming, partFraming, selectionFraming } from "./framing.ts";
@@ -423,6 +423,13 @@ export class ViewportView {
   private dragMoveHandle() {
     const canvas = this.renderer.domElement;
     this.element.addEventListener("pointerdown", (e) => {
+      // A second finger while a handle is held (phone hunt 11-01: it pinched the camera, or picked, mid-drag): nobody
+      // hears it, so the held handle stays the one thing the fingers do until it is let go.
+      if (this.moveDrag && e.target === canvas && e.pointerId !== this.moveDrag.id) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       const centre = this.host.move.state?.centre;
       if (e.target !== canvas || this.moveDrag || !e.isPrimary || e.button !== 0 || !this.host.moving() || !centre) return;
       this.pointerKind = e.pointerType === "touch" ? "touch" : "mouse";
@@ -456,7 +463,9 @@ export class ViewportView {
       // Read by the e2e tests: once a drag's end is counted, every move it made has been heard.
       this.element.dataset.moveDrags = String(Number(this.element.dataset.moveDrags ?? 0) + 1);
       this.host.setMoveHot(null);
-      this.host.movePointer({ handle: drag.handle, amount: drag.amount, done: true });
+      // The browser called the drag off (a system gesture, an incoming call, the page losing the touch): the handle's
+      // box goes back to its number at the press, as Escape on a drag would, rather than keeping wherever it stopped.
+      this.host.movePointer({ handle: drag.handle, amount: e.type === "pointercancel" ? 0 : drag.amount, done: true });
     };
     canvas.addEventListener("pointerup", end);
     canvas.addEventListener("pointercancel", end);
@@ -883,12 +892,27 @@ export class ViewportView {
     return { centre: [0, 0, 0], radius: Math.hypot(widthMm, heightMm) / 2 };
   }
 
+  /** The width the view last had (0 before its first real size), so a resize knows whether the phone was turned. */
+  private lastWidth = 0;
+
   private resize() {
     const { clientWidth: w, clientHeight: h } = this.element;
     if (w === 0 || h === 0) return;
     this.renderer.setSize(w, h);
+    // A phone turned upright (or a view made narrower) kept the camera, so the part that filled the wide view ran
+    // off both sides of the tall one (phone hunt 11-01): when the width changes, the camera moves along its line of
+    // sight so the narrower field of view covers what it did (`refitScale`; turning back undoes it exactly). Not on the
+    // first size (the camera was placed for it) nor when only the height changes (a toolbar or a keyboard settling).
+    const scale = this.lastWidth > 0 && w !== this.lastWidth ? refitScale(this.camera.fov, this.camera.aspect, w / h) : 1;
+    this.lastWidth = w;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (scale !== 1) {
+      const { position, target, up } = this.cameraPose();
+      const away = this.camera.position.distanceTo(this.controls.target);
+      const k = away > 0 ? Math.min(Math.max(away * scale, this.controls.minDistance), this.controls.maxDistance) / away : 1;
+      if (Number.isFinite(k) && k > 0 && k !== 1) this.setPose({ position: position.map((p, i) => target[i] + (p - target[i]) * k) as CameraPose["position"], target, up }, k);
+    }
   }
 
   /** What this view's renderer holds on the graphics card (the soak test's leak check): geometries, textures and shader programs. */

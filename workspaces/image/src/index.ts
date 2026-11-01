@@ -22,6 +22,7 @@ export * from "./physical-size.ts";
 export * from "./adjust.ts";
 export * from "./document.ts";
 export * from "./open.ts";
+export * from "./orientation.ts";
 export * from "./panels.ts";
 export * from "./representations.ts";
 export { currentImageObjects, mountImage, openImageFile, resetImageWorkspace } from "./workspace.ts";

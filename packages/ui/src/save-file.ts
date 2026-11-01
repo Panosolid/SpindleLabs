@@ -43,13 +43,30 @@ export type SaveResult =
 
 type Picker = (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileHandle>;
 
-/** The longest name offered, endings included (file systems allow 255 bytes). */
+/** The longest name offered, in characters, endings included. */
 const MAX_NAME = 120;
+/** And in bytes of UTF-8, endings included: file systems allow 255 bytes, and an emoji is 4 of them. */
+export const MAX_NAME_BYTES = 200;
+
+/** The longest start of `chars` (whole code points) that is at most `bytes` bytes of UTF-8. */
+function fitBytes(chars: string[], bytes: number): string {
+  let used = 0;
+  let n = 0;
+  for (const c of chars) {
+    const cp = c.codePointAt(0)!;
+    const size = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (used + size > bytes) break;
+    used += size;
+    n++;
+  }
+  return chars.slice(0, n).join("");
+}
 
 /**
  * A file name safe on every system: `name` without its ending if it already has `extension`, with the characters
  * Windows and the browsers refuse ( \ / : * ? " < > | and control characters) turned into "-", no dots or spaces at
- * either end, `fallback` if nothing is left, then `extension` added.
+ * either end, `fallback` if nothing is left, then `extension` added; cut to MAX_NAME characters and MAX_NAME_BYTES
+ * bytes of UTF-8 with the ending, at whole code points.
  */
 export function fileNameFor(name: string, extension: string, fallback = "Untitled"): string {
   let base = name.trim();
@@ -58,7 +75,8 @@ export function fileNameFor(name: string, extension: string, fallback = "Untitle
   // A name Windows keeps for devices (CON, NUL, COM1…) can't be a file there.
   if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(base)) base = `${base}-`;
   if (base === "") base = fallback;
-  return `${[...base].slice(0, MAX_NAME - extension.length).join("")}${extension}`;
+  const chars = [...base].slice(0, MAX_NAME - extension.length);
+  return `${fitBytes(chars, MAX_NAME_BYTES - new TextEncoder().encode(extension).length)}${extension}`;
 }
 
 /** The name without its ending, for the box: what the user edits. */

@@ -3,9 +3,27 @@
 import { ImageError } from "../src/errors.ts";
 import { MAX_PIXELS, MAX_SIDE, checkMmPerPixel } from "../src/limits.ts";
 import { readPhysicalSize } from "../src/physical-size.ts";
+import { readOrientation } from "../src/orientation.ts";
+
+/** The orientation reader on any bytes: never throws, gives 1–8, and the bytes it hands the decoder read as upright and are the same length. */
+export function checkOrientation(input: Uint8Array): string | null {
+  for (const format of ["png", "jpeg"] as const) {
+    try {
+      const r = readOrientation(input, format);
+      if (!(Number.isInteger(r.orientation) && r.orientation >= 1 && r.orientation <= 8)) return `orientation ${r.orientation}`;
+      if (r.asStored.length !== input.length) return "the decoder's bytes changed length";
+      if (readOrientation(r.asStored, format).orientation !== 1) return "the decoder's bytes still carry an orientation";
+    } catch (e) {
+      return `readOrientation threw ${(e as Error)?.name}: ${(e as Error)?.message}`;
+    }
+  }
+  return null;
+}
 
 /** Checks one input; returns a description of what went wrong, or null. */
 export function checkOne(input: Uint8Array): string | null {
+  const turned = checkOrientation(input);
+  if (turned) return turned;
   try {
     const s = readPhysicalSize(input);
     if (s.width < 1 || s.height < 1 || s.width > MAX_SIDE || s.height > MAX_SIDE || s.width * s.height > MAX_PIXELS) return `size outside the limits: ${s.width} × ${s.height}`;

@@ -6,9 +6,10 @@
 // and a fake localStorage that outlives each page, as the browser's does.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emptyProject, projectToJson, type Project } from "@fission/core";
+import { emptyProject, NewerFormatError, projectToJson, type Project } from "@fission/core";
 import {
   memoryKeyValue,
+  NEWER_PREFIX,
   readJournalEntry,
   projectStore,
   recoverUnsaved,
@@ -481,4 +482,51 @@ test("the seeded runs catch a journal that loses its writes", async () => {
       caught = /leaving\(\) said all is kept/.test((e as Error).message);
     }
   assert.ok(caught);
+});
+
+// Real-use hunt S2 (2026-11-01): an entry written by a newer SpindleLabs (a newer file format) was removed by an
+// older build's recovery as "couldn't be read", losing the change for the newer build too. It is kept now, out of
+// the way of this build's autosave, until a build that reads it comes back.
+const newerEntry = () => `@5000\n${projectToJson({ ...part(30), formatVersion: 3 } as unknown as Project)}`;
+const entriesHolding = (journal: ReturnType<typeof fakeStorage>, entry: string) => [...journal.items.entries()].filter(([k, v]) => k.startsWith("panoshape.unsaved") && v === entry);
+
+test("recoverUnsaved: an entry from a newer SpindleLabs is kept, through this build's saves, and said once", async () => {
+  const journal = fakeStorage();
+  const entry = newerEntry();
+  journal.setItem(unsavedKey("p"), entry);
+  const store = projectStore(memoryKeyValue(), [], () => new Date(1000));
+  await store.save("p", part(10));
+  const problems = await recoverUnsaved(store, journal, []);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /newer SpindleLabs/);
+  assert.match(problems[0], /kept/);
+  assert.equal(widthOf(await store.open("p")), 10, "this build keeps its own stored state");
+  assert.equal(entriesHolding(journal, entry).length, 1, "the newer build's change is still in the journal");
+  // This build edits and stores the project: the newer entry is not taken for this tab's own.
+  const timers = fakeTimers();
+  let w = 10;
+  const auto = startAutosave(store, "p", () => part(w), () => {}, { timers: timers.timers, journal, stored: true, storedAt: new Date(1000), now: () => new Date(2000) });
+  w = 11;
+  auto.changed();
+  await timers.advance(1000);
+  assert.equal(widthOf(await store.open("p")), 11);
+  assert.equal(entriesHolding(journal, entry).length, 1, "still kept after this build's save");
+  assert.deepEqual(await recoverUnsaved(store, journal, []), [], "said once, not on every visit");
+  assert.equal(entriesHolding(journal, entry).length, 1);
+});
+
+test("recoverUnsaved: a kept newer entry is put back by a build that reads it, and a workspace's newer data is kept too", async () => {
+  // A Design reader that refuses its data as newer (as this build's would version 5), then one that reads it.
+  const journal = fakeStorage();
+  journal.setItem(unsavedKey("p"), `@5000\n${projectToJson(part(31))}`);
+  const store = projectStore(memoryKeyValue(), [], () => new Date(1000));
+  await store.save("p", part(10));
+  const refuses = [{ id: "design" as const, readData: () => { throw new NewerFormatError("Design data version 5 is from a newer SpindleLabs"); } }];
+  const said = await recoverUnsaved(store, journal, refuses);
+  assert.match(said[0], /newer SpindleLabs.*Design data version 5/);
+  assert.equal(journal.items.has(unsavedKey("p")), false);
+  assert.equal(journal.items.has(NEWER_PREFIX + "p"), true);
+  assert.deepEqual(await recoverUnsaved(store, journal, []), [], "the newer build reads it");
+  assert.equal(widthOf(await store.open("p")), 31);
+  assert.equal(journal.items.size, 0);
 });

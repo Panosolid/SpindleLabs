@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openImage, type Decoder } from "../src/open.ts";
 import { physicalSize, type Pixels } from "../src/document.ts";
-import { idat, iend, ihdr, phys, png, refusal } from "./helpers.ts";
+import { exifApp1, exifChunk, idat, iend, ihdr, jpeg, phys, png, refusal, sof, sos } from "./helpers.ts";
 
 /** A decoder that returns blank pixels of the given size and counts its calls. */
 function fakeDecoder(width: number, height: number) {
@@ -78,4 +78,62 @@ test("the browser failing to decode good-looking headers is reported as damaged,
   const r = await refused(openImage(file200x100, "x.png", decode));
   assert.equal(r.code, "damaged");
   assert.equal(r.message, "The headers look right, but the browser could not decode the picture in this PNG file.");
+});
+
+/**
+ * A decoder that behaves like current Chromium: it turns the picture by the
+ * EXIF orientation it finds in the bytes it is given (createImageBitmap's
+ * imageOrientation "none" no longer stops it). It finds the tag by its
+ * big-endian bytes (tag 0112, type 3, count 1, value), independently of
+ * src/orientation.ts. The stored picture is `width` × `height`, and pixel
+ * (x, y) of the stored picture has red = 10 × y + x.
+ */
+function turningDecoder(width: number, height: number): Decoder {
+  return async (bytes) => {
+    let o = 1;
+    for (let i = 0; i + 10 <= bytes.length; i++) {
+      if ([0x01, 0x12, 0, 3, 0, 0, 0, 1, 0].every((b, k) => bytes[i + k] === b)) {
+        o = bytes[i + 9];
+        break;
+      }
+    }
+    const swap = o >= 5 && o <= 8;
+    const w = swap ? height : width;
+    const h = swap ? width : height;
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        // Only orientations 1 and 6 are modelled: 6 shows stored (sx, sy) = (y, height − 1 − x).
+        const [sx, sy] = o === 6 ? [y, height - 1 - x] : [x, y];
+        rgba.set([10 * sy + sx, 0, 0, 255], 4 * (y * w + x));
+      }
+    return { width: w, height: h, rgba };
+  };
+}
+
+// Regression (files hunt, 2026-11-01): every portrait phone photo was refused as damaged.
+test("a portrait phone photo (EXIF orientation 6, stored 3 × 2) opens upright as 2 × 3, not refused as damaged", async () => {
+  const photo = jpeg(exifApp1(6), sof(3, 2), sos());
+  const doc = await openImage(photo, "portrait.jpg", turningDecoder(3, 2));
+  assert.deepEqual([doc.width, doc.height], [2, 3]);
+  const reds = (p: Pixels) => Array.from({ length: p.width * p.height }, (_, i) => p.rgba[4 * i]);
+  // Stored, red = 10y + x:  0  1  2
+  //                         10 11 12
+  // Turned a quarter clockwise (orientation 6) the first column, read upwards, is the first row:
+  //   10  0
+  //   11  1
+  //   12  2
+  assert.deepEqual(reds(doc.layers[0].pixels), [10, 0, 11, 1, 12, 2]);
+  // An upright photo is unchanged.
+  const plain = await openImage(jpeg(exifApp1(1), sof(3, 2), sos()), "plain.jpg", turningDecoder(3, 2));
+  assert.deepEqual([plain.width, plain.height, ...reds(plain.layers[0].pixels)], [3, 2, 0, 1, 2, 10, 11, 12]);
+});
+
+test("a PNG with eXIf orientation 8 opens 20 × 30 from its 30 × 20 header", async () => {
+  // Stored 30 wide, 20 tall; a quarter turn anticlockwise shows it 20 wide, 30 tall.
+  const doc = await openImage(png(ihdr(30, 20), exifChunk(8), idat(), iend()), "turned.png", fakeDecoder(30, 20).decode);
+  assert.deepEqual([doc.width, doc.height], [20, 30]);
+  // A decoder that still turned the picture is caught: the stored size was expected.
+  const r = await refused(openImage(png(ihdr(30, 20), exifChunk(8), idat(), iend()), "turned.png", fakeDecoder(20, 30).decode));
+  assert.equal(r.message, "The file's header says 30 × 20 pixels but it decoded to 20 × 30.");
 });

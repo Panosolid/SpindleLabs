@@ -10,7 +10,10 @@
 // 1. Contents with a strong signature decide alone, whatever the name says:
 //    PNG (its 8 signature bytes), JPEG (FF D8 FF), PDF ("%PDF-"), STEP
 //    ("ISO-10303-21;"), a SpindleLabs project (a JSON object with
-//    "formatVersion" near the start) and SVG (its first element is <svg).
+//    "formatVersion" in its first 64 KB) and SVG (its first element is <svg).
+//    A file named like a project is read whole (up to the project limit,
+//    headBytesFor) and, if its start doesn't show it, parsed: a JSON object
+//    with a "formatVersion" key is a project, wherever the key comes.
 // 2. STL and DXF have weak signatures (an ASCII STL starts with "solid",
 //    which plenty of text does; a binary STL has no signature at all, only
 //    a size that must equal 84 + 50 × its triangle count), so they count
@@ -18,7 +21,7 @@
 // 3. A name that claims a format its contents don't match is refused as
 //    damaged or renamed; anything else is unknown.
 
-import { tooBig, type WorkspaceId } from "./project.ts";
+import { megabytes, tooBig, type WorkspaceId } from "./project.ts";
 import { workspaceName } from "./feature.ts";
 import type { RepresentationKind, RepresentationRegistry } from "./representation.ts";
 
@@ -55,11 +58,26 @@ export const formatInfo = (format: FileFormat): FileFormatInfo => FILE_FORMATS.f
 /** How much of a file identifyFile looks at; the shell reads this much before routing. */
 export const HEAD_BYTES = 64 * 1024;
 
-/** A file's name, its full size in bytes and its first bytes (up to HEAD_BYTES). */
+/** Largest image file opened, in bytes: far more than the largest image Image holds (8192 × 8192 pixels, 256 MB as RGBA), so only a file that could freeze the tab while it is read is refused. */
+export const MAX_IMAGE_BYTES = 512 * 1024 * 1024;
+
+/** How much of a file the shell reads before routing: all of one named like a project that the size limit allows (so it can be parsed), else up to HEAD_BYTES. */
+export function headBytesFor(name: string, size: number): number {
+  return claimedFormat(name) === "project" && tooBig(size) === null ? size : Math.min(size, HEAD_BYTES);
+}
+
+/** What the shell says when the browser fails to read a file: too big for it, or gone (moved, deleted, a cloud placeholder, a permission change). */
+export function unreadableMessage(name: string, size: number): string {
+  if (size > MAX_IMAGE_BYTES) return `Couldn't read “${name}”: it is ${megabytes(size)}, too big for the browser to read.`;
+  return `Couldn't read “${name}”: the browser can no longer read it (moved, deleted or not allowed). Try it again from where it is now.`;
+}
+
+/** A file's name, its full size in bytes and its first bytes (headBytesFor says how many); `folder` when a folder was dropped. */
 export interface FileHead {
   name: string;
   size: number;
   head: Uint8Array;
+  folder?: boolean;
 }
 
 export type Identified = { ok: true; format: FileFormat } | { ok: false; reason: "renamed"; claimed: FileFormat } | { ok: false; reason: "unknown" };
@@ -135,12 +153,24 @@ function weakMatches(format: FileFormat, file: FileHead): boolean {
   return false;
 }
 
+/** True when the whole file is a JSON object with a "formatVersion" key (the head must be the whole file). */
+function parsesAsProject(file: FileHead): boolean {
+  if (file.head.length !== file.size) return false;
+  try {
+    const value: unknown = JSON.parse(new TextDecoder().decode(file.head)); // drops a byte order mark
+    return typeof value === "object" && value !== null && !Array.isArray(value) && Object.hasOwn(value, "formatVersion");
+  } catch {
+    return false;
+  }
+}
+
 /** What a file is (rules at the top of this file). Never throws, whatever the bytes. */
 export function identifyFile(file: FileHead): Identified {
-  const strong = strongFormat(file.head);
+  const strong = strongFormat(file.head.subarray(0, HEAD_BYTES));
   if (strong) return { ok: true, format: strong };
   const claimed = claimedFormat(file.name);
   if (claimed === null) return { ok: false, reason: "unknown" };
+  if (claimed === "project" && parsesAsProject(file)) return { ok: true, format: "project" };
   if ((claimed === "stl" || claimed === "dxf") && weakMatches(claimed, file)) return { ok: true, format: claimed };
   return { ok: false, reason: "renamed", claimed };
 }
@@ -158,6 +188,9 @@ export interface FileImporter {
 
 export type FileRoute = { kind: "open"; format: FileFormat; importer: FileImporter } | { kind: "refused"; message: string };
 
+/** Why an image file of this many bytes isn't read, or null when it is. */
+const imageTooBig = (size: number): string | null => (size > MAX_IMAGE_BYTES ? `it is ${megabytes(size)}, and an image may be at most ${megabytes(MAX_IMAGE_BYTES)}` : null);
+
 /** "A", "A and B", "A, B and C". */
 const andList = (items: readonly string[]) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
@@ -167,6 +200,7 @@ export function routeFiles(registry: RepresentationRegistry, files: readonly Fil
   if (files.length > 1) return { kind: "refused", message: `Drop or paste one file at a time (there were ${files.length}).` };
   const file = files[0];
   const name = `“${file.name}”`;
+  if (file.folder) return { kind: "refused", message: `Couldn't open ${name}: it is a folder. Drop or paste one file from inside it.` };
   const found = identifyFile(file);
   if (!found.ok && found.reason === "renamed")
     return { kind: "refused", message: `Couldn't open ${name}: it is named like ${formatInfo(found.claimed).one}, but its contents aren't one (it may be damaged, or renamed from another type).` };
@@ -176,7 +210,7 @@ export function routeFiles(registry: RepresentationRegistry, files: readonly Fil
   }
   const importer = registry.importerFor(found.format);
   // Refused by its size alone, before the shell reads the whole file.
-  const big = found.format === "project" ? tooBig(file.size) : null;
+  const big = found.format === "project" ? tooBig(file.size) : formatInfo(found.format).representation === "image" ? imageTooBig(file.size) : null;
   if (importer && big) return { kind: "refused", message: `Couldn't open ${name}: ${big}.` };
   if (importer) return { kind: "open", format: found.format, importer };
   const info = formatInfo(found.format);

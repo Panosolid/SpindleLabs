@@ -128,7 +128,7 @@ test("the dialog asks first and says what goes; Cancel closes it and clears noth
   assert.equal($("start-fresh-heading").textContent, "Start fresh?");
   assert.equal(
     $("start-fresh-words").textContent,
-    "This clears everything in the design (1 sketch and 2 features) and starts again from an empty design, as a new project opens. Undo brings it all back.",
+    "This clears everything in the design (1 sketch and 2 features) and starts again from an empty design, as a new project opens. Undo brings it all back until you reload or close this page, so use Save first to keep it as a file.",
   );
   assert.equal($("start-fresh-cancel").ownerDocument.activeElement?.id, "start-fresh-cancel", "Cancel has the focus: Enter alone never clears");
   $("start-fresh-cancel").click();
@@ -173,4 +173,15 @@ test("New chosen once the design is fresh opens nothing, even from a menu drawn 
   entry.run();
   assert.equal(f.open, false);
   assert.equal(confirmed(), 0);
+});
+
+test("New says plainly how long Undo can bring the design back: the stored project is replaced, and undo ends with the page (real-use hunt B4)", () => {
+  // New clears the design in the open project, which autosaves over the stored one; the undo history lives only in
+  // the page. So "Undo brings it back" alone was untrue after a reload: the words say until when, and that Save keeps it.
+  const { $, choose } = setup(part());
+  choose();
+  const words = $("start-fresh-words").textContent ?? "";
+  assert.match(words, /Undo brings it all back until you reload or close this page/);
+  assert.match(words, /use Save first to keep it as a file/);
+  assert.match(START_FRESH_TITLE, /Undo brings it back until the page is reloaded or closed/);
 });
