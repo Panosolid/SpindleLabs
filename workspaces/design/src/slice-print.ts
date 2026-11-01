@@ -200,7 +200,7 @@ export class SliceDropped extends Error {
 /**
  * The engine's refusal in words for a beginner: "the part ... runs from (-22, 118) to (278, 138), off the 256 × 256 mm bed"
  * becomes how wide the part is and what the plate takes; "layer 1280 reaches z = 256.2 mm, above the printer's 256 mm"
- * becomes how tall. Any other message is kept, starting with a capital.
+ * becomes how tall; "starts in mid-air at z = 20 mm, around (35, 5), with nothing under it" says where the part hangs and what to do. Any other message is kept, starting with a capital.
  */
 export function refusalWords(message: string): string {
   const across = /runs from \((-?[\d.]+), (-?[\d.]+)\) to \((-?[\d.]+), (-?[\d.]+)\), off the (\d+) × (\d+) mm bed/.exec(message);
@@ -211,6 +211,8 @@ export function refusalWords(message: string): string {
   }
   const tall = /reaches z = ([\d.]+) mm, above the printer's ([\d.]+) mm/.exec(message);
   if (tall) return `The part is about ${tall[1]} mm tall, and the P1S prints up to ${tall[2]} mm. Make it shorter or split it into pieces.`;
+  const air = /starts in mid-air at z = (-?[\d.]+) mm, around \((-?[\d.]+), (-?[\d.]+)\), with nothing under it/.exec(message);
+  if (air) return `Part of the model hangs in the air ${air[1]} mm above the plate, around (${air[2]}, ${air[3]}) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.`;
   return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
@@ -391,6 +393,8 @@ export function slicePrint(slot: HTMLElement, events: SlicePrintEvents): SlicePr
   const say = (text: string, bad: boolean) => {
     status.textContent = text;
     status.classList.toggle("slice-print-bad", bad);
+    // On a phone the dialog scrolls and the buttons stick to its bottom: bring the words into view, not under them.
+    if (text) status.scrollIntoView?.({ block: "nearest" });
   };
   const choices = (): PrintChoices => ({ layerHeight: Number(quality.select.value), walls: Number(walls.select.value), infill: Number(infill.select.value), supports: supportStyle(supports.select.value) });
   const file = (): FileChoices => ({ format: format.select.value === "gcode" ? "gcode" : "p1s", plate: plate.select.value === "smooth" ? "smooth" : "textured", nozzle: nozzle.select.value === "high-flow" ? "high-flow" : "standard" });

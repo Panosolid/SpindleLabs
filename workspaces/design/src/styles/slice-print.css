@@ -13,6 +13,7 @@
 .slice-print select { width: 100%; }
 .slice-print #slice-print-status:empty { display: none; }
 .slice-print #slice-print-status.slice-print-bad { color: #f0a35e; }
+.slice-print #slice-print-status { scroll-margin-bottom: 76px; }
 /* The buttons stay in view at the bottom, whatever the window's height. */
 .slice-print .slice-print-actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 8px; margin: 0 -18px; padding: 10px 18px 16px; background: #161d2a; }
 .slice-print #slice-print-go:not(#none) { font-weight: 600; }

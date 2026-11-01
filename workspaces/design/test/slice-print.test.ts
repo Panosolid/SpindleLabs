@@ -572,3 +572,18 @@ test("the dialog adds the heights note after the result and marks it as a warnin
   assert.doesNotMatch(t.$("slice-print-status").textContent ?? "", /Body 2/);
   assert.equal(t.$("slice-print-status").classList.contains("slice-print-bad"), false);
 });
+
+test("a body floating above the plate is refused with advice when supports are off, and sliced with supports on (real kernel)", async () => {
+  const kernel = nodeKernel();
+  const cube = (x: number, z: number) => kernel.call("export_stl", { moved: { body: { box: { width: 10, depth: 10, height: 10 } }, moves: [{ move: [x, 0, z] }] } }, "body");
+  // One cube on the plate at x 0, one 20 mm up at x 30: its centre is (35, 5) once the lowest point is on the plate.
+  const stl = stackStl([(await cube(0, 0)).bytes, (await cube(30, 20)).bytes]);
+  const words = (m: string) => refusalWords(m);
+  await assert.rejects(kernel.call("slice_stl", stl, 0.2, 2, 15, "off"), (e: Error) => {
+    assert.equal(words(e.message), "Part of the model hangs in the air 20 mm above the plate, around (35, 5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+    return true;
+  });
+  assert.ok((await kernel.call("slice_stl", stl, 0.2, 2, 15, "normal")).layers > 0);
+  // The wording by hand, for a message of the same shape.
+  assert.equal(refusalWords("part of the model starts in mid-air at z = 3.5 mm, around (-2, 7.5), with nothing under it: turn on supports"), "Part of the model hangs in the air 3.5 mm above the plate, around (-2, 7.5) mm, with nothing under it. Turn Supports on, or move it down onto the plate or the part.");
+});
