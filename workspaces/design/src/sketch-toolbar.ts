@@ -24,6 +24,8 @@ export interface SketchToolbarEvents {
   finish(): void;
   /** The Snap button pressed: snapping turned on (true) or off. */
   snap(on: boolean): void;
+  /** Type pressed (phone width only): the keys go to the typed-size boxes. */
+  type(): void;
 }
 
 /** One row of the Create menu: the tool's name and the key that chooses it (none for a tool without one). */
@@ -87,6 +89,8 @@ export interface SketchToolbar {
   showSnap(on: boolean): void;
   /** The tool in use: its button pressed and its menu row ticked. */
   showTool(kind: ToolKind): void;
+  /** Shows Type (only ever drawn at phone width on a touch screen, sketchbar.css) while the typed-size boxes show. */
+  showType(on: boolean): void;
   /** Takes the sketch's toolbar away (the menu too). */
   hide(): void;
   /** Whether the Create menu is open (Escape closes it first). */
@@ -136,6 +140,16 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     row.append(withIcon(b, TOOL_ICONS[t.kind], TOOL_ICON_SIZE));
     return { kind: t.kind, button: b };
   });
+  // Type (sketch hunt 2026-11-01): at phone width the typed-size boxes take no taps until typed in, since beside the finger
+  // they swallowed the next tap of a line drawn down; this puts the keys in their first box. In the toolbar, not over the
+  // view, so it never covers where a sketch is tapped; wider screens never show it (a digit starts typing there).
+  const typeButton = button("Type", "sketch-type");
+  typeButton.className = "toolbar-group-tool sketchbar-type";
+  typeButton.title = "Type a size";
+  typeButton.setAttribute("aria-label", "Type a size");
+  typeButton.hidden = true;
+  typeButton.addEventListener("click", () => on.type());
+  row.append(typeButton);
 
   // The menu: fixed to the page under its button, so the toolbar's sideways
   // scroll at phone width never clips it.
@@ -339,6 +353,9 @@ export function sketchToolbar(slot: HTMLElement, on: SketchToolbarEvents): Sketc
     },
     showSnap,
     showTool,
+    showType(on) {
+      typeButton.hidden = !on;
+    },
     hide() {
       closeMenu();
       create.hidden = snapGroup.hidden = finishGroup.hidden = true;

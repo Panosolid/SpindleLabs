@@ -1,6 +1,6 @@
 fix
 
-- On a phone, a tap where the Length and Angle boxes stand now draws the next point instead of opening the keyboard; Type on the bar over the view puts the keys in the boxes.
+- On a phone, a tap where the Length and Angle boxes stand now draws the next point instead of opening the keyboard; Type in the sketch toolbar puts the keys in the boxes.
 - An arc drawn again over the same arc is refused instead of breaking the outline, and clicking twice on a point no longer draws an invisible line or circle.
 - Lines and circles smaller than 0.001 mm are refused with a note while drawing, instead of being refused later by the whole sketch.
 - A sketch on the face of a hidden body can use Project and snap to edges again.

@@ -256,12 +256,13 @@ await check("375 px with taps: the boxes on screen, a line typed by length and a
   assert.ok(b.y >= v.y && b.y + b.height <= v.y + v.height + 1, "boxes inside the view");
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth);
   assert.ok(scroll <= 375, `no sideways scroll (${scroll} px)`);
-  // At phone width the boxes take no taps until typed in: the bar over the view's Type puts the keys in Length.
-  // The bar keeps one row with Type beside Finish Sketch: a second row covered the view's top (Firefox CI, its wider text).
-  const bar = await page.locator("#phone-float").boundingBox();
-  const finish = await page.locator("#float-finish").boundingBox();
-  assert.ok(bar.height < 2 * finish.height, `the bar is one row (${bar.height} px tall, Finish ${finish.height} px)`);
-  await page.tap("#float-type");
+  // At phone width the boxes take no taps until typed in: the toolbar.s Type puts the keys in Length.
+  // Type is in the sketch's toolbar, above the view, so it never covers where a sketch is tapped (over the view it covered
+  // the next tap in Firefox and WebKit, CI), and showing it leaves the toolbar's height as it was.
+  const type = await page.locator("#sketch-type").boundingBox();
+  assert.ok(type && type.y + type.height <= v.y, `Type ${JSON.stringify(type)} is above the view (top ${v.y})`);
+  assert.ok(type.x >= 0 && type.x + type.width <= 375, "Type inside the screen's width");
+  await page.tap("#sketch-type");
   assert.equal(await focused(page), "typed-length", "Type puts the keys in Length");
   await page.keyboard.type("25");
   await page.locator("#typed-angle").tap();
@@ -292,7 +293,7 @@ await check("375 × 667 with taps, then turned sideways to 667 × 375 and back: 
   await sketch(page, true);
   await clickPlane(page, [20, 15], TOP, true);
   await points(page, "20,15");
-  await page.tap("#float-type");
+  await page.tap("#sketch-type");
   await page.keyboard.type("12");
   const canvas0 = await page.locator("#viewport canvas").boundingBox();
   const point0 = screenPoint(canvas0, [20, 15, 0], TOP);
@@ -419,7 +420,7 @@ await check("375 px with taps: an arc's end typed, the boxes and hint on screen"
   const t = await page.locator("#typed-entry").boundingBox();
   const h = await page.locator("#sketch-hint").boundingBox();
   assert.ok(h.y + h.height <= t.y || t.y + t.height <= h.y, "the hint and the boxes don't overlap");
-  await page.tap("#float-type");
+  await page.tap("#sketch-type");
   await page.keyboard.type("20");
   await page.locator("#typed-angle").tap();
   await page.keyboard.type("0");

@@ -1269,7 +1269,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     return true;
   }
   /** The sketch's own toolbar (SF3b), standing in for the modelling buttons while a sketch is edited; Extrude stays. */
-  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on) });
+  const sketchBar = sketchToolbar(ctx.toolbar, { tool: (kind) => chooseTool(kind), finish: () => finishSketch(), snap: (on) => setSnapOn(on), type: () => typed.start("") });
   /** Typed sizes (SF4): what the boxes by the pointer lock, and where the pointer is over the view (px), where they float. */
   let locks: Locks = {};
   let screen = { x: 0, y: 0 };
@@ -1307,8 +1307,9 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     // A typed arc angle goes the pointer's way round however little it went (typed-entry.ts withLocks): the preview from the tool the click will use.
     viewport.showSketches(withSnap(sketchDrawings(doc, editing && { ...editing, tool: withLocks(editing.tool, locks, editing.pointer), pointer: aim, gridSnap }, placedNow, lostSketches()), locked ? null : (editing?.snap ?? null), editing?.pixel));
     const anchor = editing && anchorOf(doc, editing.tool);
-    if (!editing) return (typed.hide(), hint.hide());
+    if (!editing) return (typed.hide(), sketchBar.showType(false), hint.hide());
     const width = viewport.element.clientWidth;
+    sketchBar.showType(typedFields(editing.tool).length > 0);
     typed.show(typedFields(editing.tool), anchor && aim ? liveValues(anchor, aim, editing.tool) : {}, Math.min(screen.x, Math.max(0, width - 200)), screen.y, viewport.editedScreenPoints());
     // A note shows where the pointer last was even once it has left the view (a finger lifted, the mouse gone to Extrude).
     if (editing.pointer || sketchNote) hint.show(sketchNote || hintOf(editing.tool), Math.min(screen.x, Math.max(0, width - 200)), screen.y, sketchNote !== "");
@@ -2644,6 +2645,7 @@ function mount(ctx: WorkspaceContext): MountedWorkspace {
     globalThis.removeEventListener?.("blur", onLostFocus);
     clearTimeout(heldShow);
     typed.hide();
+    sketchBar.showType(false);
     hint.hide();
     moveHint.hidden = true;
     showStart(); // hidden while asleep; wake shows it again if it still applies

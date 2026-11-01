@@ -8,7 +8,7 @@
    where they were a moment before (found by the Firefox sketch session).
    With a mouse a digit starts typing; on a wide touch screen (no hover)
    and while typing they take taps. At phone width they take none until
-   typed in (the bar over the view's Type, phone-float.ts): beside the
+   typed in (the sketch toolbar's Type, sketch-toolbar.ts): beside the
    finger they swallowed the next tap of a line drawn down (sketch hunt
    2026-11-01). */
 .typed-entry { position: absolute; z-index: 20; display: flex; flex-direction: column; gap: 3px; pointer-events: none; transform: translate(18px, 14px); }
