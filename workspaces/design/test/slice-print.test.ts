@@ -371,13 +371,15 @@ test("Better grip on the shipped build: the 20 mm cube's ten brim loops after th
   // The first layer is 5 °C hotter (225 for PLA's 220), back to 220 on the second, and no faster than 30 mm/s (F1800).
   assert.match(on.gcode, /^M109 S225$/m);
   assert.match(on.gcode, /^M104 S220$/m);
-  // Off: no brim; Σ (80 + 2π·d_k) = 951.23 mm of a 0.0914 mm² bead less: 36.15 mm less filament.
+  // Off: no brim; Σ (80 + 2π·d_k) = 951.23 mm of a 0.0914 mm² bead less (36.153 mm of filament), and the warm-up
+  // loop's two loops each 4.7147 mm nearer the part, 2 × 2π × 4.7147 = 59.25 mm shorter (2.252 mm): 38.405 mm less
+  // filament, and up to 12 × 2π × 0.001 mm more where the round corners' polygons lie outside their circles (0.003 mm).
   const off = await sliceBodies(kernel, doc, bodyFeatures(doc), PRINT_DEFAULTS);
   assert.ok(off.preview[0].paths.every((x) => x.role !== "brim"));
   assert.doesNotMatch(off.gcode, /;TYPE:Brim/);
   assert.doesNotMatch(off.gcode, /^M109 S225$/m);
   const less = on.filamentMm - off.filamentMm;
-  assert.ok(less > 36.152 && less < 36.157, `${less}`);
+  assert.ok(less > 38.404 && less < 38.409, `${less}`);
   // The P1S's file too.
   const file = await printFileOf(kernel, doc, bodyFeatures(doc), choices, "textured");
   const g = gcodeOfPackage(file.package)!;
