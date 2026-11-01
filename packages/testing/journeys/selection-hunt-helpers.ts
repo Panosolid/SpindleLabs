@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { app } from "./design-app.ts";
 import type { DesignDocument } from "@fission/design";
-export const empty = (): DesignDocument => ({ version: 6, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }) as never;
+export const empty = (): DesignDocument => ({ version: 7, nextId: 1, profiles: [], sketches: [], timeline: { features: [] } }) as never;
 type A = Awaited<ReturnType<typeof app>>;
 export async function insert(a: A, kind: string) {
   (a.$("#insert") as HTMLButtonElement).click();
