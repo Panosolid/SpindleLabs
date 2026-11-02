@@ -1240,13 +1240,6 @@
   },
   {
     "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ArithmeticOperator",
-    "original": "sorted.length - 1",
-    "replacement": "sorted.length + 1",
-    "why": "Makes the far side of the empty layer all round NaN: only that layer's cells, always empty, have it as a side, and no cell's size or corner is read unless it is filled."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
     "mutator": "BlockStatement",
     "original": "{ return false; }",
     "replacement": "{}",
@@ -1440,41 +1433,6 @@
     "original": "\"split-silent\"",
     "replacement": "\"\"",
     "why": "Only with the planted split-silent fault, which real code never passes; the test planting it still catches it."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ConditionalExpression",
-    "original": "sorted.length === 0",
-    "replacement": "false",
-    "why": "axisOf gets no coordinates only when no block is valid; then no body is ever made, so the grid is never read."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[0, 1]",
-    "replacement": "[]",
-    "why": "axisOf gets no coordinates only when no block is valid; then no body is ever made, so the grid is never read."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[]",
-    "replacement": "[\"Stryker was here\"]",
-    "why": "The text sorts as equal to every number, so it stays first and adds one more empty layer below the low side; no block's cell is ever in it (comparing text with numbers is false), and the cells' order along the axis is kept."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[]",
-    "replacement": "[\"Stryker was here\"]",
-    "why": "The text sorts as equal to every number, so it stays first and adds one more empty layer below the low side; no block's cell is ever in it (comparing text with numbers is false), and the cells' order along the axis is kept."
-  },
-  {
-    "file": "packages/testing/src/boolean-naming-model.ts",
-    "mutator": "ArrayDeclaration",
-    "original": "[]",
-    "replacement": "[\"Stryker was here\"]",
-    "why": "The text sorts as equal to every number, so it stays first and adds one more empty layer below the low side; no block's cell is ever in it (comparing text with numbers is false), and the cells' order along the axis is kept."
   },
   {
     "file": "packages/testing/src/boolean-naming-model.ts",
