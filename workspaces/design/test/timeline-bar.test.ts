@@ -6,7 +6,7 @@ import { extrudeSketch } from "../src/extrude.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as bar from "../src/timeline-bar.ts";
-import { barEdit, DOUBLE_CLICK_MS, dropIndex, DRAG_PIXELS, isDoubleClick, isDrag, itemMenu, stepTarget, TAP_REACH, tapPlace, timelineBarItems } from "../src/timeline-bar.ts";
+import { barEdit, DOUBLE_CLICK_MS, dropIndex, DRAG_PIXELS, isDoubleClick, isDrag, itemMenu, PHONE_TAP_PAD, stepTarget, TAP_REACH, tapPlace, timelineBarItems } from "../src/timeline-bar.ts";
 import { deleteWords } from "../src/delete-ask.ts";
 import { OPS, randomSteps, runBarSession, shrink } from "./timeline-bar-session.ts";
 
@@ -133,6 +133,59 @@ test("a tap near a gap's middle puts the marker there; on an item it does not, a
   // Scrolled 30 px: x = 25 is at 55 in the row, the middle of the gap before item 3.
   assert.equal(tapPlace(ROW, 25, 30), 2);
   assert.equal(tapPlace([], 0), null, "no items: nothing to put the marker between");
+});
+
+test("at phone width an item's whole 40 px tap area picks it, at 0.9× and 1.1× of PHONE_TAP_PAD", () => {
+  assert.equal(PHONE_TAP_PAD, 8);
+  // The phone's layout, worked by hand from timeline-bar.css: 24 px items 32 px apart from 24 px in, so items at
+  // [24, 48], [80, 104], [136, 160]; each takes 8 px either side ([16, 56], [72, 112], [128, 168]), 24 + 16 = 40 across.
+  const phone = [{ left: 24, right: 48 }, { left: 80, right: 104 }, { left: 136, right: 160 }];
+  const P = PHONE_TAP_PAD;
+  // Gap 1's middle is (48 + 80) / 2 = 64; the row between the two areas is [56, 72], TAP_REACH (8) either side of it.
+  assert.equal(tapPlace(phone, 64, 0, P), 1);
+  assert.equal(tapPlace(phone, 48 + 1.1 * P, 0, P), 1, "56.8: past item 1's area, 7.2 from the middle: the gap");
+  assert.equal(tapPlace(phone, 48 + 0.9 * P, 0, P), null, "55.2: inside item 1's area: the item's");
+  assert.equal(tapPlace(phone, 80 - 0.9 * P, 0, P), null, "72.8: inside item 2's area");
+  assert.equal(tapPlace(phone, 80 - 1.1 * P, 0, P), 1, "71.2: just before it, the gap");
+  // The ends: without the pad a tap 7.2 px inside the last item, at 152.8, is within TAP_REACH of its right
+  // edge 160 and goes to the end; with it the tap is the item's.
+  assert.equal(tapPlace(phone, 160 - 0.9 * TAP_REACH), 3, "no pad: the old end, on the item");
+  assert.equal(tapPlace(phone, 160 - 0.9 * TAP_REACH, 0, P), null, "pad: the last item's");
+  assert.equal(tapPlace(phone, 160 + 0.9 * P, 0, P), null, "167.2: inside its area");
+  assert.equal(tapPlace(phone, 160 + 1.1 * P, 0, P), 3, "168.8: past its area: the end");
+  assert.equal(tapPlace(phone, 300, 0, P), 3, "anywhere past the last area is the end (no pad: 140 px from it, nothing)");
+  assert.equal(tapPlace(phone, 300), null);
+  assert.equal(tapPlace(phone, 24 - 1.1 * P, 0, P), 0, "15.2: before the first area: the start");
+  assert.equal(tapPlace(phone, 24 - 0.9 * P, 0, P), null, "16.8: inside it");
+  // Scrolled 100 px: x = 36 is 136 in the row, item 3's left edge: the item's.
+  assert.equal(tapPlace(phone, 36, 100, P), null);
+  assert.equal(tapPlace(phone, 75, 100, P), 3, "175 in the row: past the last area");
+});
+
+test("seeded: with the pad a tap is an item's exactly when it lands in that item's area, else as without, ends unbounded", () => {
+  // seed 20261102, a small linear congruential generator so the run replays.
+  let state = 20261102;
+  const r = () => ((state = (state * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let s = 0; s < 2000; s++) {
+    const n = 1 + Math.floor(r() * 6);
+    const pad = 1 + Math.floor(r() * 10);
+    const edges: { left: number; right: number }[] = [];
+    let x = Math.floor(r() * 30);
+    for (let i = 0; i < n; i++) {
+      const w = 10 + Math.floor(r() * 30);
+      edges.push({ left: x, right: x + w });
+      x += w + Math.floor(r() * 50);
+    }
+    const scroll = Math.floor(r() * 40);
+    const tx = r() * (x + 80) - 20 - scroll;
+    const at = tx + scroll;
+    const got = tapPlace(edges, tx, scroll, pad);
+    const inArea = edges.some((e) => at >= e.left - pad && at <= e.right + pad);
+    // The model, written out again: an area is its item's; before the first area the start, past the last the end;
+    // between two areas the plain rule (gap middle within TAP_REACH).
+    const want = inArea ? null : at < edges[0].left ? 0 : at > edges[n - 1].right ? n : tapPlace(edges, tx, scroll);
+    assert.equal(got, want, `seed 20261102 case ${s}: ${JSON.stringify({ edges, tx, scroll, pad })}`);
+  }
 });
 
 test("a tap between two close gaps goes to the nearer", () => {

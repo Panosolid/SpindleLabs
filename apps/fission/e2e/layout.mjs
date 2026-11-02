@@ -661,7 +661,12 @@ try {
     const m = await measure(phone);
     assert.equal(m.browser, null, "the browser waits behind its toggle");
     assert.ok(Math.abs(m.timeline.y - m.viewport.bottom) <= 1, `the timeline is right under the view (${m.timeline.y} vs ${m.viewport.bottom})`);
-    assert.ok(m.timeline.x === 0 && Math.abs(m.timeline.w - 375) <= 1 && m.timeline.h <= 40, "full width and thin");
+    assert.ok(m.timeline.x === 0 && Math.abs(m.timeline.w - 375) <= 1, "full width");
+    checkTimelineRow(m);
+    // A row 2 px taller than its 40 px taps need fails the thin rule.
+    const taller = await phone.addStyleTag({ content: "#timeline .timeline-bar:not(#none):not(#none), #timeline .timeline-marker-buttons:not(#none) { height: 42px; }" });
+    await assert.rejects(async () => checkTimelineRow(await measure(phone)), /a thin row/);
+    await taller.evaluate((el) => el.remove());
     assert.ok(m.bar.right <= m.viewport.right && m.bar.bottom <= m.viewport.bottom, "the view bar, Full screen and all, stays in the view");
     const undo = await phone.$eval("#undo-redo", (el) => el.getBoundingClientRect().left);
     assert.ok(m.bar.right <= undo, "and clear of Undo and Redo");
