@@ -289,7 +289,7 @@ class NoNoisyKernelCheckout(unittest.TestCase):
 
     @staticmethod
     def noisy(text):
-        return re.findall(r"repository:\s*Panosolid/kernel\s*$", text, re.M)
+        return re.findall(r"repository:\s*[\w.-]+/kernel\s*$", text, re.M)
 
     def test_no_workflow_uses_it(self):
         for name in sorted(os.listdir(self.WORKFLOWS)):
@@ -297,9 +297,9 @@ class NoNoisyKernelCheckout(unittest.TestCase):
                 self.assertEqual(self.noisy(f.read()), [], name)
 
     def test_the_check_catches_it(self):
-        planted = "      - uses: actions/checkout@abc # v7\n        with:\n          repository: Panosolid/kernel\n"
+        planted = "      - uses: actions/checkout@abc # v7\n        with:\n          repository: SpindleLabs-app/kernel\n"
         self.assertEqual(len(self.noisy(planted)), 1)
-        self.assertEqual(self.noisy("repository: Panosolid/kernel-results\n"), [])
+        self.assertEqual(self.noisy("repository: SpindleLabs-app/kernel-results\n"), [])
 
 
 def jobs(text):

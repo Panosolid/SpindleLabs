@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Helpers for kernel-ci.yml, which runs the private kernel repo's checks
-# (Panosolid/kernel) on this public repo's runners.
+# (SpindleLabs-app/kernel) on this public repo's runners.
 #
 #   kernel_ci.sh status CONTEXT STATE DESCRIPTION [URL]
 #       sets a commit status on the kernel commit $HEAD_SHA (KERNEL_READ key:
@@ -38,7 +38,7 @@
 set -euo pipefail
 
 results_url() {
-  echo "https://github.com/Panosolid/kernel-results/tree/main/ci/$LABEL/$HEAD_SHA/$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}"
+  echo "https://github.com/SpindleLabs-app/kernel-results/tree/main/ci/$LABEL/$HEAD_SHA/$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}"
 }
 
 case ${1:-} in
@@ -48,12 +48,12 @@ status)
     "$state" "$context" "$description" "$url")
   curl -sS --fail -o /dev/null -X POST \
     -H "Authorization: Bearer $KERNEL_READ" -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/Panosolid/kernel/statuses/$HEAD_SHA" -d "$body"
+    "https://api.github.com/repos/SpindleLabs-app/kernel/statuses/$HEAD_SHA" -d "$body"
   ;;
 save)
   job=$2 dir=$3
   work=$(mktemp -d)
-  git clone -q --depth 1 "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/Panosolid/kernel-results.git}" "$work/r" 2>/dev/null
+  git clone -q --depth 1 "${RESULTS_REPO:-https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git}" "$work/r" 2>/dev/null
   dest="${RESULTS_PATH:-ci/$LABEL/$HEAD_SHA/$GITHUB_RUN_ID-${GITHUB_RUN_ATTEMPT:-1}}/$job"
   mkdir -p "$work/r/$dest"
   # GitHub refuses a push with a file over 100 MB, so files over 50 MB stay
@@ -99,7 +99,7 @@ checkout)
   [ -z "${KERNEL_SOURCE:-}" ] && auth=(-c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$KERNEL_READ" | base64 -w0)")
   {
     git init -q "$dir" &&
-      git -C "$dir" "${auth[@]}" fetch -q --no-tags $depth "${KERNEL_SOURCE:-https://github.com/Panosolid/kernel.git}" "$ref" $also &&
+      git -C "$dir" "${auth[@]}" fetch -q --no-tags $depth "${KERNEL_SOURCE:-https://github.com/SpindleLabs-app/kernel.git}" "$ref" $also &&
       git -C "$dir" update-ref refs/heads/tested "$(git -C "$dir" rev-parse FETCH_HEAD)" &&
       { [ -z "${SPARSE:-}" ] || git -C "$dir" sparse-checkout set $SPARSE; } &&
       git -C "$dir" checkout -q tested

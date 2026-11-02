@@ -39,7 +39,7 @@ import subprocess
 import sys
 import urllib.request
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "Panosolid/fission")
+REPO = os.environ.get("GITHUB_REPOSITORY", "SpindleLabs-app/SpindleLabs")
 
 
 def parse_time(text):
