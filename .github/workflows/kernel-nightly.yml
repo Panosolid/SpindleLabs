@@ -1,6 +1,6 @@
 name: Kernel random testing
 
-# The private kernel's Tier 3 (Panosolid/kernel), on this public repo's free
+# The private kernel's Tier 3 (SpindleLabs-app/kernel), on this public repo's free
 # runners like its CI (kernel-ci.yml; Ben's decision, 2026-10-27).
 #
 # Nightly, 11pm to 7am Perth (UTC+8), so 15:00 to 22:35 UTC, testing the
@@ -106,7 +106,7 @@ jobs:
           case $MINUTES in ""|*[!0-9]*) echo "minutes must be a whole number"; exit 1;; esac
           [[ $REF =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] || { echo "bad branch name"; exit 1; }
           # Every job tests this one commit, even if the branch moves meanwhile.
-          sha=$(git ls-remote "https://x-access-token:$KERNEL_READ@github.com/Panosolid/kernel.git" "refs/heads/$REF" 2>/dev/null | cut -f1)
+          sha=$(git ls-remote "https://x-access-token:$KERNEL_READ@github.com/SpindleLabs-app/kernel.git" "refs/heads/$REF" 2>/dev/null | cut -f1)
           [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "no kernel branch $REF"; exit 1; }
           now=$(date +%s)
           if [ "$NIGHTLY" = true ]; then
@@ -176,7 +176,7 @@ jobs:
           FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
           GH_TOKEN: ${{ github.token }}
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
-          KERNEL_REPO: Panosolid/kernel
+          KERNEL_REPO: SpindleLabs-app/kernel
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
@@ -234,7 +234,7 @@ jobs:
           FISSION_ENDLESS_STOP_FILE: ${{ runner.temp }}/stop-random-testing
           GH_TOKEN: ${{ github.token }}
           KERNEL_READ: ${{ secrets.KERNEL_READ }}
-          KERNEL_REPO: Panosolid/kernel
+          KERNEL_REPO: SpindleLabs-app/kernel
           TESTING_WORKFLOW: kernel-nightly.yml
         run: |
           watcher=
@@ -331,7 +331,7 @@ jobs:
         env:
           RESULTS_WRITE: ${{ secrets.RESULTS_WRITE }}
           GH_TOKEN: ${{ secrets.RESULTS_WRITE }}
-          GH_REPO: Panosolid/kernel-results
+          GH_REPO: SpindleLabs-app/kernel-results
           MUTANT_SHARDS: ${{ needs.plan.outputs.shards == '[]' && '0' || '4' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT: ${{ needs.plan.outputs.sha }}
@@ -341,7 +341,7 @@ jobs:
         run: |
           export BRANCH=$REF
           r="$RUNNER_TEMP/results"
-          git clone -q "https://x-access-token:$RESULTS_WRITE@github.com/Panosolid/kernel-results.git" "$r" 2>/dev/null
+          git clone -q "https://x-access-token:$RESULTS_WRITE@github.com/SpindleLabs-app/kernel-results.git" "$r" 2>/dev/null
           # Copied out first: collect-results.sh switches the clone to test-results.
           export IN="$RUNNER_TEMP/incoming"
           cp -R "$r/runs/$RUN" "$IN" 2>/dev/null || mkdir -p "$IN"

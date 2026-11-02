@@ -1,6 +1,6 @@
 name: Kernel CI
 
-# The private kernel's checks (Panosolid/kernel), run here because public
+# The private kernel's checks (SpindleLabs-app/kernel), run here because public
 # repositories' runners are free and a private repo's minutes would last a
 # few days (Ben's decision, 2026-10-27). The kernel repo's own ci.yml starts
 # this for each pull request push and each push to its main, through
@@ -17,8 +17,8 @@ name: Kernel CI
 # Secrets, in the "kernel" environment, which only main may use (Ben adds
 # them; every job that needs them names it, so no other branch's workflow
 # and no fork can read them; test_kernel_ci.py checks): KERNEL_READ, a fine-grained key with
-# read-only contents and read-write commit statuses on Panosolid/kernel;
-# RESULTS_WRITE, contents and issues read-write on Panosolid/kernel-results.
+# read-only contents and read-write commit statuses on SpindleLabs-app/kernel;
+# RESULTS_WRITE, contents and issues read-write on SpindleLabs-app/kernel-results.
 # The title names the label, so the kernel repo's ci.yml can find and cancel
 # a pull request's run when it goes back to draft.
 run-name: Kernel CI ${{ inputs.label }}
