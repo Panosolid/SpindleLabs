@@ -699,10 +699,18 @@ export function showTimelineBar(slot: HTMLElement, doc: DesignDocument, wiring: 
   const shown = list.querySelector<HTMLElement>(".timeline-bar-more-slot") ?? (markerWas !== undefined && markerWas !== marker ? list.querySelector<HTMLElement>(".timeline-bar-marker") : null);
   if (shown) {
     // The picked item and its ⋯ together; measured from the start of the scrolled row, as `barEdges` measures.
-    const from = (shown.classList.contains("timeline-bar-more-slot") ? shown.previousElementSibling! : shown).getBoundingClientRect();
-    const to = shown.getBoundingClientRect();
-    const at = list.getBoundingClientRect().left - list.scrollLeft;
-    list.scrollLeft = inView(list.scrollLeft, list.clientWidth, from.left - at, to.right - at);
+    const bring = () => {
+      if (!list.isConnected) return; // drawn again since: that drawing brings its own into view
+      const from = (shown.classList.contains("timeline-bar-more-slot") ? shown.previousElementSibling! : shown).getBoundingClientRect();
+      const to = shown.getBoundingClientRect();
+      const at = list.getBoundingClientRect().left - list.scrollLeft;
+      list.scrollLeft = inView(list.scrollLeft, list.clientWidth, from.left - at, to.right - at);
+    };
+    // A pick's ⋯ only once a double click or tap could no longer come (DOUBLE_CLICK_MS): scrolled at once, the item
+    // picked by the first tap would slide from under the finger and the second tap land beside it, so the sketch
+    // never opened (seen at 375 px once the phone's 40 px tap areas spaced the items wider). A moved marker at once.
+    if (shown.classList.contains("timeline-bar-more-slot")) (slot.ownerDocument.defaultView ?? globalThis).setTimeout(bring, DOUBLE_CLICK_MS);
+    else bring();
   }
 }
 
